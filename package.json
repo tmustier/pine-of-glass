@@ -1,7 +1,6 @@
 {
   "name": "pine-of-glass",
   "version": "0.1.0",
-  "private": true,
   "description": "Small observability extensions for the Pi coding agent",
   "license": "MIT",
   "type": "module",
@@ -29,5 +28,22 @@
     "@earendil-works/pi-tui": {
       "optional": true
     }
+  },
+  "author": "Thomas Mustier",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tmustier/pine-of-glass.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tmustier/pine-of-glass/issues"
+  },
+  "homepage": "https://github.com/tmustier/pine-of-glass/blob/main/extensions/pi-contextimate/README.md",
+  "files": [
+    "extensions/pi-contextimate",
+    "docs",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }
