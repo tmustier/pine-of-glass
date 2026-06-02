@@ -1,16 +1,18 @@
 {
-  "name": "pine-of-glass",
+  "name": "pi-contextimate",
   "version": "0.1.0",
-  "description": "Small observability extensions for the Pi coding agent",
+  "description": "Context-window observability extension for the Pi coding agent",
   "license": "MIT",
   "type": "module",
   "keywords": [
     "pi-package",
     "pi",
     "pi-coding-agent",
+    "pi-extension",
     "context-management",
     "context-window",
-    "observability"
+    "observability",
+    "token-accounting"
   ],
   "pi": {
     "extensions": [
@@ -30,14 +32,6 @@
     }
   },
   "author": "Thomas Mustier",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/tmustier/pine-of-glass.git"
-  },
-  "bugs": {
-    "url": "https://github.com/tmustier/pine-of-glass/issues"
-  },
-  "homepage": "https://github.com/tmustier/pine-of-glass/blob/main/extensions/pi-contextimate/README.md",
   "files": [
     "extensions/pi-contextimate",
     "docs",

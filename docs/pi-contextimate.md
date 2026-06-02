@@ -231,7 +231,7 @@ Findings:
 
 ### OpenAI-Codex live-usage results
 
-The public OpenAI `responses/input_tokens` endpoint was tried with Pi's `openai-codex` OAuth token and returned `401` with missing API scopes. Guessed ChatGPT backend count URLs returned `403`. Therefore OpenAI-Codex exact counting was not available via the current Pi OAuth credential during this experiment.
+The public OpenAI `responses/input_tokens` endpoint was tried with the active `openai-codex` auth path and returned `401` with missing API scopes. Guessed ChatGPT backend count URLs returned `403`. Therefore OpenAI-Codex exact counting was not available during this experiment.
 
 Instead, live `gpt-5.5` runs were used with synthetic system prompts, no tools, no context files, no skills, no prompt templates, no themes, and thinking off. After subtracting a tiny baseline, text-section results were:
 
@@ -499,7 +499,7 @@ If Pi's current total is unavailable after compaction, use the provider/model fa
 
 ## Rerunning or adapting the experiment
 
-Use a throwaway session directory and avoid printing credential values. The following is enough for a fresh agent to reproduce the experiment or adapt it to another provider.
+Use a throwaway session directory and do not print, commit, or publish credential-bearing payloads. The following is enough for a fresh agent to reproduce the experiment or adapt it to another provider.
 
 ### 1. Capture the actual provider payload
 
@@ -533,7 +533,7 @@ PI_PAYLOAD_CAPTURE_PATH=/tmp/pi-prefix-probe \
   hi
 ```
 
-Inspect only sizes/keys unless secret-bearing data is intentionally needed:
+Inspect only sizes/keys; do not print or publish full provider payloads from a real authenticated session:
 
 ```bash
 python3 - <<'PY'
@@ -557,17 +557,7 @@ tools    = count({ model, messages: [hi], tools, thinking: disabled }) - baselin
 full     = count({ model, messages, system, tools, thinking })
 ```
 
-When using Pi's stored Anthropic OAuth, match Pi's headers:
-
-```text
-Authorization: Bearer <stored access token>
-anthropic-version: 2023-06-01
-anthropic-beta: claude-code-20250219,oauth-2025-04-20
-user-agent: claude-cli/2.1.75
-x-app: cli
-```
-
-Do not print the token. Reading `~/.pi/agent/auth.json` for the access token is acceptable only for local experiments.
+Use whichever Anthropic authentication path is appropriate for your environment and keep it out of logs. For OAuth-style Claude Code requests, the request may also need the provider-specific beta/app headers used by that client. Do not print tokens or publish authenticated payloads.
 
 ### 3. OpenAI / OpenAI-Codex counts
 

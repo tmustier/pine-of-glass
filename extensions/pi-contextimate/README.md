@@ -4,16 +4,16 @@
 
 ## Install
 
-Install the package repo:
+Install from npm:
 
 ```bash
-pi install git:github.com/tmustier/pine-of-glass
+pi install npm:pi-contextimate
 ```
 
 Try it for one run without installing:
 
 ```bash
-pi -e git:github.com/tmustier/pine-of-glass
+pi -e npm:pi-contextimate
 ```
 
 For local development from a clone:
@@ -32,7 +32,7 @@ The package manifest points Pi at this extension directory, so future internal s
 
 ## Docs
 
-Full notes, accounting heuristics, and experiment results live in the repo docs:
+Full notes, accounting heuristics, and experiment results live in the package docs:
 
-- https://github.com/tmustier/pine-of-glass/blob/main/docs/pi-contextimate.md
-- https://github.com/tmustier/pine-of-glass/blob/main/docs/pi-contextimate-codex-context-accounting.md
+- `docs/pi-contextimate.md`
+- `docs/pi-contextimate-codex-context-accounting.md`

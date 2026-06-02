@@ -381,7 +381,7 @@ function loadContextimateConfig(cwd: string): ContextimateConfig {
   const configPaths = [
     join(homedir(), ".pi", "agent", "pi-contextimate.json"),
     join(cwd, ".pi", "pi-contextimate.json"),
-    // Legacy names from the original private prefix-inspector extension.
+    // Legacy names from the original prefix-inspector predecessor.
     join(homedir(), ".pi", "agent", "prefix-inspector.json"),
     join(cwd, ".pi", "prefix-inspector.json"),
     ...splitConfigPaths(process.env.PI_CONTEXTIMATE_CONFIG),
