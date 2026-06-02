@@ -12,6 +12,8 @@
 
 The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible.
 
+Related note: [`pi-contextimate-codex-context-accounting.md`](./pi-contextimate-codex-context-accounting.md) compares this policy with upstream OpenAI Codex active-context accounting, especially after interruption and compaction.
+
 ## Key distinction
 
 Do **not** treat local object size as context size.

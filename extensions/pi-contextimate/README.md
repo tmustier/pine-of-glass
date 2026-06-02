@@ -34,4 +34,5 @@ The package manifest points Pi at this extension directory, so future internal s
 
 Full notes, accounting heuristics, and experiment results live in the repo docs:
 
-https://github.com/tmustier/pine-of-glass/blob/main/docs/pi-contextimate.md
+- https://github.com/tmustier/pine-of-glass/blob/main/docs/pi-contextimate.md
+- https://github.com/tmustier/pine-of-glass/blob/main/docs/pi-contextimate-codex-context-accounting.md
