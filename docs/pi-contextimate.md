@@ -113,7 +113,7 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 - Keep the header lightweight; show accounting provenance on each row instead of a global accounting line.
 - Unknown providers fall back to `chars / 4`.
 - Text rows show their denominator inline, e.g. `~3k tokens (10.0k chars/4)`.
-- Tool rows show the provider-shaped numerator and estimator inline, e.g. `~6k tokens (47.9k chars · OpenAI cookbook formula)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
+- Tool rows show the provider-shaped numerator and estimator inline, e.g. `~6k tokens (47.9k chars · OpenAI tool-count heuristic)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
 - Text sections use text denominators; session visible buckets use session denominators; tool schemas use a provider-shaped tool numerator plus either a denominator or a special estimator.
 - Tool numerator character counts must use minified provider-shaped JSON, not pretty JSON.
 - Tool sections must never use pretty-printed expanded JSON length as the count source.
@@ -147,7 +147,7 @@ function end:       +12 once when any tools exist
 text fragments:     chars / 4 for name:description, propertyName:type:description, enum values
 ```
 
-This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI cookbook formula` instead of `openai-cookbook ÷5.5`. In terminals that support OSC-8 links, the built-in OpenAI cookbook label links to the OpenAI cookbook token-counting page.
+This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI tool-count heuristic` instead of `openai-cookbook ÷5.5`. In terminals that support OSC-8 links, the built-in OpenAI label links to OpenAI's current token-counting guide. That current guide recommends the exact `responses.input_tokens.count` endpoint for API users; pi-contextimate still uses a local heuristic at startup to avoid extra API calls and to support Codex/OAuth flows where that endpoint may be unavailable.
 
 ## Follow-up tokenizer/provider experiment from 2026-06-02
 
@@ -268,7 +268,7 @@ Provider / model family             text fallback       session fallback     too
 Anthropic Claude <= 4.6             chars / 3.8         chars / 3.5          Anthropic tool payload chars / 3.3
 Anthropic Claude >= 4.7             chars / 2.6         chars / 2.6          Anthropic tool payload chars / 2.6
 OpenAI API Responses                chars / 4           chars / 4            OpenAI tool payload chars / 5.5
-OpenAI-Codex gpt-5.5                chars / 4           chars / 4            OpenAI cookbook heuristic
+OpenAI-Codex gpt-5.5                chars / 4           chars / 4            OpenAI tool-count heuristic
 OpenAI-chat-style / Mistral         chars / 4           chars / 4            Chat tool payload chars / 5.5
 Gemini / Vertex / Bedrock           chars / 4           chars / 4            provider-shaped tool payload chars / 4
 Other providers                     chars / 4           chars / 4            OpenAI Responses-shaped fallback chars / 4
@@ -343,16 +343,16 @@ blanket chars/4:       ~26k tokens  (bad overcount, mostly tool schemas)
 
 Artifacts from this run were written to `/tmp/pi_context_heuristic_eval.js`, `/tmp/pi_context_heuristic_eval_results.json`, and `/tmp/pi_context_heuristic_eval_results_dedup.json`. They are temporary local artifacts; rerun the experiment from the documented method rather than treating `/tmp` as durable storage.
 
-## OpenAI cookbook formula evaluation from 2026-06-02
+## OpenAI tool-count heuristic evaluation from 2026-06-02
 
-The transcript evaluation above does not test the OpenAI cookbook formula because JSONL transcripts do not contain the active tool schema payload. The cookbook formula must be checked with live/captured startup payloads.
+The transcript evaluation above does not test the OpenAI tool-count heuristic because JSONL transcripts do not contain the active tool schema payload. The local formula must be checked with live/captured startup payloads.
 
 Current controlled OpenAI-Codex probe, with context files, skills, prompt templates, and themes disabled:
 
 ```text
 active tools:                 23
 minified tool JSON chars: 47,916
-cookbook formula estimate: 5,950 tokens
+local heuristic estimate: 5,950 tokens
 raw chars/4 estimate:     11,979 tokens
 chars/5.5 estimate:        8,712 tokens
 
@@ -361,13 +361,13 @@ no-tools provider input:     641 tokens
 observed input delta:     7,686 tokens
 ```
 
-The observed with-tools/no-tools delta includes both provider tool schemas and extra tool snippets/guidelines in the system prompt. In this probe the system instructions grew by `8,356 chars`, or about `~2,089 tokens` at `chars / 4`. Combining that text estimate with the cookbook schema estimate gives:
+The observed with-tools/no-tools delta includes both provider tool schemas and extra tool snippets/guidelines in the system prompt. In this probe the system instructions grew by `8,356 chars`, or about `~2,089 tokens` at `chars / 4`. Combining that text estimate with the local schema estimate gives:
 
 ```text
-5,950 cookbook tool-schema tokens + ~2,089 tool-snippet text tokens = ~8,039 tokens
+5,950 heuristic tool-schema tokens + ~2,089 tool-snippet text tokens = ~8,039 tokens
 ```
 
-That is close to the observed `7,686` token delta and much better than counting the minified tool JSON as raw `chars / 4` (`~11,979` tokens). This is why the tool row reports `OpenAI cookbook formula` rather than a simple denominator.
+That is close to the observed `7,686` token delta and much better than counting the minified tool JSON as raw `chars / 4` (`~11,979` tokens). This is why the tool row reports an OpenAI tool-count heuristic rather than a simple denominator.
 
 Artifact from this probe: `/tmp/pi_cookbook_eval_result.json`.
 

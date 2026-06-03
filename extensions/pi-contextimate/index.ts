@@ -149,7 +149,7 @@ const INSERT_AFTER_RESOURCE_RE = /^\s*\[(Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
 const ORANGE = "\x1b[38;2;245;151;52m";
 const RESET = "\x1b[0m";
-const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken";
+const OPENAI_TOKEN_COUNTING_GUIDE_URL = "https://developers.openai.com/api/docs/guides/token-counting";
 
 function orange(text: string): string {
   return `${ORANGE}${text}${RESET}`;
@@ -690,7 +690,7 @@ function referenceUrlForToolSpec(spec: ToolNumeratorSpec, shape?: string): strin
     if (spec.referenceUrl) return spec.referenceUrl;
     if (spec.url) return spec.url;
   }
-  return shape === "openai-cookbook" ? OPENAI_COOKBOOK_TOKEN_COUNTING_URL : undefined;
+  return shape === "openai-cookbook" ? OPENAI_TOKEN_COUNTING_GUIDE_URL : undefined;
 }
 
 function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, config: ContextimateConfig): ToolNumeratorResult {
@@ -700,7 +700,7 @@ function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, 
   if (shape === "openai-cookbook") {
     const content = safeMinifiedJson(tools.map(openAIResponsesToolPayload));
     return {
-      label: typeof spec === "object" && spec.label ? spec.label : "OpenAI cookbook formula",
+      label: typeof spec === "object" && spec.label ? spec.label : "OpenAI tool-count heuristic",
       content,
       chars: content.length,
       tokens: estimateOpenAIFunctionToolTokens(tools),
