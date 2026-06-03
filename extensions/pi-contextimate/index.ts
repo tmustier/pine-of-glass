@@ -1023,6 +1023,14 @@ function sessionChars(session: SessionBreakdown): number {
   return session.thinkingChars + session.toolOutputChars + session.messageChars;
 }
 
+function safely<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
+}
+
 function buildSnapshot(
   pi: ExtensionAPI,
   getSystemPrompt: () => string,
@@ -1031,8 +1039,8 @@ function buildSnapshot(
   getModel?: () => unknown,
   config: ContextimateConfig = {},
 ): PrefixSnapshot {
-  const systemPrompt = getSystemPrompt();
-  const model = toModelSummary(getModel?.()) ?? g.__piContextimateModel;
+  const systemPrompt = safely(() => getSystemPrompt() ?? "", "");
+  const model = toModelSummary(safely(() => getModel?.(), undefined)) ?? g.__piContextimateModel;
   const heuristic = resolveHeuristic(model, config);
   const textDenominator = heuristic.textDenominator;
   const promptRemainder = getPromptRemainder(systemPrompt);
@@ -1051,20 +1059,31 @@ function buildSnapshot(
   const { section: skillsSection, skills } = buildSkillsSection(systemPrompt, textDenominator);
   if (skillsSection) sections.push(skillsSection);
 
-  const { section: toolsSection, tools, loadedToolCount } = buildToolsSection(pi, heuristic, config);
-  if (toolsSection) sections.push(toolsSection);
+  let tools: ToolSummary[] = [];
+  let loadedToolCount = 0;
+  const toolsResult = safely(() => buildToolsSection(pi, heuristic, config), undefined as ReturnType<typeof buildToolsSection> | undefined);
+  if (toolsResult) {
+    tools = toolsResult.tools;
+    loadedToolCount = toolsResult.loadedToolCount;
+    if (toolsResult.section) sections.push(toolsResult.section);
+  }
 
   const session = buildSessionBreakdown(sessionManager);
-  const contextUsage = getContextUsage?.();
+  const contextUsage = safely(() => getContextUsage?.(), undefined);
   const cfgSignature = configSignature(config);
+  const activeToolSignature = safely(() => pi.getActiveTools().join(","), "tools-unavailable");
+  const loadedToolSignature = safely(
+    () => pi.getAllTools().map((tool) => `${tool.name}:${tool.description?.length ?? 0}`).join(","),
+    "tools-unavailable",
+  );
 
   const signature = [
     systemPrompt.length,
     model ? `${model.provider}:${model.id}:${model.api}` : "no-model",
     `${heuristic.label}:${heuristic.textDenominator}:${heuristic.sessionDenominator}:${heuristic.toolDenominator}:${safeJson(heuristic.toolNumerator)}`,
     cfgSignature,
-    pi.getActiveTools().join(","),
-    pi.getAllTools().map((tool) => `${tool.name}:${tool.description?.length ?? 0}`).join(","),
+    activeToolSignature,
+    loadedToolSignature,
     session ? `${session.thinkingChars}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}` : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
   ].join("|");
@@ -1278,28 +1297,39 @@ class StartupContextComponent implements Component {
   }
 
   render(width: number): string[] {
-    const snapshot = this.snapshot();
-    if (
-      this.cachedLines &&
-      this.cachedSignature === snapshot.signature &&
-      this.cachedMode === this.mode &&
-      this.cachedWidth === width
-    ) {
+    try {
+      const snapshot = this.snapshot();
+      if (
+        this.cachedLines &&
+        this.cachedSignature === snapshot.signature &&
+        this.cachedMode === this.mode &&
+        this.cachedWidth === width
+      ) {
+        return this.cachedLines;
+      }
+
+      const theme = this.getTheme();
+      const body = this.mode === "summary"
+        ? renderSummary(snapshot, theme)
+        : this.mode === "compact"
+          ? renderCompact(snapshot, theme)
+          : renderExpanded(snapshot, theme);
+
+      this.cachedSignature = snapshot.signature;
+      this.cachedMode = this.mode;
+      this.cachedWidth = width;
+      this.cachedLines = wrapLines(body, Math.max(20, width));
+      return this.cachedLines;
+    } catch {
+      this.cachedSignature = "contextimate-unavailable";
+      this.cachedMode = this.mode;
+      this.cachedWidth = width;
+      this.cachedLines = wrapLines([
+        "",
+        `${ORANGE}[Context summary]${RESET} unavailable while Pi finishes resuming this session`,
+      ], Math.max(20, width));
       return this.cachedLines;
     }
-
-    const theme = this.getTheme();
-    const body = this.mode === "summary"
-      ? renderSummary(snapshot, theme)
-      : this.mode === "compact"
-        ? renderCompact(snapshot, theme)
-        : renderExpanded(snapshot, theme);
-
-    this.cachedSignature = snapshot.signature;
-    this.cachedMode = this.mode;
-    this.cachedWidth = width;
-    this.cachedLines = wrapLines(body, Math.max(20, width));
-    return this.cachedLines;
   }
 
   invalidate(): void {
@@ -1403,7 +1433,7 @@ function scheduleInstall(block: StartupContextComponent): void {
   let attempts = 0;
   const attempt = () => {
     attempts++;
-    if (installContextBlock(block)) return;
+    if (safely(() => installContextBlock(block), false)) return;
     if (attempts < 30) {
       g.__piContextimateInstallTimer = setTimeout(attempt, 50);
     }
