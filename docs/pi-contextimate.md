@@ -110,8 +110,10 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 
 - Pick denominators from the active model/provider, so `/model` or Ctrl+P changes estimates immediately.
 - Keep built-in provider defaults in one auditable table in `extensions/pi-contextimate/index.ts` (`BUILT_IN_HEURISTIC_RULES`).
-- Show the active accounting rule in the header, e.g. `text ÷2.6 · session ÷2.6 · tools anthropic ÷2.6`.
+- Keep the header lightweight; show accounting provenance on each row instead of a global accounting line.
 - Unknown providers fall back to `chars / 4`.
+- Text rows show their denominator inline, e.g. `~3k tokens (10.0k chars/4)`.
+- Tool rows show the provider-shaped numerator and estimator inline, e.g. `~6k tokens (47.9k chars · OpenAI cookbook formula)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
 - Text sections use text denominators; session visible buckets use session denominators; tool schemas use a provider-shaped tool numerator plus either a denominator or a special estimator.
 - Tool numerator character counts must use minified provider-shaped JSON, not pretty JSON.
 - Tool sections must never use pretty-printed expanded JSON length as the count source.
@@ -145,7 +147,7 @@ function end:       +12 once when any tools exist
 text fragments:     chars / 4 for name:description, propertyName:type:description, enum values
 ```
 
-This is a schema-summary formula, not a raw JSON denominator. Therefore the UI says `tools openai-cookbook formula` instead of `tools openai-cookbook ÷5.5`.
+This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI cookbook formula` instead of `openai-cookbook ÷5.5`. In terminals that support OSC-8 links, the built-in OpenAI cookbook label links to the OpenAI cookbook token-counting page.
 
 ## Follow-up tokenizer/provider experiment from 2026-06-02
 
@@ -365,7 +367,7 @@ The observed with-tools/no-tools delta includes both provider tool schemas and e
 5,950 cookbook tool-schema tokens + ~2,089 tool-snippet text tokens = ~8,039 tokens
 ```
 
-That is close to the observed `7,686` token delta and much better than counting the minified tool JSON as raw `chars / 4` (`~11,979` tokens). This is why the UI reports `tools openai-cookbook formula` rather than a simple denominator.
+That is close to the observed `7,686` token delta and much better than counting the minified tool JSON as raw `chars / 4` (`~11,979` tokens). This is why the tool row reports `OpenAI cookbook formula` rather than a simple denominator.
 
 Artifact from this probe: `/tmp/pi_cookbook_eval_result.json`.
 
@@ -425,7 +427,7 @@ Built-in tool numerator shapes:
 - `bedrock` — `{ toolSpec: { name, description, inputSchema: { json } } }` per tool.
 - `raw-schema` — direct readable schema fallback.
 
-Users can define custom numerator shapes under `toolShapes`. A custom `template` is applied once per active tool and the minified JSON array is used as the numerator. Supported placeholders are `$name`, `$description`, `$schema`/`$parameters`, `$source`, `$parameterKeys`, `$promptGuidelines`, and `$strict`; string interpolation also supports `{{name}}`, `{{description}}`, and `{{source}}`.
+Users can define custom numerator shapes under `toolShapes`. A custom `template` is applied once per active tool and the minified JSON array is used as the numerator. Optional `url` or `referenceUrl` fields make the row's numerator label clickable in terminals that support OSC-8 hyperlinks. Supported placeholders are `$name`, `$description`, `$schema`/`$parameters`, `$source`, `$parameterKeys`, `$promptGuidelines`, and `$strict`; string interpolation also supports `{{name}}`, `{{description}}`, and `{{source}}`.
 
 ```json
 {
@@ -433,6 +435,7 @@ Users can define custom numerator shapes under `toolShapes`. A custom `template`
     "my-provider-tools": {
       "label": "My provider tool payload",
       "denominator": 4.8,
+      "url": "https://example.com/my-provider-token-accounting",
       "template": {
         "kind": "function",
         "fn": {

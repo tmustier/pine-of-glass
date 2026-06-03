@@ -46,6 +46,8 @@ type ToolNumeratorTemplate = {
   shape?: string;
   template?: unknown;
   denominator?: number;
+  url?: string;
+  referenceUrl?: string;
 };
 
 type ToolNumeratorSpec = string | ToolNumeratorTemplate;
@@ -101,6 +103,7 @@ type ToolNumeratorResult = {
   chars: number;
   tokens?: number;
   denominator?: number;
+  referenceUrl?: string;
 };
 
 type SessionBreakdown = {
@@ -146,9 +149,15 @@ const INSERT_AFTER_RESOURCE_RE = /^\s*\[(Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
 const ORANGE = "\x1b[38;2;245;151;52m";
 const RESET = "\x1b[0m";
+const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken";
 
 function orange(text: string): string {
   return `${ORANGE}${text}${RESET}`;
+}
+
+function hyperlink(text: string, url?: string): string {
+  if (!url) return text;
+  return `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`;
 }
 
 function compactNumber(value: number): string {
@@ -179,7 +188,7 @@ function formatDenominator(value: number): string {
 function formatCountParts(chars: number, denominator = 4): { tokens: string; chars: string } {
   const charLabel = compactNumber(chars);
   const tokenLabel = compactTokenNumber(estimateCharsAsTokens(chars, denominator));
-  return { tokens: `~${tokenLabel} tokens`, chars: `(${charLabel} chars)` };
+  return { tokens: `~${tokenLabel} tokens`, chars: `(${charLabel} chars/${formatDenominator(denominator)})` };
 }
 
 function formatCount(chars: number, denominator = 4): string {
@@ -187,9 +196,13 @@ function formatCount(chars: number, denominator = 4): string {
   return `${parts.tokens} ${parts.chars}`;
 }
 
-function formatTokenEstimate(tokens: number, chars?: number, charLabel = "chars"): string {
-  const suffix = typeof chars === "number" ? ` (${compactNumber(chars)} ${charLabel})` : "";
+function formatTokenEstimate(tokens: number, chars?: number, detail?: string): string {
+  const suffix = typeof chars === "number" ? ` (${compactNumber(chars)} chars${detail ? ` · ${detail}` : ""})` : "";
   return `~${compactTokenNumber(tokens)} tokens${suffix}`;
+}
+
+function formatDenominatorDetail(denominator: number): string {
+  return `chars/${formatDenominator(denominator)}`;
 }
 
 function estimateOpenAITextTokens(text: string): number {
@@ -672,6 +685,14 @@ function resolveToolShapeSpec(spec: ToolNumeratorSpec, config: ContextimateConfi
   return resolveToolShapeSpec(custom, config, seen);
 }
 
+function referenceUrlForToolSpec(spec: ToolNumeratorSpec, shape?: string): string | undefined {
+  if (typeof spec === "object") {
+    if (spec.referenceUrl) return spec.referenceUrl;
+    if (spec.url) return spec.url;
+  }
+  return shape === "openai-cookbook" ? OPENAI_COOKBOOK_TOKEN_COUNTING_URL : undefined;
+}
+
 function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, config: ContextimateConfig): ToolNumeratorResult {
   const spec = resolveToolShapeSpec(heuristic.toolNumerator, config);
   const denominator = typeof spec === "object" ? cleanDenominator(spec.denominator, heuristic.toolDenominator) : heuristic.toolDenominator;
@@ -679,10 +700,11 @@ function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, 
   if (shape === "openai-cookbook") {
     const content = safeMinifiedJson(tools.map(openAIResponsesToolPayload));
     return {
-      label: "OpenAI cookbook function heuristic",
+      label: typeof spec === "object" && spec.label ? spec.label : "OpenAI cookbook formula",
       content,
       chars: content.length,
       tokens: estimateOpenAIFunctionToolTokens(tools),
+      referenceUrl: referenceUrlForToolSpec(spec, shape),
     };
   }
 
@@ -734,6 +756,7 @@ function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, 
     content,
     chars: content.length,
     denominator,
+    referenceUrl: referenceUrlForToolSpec(spec, shape),
   };
 }
 
@@ -825,6 +848,10 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
   const numerator = buildToolNumerator(tools, heuristic, config);
   const denominator = numerator.denominator ?? heuristic.toolDenominator;
   const effectiveTokens = numerator.tokens ?? estimateCharsAsTokens(numerator.chars, denominator);
+  const numeratorLabel = hyperlink(numerator.label, numerator.referenceUrl);
+  const numeratorDetail = typeof numerator.tokens === "number"
+    ? numeratorLabel
+    : `${formatDenominatorDetail(denominator)} · ${numeratorLabel}`;
   return {
     tools,
     loadedToolCount: allTools.length,
@@ -835,7 +862,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
       effectiveTokens,
       rawChars: numerator.chars,
       denominator,
-      countLabel: `${formatTokenEstimate(effectiveTokens, numerator.chars)} · ${numerator.label}`,
+      countLabel: formatTokenEstimate(effectiveTokens, numerator.chars, numeratorDetail),
       compactLines: tools.map((tool) => {
         const params = tool.parameterKeys.length > 0 ? ` params: ${tool.parameterKeys.join(", ")}` : " no params";
         return `• ${tool.name} — ${singleLine(tool.description, 150)} (${tool.source};${params})`;
@@ -1014,35 +1041,12 @@ function padLabel(label: string, width = 42): string {
   return label.length >= width ? `${label} ` : label.padEnd(width, " ");
 }
 
-function toolNumeratorName(spec: ToolNumeratorSpec): string {
-  if (typeof spec === "string") return spec;
-  if (spec.label) return spec.label;
-  if (spec.shape) return spec.shape;
-  if (spec.template !== undefined) return "custom-template";
-  return "custom";
-}
-
-function toolNumeratorUsesDenominator(spec: ToolNumeratorSpec): boolean {
-  if (typeof spec === "string") return spec !== "openai-cookbook";
-  if (spec.shape) return spec.shape !== "openai-cookbook";
-  return true;
-}
-
-function heuristicAccountingDetail(heuristic: ResolvedHeuristic): string {
-  const toolName = toolNumeratorName(heuristic.toolNumerator);
-  const toolDetail = toolNumeratorUsesDenominator(heuristic.toolNumerator)
-    ? `${toolName} ÷${formatDenominator(heuristic.toolDenominator)}`
-    : `${toolName} formula`;
-  return `accounting: text ÷${formatDenominator(heuristic.textDenominator)} · session ÷${formatDenominator(heuristic.sessionDenominator)} · tools ${toolDetail}`;
-}
-
 function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): string[] {
   const ctrlO = keyText("app.tools.expand") || "Ctrl+O";
   return [
     "",
     `${orange(theme.bold("[Context summary]"))} ${theme.fg("dim", "assembled prefix ·")} ${renderModePips(mode, theme)}`,
-    `  ${theme.fg("dim", `${ctrlO}: cycle view · model ${modelLabel(snapshot.model)} · estimates ${snapshot.heuristic.label}`)}`,
-    `  ${theme.fg("dim", heuristicAccountingDetail(snapshot.heuristic))}`,
+    `  ${theme.fg("dim", `${ctrlO}: cycle view · model ${modelLabel(snapshot.model)}`)}`,
   ];
 }
 
