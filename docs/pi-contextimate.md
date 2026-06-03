@@ -14,9 +14,9 @@ The output is an inspector, not a billing ledger. The section rows should be clo
 
 - **Summary** — one row per category (system prompt, context files, skills, tools, session) with its token estimate.
 - **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row.
-- **Expanded** — adds structural detail per section: counting method and caveats, sources, parameter keys, prompt-guidance counts, and schema summaries.
+- **Expanded** — adds deep detail: counting method/caveats and sources, plus the formatted (pretty-printed) JSON of each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens.
 
-None of the modes dump the raw system prompt or full tool-schema JSON.
+Summary and compact never dump raw content. Expanded shows the formatted tool-definition JSON; the system prompt and context files stay summarized (raw chars + short preview).
 
 Related note: [`pi-contextimate-codex-context-accounting.md`](./pi-contextimate-codex-context-accounting.md) compares this policy with upstream OpenAI Codex active-context accounting, especially after interruption and compaction.
 

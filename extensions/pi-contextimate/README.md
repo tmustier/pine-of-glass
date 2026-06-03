@@ -30,7 +30,7 @@ The package manifest points Pi at this extension directory, so future internal s
 - `/contextimate` cycles the view.
 - `/contextimate summary`, `/contextimate compact`, and `/contextimate expanded` jump directly to a mode.
 - Compact is a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens, with the counting method shown once on the category header.
-- Expanded adds the structural detail: per-section method/caveats, sources, parameter keys, prompt-guidance counts, and schema summaries — never full prompt or raw schema JSON dumps.
+- Expanded adds the deep detail: per-section method/caveats and sources, plus the formatted (pretty-printed) JSON of each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens. (System prompt and context files stay summarized.)
 
 ## Docs
 

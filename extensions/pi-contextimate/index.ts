@@ -161,6 +161,10 @@ const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instru
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
+// Pi can deliver a single Ctrl+O press through both our raw terminal-input
+// listener and its native expandable-row toggle. Coalesce cycles that land
+// within this window so one press advances the view exactly once.
+const CYCLE_DEDUPE_MS = 60;
 const ORANGE = "\x1b[38;2;245;151;52m";
 const RESET = "\x1b[0m";
 const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
@@ -953,20 +957,6 @@ function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristi
   };
 }
 
-function formatToolDetailLines(tool: ToolSummary, estimate: ToolDisplayEstimate, includeGuidelines = false): string[] {
-  const params = tool.parameterKeys.length > 0 ? tool.parameterKeys.join(", ") : "none";
-  const lines = [
-    `• ${tool.name} ${formatTokenEstimate(estimate.tokens, estimate.chars, estimate.detail)} — ${singleLine(tool.description, 105)}`,
-    `  source: ${tool.source}; params: ${params}`,
-  ];
-  if (includeGuidelines && tool.promptGuidelines.length > 0) {
-    lines.push(`  prompt guidance: ${tool.promptGuidelines.length} bullet(s)`);
-    for (const guideline of tool.promptGuidelines.slice(0, 3)) lines.push(`    - ${singleLine(guideline, 130)}`);
-    if (tool.promptGuidelines.length > 3) lines.push(`    - +${tool.promptGuidelines.length - 3} more guideline(s)`);
-  }
-  return lines;
-}
-
 function toolCountMethodLines(numerator: ToolNumeratorResult, denominator: number): string[] {
   if (typeof numerator.tokens === "number") {
     return [
@@ -994,14 +984,19 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
     ? `payload size; ${numeratorLabel}; ${numerator.detail ?? `text/${formatDenominator(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`}`
     : `${formatDenominatorDetail(denominator)} · ${numeratorLabel}`;
   const methodLines = toolCountMethodLines(numerator, denominator);
+  const toolSpec = resolveToolShapeSpec(heuristic.toolNumerator, config);
+  const toolShape = typeof toolSpec === "string" ? toolSpec : toolSpec.shape;
   const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic, config) }));
   const compactToolRows = [...toolEstimates]
     .sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name))
     .map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description }));
-  const expandedToolLines = toolEstimates.flatMap(({ tool, estimate }, index) => [
-    ...(index === 0 ? [] : [""]),
-    ...formatToolDetailLines(tool, estimate, true),
-  ]);
+  const expandedToolLines = [...toolEstimates]
+    .sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name))
+    .flatMap(({ tool, estimate }, index) => [
+      ...(index === 0 ? [] : [""]),
+      `${tool.name} — ${formatTokenEstimate(estimate.tokens, estimate.chars, estimate.detail)} · source: ${tool.source}`,
+      ...safeJson(toolPayloadForShape(tool, toolShape, toolSpec)).split("\n"),
+    ]);
   return {
     tools,
     loadedToolCount: allTools.length,
@@ -1018,7 +1013,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
         ...methodLines,
         ...(typeof numerator.tokens === "number" ? ["• per-tool rows exclude the shared +12 final tools overhead shown here", "• shared formula overhead: +12 tokens once for the whole active tool set"] : ["• per-tool rows are approximate; array/bracket/comma payload overhead is included only in the total"]),
         "",
-        "Tool definitions (schema summaries, not full JSON):",
+        `Tool definitions (formatted JSON — the provider-shaped payload counted above, sorted by estimated tokens):`,
         "",
         ...expandedToolLines,
       ],
@@ -1335,7 +1330,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
 
 function renderExpanded(snapshot: PrefixSnapshot, theme: Theme): string[] {
   const lines = renderHeader(snapshot, "expanded", theme);
-  lines.push(`  ${theme.fg("dim", "Expanded view is structural: per-section subtotals, sources, and per-skill/per-tool estimates without full prompt/schema dumps.")}`);
+  lines.push(`  ${theme.fg("dim", "Expanded view: per-section subtotals, sources, per-skill/per-tool estimates, and the formatted JSON tool definitions that are counted.")}`);
   lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
 
   for (const section of snapshot.sections) {
@@ -1371,6 +1366,7 @@ class StartupContextComponent implements Component {
   private cachedMode?: ViewMode;
   private cachedWidth?: number;
   private cachedLines?: string[];
+  private lastCycleAt = 0;
 
   constructor(
     private readonly snapshot: () => PrefixSnapshot,
@@ -1398,6 +1394,9 @@ class StartupContextComponent implements Component {
   }
 
   cycleMode(): ViewMode {
+    const now = Date.now();
+    if (now - this.lastCycleAt < CYCLE_DEDUPE_MS) return this.mode;
+    this.lastCycleAt = now;
     this.setMode(nextMode(this.mode));
     return this.mode;
   }
