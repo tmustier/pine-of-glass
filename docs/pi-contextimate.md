@@ -139,23 +139,25 @@ Formula:
 
 - per function constant
 - `name:description`
-- per top-level property constant
+- per property-section constant
+- recursive property constants for top-level properties, nested object properties, and object-array item properties
 - `propertyName:type:description`
 - enum constants and values
 - final tools constant
 
-Because the extension does not load a tokenizer, approximate tokenization for these text fragments with `chars / 4`. In the 2026-06-02 probe, this put the full default tool set within a few percent of the provider-reported tool contribution.
+Because the extension does not load a tokenizer, approximate tokenization for schema text fragments with `chars / 6.6`. The original first pass used `chars / 4` for those fragments; a synthetic schema ablation on 2026-06-03 showed that was too high for OpenAI-Codex schema fragments.
 
 Current constants in `estimateOpenAIFunctionToolTokens`:
 
 ```text
 function init:       +7 per function
-property section:   +3 if properties exist
-property key:       +3 per top-level property
+property section:   +3 if properties exist at a level
+property key:       +3 per property
 enum init:          -3 when enum values exist
 enum item:          +3 per enum value
 function end:       +12 once when any tools exist
-text fragments:     chars / 4 for name:description, propertyName:type:description, enum values
+text fragments:     chars / 6.6 for name:description, propertyName:type:description, enum values
+recursion:          nested object properties and object-array item properties are counted recursively
 ```
 
 This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI-style local formula` instead of `openai-cookbook ÷5.5`. Compact/expanded modes print the formula and point to this section (`docs/pi-contextimate.md#practical-openai-style-tool-heuristic`) so the calculation backup is visible even when a terminal strips hyperlink escape sequences.
@@ -358,29 +360,79 @@ Artifacts from this run were written to `/tmp/pi_context_heuristic_eval.js`, `/t
 
 The transcript evaluation above does not test the OpenAI-style local formula because JSONL transcripts do not contain the active tool schema payload. The local formula must be checked with live/captured startup payloads.
 
-Current controlled OpenAI-Codex probe, with context files, skills, prompt templates, and themes disabled:
+Controlled OpenAI-Codex probe, with context files, skills, prompt templates, and themes disabled:
 
 ```text
-active tools:                 23
-minified tool JSON chars: 47,916
-local heuristic estimate: 5,950 tokens
-raw chars/4 estimate:     11,979 tokens
-chars/5.5 estimate:        8,712 tokens
+active tools:                         23
+minified tool JSON chars:         47,916
+old top-level chars/4 formula:     5,950 tokens
+current recursive chars/6.6 formula: 5,080 tokens
+raw chars/4 estimate:             11,979 tokens
+raw chars/5.5 estimate:            8,712 tokens
 
-with-tools provider input: 8,327 tokens
-no-tools provider input:     641 tokens
-observed input delta:     7,686 tokens
+with-tools provider input:         8,327 tokens
+no-tools provider input:             641 tokens
+observed input delta:             7,686 tokens
 ```
 
-The observed with-tools/no-tools delta includes both provider tool schemas and extra tool snippets/guidelines in the system prompt. In this probe the system instructions grew by `8,356 chars`, or about `~2,089 tokens` at `chars / 4`. Combining that text estimate with the local schema estimate gives:
+The observed with-tools/no-tools delta includes both provider tool schemas and extra tool snippets/guidelines in the system prompt. In this probe the system instructions grew by `8,356 chars`, or about `~2,089 tokens` at `chars / 4`. That implies an approximate schema-only contribution of `7,686 - 2,089 = 5,597` tokens. The current recursive formula is `~9%` low against that inferred schema-only contribution, while raw JSON `chars / 4` is `~114%` high and raw JSON `chars / 5.5` is `~56%` high.
+
+This real-tool probe is useful but not enough to prove the formula beats a fitted constant because it is only one schema set. That is why the synthetic ablation below varies schema shape deliberately.
+
+Artifact from the first probe: `/tmp/pi_cookbook_eval_result.json`.
+
+## Synthetic OpenAI tool-schema ablation from 2026-06-03
+
+Goal: test the upfront schema cost itself, not session messages or tool outputs.
+
+Setup:
+
+- Registered synthetic extension tools only; no built-in tools.
+- Disabled context files, skills, prompt templates, themes, and extension discovery except the synthetic-tool harness.
+- Used `--system-prompt x`, because Pi treats an empty `--system-prompt ""` as “use the default”. The captured instructions were constant across trials (`x` plus date/cwd).
+- Prompt was just `hi`, thinking off.
+- Varied 20 synthetic schemas: empty/no-arg, short/long descriptions, many flat properties, enums, arrays, nested objects, deep nested objects, and mixed complex schemas.
+- Ran baseline with no active tools, every singleton tool, random mixed subsets, structured groups, and all tools.
+
+Assertions from the run:
 
 ```text
-5,950 heuristic tool-schema tokens + ~2,089 tool-snippet text tokens = ~8,039 tokens
+all payloads single request:       true
+all instructions constant:         true
+all first user input constant:     true
+all payload tools matched active:  true
+no first response tool call:       true
 ```
 
-That is close to the observed `7,686` token delta and much better than counting the minified tool JSON as raw `chars / 4` (`~11,979` tokens). This is why the tool row reports an OpenAI-style local formula rather than a simple denominator.
+Train/test split: fit constants only on two-thirds of singleton synthetic tools; evaluate on the remaining singletons plus all mixed subsets.
 
-Artifact from this probe: `/tmp/pi_cookbook_eval_result.json`.
+Held-out metrics against actual schema-token delta (`provider input with tools - provider input baseline`):
+
+```text
+method                                MAE   median AE   MAPE   bias
+old top-level chars/4 formula          189       91     22.3%  +177
+raw schema chars/4                     606      289     78.4%  +606
+raw schema chars/5.5                   256      131     33.2%  +246
+raw schema chars/8                      67       33     13.3%   -54
+fitted raw-schema denominator (/7.215)  58       32     13.1%   +18
+current recursive chars/6.6 formula     44       44      9.1%   -23
+```
+
+Across all non-baseline synthetic cases:
+
+```text
+method                                MAE   median AE   MAPE   bias
+old top-level chars/4 formula          144       53     24.3%  +126
+raw schema chars/4                     437      198     75.4%  +433
+raw schema chars/5.5                   186       77     32.0%  +173
+raw schema chars/8                      54       27     15.7%   -44
+fitted raw-schema denominator (/7.215)  48       27     15.1%    +8
+current recursive chars/6.6 formula     37       29     11.3%   -17
+```
+
+Conclusion: the original `chars / 4` formula was not good enough once schema shapes varied. A raw schema denominator around `/7–/8` is a strong baseline. The current formula only became better after two changes: count nested object and object-array item properties recursively, and estimate schema text fragments at `chars / 6.6` instead of `chars / 4`.
+
+Run artifact: `/tmp/pi-contextimate-synthetic-schema-ablation/results.json`.
 
 ## User configuration
 

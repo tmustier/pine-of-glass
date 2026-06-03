@@ -151,6 +151,7 @@ const DEFAULT_MODE: ViewMode = "summary";
 const ORANGE = "\x1b[38;2;245;151;52m";
 const RESET = "\x1b[0m";
 const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
+const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
 
 function localCalculationNoteUrl(): string {
   try {
@@ -807,38 +808,66 @@ function schemaPropertyEnum(property: unknown): unknown[] {
   return Array.isArray(enumValues) ? enumValues : [];
 }
 
+function schemaArrayItemProperties(property: unknown): Record<string, unknown> {
+  if (!property || typeof property !== "object" || Array.isArray(property)) return {};
+  const items = (property as { items?: unknown }).items;
+  return getSchemaProperties(items);
+}
+
+function estimateOpenAIToolTextTokens(text: string): number {
+  return estimateCharsAsTokens(text.length, OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR);
+}
+
+function estimateOpenAIPropertyTokens(propertyName: string, property: unknown): number {
+  const propInit = 3;
+  const propKey = 3;
+  const enumInit = -3;
+  const enumItem = 3;
+
+  let tokens = propKey;
+  const enumValues = schemaPropertyEnum(property);
+  if (enumValues.length > 0) {
+    tokens += enumInit;
+    for (const enumValue of enumValues) tokens += enumItem + estimateOpenAIToolTextTokens(String(enumValue));
+  }
+  tokens += estimateOpenAIToolTextTokens(`${propertyName}:${schemaPropertyType(property)}:${schemaPropertyDescription(property)}`);
+
+  const nestedEntries = Object.entries(getSchemaProperties(property));
+  if (nestedEntries.length > 0) {
+    tokens += propInit;
+    for (const [nestedName, nestedProperty] of nestedEntries) tokens += estimateOpenAIPropertyTokens(nestedName, nestedProperty);
+  }
+
+  const itemEntries = Object.entries(schemaArrayItemProperties(property));
+  if (itemEntries.length > 0) {
+    tokens += propInit;
+    for (const [itemName, itemProperty] of itemEntries) tokens += estimateOpenAIPropertyTokens(itemName, itemProperty);
+  }
+
+  return tokens;
+}
+
 function estimateOpenAIFunctionToolTokens(tools: ToolSummary[]): number {
   // OpenAI's public token-counting docs say exact tool counts need the Responses
   // input-token endpoint. For no-API-call startup estimates, use the older
   // cookbook/tiktoken-style schema-summary formula: model-specific constants plus
   // name/description/property summaries, not raw schema JSON. Current public
   // tiktoken maps GPT-5 and GPT-4o families to o200k_base, so use the GPT-4o/GPT-5
-  // family constants; approximate tokenizer counts for text fragments with chars/4
-  // so this remains dependency-free at startup.
+  // family constants. A synthetic schema ablation found chars/6.6 over these schema
+  // text fragments, plus recursive nested property counting, beats raw schema-char
+  // denominators on held-out mixed schemas while remaining dependency-free.
   const funcInit = 7;
   const propInit = 3;
-  const propKey = 3;
-  const enumInit = -3;
-  const enumItem = 3;
   const funcEnd = 12;
 
   let tokens = 0;
   for (const tool of tools) {
     tokens += funcInit;
-    tokens += estimateOpenAITextTokens(`${tool.name}:${trimFinalPeriod(tool.description)}`);
+    tokens += estimateOpenAIToolTextTokens(`${tool.name}:${trimFinalPeriod(tool.description)}`);
 
-    const properties = getSchemaProperties(tool.schema);
-    const propertyEntries = Object.entries(properties);
+    const propertyEntries = Object.entries(getSchemaProperties(tool.schema));
     if (propertyEntries.length > 0) tokens += propInit;
-    for (const [propertyName, property] of propertyEntries) {
-      tokens += propKey;
-      const enumValues = schemaPropertyEnum(property);
-      if (enumValues.length > 0) {
-        tokens += enumInit;
-        for (const enumValue of enumValues) tokens += enumItem + estimateOpenAITextTokens(String(enumValue));
-      }
-      tokens += estimateOpenAITextTokens(`${propertyName}:${schemaPropertyType(property)}:${schemaPropertyDescription(property)}`);
-    }
+    for (const [propertyName, property] of propertyEntries) tokens += estimateOpenAIPropertyTokens(propertyName, property);
   }
 
   if (tools.length > 0) tokens += funcEnd;
@@ -859,7 +888,7 @@ function toolCountMethodLines(numerator: ToolNumeratorResult, denominator: numbe
   if (typeof numerator.tokens === "number") {
     return [
       `• count method: ${numerator.label}; numerator is ${compactNumber(numerator.chars)} chars of minified provider-shaped tools payload`,
-      "• formula: +7/function +3/property-section +3/property -3/enum +3/enum-item +12/final; text fragments use chars/4",
+      `• formula: +7/function +3/property-section +3/property -3/enum +3/enum-item +12/final; recursive text fragments use chars/${formatDenominator(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`,
       "• backup: docs/pi-contextimate.md#practical-openai-style-tool-heuristic",
     ];
   }
