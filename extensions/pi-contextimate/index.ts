@@ -4,7 +4,8 @@ import { buildSessionContext, convertToLlm, highlightCode, keyText } from "@eare
 import { matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -149,7 +150,19 @@ const INSERT_AFTER_RESOURCE_RE = /^\s*\[(Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
 const ORANGE = "\x1b[38;2;245;151;52m";
 const RESET = "\x1b[0m";
-const OPENAI_TOKEN_COUNTING_GUIDE_URL = "https://developers.openai.com/api/docs/guides/token-counting";
+const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
+
+function localCalculationNoteUrl(): string {
+  try {
+    const docsPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../docs/pi-contextimate.md");
+    if (existsSync(docsPath)) return `${pathToFileURL(docsPath).href}#practical-openai-style-tool-heuristic`;
+  } catch {
+    // Fall back to the public formula lineage when running in an unusual loader.
+  }
+  return OPENAI_COOKBOOK_TOKEN_COUNTING_URL;
+}
+
+const OPENAI_TOOL_CALCULATION_REFERENCE_URL = localCalculationNoteUrl();
 
 function orange(text: string): string {
   return `${ORANGE}${text}${RESET}`;
@@ -690,7 +703,7 @@ function referenceUrlForToolSpec(spec: ToolNumeratorSpec, shape?: string): strin
     if (spec.referenceUrl) return spec.referenceUrl;
     if (spec.url) return spec.url;
   }
-  return shape === "openai-cookbook" ? OPENAI_TOKEN_COUNTING_GUIDE_URL : undefined;
+  return shape === "openai-cookbook" ? OPENAI_TOOL_CALCULATION_REFERENCE_URL : undefined;
 }
 
 function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, config: ContextimateConfig): ToolNumeratorResult {
@@ -700,7 +713,7 @@ function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, 
   if (shape === "openai-cookbook") {
     const content = safeMinifiedJson(tools.map(openAIResponsesToolPayload));
     return {
-      label: typeof spec === "object" && spec.label ? spec.label : "OpenAI tool-count heuristic",
+      label: typeof spec === "object" && spec.label ? spec.label : "OpenAI-style local formula",
       content,
       chars: content.length,
       tokens: estimateOpenAIFunctionToolTokens(tools),
@@ -795,10 +808,12 @@ function schemaPropertyEnum(property: unknown): unknown[] {
 }
 
 function estimateOpenAIFunctionToolTokens(tools: ToolSummary[]): number {
-  // OpenAI's cookbook does not count raw function-schema JSON. It uses a small
-  // set of model-specific constants plus name/description/property summaries.
-  // Use the gpt-4o/gpt-5-family constants, and approximate tokenizer counts for
-  // text fragments with chars/4 so this remains dependency-free at startup.
+  // OpenAI's public token-counting docs say exact tool counts need the Responses
+  // input-token endpoint. For no-API-call startup estimates, use the older
+  // cookbook/tiktoken-style schema-summary formula: model-specific constants plus
+  // name/description/property summaries, not raw schema JSON. Use the gpt-4o/gpt-5
+  // family constants, and approximate tokenizer counts for text fragments with
+  // chars/4 so this remains dependency-free at startup.
   const funcInit = 7;
   const propInit = 3;
   const propKey = 3;
@@ -839,6 +854,19 @@ function formatToolExpandedLines(tool: ToolSummary): string[] {
   return lines;
 }
 
+function toolCountMethodLines(numerator: ToolNumeratorResult, denominator: number): string[] {
+  if (typeof numerator.tokens === "number") {
+    return [
+      `• count method: ${numerator.label}; numerator is ${compactNumber(numerator.chars)} chars of minified provider-shaped tools payload`,
+      "• formula: +7/function +3/property-section +3/property -3/enum +3/enum-item +12/final; text fragments use chars/4",
+      "• backup: docs/pi-contextimate.md#practical-openai-style-tool-heuristic",
+    ];
+  }
+  return [
+    `• count method: ${numerator.label}; numerator is ${compactNumber(numerator.chars)} chars/${formatDenominator(denominator)}`,
+  ];
+}
+
 function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, config: ContextimateConfig): { section?: PrefixSection; tools: ToolSummary[]; loadedToolCount: number } {
   const activeNames = new Set(pi.getActiveTools());
   const allTools = pi.getAllTools();
@@ -852,6 +880,11 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
   const numeratorDetail = typeof numerator.tokens === "number"
     ? numeratorLabel
     : `${formatDenominatorDetail(denominator)} · ${numeratorLabel}`;
+  const methodLines = toolCountMethodLines(numerator, denominator);
+  const toolLines = tools.map((tool) => {
+    const params = tool.parameterKeys.length > 0 ? ` params: ${tool.parameterKeys.join(", ")}` : " no params";
+    return `• ${tool.name} — ${singleLine(tool.description, 150)} (${tool.source};${params})`;
+  });
   return {
     tools,
     loadedToolCount: allTools.length,
@@ -863,14 +896,17 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
       rawChars: numerator.chars,
       denominator,
       countLabel: formatTokenEstimate(effectiveTokens, numerator.chars, numeratorDetail),
-      compactLines: tools.map((tool) => {
-        const params = tool.parameterKeys.length > 0 ? ` params: ${tool.parameterKeys.join(", ")}` : " no params";
-        return `• ${tool.name} — ${singleLine(tool.description, 150)} (${tool.source};${params})`;
-      }),
-      expandedLines: tools.flatMap((tool, index) => [
-        ...(index === 0 ? [] : ["", "---", ""]),
-        ...formatToolExpandedLines(tool),
-      ]),
+      compactLines: [...methodLines, ...toolLines],
+      expandedLines: [
+        ...methodLines,
+        "",
+        "Tool definitions:",
+        "",
+        ...tools.flatMap((tool, index) => [
+          ...(index === 0 ? [] : ["", "---", ""]),
+          ...formatToolExpandedLines(tool),
+        ]),
+      ],
     },
   };
 }

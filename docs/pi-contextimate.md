@@ -57,7 +57,7 @@ OpenAI's token-counting docs say the Responses input-token endpoint accepts the 
 - **tools and schemas add tokens that are hard to count locally**
 - use the token-count endpoint for exact counts
 
-OpenAI cookbook examples for function/tool token counting do not count raw JSON. They use a model-specific internal-ish formula over function name/description, property names/types/descriptions, enum values, and fixed constants.
+OpenAI Cookbook/tiktoken examples for function/tool token counting do not count raw JSON. They use a model-specific internal-ish formula over function name/description, property names/types/descriptions, enum values, and fixed constants. That formula lineage is older than the current Responses token-count endpoint, but it is the public explanation for the kind of local, no-network approximation pi-contextimate uses.
 
 ### Anthropic
 
@@ -113,7 +113,8 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 - Keep the header lightweight; show accounting provenance on each row instead of a global accounting line.
 - Unknown providers fall back to `chars / 4`.
 - Text rows show their denominator inline, e.g. `~3k tokens (10.0k chars/4)`.
-- Tool rows show the provider-shaped numerator and estimator inline, e.g. `~6k tokens (47.9k chars · OpenAI tool-count heuristic)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
+- Tool rows show the provider-shaped numerator and estimator inline, e.g. `~6k tokens (47.9k chars · OpenAI-style local formula)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
+- Compact/expanded modes add method lines under `Tools`, including the formula/provenance for OpenAI-style local estimates, so the UI does not depend on clickable terminal links for calculation backup.
 - Text sections use text denominators; session visible buckets use session denominators; tool schemas use a provider-shaped tool numerator plus either a denominator or a special estimator.
 - Tool numerator character counts must use minified provider-shaped JSON, not pretty JSON.
 - Tool sections must never use pretty-printed expanded JSON length as the count source.
@@ -124,7 +125,16 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 
 ## Practical OpenAI-style tool heuristic
 
-Use the OpenAI cookbook-style approach for function tools:
+Use the OpenAI Cookbook/tiktoken-style approach for function tools. This is the calculation backing the OpenAI-Codex tools row in summary mode. The row's character count is the size of the minified provider-shaped `tools` payload; the token count is produced by the formula below, not by dividing that JSON string by a denominator.
+
+Provenance and limits:
+
+- OpenAI's current [function-calling docs](https://developers.openai.com/api/docs/guides/function-calling#token-usage) say callable function definitions count against context and are billed as input tokens.
+- OpenAI's current [token-counting docs](https://developers.openai.com/api/docs/guides/token-counting) say tools/schemas are hard to count locally and recommend `responses.input_tokens.count` for exact counts.
+- The older [Cookbook/tiktoken token-counting example](https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken) is still the public source for a local function/tool schema-summary formula.
+- pi-contextimate uses the local formula at startup because exact endpoints add API calls, may not be available for Codex/OAuth-backed providers, and do not help Anthropic/Gemini/etc. without separate provider-specific count calls.
+
+Formula:
 
 - per function constant
 - `name:description`
@@ -147,7 +157,7 @@ function end:       +12 once when any tools exist
 text fragments:     chars / 4 for name:description, propertyName:type:description, enum values
 ```
 
-This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI tool-count heuristic` instead of `openai-cookbook ÷5.5`. In terminals that support OSC-8 links, the built-in OpenAI label links to OpenAI's current token-counting guide. That current guide recommends the exact `responses.input_tokens.count` endpoint for API users; pi-contextimate still uses a local heuristic at startup to avoid extra API calls and to support Codex/OAuth flows where that endpoint may be unavailable.
+This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI-style local formula` instead of `openai-cookbook ÷5.5`. Compact/expanded modes print the formula and point to this section (`docs/pi-contextimate.md#practical-openai-style-tool-heuristic`) so the calculation backup is visible even when a terminal strips hyperlink escape sequences.
 
 ## Follow-up tokenizer/provider experiment from 2026-06-02
 
@@ -257,7 +267,7 @@ read only             682          147       4.6
 default 23 tools   48,126        8,792       5.5
 ```
 
-For OpenAI-Codex tools, raw `chars / 4` is too high. A better fallback is minified provider-shaped tool payload `chars / 5.5`, or the OpenAI cookbook-style function heuristic currently used by the extension.
+For OpenAI-Codex tools, raw `chars / 4` is too high. A better fallback is minified provider-shaped tool payload `chars / 5.5`, or the OpenAI-style local formula currently used by the extension.
 
 ### Heuristic policy after this experiment
 
@@ -268,7 +278,7 @@ Provider / model family             text fallback       session fallback     too
 Anthropic Claude <= 4.6             chars / 3.8         chars / 3.5          Anthropic tool payload chars / 3.3
 Anthropic Claude >= 4.7             chars / 2.6         chars / 2.6          Anthropic tool payload chars / 2.6
 OpenAI API Responses                chars / 4           chars / 4            OpenAI tool payload chars / 5.5
-OpenAI-Codex gpt-5.5                chars / 4           chars / 4            OpenAI tool-count heuristic
+OpenAI-Codex gpt-5.5                chars / 4           chars / 4            OpenAI-style local formula
 OpenAI-chat-style / Mistral         chars / 4           chars / 4            Chat tool payload chars / 5.5
 Gemini / Vertex / Bedrock           chars / 4           chars / 4            provider-shaped tool payload chars / 4
 Other providers                     chars / 4           chars / 4            OpenAI Responses-shaped fallback chars / 4
@@ -343,9 +353,9 @@ blanket chars/4:       ~26k tokens  (bad overcount, mostly tool schemas)
 
 Artifacts from this run were written to `/tmp/pi_context_heuristic_eval.js`, `/tmp/pi_context_heuristic_eval_results.json`, and `/tmp/pi_context_heuristic_eval_results_dedup.json`. They are temporary local artifacts; rerun the experiment from the documented method rather than treating `/tmp` as durable storage.
 
-## OpenAI tool-count heuristic evaluation from 2026-06-02
+## OpenAI-style local formula evaluation from 2026-06-02
 
-The transcript evaluation above does not test the OpenAI tool-count heuristic because JSONL transcripts do not contain the active tool schema payload. The local formula must be checked with live/captured startup payloads.
+The transcript evaluation above does not test the OpenAI-style local formula because JSONL transcripts do not contain the active tool schema payload. The local formula must be checked with live/captured startup payloads.
 
 Current controlled OpenAI-Codex probe, with context files, skills, prompt templates, and themes disabled:
 
@@ -367,7 +377,7 @@ The observed with-tools/no-tools delta includes both provider tool schemas and e
 5,950 heuristic tool-schema tokens + ~2,089 tool-snippet text tokens = ~8,039 tokens
 ```
 
-That is close to the observed `7,686` token delta and much better than counting the minified tool JSON as raw `chars / 4` (`~11,979` tokens). This is why the tool row reports an OpenAI tool-count heuristic rather than a simple denominator.
+That is close to the observed `7,686` token delta and much better than counting the minified tool JSON as raw `chars / 4` (`~11,979` tokens). This is why the tool row reports an OpenAI-style local formula rather than a simple denominator.
 
 Artifact from this probe: `/tmp/pi_cookbook_eval_result.json`.
 
@@ -419,7 +429,7 @@ Rule `match` values support exact strings, `*`/`?` globs, or JavaScript regex st
 
 Built-in tool numerator shapes:
 
-- `openai-cookbook` — OpenAI function-token heuristic, currently the OpenAI-Codex default.
+- `openai-cookbook` — OpenAI-style local function-token formula, currently the OpenAI-Codex default. The key name is retained for compatibility with existing configs.
 - `openai-responses` / `openai-codex-responses` — `{ type, name, description, parameters, strict }` per tool.
 - `openai-chat` / `openai-completions` / `mistral` — Chat Completions-style `{ type, function: { ... } }` per tool.
 - `anthropic` — `{ name, description, input_schema }` per tool.
@@ -427,7 +437,7 @@ Built-in tool numerator shapes:
 - `bedrock` — `{ toolSpec: { name, description, inputSchema: { json } } }` per tool.
 - `raw-schema` — direct readable schema fallback.
 
-Users can define custom numerator shapes under `toolShapes`. A custom `template` is applied once per active tool and the minified JSON array is used as the numerator. Optional `url` or `referenceUrl` fields make the row's numerator label clickable in terminals that support OSC-8 hyperlinks. Supported placeholders are `$name`, `$description`, `$schema`/`$parameters`, `$source`, `$parameterKeys`, `$promptGuidelines`, and `$strict`; string interpolation also supports `{{name}}`, `{{description}}`, and `{{source}}`.
+Users can define custom numerator shapes under `toolShapes`. A custom `template` is applied once per active tool and the minified JSON array is used as the numerator. Optional `url` or `referenceUrl` fields are retained as best-effort hyperlink metadata for renderers that preserve OSC-8 links, but visible labels/method lines should stand on their own because some Pi terminal render paths strip those escapes. Supported placeholders are `$name`, `$description`, `$schema`/`$parameters`, `$source`, `$parameterKeys`, `$promptGuidelines`, and `$strict`; string interpolation also supports `{{name}}`, `{{description}}`, and `{{source}}`.
 
 ```json
 {
