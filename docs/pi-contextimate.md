@@ -132,6 +132,7 @@ Provenance and limits:
 - OpenAI's current [function-calling docs](https://developers.openai.com/api/docs/guides/function-calling#token-usage) say callable function definitions count against context and are billed as input tokens.
 - OpenAI's current [token-counting docs](https://developers.openai.com/api/docs/guides/token-counting) say tools/schemas are hard to count locally and recommend `responses.input_tokens.count` for exact counts.
 - The older [Cookbook/tiktoken token-counting example](https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken) is still the public source for a local function/tool schema-summary formula.
+- Current public `tiktoken` maps `gpt-5` / `gpt-5-*` and `gpt-4o` / `gpt-4o-*` to the same `o200k_base` encoding family, so the text-tokenizer lineage is consistent with the Cookbook's GPT-4o constants. That does **not** guarantee identical hidden tool-wrapper accounting for current Responses/Codex models.
 - pi-contextimate uses the local formula at startup because exact endpoints add API calls, may not be available for Codex/OAuth-backed providers, and do not help Anthropic/Gemini/etc. without separate provider-specific count calls.
 
 Formula:

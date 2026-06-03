@@ -811,9 +811,10 @@ function estimateOpenAIFunctionToolTokens(tools: ToolSummary[]): number {
   // OpenAI's public token-counting docs say exact tool counts need the Responses
   // input-token endpoint. For no-API-call startup estimates, use the older
   // cookbook/tiktoken-style schema-summary formula: model-specific constants plus
-  // name/description/property summaries, not raw schema JSON. Use the gpt-4o/gpt-5
-  // family constants, and approximate tokenizer counts for text fragments with
-  // chars/4 so this remains dependency-free at startup.
+  // name/description/property summaries, not raw schema JSON. Current public
+  // tiktoken maps GPT-5 and GPT-4o families to o200k_base, so use the GPT-4o/GPT-5
+  // family constants; approximate tokenizer counts for text fragments with chars/4
+  // so this remains dependency-free at startup.
   const funcInit = 7;
   const propInit = 3;
   const propKey = 3;
