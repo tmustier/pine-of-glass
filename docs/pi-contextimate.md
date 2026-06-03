@@ -13,8 +13,8 @@
 The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. In Pi's startup resource list, `[Context Estimator]` is inserted after the native startup resource sections, leaving Pi's default `[Context]`, `[Skills]`, `[Prompts]`, and `[Extensions]` order untouched. `Ctrl+O` cycles `summary → compact → expanded` through Pi's native expand/collapse path:
 
 - **Summary** — one row per category (system prompt, context files, skills, tools, session) with its token estimate.
-- **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row.
-- **Expanded** — adds deep detail: counting method/caveats and sources, plus minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens.
+- **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row. Skill names link to their `SKILL.md`; AGENTS/context section names link to the source file.
+- **Expanded** — adds deep detail: counting method/caveats and sources, plus syntax-highlighted minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens. Paths and URLs in expanded detail rows are OSC-8 hyperlinks where the terminal supports them.
 
 Summary and compact never dump raw content. Expanded shows minified tool-definition JSON; the system prompt and context files stay summarized (raw chars + short preview).
 

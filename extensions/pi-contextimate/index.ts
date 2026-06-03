@@ -31,11 +31,13 @@ type ScanRow = {
   name: string;
   tokens: number;
   desc?: string;
+  href?: string;
 };
 
 type PrefixSection = {
   id: string;
   title: string;
+  href?: string;
   content: string;
   countLabel?: string;
   effectiveTokens?: number;
@@ -161,6 +163,12 @@ const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]
 const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
 const ORANGE = "\x1b[38;2;245;151;52m";
+const CYAN = "\x1b[38;2;110;200;255m";
+const GREEN = "\x1b[38;2;135;210;140m";
+const MUTED = "\x1b[38;2;145;145;145m";
+const DIM = "\x1b[2m";
+const UNDERLINE = "\x1b[4m";
+const NO_UNDERLINE = "\x1b[24m";
 const RESET = "\x1b[0m";
 const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
 const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
@@ -240,6 +248,60 @@ function compactPath(filePath: string): string {
   return filePath;
 }
 
+function safeOscHref(href: string): string {
+  return href.replace(/[\x00-\x1f\x7f]/g, "");
+}
+
+function fileHref(filePath: string): string | undefined {
+  if (!filePath) return undefined;
+  const expanded = filePath.startsWith("~/") ? resolve(homedir(), filePath.slice(2)) : filePath;
+  if (!expanded.startsWith("/")) return undefined;
+  return pathToFileURL(expanded).href;
+}
+
+function linkText(label: string, href?: string): string {
+  if (!href) return label;
+  return `\x1b]8;;${safeOscHref(href)}\x07${UNDERLINE}${label}${NO_UNDERLINE}\x1b]8;;\x07`;
+}
+
+const URL_RE = /https?:\/\/[^\s"'<>]+/g;
+const PATH_RE = /(?:~\/|\/)[A-Za-z0-9._~@%+\-/]+/g;
+
+function trimTrailingLinkPunctuation(value: string): { core: string; trailing: string } {
+  const match = value.match(/^(.*?)([),.;:]+)?$/);
+  return { core: match?.[1] ?? value, trailing: match?.[2] ?? "" };
+}
+
+function linkifyPathsAndUrls(text: string): string {
+  let out = "";
+  let last = 0;
+  const matches: Array<{ start: number; end: number; href: string; text: string }> = [];
+  for (const match of text.matchAll(URL_RE)) {
+    const raw = match[0] ?? "";
+    const { core, trailing } = trimTrailingLinkPunctuation(raw);
+    const start = match.index ?? 0;
+    matches.push({ start, end: start + core.length, href: core, text: core });
+    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, href: "", text: trailing });
+  }
+  for (const match of text.matchAll(PATH_RE)) {
+    const raw = match[0] ?? "";
+    const start = match.index ?? 0;
+    if (matches.some((existing) => start >= existing.start && start < existing.end)) continue;
+    const { core, trailing } = trimTrailingLinkPunctuation(raw);
+    const href = fileHref(core);
+    if (href) matches.push({ start, end: start + core.length, href, text: core });
+    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, href: "", text: trailing });
+  }
+  matches.sort((a, b) => a.start - b.start || b.end - a.end);
+  for (const match of matches) {
+    if (match.start < last) continue;
+    out += text.slice(last, match.start);
+    out += match.href ? linkText(match.text, match.href) : match.text;
+    last = match.end;
+  }
+  return out + text.slice(last);
+}
+
 function unescapeXml(value: string): string {
   return value
     .replace(/&apos;/g, "'")
@@ -269,6 +331,18 @@ function safeMinifiedJson(value: unknown): string {
   } catch (error) {
     return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
   }
+}
+
+function highlightMinifiedJson(json: string): string {
+  return json.replace(/("(?:\\.|[^"\\])*"|\b-?\d+(?:\.\d+)?(?:e[+-]?\d+)?\b|\btrue\b|\bfalse\b|\bnull\b|[{}\[\]:,])/gi, (token, _value, offset, whole) => {
+    if (token.startsWith('"')) {
+      const next = whole.slice(offset + token.length).match(/^\s*:/);
+      return next ? `${CYAN}${token}${RESET}` : `${DIM}${token}${RESET}`;
+    }
+    if (/^-?\d/.test(token)) return orange(token);
+    if (/^(true|false|null)$/i.test(token)) return `${GREEN}${token}${RESET}`;
+    return `${MUTED}${token}${RESET}`;
+  });
 }
 
 function normalizeBlankLines(text: string): string {
@@ -329,6 +403,7 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
     sections.push({
       id: `context:${filePath}`,
       title,
+      href: fileHref(filePath),
       content: body,
       denominator,
       countLabel: formatCount(body.length, denominator),
@@ -364,7 +439,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       countLabel: formatCount(content.length, denominator),
       compactRows: [...skills]
         .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
-        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description })),
+        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description, href: fileHref(skill.location) })),
       expandedLines,
     },
   };
@@ -990,7 +1065,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
     .flatMap(({ tool, estimate }, index) => [
       ...(index === 0 ? [] : [""]),
       `${tool.name} — ${formatTokenEstimate(estimate.tokens, estimate.chars, estimate.detail)} · source: ${tool.source}`,
-      `\x1b[2m${safeMinifiedJson(toolPayloadForShape(tool, toolShape, toolSpec))}${RESET}`,
+      safeMinifiedJson(toolPayloadForShape(tool, toolShape, toolSpec)),
     ]);
   return {
     tools,
@@ -1224,6 +1299,47 @@ function renderEstimatedTokenRow(label: string, tokens: number, chars: number | 
   return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `~${compactTokenNumber(tokens)} tokens${suffix}`)}`;
 }
 
+function renderSectionTitle(section: PrefixSection, padded = false): string {
+  const title = padded ? padLabel(section.title) : section.title;
+  return linkText(title, section.href);
+}
+
+function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
+  if (!rawLine) return "";
+  if (/^[{\[]/.test(stripAnsi(rawLine))) return `  ${highlightMinifiedJson(stripAnsi(rawLine))}`;
+
+  const toolHeader = rawLine.match(/^([^—]+?) — (~[^·]+(?: · [^)]+\))?) · source: (.*)$/);
+  if (toolHeader) {
+    const [, name, estimate, source] = toolHeader;
+    return `  ${theme.bold(name.trim())} ${theme.fg("dim", "—")} ${orange(estimate.trim())} ${theme.fg("dim", "· source:")} ${linkifyPathsAndUrls(source.trim())}`;
+  }
+
+  const skillRow = rawLine.match(/^• ([^\s]+) (~[^—]+) — (.*)$/);
+  if (skillRow) {
+    const [, name, estimate, rest] = skillRow;
+    return `  ${orange("•")} ${theme.bold(linkText(name, snapshotlessSkillHref(rest)))} ${orange(estimate.trim())} ${theme.fg("dim", "—")} ${linkifyPathsAndUrls(rest)}`;
+  }
+
+  const bullet = rawLine.match(/^•\s+([^:]+):(.*)$/);
+  if (bullet) {
+    const [, label, value] = bullet;
+    return `  ${orange("•")} ${theme.bold(`${label}:`)}${value ? ` ${linkifyPathsAndUrls(value.trim())}` : ""}`;
+  }
+
+  if (rawLine.startsWith("• ")) {
+    return `  ${orange("•")} ${theme.fg("dim", linkifyPathsAndUrls(rawLine.slice(2)))}`;
+  }
+
+  if (/Tool definitions|Context files|Skills \(|Tools \(/.test(rawLine)) return `  ${orange(theme.bold(linkifyPathsAndUrls(rawLine)))}`;
+  return `  ${linkifyPathsAndUrls(rawLine)}`;
+}
+
+function snapshotlessSkillHref(rest: string): string | undefined {
+  const match = rest.match(/\((~\/[^)]+|\/[^)]+)\)\s*$/);
+  if (!match) return undefined;
+  return fileHref(match[1]);
+}
+
 function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme): string | undefined {
   if (usage.tokens === null) return undefined;
   const percent = formatPercent(usage.percent);
@@ -1288,7 +1404,7 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
   const lines = renderHeader(snapshot, "summary", theme);
   lines.push("");
   for (const section of snapshot.sections) {
-    lines.push(`  ${theme.fg("muted", padLabel(section.title))}${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
+    lines.push(`  ${theme.fg("muted", renderSectionTitle(section, true))}${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
   }
   lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
   return lines;
@@ -1305,7 +1421,7 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] 
       : row.name.padEnd(nameWidth, " ");
     const token = tokenStrings[index].padStart(tokenWidth, " ");
     const desc = row.desc ? singleLine(row.desc, descWidth) : "";
-    return `    ${theme.fg("text", name)}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+    return `    ${theme.fg("text", linkText(name, row.href))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
@@ -1314,7 +1430,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   lines.push(`  ${theme.fg("dim", "Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail")}`);
   for (const section of snapshot.sections) {
     const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `  ${orange("▸")} ${theme.bold(section.title)}  ${theme.fg("dim", countLabel)}`);
+    lines.push("", `  ${orange("▸")} ${theme.bold(renderSectionTitle(section))}  ${theme.fg("dim", countLabel)}`);
     if (section.compactRows && section.compactRows.length > 0) {
       lines.push(...renderScanRows(section.compactRows, theme, width));
     }
@@ -1329,11 +1445,12 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme): string[] {
   lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
 
   for (const section of snapshot.sections) {
-    lines.push("", `${orange(`[${section.title} - ${section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator)}]`)}`, "");
+    const sectionCount = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
+    lines.push("", `${orange("[")}${theme.bold(renderSectionTitle(section))}${theme.fg("dim", ` - ${sectionCount}`)}${orange("]")}`, "");
     if (section.expandedLines) {
-      lines.push(...section.expandedLines);
+      lines.push(...section.expandedLines.map((line) => renderExpandedDetailLine(line, theme)));
     } else {
-      lines.push(section.content || "(empty)");
+      lines.push(renderExpandedDetailLine(section.content || "(empty)", theme));
     }
   }
 
