@@ -10,13 +10,13 @@
 - active tool definitions
 - active-branch session material: tool outputs, visible messages/tool calls, and residual other/reasoning
 
-The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. In Pi's startup resource list, `[Context Estimator]` is inserted immediately after the native `[Context]` row, before `[Skills]`, `[Prompts]`, and `[Extensions]`. `Ctrl+O` cycles `summary → compact → expanded`:
+The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. In Pi's startup resource list, `[Context Estimator]` is inserted after the native startup resource sections, leaving Pi's default `[Context]`, `[Skills]`, `[Prompts]`, and `[Extensions]` order untouched. `Ctrl+O` cycles `summary → compact → expanded` through Pi's native expand/collapse path:
 
 - **Summary** — one row per category (system prompt, context files, skills, tools, session) with its token estimate.
 - **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row.
-- **Expanded** — adds deep detail: counting method/caveats and sources, plus the formatted (pretty-printed) JSON of each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens.
+- **Expanded** — adds deep detail: counting method/caveats and sources, plus minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens.
 
-Summary and compact never dump raw content. Expanded shows the formatted tool-definition JSON; the system prompt and context files stay summarized (raw chars + short preview).
+Summary and compact never dump raw content. Expanded shows minified tool-definition JSON; the system prompt and context files stay summarized (raw chars + short preview).
 
 Related note: [`pi-contextimate-codex-context-accounting.md`](./pi-contextimate-codex-context-accounting.md) compares this policy with upstream OpenAI Codex active-context accounting, especially after interruption and compaction.
 

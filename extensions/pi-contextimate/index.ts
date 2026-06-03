@@ -1,7 +1,7 @@
 import type { Component } from "@earendil-works/pi-tui";
 import type { ContextUsage, ExtensionAPI, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -149,7 +149,6 @@ type ContextimateGlobal = typeof globalThis & {
   __piContextimateBlock?: StartupContextComponent;
   __piContextimateMode?: ViewMode;
   __piContextimateInstallTimer?: ReturnType<typeof setTimeout>;
-  __piContextimateInputUnsubscribe?: () => void;
   __piContextimateModel?: ModelSummary;
 };
 
@@ -160,12 +159,7 @@ const PROJECT_INSTRUCTIONS_RE = /<project_instructions path="([^"]*)">\n([\s\S]*
 const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>/;
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
-const CONTEXT_RESOURCE_HEADER_RE = /^\s*\[Context\](?:\s|$)/m;
 const DEFAULT_MODE: ViewMode = "summary";
-// Pi can deliver a single Ctrl+O press through both our raw terminal-input
-// listener and its native expandable-row toggle. Coalesce cycles that land
-// within this window so one press advances the view exactly once.
-const CYCLE_DEDUPE_MS = 60;
 const ORANGE = "\x1b[38;2;245;151;52m";
 const RESET = "\x1b[0m";
 const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
@@ -996,7 +990,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
     .flatMap(({ tool, estimate }, index) => [
       ...(index === 0 ? [] : [""]),
       `${tool.name} — ${formatTokenEstimate(estimate.tokens, estimate.chars, estimate.detail)} · source: ${tool.source}`,
-      ...safeJson(toolPayloadForShape(tool, toolShape, toolSpec)).split("\n"),
+      `\x1b[2m${safeMinifiedJson(toolPayloadForShape(tool, toolShape, toolSpec))}${RESET}`,
     ]);
   return {
     tools,
@@ -1014,7 +1008,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
         ...methodLines,
         ...(typeof numerator.tokens === "number" ? ["• per-tool rows exclude the shared +12 final tools overhead shown here", "• shared formula overhead: +12 tokens once for the whole active tool set"] : ["• per-tool rows are approximate; array/bracket/comma payload overhead is included only in the total"]),
         "",
-        `Tool definitions (formatted JSON — the provider-shaped payload counted above, sorted by estimated tokens):`,
+        `Tool definitions (minified JSON — the provider-shaped payload counted above, sorted by estimated tokens):`,
         "",
         ...expandedToolLines,
       ],
@@ -1331,7 +1325,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
 
 function renderExpanded(snapshot: PrefixSnapshot, theme: Theme): string[] {
   const lines = renderHeader(snapshot, "expanded", theme);
-  lines.push(`  ${theme.fg("dim", "Expanded view: per-section subtotals, sources, per-skill/per-tool estimates, and the formatted JSON tool definitions that are counted.")}`);
+  lines.push(`  ${theme.fg("dim", "Expanded view: per-section subtotals, sources, per-skill/per-tool estimates, and minified JSON tool definitions that are counted.")}`);
   lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
 
   for (const section of snapshot.sections) {
@@ -1367,7 +1361,6 @@ class StartupContextComponent implements Component {
   private cachedMode?: ViewMode;
   private cachedWidth?: number;
   private cachedLines?: string[];
-  private lastCycleAt = 0;
 
   constructor(
     private readonly snapshot: () => PrefixSnapshot,
@@ -1388,16 +1381,14 @@ class StartupContextComponent implements Component {
   }
 
   setExpanded(_expanded: boolean): void {
-    // Fallback path for Pi's native Ctrl+O handler: if our raw terminal-input
-    // listener does not see the key first, Pi toggles all expandable rows. Treat
-    // that as a request to advance the three-state Context Estimator view.
+    // Pi's native Ctrl+O path toggles one global boolean and calls setExpanded()
+    // on every expandable chat component exactly once per toggle. Use that as
+    // the single source of truth for cycling; do not also listen to raw terminal
+    // input, or one keypress can advance twice.
     this.cycleMode();
   }
 
   cycleMode(): ViewMode {
-    const now = Date.now();
-    if (now - this.lastCycleAt < CYCLE_DEDUPE_MS) return this.mode;
-    this.lastCycleAt = now;
     this.setMode(nextMode(this.mode));
     return this.mode;
   }
@@ -1493,22 +1484,18 @@ function removeExistingPrefixBlocks(chat: any): void {
   chat.children = chat.children.filter((child: Component) => !isPrefixBlock(child));
 }
 
-function indexAfterRowAndFollowingBlank(chat: any, index: number): number {
-  if (!Array.isArray(chat.children)) return index;
-  return index + 1 < chat.children.length && isBlankComponent(chat.children[index + 1] as Component) ? index + 1 : index;
-}
-
-function insertionIndexAfterContextResource(chat: any): number {
+function insertionIndexAfterResourceList(chat: any): number {
   if (!Array.isArray(chat.children)) return -1;
-  let firstResourceIndex = -1;
+  let index = -1;
   for (let i = 0; i < chat.children.length; i++) {
     const child = chat.children[i] as Component;
     if (isPrefixBlock(child)) continue;
-    const text = renderPlain(child);
-    if (firstResourceIndex === -1 && RESOURCE_HEADER_RE.test(text)) firstResourceIndex = i;
-    if (CONTEXT_RESOURCE_HEADER_RE.test(text)) return indexAfterRowAndFollowingBlank(chat, i);
+    if (RESOURCE_HEADER_RE.test(renderPlain(child))) {
+      index = i;
+      if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;
+    }
   }
-  return firstResourceIndex === -1 ? -1 : indexAfterRowAndFollowingBlank(chat, firstResourceIndex);
+  return index;
 }
 
 function installContextBlock(block: StartupContextComponent): boolean {
@@ -1517,7 +1504,7 @@ function installContextBlock(block: StartupContextComponent): boolean {
   if (!chat || !Array.isArray(chat.children)) return false;
 
   removeExistingPrefixBlocks(chat);
-  const insertAfter = insertionIndexAfterContextResource(chat);
+  const insertAfter = insertionIndexAfterResourceList(chat);
   chat.children.splice(insertAfter + 1, 0, block);
   tui?.requestRender?.(true);
   return true;
@@ -1574,13 +1561,6 @@ export default function piContextimate(pi: ExtensionAPI) {
 
     scheduleInstall(block);
 
-    g.__piContextimateInputUnsubscribe?.();
-    g.__piContextimateInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
-      if (!matchesKey(data, "ctrl+o")) return undefined;
-      const next = g.__piContextimateBlock?.cycleMode() ?? nextMode(g.__piContextimateMode ?? DEFAULT_MODE);
-      setMode(next);
-      return { consume: true };
-    });
   });
 
   pi.on("model_select", async (event, ctx) => {
@@ -1590,8 +1570,6 @@ export default function piContextimate(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
-    g.__piContextimateInputUnsubscribe?.();
-    g.__piContextimateInputUnsubscribe = undefined;
     if (g.__piContextimateInstallTimer) clearTimeout(g.__piContextimateInstallTimer);
     g.__piContextimateInstallTimer = undefined;
   });
