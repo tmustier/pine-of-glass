@@ -10,7 +10,7 @@
 - active tool definitions
 - active-branch session material: tool outputs, visible messages/tool calls, and residual other/reasoning
 
-The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. `Ctrl+O` cycles `summary → compact → expanded`:
+The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. In Pi's startup resource list, `[Context Estimator]` is inserted immediately after the native `[Context]` row, before `[Skills]`, `[Prompts]`, and `[Extensions]`. `Ctrl+O` cycles `summary → compact → expanded`:
 
 - **Summary** — one row per category (system prompt, context files, skills, tools, session) with its token estimate.
 - **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row.

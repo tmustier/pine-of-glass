@@ -26,6 +26,7 @@ The package manifest points Pi at this extension directory, so future internal s
 
 ## Use
 
+- `[Context Estimator]` renders immediately after Pi's native `[Context]` row, before `[Skills]`, `[Prompts]`, and `[Extensions]`.
 - `Ctrl+O` cycles the `[Context Estimator]` view: summary → compact → expanded.
 - `/contextimate` cycles the view.
 - `/contextimate summary`, `/contextimate compact`, and `/contextimate expanded` jump directly to a mode.

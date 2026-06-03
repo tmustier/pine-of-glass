@@ -160,6 +160,7 @@ const PROJECT_INSTRUCTIONS_RE = /<project_instructions path="([^"]*)">\n([\s\S]*
 const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>/;
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
+const CONTEXT_RESOURCE_HEADER_RE = /^\s*\[Context\](?:\s|$)/m;
 const DEFAULT_MODE: ViewMode = "summary";
 // Pi can deliver a single Ctrl+O press through both our raw terminal-input
 // listener and its native expandable-row toggle. Coalesce cycles that land
@@ -1492,18 +1493,22 @@ function removeExistingPrefixBlocks(chat: any): void {
   chat.children = chat.children.filter((child: Component) => !isPrefixBlock(child));
 }
 
-function insertionIndexAfterResourceList(chat: any): number {
+function indexAfterRowAndFollowingBlank(chat: any, index: number): number {
+  if (!Array.isArray(chat.children)) return index;
+  return index + 1 < chat.children.length && isBlankComponent(chat.children[index + 1] as Component) ? index + 1 : index;
+}
+
+function insertionIndexAfterContextResource(chat: any): number {
   if (!Array.isArray(chat.children)) return -1;
-  let index = -1;
+  let firstResourceIndex = -1;
   for (let i = 0; i < chat.children.length; i++) {
     const child = chat.children[i] as Component;
     if (isPrefixBlock(child)) continue;
-    if (RESOURCE_HEADER_RE.test(renderPlain(child))) {
-      index = i;
-      if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;
-    }
+    const text = renderPlain(child);
+    if (firstResourceIndex === -1 && RESOURCE_HEADER_RE.test(text)) firstResourceIndex = i;
+    if (CONTEXT_RESOURCE_HEADER_RE.test(text)) return indexAfterRowAndFollowingBlank(chat, i);
   }
-  return index;
+  return firstResourceIndex === -1 ? -1 : indexAfterRowAndFollowingBlank(chat, firstResourceIndex);
 }
 
 function installContextBlock(block: StartupContextComponent): boolean {
@@ -1512,7 +1517,7 @@ function installContextBlock(block: StartupContextComponent): boolean {
   if (!chat || !Array.isArray(chat.children)) return false;
 
   removeExistingPrefixBlocks(chat);
-  const insertAfter = insertionIndexAfterResourceList(chat);
+  const insertAfter = insertionIndexAfterContextResource(chat);
   chat.children.splice(insertAfter + 1, 0, block);
   tui?.requestRender?.(true);
   return true;
