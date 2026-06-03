@@ -1,6 +1,6 @@
 # pi-contextimate
 
-`pi-contextimate` is a Pi extension that adds a startup `[Context summary]` panel showing what is filling the current model context window: system prompt, AGENTS.md files, Agent Skills, active tools, and current session material.
+`pi-contextimate` is a Pi extension that adds a startup `[Context Estimator]` panel showing what is filling the current model context window: system prompt, AGENTS.md files, Agent Skills, active tools, and current session material.
 
 ## Install
 
@@ -26,13 +26,19 @@ The package manifest points Pi at this extension directory, so future internal s
 
 ## Use
 
-- `Ctrl+O` cycles the `[Context summary]` view.
+- `Ctrl+O` cycles the `[Context Estimator]` view: summary → compact → expanded.
 - `/contextimate` cycles the view.
 - `/contextimate summary`, `/contextimate compact`, and `/contextimate expanded` jump directly to a mode.
+- Compact/expanded modes show structural drilldowns and per-skill/per-tool estimates rather than dumping full prompt text.
 
 ## Docs
 
-Full notes, accounting heuristics, and experiment results live in the package docs:
+Full notes, accounting heuristics, experiment results, and validation-script instructions live in the package docs:
 
 - `docs/pi-contextimate.md`
 - `docs/pi-contextimate-codex-context-accounting.md`
+
+Packaged diagnostics:
+
+- `pi-contextimate-probe-prefix` — run a tiny live prefix probe and print sanitized payload-size/usage summaries.
+- `pi-contextimate-evaluate-transcripts` — evaluate local Pi JSONL session-growth heuristics against recorded usage.

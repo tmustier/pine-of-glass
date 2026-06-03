@@ -2,3 +2,10 @@ node_modules/
 .DS_Store
 .pi/
 *.log
+
+# pi-contextimate local validation artifacts
+.pi-contextimate-*/
+pi-contextimate-*/
+*.payloads.jsonl
+*.summary.json
+pi-contextimate-*-results.json

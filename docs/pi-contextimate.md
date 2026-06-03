@@ -2,7 +2,7 @@
 
 ## User-facing goal
 
-`pi-contextimate` should explain what is filling the model context window, broken down into the pieces a human can act on:
+`pi-contextimate` shows a startup `[Context Estimator]` panel that explains what is filling the model context window, broken down into the pieces a human can act on:
 
 - system prompt / harness instructions
 - AGENTS.md context files
@@ -10,7 +10,7 @@
 - active tool definitions
 - active-branch session material: tool outputs, visible messages/tool calls, and residual other/reasoning
 
-The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible.
+The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. `Ctrl+O` cycles `summary → compact → expanded`; the compact and expanded modes are structural drilldowns, not raw prompt dumps.
 
 Related note: [`pi-contextimate-codex-context-accounting.md`](./pi-contextimate-codex-context-accounting.md) compares this policy with upstream OpenAI Codex active-context accounting, especially after interruption and compaction.
 
@@ -18,7 +18,7 @@ Related note: [`pi-contextimate-codex-context-accounting.md`](./pi-contextimate-
 
 Do **not** treat local object size as context size.
 
-For normal text sections, the denominator should be provider/model-aware. `chars / 4` is still the fallback for unknown providers, but Claude 4.7+ Pi-shaped context is closer to `chars / 2.6–2.75`. For tool schemas, raw text size is not enough: count a provider-shaped numerator, not the literal pretty-printed JSON schema shown in expanded mode.
+For normal text sections, the denominator should be provider/model-aware. `chars / 4` is still the fallback for unknown providers, but Claude 4.7+ Pi-shaped context is closer to `chars / 2.6–2.75`. For tool schemas, raw text size is not enough: count a provider-shaped numerator or formula, not the literal pretty-printed/debug JSON.
 
 ## What Pi sends
 
@@ -44,7 +44,7 @@ For OpenAI Codex / Responses, Pi's path is:
 }
 ```
 
-Expanded inspector JSON is for readability only and should not be counted as if it were the provider payload.
+Debug JSON is for analysis only and should not be counted as if it were the provider payload. The normal expanded UI should show structural summaries and per-item estimates rather than dumping full schemas or prompt text.
 
 ## Provider facts
 
@@ -113,19 +113,21 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 - Keep the header lightweight; show accounting provenance on each row instead of a global accounting line.
 - Unknown providers fall back to `chars / 4`.
 - Text rows show their denominator inline, e.g. `~3k tokens (10.0k chars/4)`.
-- Tool rows show the provider-shaped numerator and estimator inline, e.g. `~6k tokens (47.9k chars · OpenAI-style local formula)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
+- The aggregate `Tools` row shows the provider-shaped numerator and estimator inline, e.g. `~5k tokens (47.9k chars · payload size; OpenAI-style local formula; schema text/6.6)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
+- Individual tool detail rows use that tool's own provider-shaped/minified payload size (or OpenAI formula subtotal) rather than repeating the aggregate payload character count.
+- For OpenAI-style local formula rows, the minified payload character count is a size cue only; it is **not** divided by 6.6. The formula uses fixed constants plus name/description/property text fragments estimated with `chars/6.6`.
 - Compact/expanded modes add method lines under `Tools`, including the formula/provenance for OpenAI-style local estimates, so the UI does not depend on clickable terminal links for calculation backup.
 - Text sections use text denominators; session visible buckets use session denominators; tool schemas use a provider-shaped tool numerator plus either a denominator or a special estimator.
 - Tool numerator character counts must use minified provider-shaped JSON, not pretty JSON.
-- Tool sections must never use pretty-printed expanded JSON length as the count source.
-- Keep expanded mode readable with pretty JSON, but make clear counts use provider/model-aware estimates.
+- Tool sections must never use pretty-printed/debug JSON length as the count source.
+- Keep expanded mode readable and structural: show per-skill/per-tool estimate rows, sources, parameter keys, and short guidance summaries; do not dump the full system prompt or full tool schemas by default.
 - Show Pi's current context usage separately as `Total request` after a response exists.
 - Render token counts as whole-token or whole-`k` values (`~600 tokens`, `~6k tokens`), not `x.xk tokens`; decimal-place token counts imply false precision. Character counts may remain compact (`1.6k chars`) because they are just a size cue.
 - Future exact mode: optionally call provider token-count endpoints using the actual outgoing payload, then subtract baselines to isolate sections. This should be opt-in or cached because it adds network/API work to startup.
 
 ## Practical OpenAI-style tool heuristic
 
-Use the OpenAI Cookbook/tiktoken-style approach for function tools. This is the calculation backing the OpenAI-Codex tools row in summary mode. The row's character count is the size of the minified provider-shaped `tools` payload; the token count is produced by the formula below, not by dividing that JSON string by a denominator.
+Use the OpenAI Cookbook/tiktoken-style approach for function tools. This is the calculation backing the OpenAI-Codex tools row in summary mode. The row's character count is the size of the minified provider-shaped `tools` payload; it is a payload-size cue only. The token count is produced by the formula below, not by dividing that JSON string by a denominator.
 
 Provenance and limits:
 
@@ -160,7 +162,7 @@ text fragments:     chars / 6.6 for name:description, propertyName:type:descript
 recursion:          nested object properties and object-array item properties are counted recursively
 ```
 
-This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI-style local formula` instead of `openai-cookbook ÷5.5`. Compact/expanded modes print the formula and point to this section (`docs/pi-contextimate.md#practical-openai-style-tool-heuristic`) so the calculation backup is visible even when a terminal strips hyperlink escape sequences.
+This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI-style local formula` and `schema text/6.6`, not `openai-cookbook ÷5.5` or raw payload `chars/6.6`. Compact/expanded modes print the formula and point to this section (`docs/pi-contextimate.md#practical-openai-style-tool-heuristic`) so the calculation backup is visible without relying on terminal hyperlinks.
 
 ## Follow-up tokenizer/provider experiment from 2026-06-02
 
@@ -445,40 +447,47 @@ The extension reads optional JSON config from these paths, in order:
 5. any colon-separated paths in `PI_CONTEXTIMATE_CONFIG`
 6. legacy fallback: any colon-separated paths in `PI_PREFIX_INSPECTOR_CONFIG`
 
-Later files override scalar/default fields; `rules` are appended and later matching rules win because they are applied last. This keeps the built-in provider-aware defaults as the base while allowing project or user overrides.
+Later files override scalar/default fields; `profiles` and `toolShapes` are merged by name; `rules` are appended and later matching rules win because they are applied last. This keeps the built-in provider-aware defaults as the base while allowing project or user overrides.
+
+A profile is a reusable counting recipe. A rule can select a profile by provider/model/API and optionally override any field inline.
 
 Example:
 
 ```json
 {
-  "defaults": {
-    "textDenominator": 4,
-    "sessionDenominator": 4,
-    "toolDenominator": 4,
-    "toolNumerator": "openai-responses"
-  },
-  "rules": [
-    {
+  "profiles": {
+    "openai-like": {
+      "label": "OpenAI-like chars/4 profile",
+      "textDenominator": 4,
+      "sessionDenominator": 4,
+      "toolDenominator": 5.5,
+      "toolNumerator": "openai-responses"
+    },
+    "claude-48": {
       "label": "Custom Claude 4.8 calibration",
-      "match": { "provider": "anthropic", "model": "*4-8*" },
       "textDenominator": 2.6,
       "sessionDenominator": 2.6,
       "toolDenominator": 2.6,
       "toolNumerator": "anthropic"
+    }
+  },
+  "defaults": { "profile": "openai-like" },
+  "rules": [
+    {
+      "profile": "claude-48",
+      "match": { "provider": "anthropic", "model": "*4-8*" }
     },
     {
+      "profile": "openai-like",
       "label": "My proxy uses chat function tools",
       "match": { "provider": "my-proxy", "api": "openai-completions" },
-      "textDenominator": 4,
-      "sessionDenominator": 4,
-      "toolDenominator": 5.5,
       "toolNumerator": "openai-chat"
     }
   ]
 }
 ```
 
-Rule `match` values support exact strings, `*`/`?` globs, or JavaScript regex strings such as `"/claude.*4-8/i"`.
+Rule `match` values support exact strings, `*`/`?` globs, or JavaScript regex strings such as `"/claude.*4-8/i"`. Built-in rules cannot currently be disabled, but a later matching custom rule shadows their denominators/tool numerator.
 
 Built-in tool numerator shapes:
 
@@ -563,11 +572,44 @@ Where:
 
 If Pi's current total is unavailable after compaction, use the provider/model fallback estimate for `x` and keep the same split labels. In that fallback state, make clear the whole session total is heuristic.
 
-## Rerunning or adapting the experiment
+## Rerunning or adapting the experiments
 
-Use a throwaway session directory and do not print, commit, or publish credential-bearing payloads. The following is enough for a fresh agent to reproduce the experiment or adapt it to another provider.
+Use a throwaway session directory and do not print, commit, or publish credential-bearing payloads.
 
-### 1. Capture the actual provider payload
+### Script-first validation
+
+Packaged/repo scripts live in `scripts/contextimate/` and write to `/tmp` by default.
+
+Historical session-growth evaluation:
+
+```bash
+pi-contextimate-evaluate-transcripts \
+  --root ~/.pi/agent/sessions \
+  --output /tmp/pi-contextimate-transcript-eval/results.json
+
+# or from a repo clone
+node scripts/contextimate/evaluate-transcripts.mjs \
+  --root ~/.pi/agent/sessions \
+  --output /tmp/pi-contextimate-transcript-eval/results.json
+```
+
+This evaluates session-material growth against recorded provider usage in JSONL sessions. It fits one static intercept per transcript because historical sessions do not store startup system prompts or provider tool payloads. It is not a static prefix/tool-schema validation.
+
+Live prefix probe:
+
+```bash
+pi-contextimate-probe-prefix \
+  --model openai-codex/gpt-5.5 \
+  --cwd ~/projects/commercial \
+  --output-dir /tmp/pi-contextimate-prefix-probe
+
+# Strip resources or vary tools by passing extra Pi flags after --
+pi-contextimate-probe-prefix -- --no-tools --no-skills --no-context-files
+```
+
+This runs a tiny thinking-off request, captures the outgoing provider payload with `before_provider_request`, and prints only sanitized sizes plus provider usage. The captured payload artifact can contain sensitive local prompt/tool data; keep it local and out of Git.
+
+### Manual path: capture the actual provider payload
 
 Create a temporary capture extension:
 
@@ -612,7 +654,7 @@ print('tool chars', len(json.dumps(p.get('tools'), separators=(',', ':'))))
 PY
 ```
 
-### 2. Anthropic exact counts
+### Anthropic exact counts
 
 Use `messages/count_tokens` with the same model and request-shaped payload. Section tokens are isolated by subtracting a minimal baseline:
 
@@ -625,7 +667,7 @@ full     = count({ model, messages, system, tools, thinking })
 
 Use whichever Anthropic authentication path is appropriate for your environment and keep it out of logs. For OAuth-style Claude Code requests, the request may also need the provider-specific beta/app headers used by that client. Do not print tokens or publish authenticated payloads.
 
-### 3. OpenAI / OpenAI-Codex counts
+### OpenAI / OpenAI-Codex counts
 
 For OpenAI API-key-backed Responses models, try the official endpoint with the exact Responses payload:
 
@@ -668,7 +710,7 @@ pi -p \
 
 Read the saved session JSONL and subtract a tiny baseline run with the same flags and a one-character system prompt. For tool probes, hold the system prompt constant and vary `--tools` / `--no-tools`; subtract the no-tools baseline.
 
-### 4. Adapting to another provider
+### Adapting to another provider
 
 1. Capture the provider payload with `before_provider_request`.
 2. Identify the provider-shaped numerator for each section: system/instructions, messages, and tools.
