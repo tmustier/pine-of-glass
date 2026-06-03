@@ -27,6 +27,12 @@ type ToolSummary = {
   promptGuidelines: string[];
 };
 
+type ScanRow = {
+  name: string;
+  tokens: number;
+  desc?: string;
+};
+
 type PrefixSection = {
   id: string;
   title: string;
@@ -35,7 +41,7 @@ type PrefixSection = {
   effectiveTokens?: number;
   rawChars?: number;
   denominator?: number;
-  compactLines?: string[];
+  compactRows?: ScanRow[];
   expandedLines?: string[];
 };
 
@@ -312,13 +318,7 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
     const filePath = rawPath ?? "";
     const title = compactPath(filePath);
     const body = content ?? "";
-    const compactPreview = firstMeaningfulLines(body, 3).map((line) => `• ${singleLine(line)}`);
     const expandedPreview = firstMeaningfulLines(body, 8).map((line) => `• ${singleLine(line, 150)}`);
-    const compactLines = [
-      `• source: ${title}`,
-      `• counted as text with ${formatDenominatorDetail(denominator)}`,
-      ...(compactPreview.length > 0 ? compactPreview : ["• no non-empty lines"]),
-    ];
     const expandedLines = [
       `• source: ${title}`,
       `• path: ${filePath}`,
@@ -333,16 +333,10 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
       content: body,
       denominator,
       countLabel: formatCount(body.length, denominator),
-      compactLines,
       expandedLines,
     });
   }
   return sections;
-}
-
-function limitDetailLines(lines: string[], limit: number, moreLabel: string): string[] {
-  if (lines.length <= limit) return lines;
-  return [...lines.slice(0, limit), `• +${lines.length - limit} more ${moreLabel}`];
 }
 
 function buildSkillsSection(systemPrompt: string, denominator: number): { section?: PrefixSection; skills: SkillSummary[] } {
@@ -369,10 +363,9 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       content,
       denominator,
       countLabel: formatCount(content.length, denominator),
-      compactLines: [
-        ...(wrapperChars > 0 ? [`• per-skill rows exclude ${formatCount(wrapperChars, denominator)} wrapper/markup; expanded shows details`] : []),
-        ...limitDetailLines(skillLines, 8, "skills"),
-      ],
+      compactRows: [...skills]
+        .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
+        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description })),
       expandedLines,
     },
   };
@@ -1002,16 +995,9 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
     : `${formatDenominatorDetail(denominator)} · ${numeratorLabel}`;
   const methodLines = toolCountMethodLines(numerator, denominator);
   const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic, config) }));
-  const compactToolLines = limitDetailLines(
-    [...toolEstimates]
-      .sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name))
-      .flatMap(({ tool, estimate }) => formatToolDetailLines(tool, estimate, false).slice(0, 1)),
-    10,
-    "tools",
-  );
-  const compactToolCaveat = typeof numerator.tokens === "number"
-    ? "• per-tool rows exclude shared +12 formula overhead; expanded shows subtotal details"
-    : "• per-tool rows are approximate; expanded shows subtotal details";
+  const compactToolRows = [...toolEstimates]
+    .sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name))
+    .map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description }));
   const expandedToolLines = toolEstimates.flatMap(({ tool, estimate }, index) => [
     ...(index === 0 ? [] : [""]),
     ...formatToolDetailLines(tool, estimate, true),
@@ -1027,7 +1013,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
       rawChars: numerator.chars,
       denominator,
       countLabel: formatTokenEstimate(effectiveTokens, numerator.chars, numeratorDetail),
-      compactLines: [...methodLines, compactToolCaveat, "", ...compactToolLines],
+      compactRows: compactToolRows,
       expandedLines: [
         ...methodLines,
         ...(typeof numerator.tokens === "number" ? ["• per-tool rows exclude the shared +12 final tools overhead shown here", "• shared formula overhead: +12 tokens once for the whole active tool set"] : ["• per-tool rows are approximate; array/bracket/comma payload overhead is included only in the total"]),
@@ -1151,10 +1137,6 @@ function buildSnapshot(
       content: promptRemainder,
       denominator: textDenominator,
       countLabel: formatCount(promptRemainder.length, textDenominator),
-      compactLines: [
-        `• counted as text with ${formatDenominatorDetail(textDenominator)}`,
-        ...(systemPreview.length > 0 ? systemPreview : ["• no standalone system-prompt text after structured sections"]),
-      ],
       expandedLines: [
         `• counted as text with ${formatDenominatorDetail(textDenominator)}`,
         `• raw standalone chars: ${compactNumber(promptRemainder.length)}`,
@@ -1322,12 +1304,29 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
   return lines;
 }
 
-function renderCompact(snapshot: PrefixSnapshot, theme: Theme): string[] {
+function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] {
+  const nameWidth = Math.min(26, Math.max(...rows.map((row) => row.name.length)));
+  const tokenStrings = rows.map((row) => `~${compactTokenNumber(row.tokens)}`);
+  const tokenWidth = Math.max(...tokenStrings.map((token) => token.length));
+  const descWidth = Math.max(24, width - (4 + nameWidth + 2 + tokenWidth + 2));
+  return rows.map((row, index) => {
+    const name = row.name.length > nameWidth
+      ? `${row.name.slice(0, nameWidth - 1)}…`
+      : row.name.padEnd(nameWidth, " ");
+    const token = tokenStrings[index].padStart(tokenWidth, " ");
+    const desc = row.desc ? singleLine(row.desc, descWidth) : "";
+    return `    ${theme.fg("text", name)}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+  });
+}
+
+function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "compact", theme);
+  lines.push(`  ${theme.fg("dim", "Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail")}`);
   for (const section of snapshot.sections) {
-    lines.push("", `  ${orange("▸")} ${theme.bold(section.title)} ${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
-    for (const line of section.compactLines ?? firstMeaningfulLines(section.content, 4).map((entry) => `• ${singleLine(entry)}`)) {
-      lines.push(`    ${theme.fg("dim", line)}`);
+    const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
+    lines.push("", `  ${orange("▸")} ${theme.bold(section.title)}  ${theme.fg("dim", countLabel)}`);
+    if (section.compactRows && section.compactRows.length > 0) {
+      lines.push(...renderScanRows(section.compactRows, theme, width));
     }
   }
   lines.push("", renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
@@ -1419,7 +1418,7 @@ class StartupContextComponent implements Component {
       const body = this.mode === "summary"
         ? renderSummary(snapshot, theme)
         : this.mode === "compact"
-          ? renderCompact(snapshot, theme)
+          ? renderCompact(snapshot, theme, width)
           : renderExpanded(snapshot, theme);
 
       this.cachedSignature = snapshot.signature;

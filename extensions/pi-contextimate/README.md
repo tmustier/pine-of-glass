@@ -29,7 +29,8 @@ The package manifest points Pi at this extension directory, so future internal s
 - `Ctrl+O` cycles the `[Context Estimator]` view: summary → compact → expanded.
 - `/contextimate` cycles the view.
 - `/contextimate summary`, `/contextimate compact`, and `/contextimate expanded` jump directly to a mode.
-- Compact/expanded modes show structural drilldowns and per-skill/per-tool estimates rather than dumping full prompt text.
+- Compact is a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens, with the counting method shown once on the category header.
+- Expanded adds the structural detail: per-section method/caveats, sources, parameter keys, prompt-guidance counts, and schema summaries — never full prompt or raw schema JSON dumps.
 
 ## Docs
 
