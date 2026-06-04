@@ -29,8 +29,9 @@ type ToolSummary = {
 
 type ScanRow = {
   name: string;
-  tokens: number;
+  tokens?: number;
   desc?: string;
+  inactive?: boolean;
 };
 
 type ToolField = {
@@ -208,20 +209,39 @@ function compactNumber(value: number): string {
   return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(Math.round(value));
 }
 
+type TokenLabelLayout = { unitWidth: number; fieldWidth: number };
+
 function compactTokenNumber(value: number): string {
-  return `${Math.round(value / 1000)}k`;
+  const rounded = Math.max(0, Math.round(value));
+  if (rounded < 1000) return `${(rounded / 1000).toFixed(1)}k`;
+  return `${Math.round(rounded / 1000)}k`;
 }
 
-function estimatedTokenLabel(tokens: number, width = 0): string {
-  return `~${compactTokenNumber(tokens)}`.padStart(width, " ");
+function tokenIntegerWidth(tokens: number): number {
+  return compactTokenNumber(tokens).split(/[.k]/, 1)[0]?.length ?? 0;
 }
 
-function exactTokenLabel(tokens: number, width = 0): string {
-  return compactTokenNumber(tokens).padStart(width, " ");
+function estimatedTokenLabel(tokens: number, layout: TokenLabelLayout = tokenLabelLayout([tokens])): string {
+  const leftPad = " ".repeat(Math.max(0, layout.unitWidth - tokenIntegerWidth(tokens)));
+  return `${leftPad}~${compactTokenNumber(tokens)}`;
 }
 
-function estimatedTokenLabelWidth(tokens: number[]): number {
-  return Math.max(0, ...tokens.map((token) => estimatedTokenLabel(token).length));
+function estimatedTokenField(tokens: number, layout: TokenLabelLayout): string {
+  return estimatedTokenLabel(tokens, layout).padEnd(layout.fieldWidth, " ");
+}
+
+function exactTokenLabel(tokens: number, layout: TokenLabelLayout = tokenLabelLayout([tokens])): string {
+  const leftPad = " ".repeat(Math.max(0, layout.unitWidth - tokenIntegerWidth(tokens)) + 1);
+  return `${leftPad}${compactTokenNumber(tokens)}`;
+}
+
+function tokenLabelLayout(tokens: number[]): TokenLabelLayout {
+  const unitWidth = Math.max(0, ...tokens.map(tokenIntegerWidth));
+  const rawLabels = tokens.map((token) => {
+    const leftPad = " ".repeat(Math.max(0, unitWidth - tokenIntegerWidth(token)));
+    return `${leftPad}~${compactTokenNumber(token)}`;
+  });
+  return { unitWidth, fieldWidth: Math.max(0, ...rawLabels.map((label) => label.length)) };
 }
 
 function formatPercent(value: number | null): string | undefined {
@@ -241,9 +261,9 @@ function formatDenominator(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function formatCountParts(chars: number, denominator = 4, tokenWidth = 0): { tokens: string; chars: string } {
+function formatCountParts(chars: number, denominator = 4, tokenLayout?: TokenLabelLayout): { tokens: string; chars: string } {
   const charLabel = compactNumber(chars);
-  const tokenLabel = estimatedTokenLabel(estimateCharsAsTokens(chars, denominator), tokenWidth);
+  const tokenLabel = estimatedTokenLabel(estimateCharsAsTokens(chars, denominator), tokenLayout);
   return { tokens: `${tokenLabel} tokens`, chars: `(${charLabel} chars/${formatDenominator(denominator)})` };
 }
 
@@ -252,11 +272,11 @@ function formatCount(chars: number, denominator = 4): string {
   return `${parts.tokens} ${parts.chars}`;
 }
 
-function formatTokenEstimate(tokens: number, chars?: number, detail?: string, tokenWidth = 0): string {
+function formatTokenEstimate(tokens: number, chars?: number, detail?: string, tokenLayout?: TokenLabelLayout): string {
   const suffix = typeof chars === "number"
     ? ` (${compactNumber(chars)} ${detail?.startsWith("chars/") ? detail : `chars${detail ? ` · ${detail}` : ""}`})`
     : "";
-  return `${estimatedTokenLabel(tokens, tokenWidth)} tokens${suffix}`;
+  return `${estimatedTokenLabel(tokens, tokenLayout)} tokens${suffix}`;
 }
 
 function formatDenominatorDetail(denominator: number): string {
@@ -1052,7 +1072,12 @@ function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristi
 function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, config: ContextimateConfig): { section?: PrefixSection; tools: ToolSummary[]; loadedToolCount: number } {
   const activeNames = new Set(pi.getActiveTools());
   const allTools = pi.getAllTools();
-  const tools = allTools.filter((tool) => activeNames.has(tool.name)).map(summarizeTool);
+  const activeToolInfos = allTools.filter((tool) => activeNames.has(tool.name));
+  const inactiveTools = allTools
+    .filter((tool) => !activeNames.has(tool.name))
+    .map(summarizeTool)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const tools = activeToolInfos.map(summarizeTool);
   if (tools.length === 0) return { tools, loadedToolCount: allTools.length };
 
   const numerator = buildToolNumerator(tools, heuristic, config);
@@ -1064,7 +1089,10 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
     : `${formatDenominatorDetail(denominator)} · ${numeratorLabel}`;
   const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic, config) }));
   const sortedEstimates = [...toolEstimates].sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name));
-  const compactToolRows = sortedEstimates.map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description }));
+  const compactToolRows: ScanRow[] = [
+    ...sortedEstimates.map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description })),
+    ...inactiveTools.map((tool) => ({ name: tool.name, desc: `(inactive) ${tool.description}`, inactive: true })),
+  ];
   const expandedTools: ToolExpanded[] = sortedEstimates.map(({ tool, estimate }) => ({
     name: tool.name,
     tokens: estimate.tokens,
@@ -1085,7 +1113,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
     loadedToolCount: allTools.length,
     section: {
       id: "tools",
-      title: `Tools (${tools.length} active / ${allTools.length} loaded)`,
+      title: `Tools (${tools.length}/${allTools.length} active)`,
       content: numerator.content,
       effectiveTokens,
       rawChars: numerator.chars,
@@ -1294,17 +1322,17 @@ function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): s
   ];
 }
 
-function renderTokenTotalRow(label: string, tokens: number, theme: Theme, details?: string, tokenWidth = 0): string {
-  return `  ${orange(theme.bold(`${padLabel(label)}${estimatedTokenLabel(tokens, tokenWidth)} tokens`))}${details ? ` ${theme.fg("dim", details)}` : ""}`;
+function renderTokenTotalRow(label: string, tokens: number, theme: Theme, details?: string, tokenLayout?: TokenLabelLayout): string {
+  return `  ${orange(theme.bold(`${padLabel(label)}${estimatedTokenLabel(tokens, tokenLayout)} tokens`))}${details ? ` ${theme.fg("dim", details)}` : ""}`;
 }
 
-function renderEstimatedTokenRow(label: string, tokens: number, chars: number | undefined, theme: Theme, details?: string, tokenWidth = 0): string {
+function renderEstimatedTokenRow(label: string, tokens: number, chars: number | undefined, theme: Theme, details?: string, tokenLayout?: TokenLabelLayout): string {
   const suffix = typeof chars === "number"
     ? details?.startsWith("chars/")
       ? ` (${compactNumber(chars)} ${details})`
       : ` (${compactNumber(chars)} chars${details ? ` · ${details}` : ""})`
     : details ? ` (${details})` : "";
-  return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `${estimatedTokenLabel(tokens, tokenWidth)} tokens${suffix}`)}`;
+  return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `${estimatedTokenLabel(tokens, tokenLayout)} tokens${suffix}`)}`;
 }
 
 function renderSectionTitle(section: PrefixSection, style: (text: string) => string, padded = false): string {
@@ -1367,17 +1395,30 @@ function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number): 
   });
 }
 
+function expandedToolLabel(tool: ToolExpanded): string {
+  return tildeAll([tool.name, tool.source].filter(Boolean).join(" · "));
+}
+
+function renderExpandedToolHeader(tool: ToolExpanded, tokenLayout: TokenLabelLayout, theme: Theme, width: number): string {
+  const maxWidth = Math.max(40, width);
+  const indent = "    ";
+  const gap = 2;
+  const token = estimatedTokenField(tool.tokens, tokenLayout);
+  const sourceWidth = Math.max(12, maxWidth - indent.length - gap - tokenLayout.fieldWidth);
+  const label = middleTruncatePath(expandedToolLabel(tool), sourceWidth);
+  const used = indent.length + stripAnsi(label).length + tokenLayout.fieldWidth;
+  return `${indent}${styledText(label, (value) => theme.fg("text", value))}${" ".repeat(Math.max(gap, maxWidth - used))}${orange(token)}`;
+}
+
 function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpanded[] }, theme: Theme, width: number): string[] {
   const out: string[] = [];
+  const tokenLayout = tokenLabelLayout(content.tools.map((tool) => tool.tokens));
   for (const note of content.notes) {
     for (const line of wrapPlainText(note, Math.max(24, width - 4), 4)) out.push(`    ${theme.fg("dim", line)}`);
   }
   for (const tool of content.tools) {
     out.push("");
-    const head = `    ${styledText(tool.name, (value) => theme.bold(value))}  ${orange(`${estimatedTokenLabel(tool.tokens)} tokens`)}`;
-    const sourceWidth = Math.max(20, Math.max(40, width) - stripAnsi(head).length - 2);
-    const source = middleTruncatePath(tildeAll(tool.source), sourceWidth);
-    out.push(joinLeftRight(head, theme.fg("dim", source), Math.max(40, width)));
+    out.push(renderExpandedToolHeader(tool, tokenLayout, theme, width));
     if (tool.description && tool.description !== "(no description)") {
       for (const line of wrapPlainText(tool.description, Math.max(24, width - 6), 3)) {
         out.push(`      ${theme.fg("dim", line)}`);
@@ -1388,14 +1429,14 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
   return out;
 }
 
-function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme, tokenWidth = 0): string | undefined {
+function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme, tokenLayout?: TokenLabelLayout): string | undefined {
   if (usage.tokens === null) return undefined;
   const percent = formatPercent(usage.percent);
   const window = usage.contextWindow > 0 ? compactTokenNumber(usage.contextWindow) : undefined;
   const details = percent && window
     ? `(${percent} / ${window} ctx)`
     : "(Pi usage)";
-  return `  ${orange(theme.bold(`${padLabel(label)}${exactTokenLabel(usage.tokens, tokenWidth)} tokens`))} ${theme.fg("dim", details)}`;
+  return `  ${orange(theme.bold(`${padLabel(label)}${exactTokenLabel(usage.tokens, tokenLayout)} tokens`))} ${theme.fg("dim", details)}`;
 }
 
 type SessionEstimate = {
@@ -1429,26 +1470,26 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
   };
 }
 
-function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, tokenWidth = 0): string[] {
+function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, tokenLayout?: TokenLabelLayout): string[] {
   const estimate = buildSessionEstimate(snapshot);
   if (!snapshot.session || !estimate) return [];
   const source = estimate.totalSource === "pi" ? "(Pi current - harness)" : "(heuristic fallback)";
   const rows = [
     "",
-    renderTokenTotalRow("Total session", estimate.totalTokens, theme, source, tokenWidth),
+    renderTokenTotalRow("Total session", estimate.totalTokens, theme, source, tokenLayout),
     `    ${theme.fg("dim", `of which approx. visible buckets use chars/${formatDenominator(estimate.denominator)}; other/reasoning is residual`)}`,
-    renderEstimatedTokenRow("Tool outputs", estimate.toolOutputTokens, snapshot.session.toolOutputChars, theme, formatDenominatorDetail(estimate.denominator), tokenWidth),
-    renderEstimatedTokenRow("Messages", estimate.messageTokens, snapshot.session.messageChars, theme, formatDenominatorDetail(estimate.denominator), tokenWidth),
-    renderEstimatedTokenRow("Other / reasoning", estimate.otherTokens, undefined, theme, "residual", tokenWidth),
+    renderEstimatedTokenRow("Tool outputs", estimate.toolOutputTokens, snapshot.session.toolOutputChars, theme, formatDenominatorDetail(estimate.denominator), tokenLayout),
+    renderEstimatedTokenRow("Messages", estimate.messageTokens, snapshot.session.messageChars, theme, formatDenominatorDetail(estimate.denominator), tokenLayout),
+    renderEstimatedTokenRow("Other / reasoning", estimate.otherTokens, undefined, theme, "residual", tokenLayout),
   ];
   const requestTotal = snapshot.contextUsage
-    ? renderContextUsageTotalRow("Total request", snapshot.contextUsage, theme, tokenWidth)
+    ? renderContextUsageTotalRow("Total request", snapshot.contextUsage, theme, tokenLayout)
     : undefined;
   if (requestTotal) rows.push(requestTotal);
   return rows;
 }
 
-function summaryTokenWidth(snapshot: PrefixSnapshot): number {
+function summaryTokenWidth(snapshot: PrefixSnapshot): TokenLabelLayout {
   const values = [...snapshot.sections.map(sectionTokens), totalTokens(snapshot)];
   const sessionEstimate = buildSessionEstimate(snapshot);
   if (sessionEstimate) values.push(
@@ -1458,11 +1499,11 @@ function summaryTokenWidth(snapshot: PrefixSnapshot): number {
     sessionEstimate.otherTokens,
   );
   if (typeof snapshot.contextUsage?.tokens === "number") values.push(snapshot.contextUsage.tokens);
-  return estimatedTokenLabelWidth(values);
+  return tokenLabelLayout(values);
 }
 
-function alignCountLabel(countLabel: string, tokens: number, tokenWidth: number): string {
-  return countLabel.replace(/^~\d+k tokens/, `${estimatedTokenLabel(tokens, tokenWidth)} tokens`);
+function alignCountLabel(countLabel: string, tokens: number, tokenLayout: TokenLabelLayout): string {
+  return countLabel.replace(/^\s*~\d+(?:\.\d)?k tokens/, `${estimatedTokenLabel(tokens, tokenLayout)} tokens`);
 }
 
 function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
@@ -1477,33 +1518,76 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
   return lines;
 }
 
-function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] {
-  const nameWidth = Math.min(26, Math.max(...rows.map((row) => row.name.length)));
-  const tokenStrings = rows.map((row) => estimatedTokenLabel(row.tokens));
-  const tokenWidth = Math.max(...tokenStrings.map((token) => token.length));
-  const descWidth = Math.max(24, width - (4 + nameWidth + 2 + tokenWidth + 2));
-  return rows.map((row, index) => {
-    const name = row.name.length > nameWidth
-      ? `${row.name.slice(0, nameWidth - 1)}…`
-      : row.name.padEnd(nameWidth, " ");
-    const token = tokenStrings[index].padStart(tokenWidth, " ");
+type CompactLayout = { labelWidth: number; tokenLayout: TokenLabelLayout };
+
+function compactLabel(label: string, width: number): string {
+  if (label.length > width) return `${label.slice(0, Math.max(0, width - 1))}…`;
+  return label.padEnd(width, " ");
+}
+
+function numericRowTokens(rows: ScanRow[]): number[] {
+  return rows.flatMap((row) => typeof row.tokens === "number" ? [row.tokens] : []);
+}
+
+function compactLayout(snapshot: PrefixSnapshot): CompactLayout {
+  const rows = snapshot.sections.flatMap((section) => section.compactRows ?? []);
+  const labels = [
+    ...snapshot.sections.map((section) => section.title),
+    ...rows.map((row) => row.name),
+    "Total harness",
+  ];
+  const labelWidth = Math.min(26, Math.max(0, ...labels.map((label) => label.length)));
+  const tokenLayout = tokenLabelLayout([
+    ...snapshot.sections.map(sectionTokens),
+    ...numericRowTokens(rows),
+    totalTokens(snapshot),
+  ]);
+  return { labelWidth, tokenLayout };
+}
+
+function inactiveTokenField(layout: TokenLabelLayout): string {
+  return "-".padStart(Math.max(1, layout.unitWidth + 1)).padEnd(Math.max(layout.fieldWidth, layout.unitWidth + 1, 1), " ");
+}
+
+function renderScanRows(rows: ScanRow[], theme: Theme, width: number, layout?: CompactLayout): string[] {
+  const labelWidth = layout?.labelWidth ?? Math.min(26, Math.max(...rows.map((row) => row.name.length)));
+  const tokenLayout = layout?.tokenLayout ?? tokenLabelLayout(numericRowTokens(rows));
+  const tokenWidth = Math.max(tokenLayout.fieldWidth, tokenLayout.unitWidth + 1, 1);
+  const effectiveTokenLayout = { ...tokenLayout, fieldWidth: tokenWidth };
+  const descWidth = Math.max(24, width - (4 + labelWidth + 2 + tokenWidth + 2));
+  return rows.map((row) => {
+    const name = compactLabel(row.name, labelWidth);
     const desc = row.desc ? singleLine(row.desc, descWidth) : "";
+    const token = typeof row.tokens === "number"
+      ? estimatedTokenField(row.tokens, effectiveTokenLayout)
+      : inactiveTokenField(effectiveTokenLayout);
+    if (row.inactive) {
+      return theme.fg("dim", `    ${name}  ${token}${desc ? `  ${desc}` : ""}`);
+    }
     return `    ${styledText(name, (value) => theme.fg("text", value))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
+function renderCompactTotalRow(snapshot: PrefixSnapshot, theme: Theme, layout: CompactLayout): string {
+  const label = compactLabel("Total harness", layout.labelWidth + 2);
+  const token = `${estimatedTokenLabel(totalTokens(snapshot), layout.tokenLayout)} tokens`;
+  return `  ${orange(theme.bold(`${label}  ${token}`))} ${theme.fg("dim", `(${compactNumber(totalChars(snapshot))} chars)`)}`;
+}
+
 function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "compact", theme);
-  const tokenWidth = summaryTokenWidth(snapshot);
+  const layout = compactLayout(snapshot);
   lines.push(`  ${theme.fg("dim", "Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail")}`);
   for (const section of snapshot.sections) {
     const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `  ${orange("▸")} ${renderSectionTitle(section, (value) => theme.bold(value))}  ${theme.fg("dim", alignCountLabel(countLabel, sectionTokens(section), tokenWidth))}`);
+    const title = compactLabel(section.title, layout.labelWidth);
+    lines.push("", `  ${orange("▸")} ${styledText(title, (value) => theme.bold(value))}  ${theme.fg("dim", alignCountLabel(countLabel, sectionTokens(section), layout.tokenLayout))}`);
     if (section.compactRows && section.compactRows.length > 0) {
-      lines.push(...renderScanRows(section.compactRows, theme, width));
+      lines.push(...renderScanRows(section.compactRows, theme, width, layout));
     }
   }
-  lines.push("", renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`, tokenWidth), ...renderSessionRows(snapshot, theme, tokenWidth));
+  const sessionTokenWidth = summaryTokenWidth(snapshot);
+  lines.push("", renderCompactTotalRow(snapshot, theme, layout), ...renderSessionRows(snapshot, theme, sessionTokenWidth));
   return lines;
 }
 
