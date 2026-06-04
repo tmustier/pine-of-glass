@@ -9,7 +9,7 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 
 ## Installation
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
-- From npm (installs both `contextimate` and `traceline`): `pi install npm:pi-contextimate`
+- From npm (installs both `contextimate` and `traceline`): `pi install npm:pine-of-glass`
 
 ## Screenshots
 ### [Contextimate](./extensions/pi-contextimate)

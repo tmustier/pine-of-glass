@@ -7,13 +7,13 @@
 Install from npm:
 
 ```bash
-pi install npm:pi-contextimate
+pi install npm:pine-of-glass
 ```
 
 Try it for one run without installing:
 
 ```bash
-pi -e npm:pi-contextimate
+pi -e npm:pine-of-glass
 ```
 
 For local development from a clone:

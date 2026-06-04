@@ -44,10 +44,10 @@ The discriminating part of a row usually lives at the **tail** — the filename 
 
 ## Install
 
-From npm (published as part of the `pi-contextimate` package):
+From npm (published as part of the `pine-of-glass` package):
 
 ```bash
-pi install npm:pi-contextimate
+pi install npm:pine-of-glass
 ```
 
 For local development from a clone:
