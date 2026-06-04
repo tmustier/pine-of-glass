@@ -1,6 +1,6 @@
 {
   "name": "pi-contextimate",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Observability extensions for the Pi coding agent",
   "license": "MIT",
   "type": "module",
@@ -46,7 +46,7 @@
     "access": "public"
   },
   "bin": {
-    "pi-contextimate-probe-prefix": "./scripts/contextimate/probe-live-prefix.mjs",
-    "pi-contextimate-evaluate-transcripts": "./scripts/contextimate/evaluate-transcripts.mjs"
+    "pi-contextimate-probe-prefix": "scripts/contextimate/probe-live-prefix.mjs",
+    "pi-contextimate-evaluate-transcripts": "scripts/contextimate/evaluate-transcripts.mjs"
   }
 }
