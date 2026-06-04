@@ -1,7 +1,7 @@
 import type { Component } from "@earendil-works/pi-tui";
 import type { ContextUsage, ExtensionAPI, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { hyperlink, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -167,8 +167,6 @@ const CYAN = "\x1b[38;2;110;200;255m";
 const GREEN = "\x1b[38;2;135;210;140m";
 const MUTED = "\x1b[38;2;145;145;145m";
 const DIM = "\x1b[2m";
-const UNDERLINE = "\x1b[4m";
-const NO_UNDERLINE = "\x1b[24m";
 const RESET = "\x1b[0m";
 const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
 const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
@@ -261,7 +259,7 @@ function fileHref(filePath: string): string | undefined {
 
 function linkText(label: string, href?: string): string {
   if (!href) return label;
-  return `\x1b]8;;${safeOscHref(href)}\x07${UNDERLINE}${label}${NO_UNDERLINE}\x1b]8;;\x07`;
+  return hyperlink(label, safeOscHref(href));
 }
 
 const URL_RE = /https?:\/\/[^\s"'<>]+/g;

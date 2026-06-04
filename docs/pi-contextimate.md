@@ -14,7 +14,7 @@ The output is an inspector, not a billing ledger. The section rows should be clo
 
 - **Summary** — one row per category (system prompt, context files, skills, tools, session) with its token estimate.
 - **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row. Skill names link to their `SKILL.md`; AGENTS/context section names link to the source file.
-- **Expanded** — adds deep detail: counting method/caveats and sources, plus syntax-highlighted minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens. Paths and URLs in expanded detail rows are OSC-8 hyperlinks where the terminal supports them.
+- **Expanded** — adds deep detail: counting method/caveats and sources, plus syntax-highlighted minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens. Paths and URLs in expanded detail rows use unobtrusive OSC-8 hyperlinks where the terminal supports them; there is no extra underline styling.
 
 Summary and compact never dump raw content. Expanded shows minified tool-definition JSON; the system prompt and context files stay summarized (raw chars + short preview).
 
