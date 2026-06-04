@@ -17,10 +17,13 @@ import { join } from "node:path";
  *
  * One-line rendering reuses pi's native tool call renderer, so visual defaults
  * (bold command name, accent paths/backticks, warning line ranges, etc.) drift with pi.
- * If the invocation does not fit the terminal width, it is truncated with `...`; once a
- * result exists, a right-aligned `(chars x.xk)` result-size suffix is reserved at the end.
- * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
- * between consecutive tools.
+ * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with a
+ * dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
+ * operative end of a command — because that is where the discriminating information lives;
+ * the cut snaps to a nearby `/` or space. Plain file reads additionally dim the directory
+ * so the basename stands out. Once a result exists, a right-aligned `(chars x.xk)`
+ * result-size suffix is reserved at the end. Spacing: one blank line before a tool group
+ * (restoring the spacer pi drops), none between consecutive tools.
  *
  * Nothing in pi's node_modules is modified, so this survives `pi update`.
  */
@@ -48,8 +51,11 @@ const TOOL_BULLET = "›";
 const TOOL_AFTER_BULLET = " ";
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const ONE_LINE_ELLIPSIS = "...";
-const TRACELINE_PATCH_VERSION = 6;
+const ONE_LINE_ELLIPSIS = "…";
+const TRACELINE_PATCH_VERSION = 7;
+const MIN_HEAD_COLS = 6;
+const TAIL_RATIO = 0.55;
+const SNAP_WINDOW = 8;
 
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
 
@@ -170,16 +176,77 @@ function resultCharSuffix(comp: any): string {
   return chars === undefined ? "" : `${MUTED_GREY}(chars ${formatCharCount(chars)})${RESET}`;
 }
 
+// Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
+// width (e.g. bash `cd /Users/me/... && …` → `cd ~/... && …`). Safe on ANSI strings: the
+// home path is contiguous text and never contains escape codes.
+function tildify(text: string): string {
+  const home = homedir();
+  return home ? text.split(home).join("~") : text;
+}
+
+function isVisibleBoundary(ch: string): boolean {
+  return ch === "/" || ch === " ";
+}
+
+// ANSI-aware middle truncation that protects the *tail* of the line — the basename +
+// :line-range for a path, or the operative end of a command — because that is where the
+// information distinguishing one row from the next lives. The cut snaps to a nearby "/"
+// or space boundary, and the ellipsis is dimmed so it reads as a UI marker rather than as
+// part of the path/command. Falls back to tail truncation only when the width is too
+// small to keep both ends.
+function middleTruncate(line: string, width: number): string {
+  const maxWidth = Math.max(1, width);
+  if (visibleWidth(line) <= maxWidth) return line;
+
+  const vis = stripAnsi(line);
+  const visLen = vis.length;
+  const budget = Math.max(1, maxWidth - 1); // reserve one column for the ellipsis
+
+  const maxTail = Math.min(budget - MIN_HEAD_COLS, Math.max(12, Math.floor(budget * TAIL_RATIO)));
+  if (maxTail < 1) return truncateToWidth(line, maxWidth, ONE_LINE_ELLIPSIS);
+
+  // Longest tail that fits `maxTail` and starts at a separator, so it reads as `…/seg`.
+  let tailStart = -1;
+  for (let i = Math.max(0, visLen - maxTail); i < visLen; i++) {
+    if (isVisibleBoundary(vis[i])) {
+      tailStart = i;
+      break;
+    }
+  }
+  if (tailStart < 0) tailStart = visLen - maxTail; // no boundary in range: keep the end
+
+  const dimEllipsis = `${MUTED_GREY}${ONE_LINE_ELLIPSIS}${RESET}`;
+  const tailRaw = line.slice(rawIndexAtVisibleIndex(line, tailStart));
+
+  let headEnd = budget - (visLen - tailStart);
+  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
+
+  // Snap the head back to a nearby boundary so the ellipsis lands on a clean edge: keep a
+  // trailing "/" on the head side, drop a trailing space. Search from the last kept char
+  // inward so keeping the "/" can never push the head past its budget.
+  for (let i = headEnd - 1; i >= Math.max(0, headEnd - SNAP_WINDOW); i--) {
+    if (isVisibleBoundary(vis[i])) {
+      headEnd = vis[i] === "/" ? i + 1 : i;
+      break;
+    }
+  }
+  headEnd = Math.min(headEnd, tailStart);
+  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
+
+  const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headEnd));
+  return `${headRaw}${RESET}${dimEllipsis}${tailRaw}`;
+}
+
 function fitOneLineAndSuffix(invocation: string, suffix: string, width: number): string {
   const maxWidth = Math.max(1, width);
   const invocationText = invocation.trimEnd();
-  if (!suffix) return truncateToWidth(invocationText, maxWidth, ONE_LINE_ELLIPSIS);
+  if (!suffix) return middleTruncate(invocationText, maxWidth);
 
   const suffixWidth = visibleWidth(suffix);
   if (suffixWidth >= maxWidth) return truncateToWidth(suffix, maxWidth, ONE_LINE_ELLIPSIS);
 
   const invocationWidth = Math.max(0, maxWidth - suffixWidth - 1);
-  const fittedInvocation = invocationWidth > 0 ? truncateToWidth(invocationText, invocationWidth, ONE_LINE_ELLIPSIS) : "";
+  const fittedInvocation = invocationWidth > 0 ? middleTruncate(invocationText, invocationWidth) : "";
   const gapWidth = Math.max(1, maxWidth - visibleWidth(fittedInvocation) - suffixWidth);
   return `${fittedInvocation}${" ".repeat(gapWidth)}${suffix}`;
 }
@@ -375,10 +442,29 @@ function fallbackInvocationLine(comp: any): string {
   return body.replace(/\s+/g, " ").trim() || verb;
 }
 
+// Emphasis for plain file reads: dim the directory so the basename (which file) and the
+// :line-range (how much of it) stand out. Applied only when the native row is a bare
+// `read <path>[:range]`; rows with a secondary label (resource / [skill]) keep native.
+function pathEmphasisLine(comp: any, nativeColored: string): string | undefined {
+  if (toolLabel(comp?.toolName) !== "read") return undefined;
+  const path = comp?.args?.path;
+  if (typeof path !== "string" || path.length === 0) return undefined;
+  const tildePath = tildify(path);
+  const lastSlash = tildePath.lastIndexOf("/");
+  if (lastSlash < 0) return undefined;
+  if (!stripAnsi(nativeColored).trim().startsWith(`read ${tildePath}`)) return undefined;
+  const dir = tildePath.slice(0, lastSlash + 1);
+  const base = tildePath.slice(lastSlash + 1);
+  const range = lineRange(comp?.args);
+  return `${statusColor(comp)}${BOLD}read${BOLD_OFF}${RESET} ${MUTED_GREY}${dir}${RESET}${base}${MUTED_GREY}${range}${RESET}`;
+}
+
 function oneLine(comp: any, width: number): string {
   const lineWidth = Math.max(1, width);
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
-  const invocation = nativeInvocationLine(comp) ?? `${statusColor(comp)}${fallbackInvocationLine(comp)}${RESET}`;
+  const native = nativeInvocationLine(comp);
+  const base = (native && pathEmphasisLine(comp, native)) ?? native ?? `${statusColor(comp)}${fallbackInvocationLine(comp)}${RESET}`;
+  const invocation = tildify(base);
   const fitted = fitOneLineAndSuffix(invocation, resultCharSuffix(comp), available);
   return truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ONE_LINE_ELLIPSIS);
 }
