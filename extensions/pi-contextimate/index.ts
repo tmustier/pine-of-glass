@@ -1,7 +1,7 @@
 import type { Component } from "@earendil-works/pi-tui";
 import type { ContextUsage, ExtensionAPI, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -31,11 +31,13 @@ type ScanRow = {
   name: string;
   tokens: number;
   desc?: string;
+  href?: string;
 };
 
 type PrefixSection = {
   id: string;
   title: string;
+  href?: string;
   content: string;
   countLabel?: string;
   effectiveTokens?: number;
@@ -244,8 +246,47 @@ function compactPath(filePath: string): string {
   return filePath;
 }
 
-function styledText(label: string, style: (text: string) => string = (text) => text): string {
-  return style(label);
+function fileHref(filePath: string): string | undefined {
+  if (!filePath) return undefined;
+  const expanded = filePath.startsWith("~/") ? resolve(homedir(), filePath.slice(2)) : filePath;
+  if (!expanded.startsWith("/")) return undefined;
+  return pathToFileURL(expanded).href;
+}
+
+function escapeMarkdownLabel(label: string): string {
+  return label.replace(/[\\[\]]/g, "\\$&");
+}
+
+function escapeMarkdownHref(href: string): string {
+  return href.replace(/[\x00-\x1f\x7f<>]/g, (char) => encodeURIComponent(char));
+}
+
+function markdownInlineTheme(theme: Theme, style: (text: string) => string) {
+  const plain = (text: string) => style(text);
+  return {
+    heading: plain,
+    link: plain,
+    linkUrl: (text: string) => theme.fg("dim", text),
+    code: plain,
+    codeBlock: plain,
+    codeBlockBorder: plain,
+    quote: plain,
+    quoteBorder: plain,
+    hr: plain,
+    listBullet: plain,
+    bold: (text: string) => theme.bold(text),
+    italic: (text: string) => theme.italic(text),
+    underline: (text: string) => text,
+    strikethrough: plain,
+    highlightCode: (code: string) => code.split("\n").map(plain),
+  };
+}
+
+function styledText(label: string, style: (text: string) => string = (text) => text, theme?: Theme, href?: string): string {
+  if (!href || !theme) return style(label);
+  const markdown = `[${escapeMarkdownLabel(label)}](${escapeMarkdownHref(href)})`;
+  const rendered = new Markdown(markdown, 0, 0, markdownInlineTheme(theme, style)).render(Math.max(1, visibleWidth(label)));
+  return rendered[0] || style(label);
 }
 
 function stylePathsAndUrls(text: string, style: (text: string) => string = (value) => value): string {
@@ -353,6 +394,7 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
     sections.push({
       id: `context:${filePath}`,
       title,
+      href: fileHref(filePath),
       content: body,
       denominator,
       countLabel: formatCount(body.length, denominator),
@@ -388,7 +430,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       countLabel: formatCount(content.length, denominator),
       compactRows: [...skills]
         .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
-        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description })),
+        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description, href: fileHref(skill.location) })),
       expandedLines,
     },
   };
@@ -1248,9 +1290,10 @@ function renderEstimatedTokenRow(label: string, tokens: number, chars: number | 
   return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `~${compactTokenNumber(tokens)} tokens${suffix}`)}`;
 }
 
-function renderSectionTitle(section: PrefixSection, style: (text: string) => string, padded = false): string {
-  const title = padded ? padLabel(section.title) : section.title;
-  return styledText(title, style);
+function renderSectionTitle(section: PrefixSection, theme: Theme, style: (text: string) => string, padded = false): string {
+  const title = styledText(section.title, style, theme, section.href);
+  if (!padded) return title;
+  return title + style(" ".repeat(Math.max(0, LABEL_WIDTH - visibleWidth(section.title))));
 }
 
 function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
@@ -1347,7 +1390,7 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
   const lines = renderHeader(snapshot, "summary", theme);
   lines.push("");
   for (const section of snapshot.sections) {
-    lines.push(`  ${renderSectionTitle(section, (value) => theme.fg("muted", value), true)}${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
+    lines.push(`  ${renderSectionTitle(section, theme, (value) => theme.fg("muted", value), true)}${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
   }
   lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
   return lines;
@@ -1361,10 +1404,12 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] 
   return rows.map((row, index) => {
     const name = row.name.length > nameWidth
       ? `${row.name.slice(0, nameWidth - 1)}…`
-      : row.name.padEnd(nameWidth, " ");
+      : row.name;
     const token = tokenStrings[index].padStart(tokenWidth, " ");
     const desc = row.desc ? singleLine(row.desc, descWidth) : "";
-    return `    ${styledText(name, (value) => theme.fg("text", value))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+    const linkedName = styledText(name, (value) => theme.fg("text", value), theme, row.href);
+    const padding = " ".repeat(Math.max(0, nameWidth - visibleWidth(name)));
+    return `    ${linkedName}${padding}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
@@ -1373,7 +1418,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   lines.push(`  ${theme.fg("dim", "Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail")}`);
   for (const section of snapshot.sections) {
     const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `  ${orange("▸")} ${renderSectionTitle(section, (value) => theme.bold(value))}  ${theme.fg("dim", countLabel)}`);
+    lines.push("", `  ${orange("▸")} ${renderSectionTitle(section, theme, (value) => theme.bold(value))}  ${theme.fg("dim", countLabel)}`);
     if (section.compactRows && section.compactRows.length > 0) {
       lines.push(...renderScanRows(section.compactRows, theme, width));
     }
@@ -1389,7 +1434,7 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme): string[] {
 
   for (const section of snapshot.sections) {
     const sectionCount = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `${orange("[")}${renderSectionTitle(section, (value) => theme.bold(value))}${theme.fg("dim", ` - ${sectionCount}`)}${orange("]")}`, "");
+    lines.push("", `${orange("[")}${renderSectionTitle(section, theme, (value) => theme.bold(value))}${theme.fg("dim", ` - ${sectionCount}`)}${orange("]")}`, "");
     if (section.expandedLines) {
       lines.push(...section.expandedLines.map((line) => renderExpandedDetailLine(line, theme)));
     } else {
