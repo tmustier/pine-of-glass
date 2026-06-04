@@ -28,6 +28,7 @@ The package manifest points Pi at this extension directory as part of the `pine-
 
 - `[Context Estimator]` renders after Pi's native startup resource sections, leaving Pi's default `[Context]`, `[Skills]`, `[Prompts]`, and `[Extensions]` order untouched.
 - `Ctrl+O` cycles the `[Context Estimator]` view through Pi's native expand/collapse path: summary → compact → expanded.
+- `Ctrl+T` toggles Pi's thinking-block visibility and rebuilds the chat transcript; the estimator watches for that rebuild and re-inserts itself if Pi drops the startup block.
 - `/contextimate` cycles the view.
 - `/contextimate summary`, `/contextimate compact`, and `/contextimate expanded` jump directly to a mode.
 - Compact is a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens, with the counting method shown once on the category header.

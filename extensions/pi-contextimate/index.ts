@@ -146,6 +146,7 @@ type PrefixSnapshot = {
 
 type ContextimateGlobal = typeof globalThis & {
   __piContextimateTui?: any;
+  __piContextimateChat?: any;
   __piContextimateBlock?: StartupContextComponent;
   __piContextimateMode?: ViewMode;
   __piContextimateInstallTimer?: ReturnType<typeof setTimeout>;
@@ -1558,14 +1559,23 @@ function insertionIndexAfterResourceList(chat: any): number {
   return index;
 }
 
+function isContextBlockInstalled(block: StartupContextComponent): boolean {
+  const chat = g.__piContextimateChat;
+  return Array.isArray(chat?.children) && chat.children.includes(block);
+}
+
 function installContextBlock(block: StartupContextComponent): boolean {
   const tui = g.__piContextimateTui;
-  const chat = findResourceChatContainer(tui);
+  const chat = findResourceChatContainer(tui) ?? g.__piContextimateChat;
   if (!chat || !Array.isArray(chat.children)) return false;
+
+  g.__piContextimateChat = chat;
+  if (chat.children.includes(block)) return true;
 
   removeExistingPrefixBlocks(chat);
   const insertAfter = insertionIndexAfterResourceList(chat);
-  chat.children.splice(insertAfter + 1, 0, block);
+  const insertAt = insertAfter >= 0 ? insertAfter + 1 : 0;
+  chat.children.splice(insertAt, 0, block);
   tui?.requestRender?.(true);
   return true;
 }
@@ -1615,9 +1625,18 @@ export default function piContextimate(pi: ExtensionAPI) {
 
     ctx.ui.setWidget("__pi_contextimate_capture", (tui: any) => {
       g.__piContextimateTui = tui;
-      return { render: () => [] as string[], invalidate: () => {} };
+      return {
+        render: () => {
+          const activeBlock = g.__piContextimateBlock;
+          // Ctrl+T rebuilds Pi's chat transcript to toggle thinking visibility,
+          // which can drop startup-only chat children. Keep this zero-line widget
+          // mounted so it can quietly reinsert the estimator after such rebuilds.
+          if (activeBlock && !isContextBlockInstalled(activeBlock)) scheduleInstall(activeBlock);
+          return [] as string[];
+        },
+        invalidate: () => {},
+      };
     });
-    ctx.ui.setWidget("__pi_contextimate_capture", undefined);
 
     scheduleInstall(block);
 
