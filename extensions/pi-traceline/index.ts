@@ -23,8 +23,8 @@ import { join } from "node:path";
  * the cut snaps to a nearby `/` or space. Plain file reads additionally dim the directory
  * so the basename stands out. Once a result exists, a right-aligned `(chars x.xk)`
  * result-size suffix is reserved at the end. Spacing: one blank line before a tool group
- * (restoring the spacer pi drops), none between consecutive tools. Clicking a tool row
- * toggles that row only, without changing Pi's global tool expansion state.
+ * (restoring the spacer pi drops), none between consecutive tools. One-shot click mode
+ * toggles a clicked row only, without changing Pi's global tool expansion state.
  *
  * Nothing in pi's node_modules is modified, so this survives `pi update`.
  */
@@ -50,6 +50,8 @@ type TracelineGlobal = typeof globalThis & {
   __tracelineHitMap?: ToolHit[];
   __tracelineTotalRows?: number;
   __tracelineClickEnabled?: boolean;
+  __tracelineClickOneShot?: boolean;
+  __tracelineClickArmTimer?: ReturnType<typeof setTimeout>;
   __tracelineMouseReportingEnabled?: boolean;
 };
 const g = globalThis as TracelineGlobal;
@@ -142,11 +144,24 @@ function displayMode(): ToolDisplayMode {
 
 // --- click-to-expand hit testing ------------------------------------------------------
 
+function envEnablesPersistentClicks(): boolean {
+  const value = (process.env.PI_TRACELINE_CLICK ?? "").toLowerCase();
+  return value === "1" || value === "true" || value === "on" || value === "yes";
+}
+
 function shouldEnableClicks(): boolean {
   if (g.__tracelineClickEnabled === undefined) {
-    g.__tracelineClickEnabled = process.env.PI_TRACELINE_CLICK !== "0";
+    // Mouse reporting steals wheel/trackpad scrolling from the terminal. Keep it off by
+    // default, unless the user explicitly opts into persistent click handling.
+    g.__tracelineClickEnabled = envEnablesPersistentClicks();
   }
   return g.__tracelineClickEnabled;
+}
+
+function clearClickArmTimer(): void {
+  if (!g.__tracelineClickArmTimer) return;
+  clearTimeout(g.__tracelineClickArmTimer);
+  g.__tracelineClickArmTimer = undefined;
 }
 
 function enableMouseReporting(): void {
@@ -160,6 +175,28 @@ function disableMouseReporting(): void {
   if (!g.__tracelineMouseReportingEnabled) return;
   if (process.stdout.isTTY) process.stdout.write(MOUSE_REPORTING_DISABLE);
   g.__tracelineMouseReportingEnabled = false;
+}
+
+function setClickHandling(enabled: boolean, options: { oneShot?: boolean; ttlMs?: number } = {}): void {
+  clearClickArmTimer();
+  g.__tracelineClickEnabled = enabled;
+  g.__tracelineClickOneShot = enabled && options.oneShot === true;
+
+  if (enabled) {
+    enableMouseReporting();
+    if (g.__tracelineClickOneShot && options.ttlMs && options.ttlMs > 0) {
+      g.__tracelineClickArmTimer = setTimeout(() => {
+        if (g.__tracelineClickOneShot) setClickHandling(false);
+      }, options.ttlMs);
+    }
+  } else {
+    g.__tracelineClickOneShot = false;
+    disableMouseReporting();
+  }
+}
+
+function armClickOnce(ttlMs = 8_000): void {
+  setClickHandling(true, { oneShot: true, ttlMs });
 }
 
 function findContainerPrototype(tui: any): any {
@@ -306,6 +343,7 @@ function handleMouseInput(data: string): { consume?: boolean } | undefined {
   if (isLeftMousePress(mouse)) {
     const comp = toolAtViewportRow(mouse.row);
     if (comp) toggleClickedTool(comp);
+    if (g.__tracelineClickOneShot) setClickHandling(false);
   }
 
   // Always consume mouse escape sequences while reporting is enabled; otherwise raw
@@ -749,8 +787,26 @@ function tryPatch(): void {
 }
 
 export default function piTraceline(pi: ExtensionAPI) {
+  pi.registerShortcut("ctrl+shift+o", {
+    description: "Arm one pi-traceline row click",
+    handler: async (ctx) => {
+      armClickOnce();
+      ctx.ui.notify("pi-traceline click armed for 8s", "info");
+    },
+  });
+
+  pi.registerCommand("traceline-click", {
+    description: "Arm one pi-traceline row click without keeping mouse reporting on",
+    handler: async (args, ctx) => {
+      const seconds = Number.parseFloat(args.trim());
+      const ttlMs = Number.isFinite(seconds) && seconds > 0 ? Math.max(500, seconds * 1000) : 8_000;
+      armClickOnce(ttlMs);
+      ctx.ui.notify(`pi-traceline click armed for ${Math.round(ttlMs / 1000)}s`, "info");
+    },
+  });
+
   pi.registerCommand("traceline-clicks", {
-    description: "Toggle pi-traceline click-to-expand tool rows (on/off/toggle)",
+    description: "Toggle persistent pi-traceline click-to-expand rows (captures terminal scroll)",
     handler: async (args, ctx) => {
       const value = args.trim().toLowerCase();
       const next =
@@ -760,10 +816,13 @@ export default function piTraceline(pi: ExtensionAPI) {
             ? false
             : !shouldEnableClicks();
 
-      g.__tracelineClickEnabled = next;
-      if (next) enableMouseReporting();
-      else disableMouseReporting();
-      ctx.ui.notify(`pi-traceline click-to-expand ${next ? "enabled" : "disabled"}`, "info");
+      setClickHandling(next);
+      ctx.ui.notify(
+        next
+          ? "pi-traceline persistent clicks enabled; terminal scroll may be captured"
+          : "pi-traceline persistent clicks disabled; terminal scroll restored",
+        "info",
+      );
     },
   });
 
@@ -808,6 +867,6 @@ export default function piTraceline(pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;
-    disableMouseReporting();
+    setClickHandling(false);
   });
 }

@@ -24,7 +24,7 @@ When tool rows are collapsed, each one renders as a single line:
 - **What context Pi got** - which files it read and how much of them (`read ... :1-20`), which skills it invoked (`[skill] ...`), which subagents ran.
 - **Which outputs were massive** - a right-aligned `(chars x.xk)` result-size suffix per row makes an over-large tool output (often a sign of a tool or guidance issue) jump out.
 - **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error.
-- **Selective expansion** - click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
+- **Selective expansion** - arm a one-shot click and then click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
 
 Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults. One blank line precedes a group of tool calls; consecutive tool calls stay tight.
 
@@ -60,14 +60,15 @@ Or add it to your Pi config's extension list pointing at this directory. If you 
   - **reasoning shown** → native tool rows, untouched (full detail).
   - **reasoning hidden** → each tool row collapses to one trace line.
 - So one keystroke flips the whole turn between "full detail" and "trace line", and back again when you want to expand.
-- Click any tool row to expand/collapse only that row. If mouse reporting interferes with terminal text selection, run `/traceline-clicks off`; `/traceline-clicks on` re-enables it. You can also start Pi with `PI_TRACELINE_CLICK=0` to keep click handling off by default.
+- Plain terminal scrolling stays available by default. To expand/collapse one row with the mouse, press `Ctrl+Shift+O` or run `/traceline-click`, then click the row within 8 seconds.
+- If you prefer always-on click handling, run `/traceline-clicks on`; this uses terminal mouse reporting and may capture wheel/trackpad scrolling until `/traceline-clicks off`. You can also start Pi with `PI_TRACELINE_CLICK=1` to opt into persistent click handling by default.
 
 The collapse state is read from a live assistant row (falling back to `~/.pi/agent/settings.json`'s `hideThinkingBlock`), so the tool view can never desync from the reasoning view.
 
 ## How it works
 
 - On `session_start` it captures the real TUI and wraps `requestRender`, then patches the shared tool-row component prototype's `render` the moment a tool row exists. The patch is versioned and idempotent across reloads and session resumes.
-- It also wraps the captured TUI render path to build a row-to-tool hit map, enables SGR mouse reporting, and consumes SGR click events through Pi's public raw-input hook.
+- It also wraps the captured TUI render path to build a row-to-tool hit map. One-shot click mode briefly enables SGR mouse reporting and consumes SGR click events through Pi's public raw-input hook, then disables mouse reporting again so terminal scrolling works normally.
 - While reasoning is shown, `render` defers to Pi's original implementation unchanged. While reasoning is hidden, it emits the single trace line unless that individual row has been clicked open.
 - Any failure inside the one-line path falls back to Pi's original `render`, so the extension can never break a frame.
 - Nothing in Pi's `node_modules` is modified, so it survives `pi update`.
