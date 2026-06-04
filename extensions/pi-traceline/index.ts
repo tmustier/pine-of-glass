@@ -18,24 +18,39 @@ import { join } from "node:path";
  * One-line rendering reuses pi's native tool call renderer, so visual defaults
  * (bold command name, accent paths/backticks, warning line ranges, etc.) drift with pi.
  * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with a
- * dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
+ * dimmed `...` so the tail survives — the basename + `:line-range` for a path, or the
  * operative end of a command — because that is where the discriminating information lives;
  * the cut snaps to a nearby `/` or space. Plain file reads additionally dim the directory
  * so the basename stands out. Once a result exists, a right-aligned `(chars x.xk)`
  * result-size suffix is reserved at the end. Spacing: one blank line before a tool group
- * (restoring the spacer pi drops), none between consecutive tools.
+ * (restoring the spacer pi drops), none between consecutive tools. Clicking a tool row
+ * toggles that row only, without changing Pi's global tool expansion state.
  *
  * Nothing in pi's node_modules is modified, so this survives `pi update`.
  */
 
 type ToolDisplayMode = "native" | "oneLine";
 
+type ToolHit = {
+  start: number;
+  end: number;
+  comp: any;
+};
+
 type TracelineGlobal = typeof globalThis & {
   __tracelinePatched?: boolean;
   __tracelinePatchVersion?: number;
+  __tracelineContainerPatchVersion?: number;
   __tracelineTui?: any;
   __tracelineChat?: any;
   __tracelineInputUnsubscribe?: () => void;
+  __tracelineLayoutActive?: boolean;
+  __tracelineLayoutRow?: number;
+  __tracelineLayoutHits?: ToolHit[];
+  __tracelineHitMap?: ToolHit[];
+  __tracelineTotalRows?: number;
+  __tracelineClickEnabled?: boolean;
+  __tracelineMouseReportingEnabled?: boolean;
 };
 const g = globalThis as TracelineGlobal;
 
@@ -51,11 +66,14 @@ const TOOL_BULLET = "›";
 const TOOL_AFTER_BULLET = " ";
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const ONE_LINE_ELLIPSIS = "…";
-const TRACELINE_PATCH_VERSION = 7;
+const ONE_LINE_ELLIPSIS = "...";
+const TRACELINE_PATCH_VERSION = 8;
+const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const MIN_HEAD_COLS = 6;
 const TAIL_RATIO = 0.55;
 const SNAP_WINDOW = 8;
+const MOUSE_REPORTING_ENABLE = "\x1b[?1000h\x1b[?1006h";
+const MOUSE_REPORTING_DISABLE = "\x1b[?1000l\x1b[?1006l";
 
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
 
@@ -122,6 +140,179 @@ function displayMode(): ToolDisplayMode {
   return thinkingHidden() ? "oneLine" : "native";
 }
 
+// --- click-to-expand hit testing ------------------------------------------------------
+
+function shouldEnableClicks(): boolean {
+  if (g.__tracelineClickEnabled === undefined) {
+    g.__tracelineClickEnabled = process.env.PI_TRACELINE_CLICK !== "0";
+  }
+  return g.__tracelineClickEnabled;
+}
+
+function enableMouseReporting(): void {
+  if (!shouldEnableClicks() || g.__tracelineMouseReportingEnabled) return;
+  if (!process.stdout.isTTY) return;
+  process.stdout.write(MOUSE_REPORTING_ENABLE);
+  g.__tracelineMouseReportingEnabled = true;
+}
+
+function disableMouseReporting(): void {
+  if (!g.__tracelineMouseReportingEnabled) return;
+  if (process.stdout.isTTY) process.stdout.write(MOUSE_REPORTING_DISABLE);
+  g.__tracelineMouseReportingEnabled = false;
+}
+
+function findContainerPrototype(tui: any): any {
+  let proto = Object.getPrototypeOf(tui);
+  while (proto) {
+    if (proto.constructor?.name === "Container" && typeof proto.render === "function") return proto;
+    proto = Object.getPrototypeOf(proto);
+  }
+  return undefined;
+}
+
+function registerToolHit(comp: any, start: number, end: number): void {
+  if (!g.__tracelineLayoutActive || end < start) return;
+  g.__tracelineLayoutHits?.push({ start, end, comp });
+}
+
+function withLayoutSuppressed<T>(fn: () => T): T {
+  const wasActive = g.__tracelineLayoutActive;
+  g.__tracelineLayoutActive = false;
+  try {
+    return fn();
+  } finally {
+    g.__tracelineLayoutActive = wasActive;
+  }
+}
+
+function patchContainerPrototype(tui: any): void {
+  const proto = findContainerPrototype(tui);
+  if (!proto || proto.__tracelineContainerPatchVersion === TRACELINE_CONTAINER_PATCH_VERSION) {
+    return;
+  }
+
+  const original = proto.__tracelineOriginalRender ?? proto.render;
+  proto.__tracelineOriginalRender = original;
+  proto.render = function (width: number) {
+    if (!g.__tracelineLayoutActive || !Array.isArray(this.children)) {
+      return original.call(this, width);
+    }
+
+    const lines: string[] = [];
+    for (const child of this.children) {
+      const start = g.__tracelineLayoutRow ?? 0;
+      const rendered = typeof child?.render === "function" ? child.render(width) : [];
+      const childLines = Array.isArray(rendered) ? rendered : [];
+      if (isToolRow(child)) registerToolHit(child, start, start + childLines.length - 1);
+      g.__tracelineLayoutRow = start + childLines.length;
+      for (const line of childLines) lines.push(line);
+    }
+    return lines;
+  };
+  proto.__tracelineContainerPatchVersion = TRACELINE_CONTAINER_PATCH_VERSION;
+}
+
+function wrapTuiRender(tui: any): void {
+  if (!tui || tui.__tracelineRenderWrapVersion === TRACELINE_PATCH_VERSION) return;
+
+  const original = tui.__tracelineOriginalRender ?? tui.render;
+  tui.__tracelineOriginalRender = original;
+  tui.render = function (width: number) {
+    if (g.__tracelineLayoutActive) return original.call(this, width);
+
+    g.__tracelineLayoutActive = true;
+    g.__tracelineLayoutRow = 0;
+    g.__tracelineLayoutHits = [];
+    try {
+      const lines = original.call(this, width);
+      g.__tracelineHitMap = g.__tracelineLayoutHits ?? [];
+      g.__tracelineTotalRows = Array.isArray(lines) ? lines.length : 0;
+      return lines;
+    } finally {
+      g.__tracelineLayoutActive = false;
+      g.__tracelineLayoutRow = undefined;
+      g.__tracelineLayoutHits = undefined;
+    }
+  };
+  tui.__tracelineRenderWrapVersion = TRACELINE_PATCH_VERSION;
+}
+
+type SgrMouseEvent = {
+  code: number;
+  col: number;
+  row: number;
+  isPress: boolean;
+};
+
+function parseSgrMouse(data: string): SgrMouseEvent | undefined {
+  const match = data.match(/^\x1b\[<(\d+);(\d+);(\d+)([mM])$/);
+  if (!match) return undefined;
+  return {
+    code: Number.parseInt(match[1]!, 10),
+    col: Number.parseInt(match[2]!, 10),
+    row: Number.parseInt(match[3]!, 10),
+    isPress: match[4] === "M",
+  };
+}
+
+function isLeftMousePress(event: SgrMouseEvent): boolean {
+  if (!event.isPress) return false;
+  if ((event.code & 64) !== 0) return false; // wheel event
+  return (event.code & 3) === 0;
+}
+
+function toolAtViewportRow(row: number): any | undefined {
+  const hits = g.__tracelineHitMap ?? [];
+  if (hits.length === 0) return undefined;
+
+  const totalRows = g.__tracelineTotalRows ?? 0;
+  const terminalRows = Math.max(1, Number(g.__tracelineTui?.terminal?.rows ?? process.stdout.rows ?? 24));
+  const lineIndex = Math.max(0, totalRows - terminalRows) + row - 1;
+
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const hit = hits[i]!;
+    if (lineIndex >= hit.start && lineIndex <= hit.end) return hit.comp;
+  }
+  return undefined;
+}
+
+function toolIsIndividuallyExpanded(comp: any): boolean {
+  return comp?.__tracelineIndividuallyExpanded === true;
+}
+
+function setToolExpanded(comp: any, expanded: boolean): void {
+  comp.__tracelineIndividuallyExpanded = expanded;
+  try {
+    if (typeof comp.setExpanded === "function") comp.setExpanded(expanded);
+    else comp.expanded = expanded;
+    comp.invalidate?.();
+  } catch {
+    /* ignore row-local expansion failures */
+  }
+}
+
+function toggleClickedTool(comp: any): void {
+  const currentlyExpanded = displayMode() === "oneLine" ? toolIsIndividuallyExpanded(comp) : comp?.expanded === true;
+  setToolExpanded(comp, !currentlyExpanded);
+  g.__tracelineTui?.requestRender?.();
+}
+
+function handleMouseInput(data: string): { consume?: boolean } | undefined {
+  if (!shouldEnableClicks()) return undefined;
+  const mouse = parseSgrMouse(data);
+  if (!mouse) return undefined;
+
+  if (isLeftMousePress(mouse)) {
+    const comp = toolAtViewportRow(mouse.row);
+    if (comp) toggleClickedTool(comp);
+  }
+
+  // Always consume mouse escape sequences while reporting is enabled; otherwise raw
+  // CSI bytes can leak into the editor when the click is outside a tool row.
+  return { consume: true };
+}
+
 // --- one-line rendering ---------------------------------------------------------------
 
 // Raw tool name exactly as pi reports it (read, edit, bash, mcp/tool names, etc.).
@@ -177,7 +368,7 @@ function resultCharSuffix(comp: any): string {
 }
 
 // Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
-// width (e.g. bash `cd /Users/me/... && …` → `cd ~/... && …`). Safe on ANSI strings: the
+// width (e.g. bash `cd /Users/me/... && ...` -> `cd ~/... && ...`). Safe on ANSI strings: the
 // home path is contiguous text and never contains escape codes.
 function tildify(text: string): string {
   const home = homedir();
@@ -200,12 +391,13 @@ function middleTruncate(line: string, width: number): string {
 
   const vis = stripAnsi(line);
   const visLen = vis.length;
-  const budget = Math.max(1, maxWidth - 1); // reserve one column for the ellipsis
+  const ellipsisWidth = visibleWidth(ONE_LINE_ELLIPSIS);
+  const budget = Math.max(1, maxWidth - ellipsisWidth); // reserve columns for the ellipsis
 
   const maxTail = Math.min(budget - MIN_HEAD_COLS, Math.max(12, Math.floor(budget * TAIL_RATIO)));
   if (maxTail < 1) return truncateToWidth(line, maxWidth, ONE_LINE_ELLIPSIS);
 
-  // Longest tail that fits `maxTail` and starts at a separator, so it reads as `…/seg`.
+  // Longest tail that fits `maxTail` and starts at a separator, so it reads as `.../seg`.
   let tailStart = -1;
   for (let i = Math.max(0, visLen - maxTail); i < visLen; i++) {
     if (isVisibleBoundary(vis[i])) {
@@ -423,7 +615,7 @@ function colourCommandPrefix(comp: any, line: string): string {
 function nativeInvocationLine(comp: any): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
-  const line = firstVisibleLine(call.render(ONE_LINE_CAPTURE_WIDTH));
+  const line = firstVisibleLine(withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH)));
   return line ? colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))) : undefined;
 }
 
@@ -526,6 +718,14 @@ function patchToolRowPrototype(proto: any): void {
       mode = "native";
     }
     if (mode === "native") return original.call(this, width);
+    if (toolIsIndividuallyExpanded(this)) {
+      try {
+        if (this.expanded !== true && typeof this.setExpanded === "function") this.setExpanded(true);
+      } catch {
+        /* ignore expansion sync failures */
+      }
+      return original.call(this, width);
+    }
     try {
       const line = oneLine(this, width);
       return leadingBlank(this) ? ["", line] : [line];
@@ -549,29 +749,56 @@ function tryPatch(): void {
 }
 
 export default function piTraceline(pi: ExtensionAPI) {
+  pi.registerCommand("traceline-clicks", {
+    description: "Toggle pi-traceline click-to-expand tool rows (on/off/toggle)",
+    handler: async (args, ctx) => {
+      const value = args.trim().toLowerCase();
+      const next =
+        value === "on" || value === "enable" || value === "enabled" || value === "1" || value === "true"
+          ? true
+          : value === "off" || value === "disable" || value === "disabled" || value === "0" || value === "false"
+            ? false
+            : !shouldEnableClicks();
+
+      g.__tracelineClickEnabled = next;
+      if (next) enableMouseReporting();
+      else disableMouseReporting();
+      ctx.ui.notify(`pi-traceline click-to-expand ${next ? "enabled" : "disabled"}`, "info");
+    },
+  });
+
   pi.on("session_start", async (_event, ctx) => {
-    // Capture the real TUI (passed synchronously to the widget factory) and wrap
-    // requestRender so we patch the shared tool-row prototype the moment a tool row
-    // exists. Then remove the throwaway widget so there is no visible artifact.
+    // Capture the real TUI (passed synchronously to the widget factory), then patch only
+    // extension-visible seams: render for hit-map capture, requestRender for delayed
+    // tool-row patching, and raw terminal input for SGR mouse click events. Then remove
+    // the throwaway widget so there is no visible artifact.
     ctx.ui.setWidget("__pi_traceline_capture", (t: any) => {
       g.__tracelineTui = t;
-      if (!t.__tracelineRRWrapped) {
-        const orig = t.requestRender.bind(t);
+      patchContainerPrototype(t);
+      wrapTuiRender(t);
+      if (t.__tracelineRRWrapVersion !== TRACELINE_PATCH_VERSION) {
+        const orig = t.__tracelineOriginalRequestRender ?? t.requestRender.bind(t);
+        t.__tracelineOriginalRequestRender = orig;
         t.requestRender = (force?: boolean) => {
           tryPatch();
           return orig(force);
         };
-        t.__tracelineRRWrapped = true;
+        t.__tracelineRRWrapVersion = TRACELINE_PATCH_VERSION;
       }
+      tryPatch();
       return { render: () => [] as string[], invalidate: () => {} };
     });
     ctx.ui.setWidget("__pi_traceline_capture", undefined);
+    enableMouseReporting();
 
     // Make reload/session-start idempotent: do not stack raw-input listeners.
     // Ctrl+T itself remains Pi-native: Pi toggles reasoning visibility; this extension
-    // only changes how tool rows render while reasoning is hidden.
+    // only changes how tool rows render while reasoning is hidden. Mouse events are
+    // consumed so terminal escape bytes never leak into the editor.
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
+      const mouseResult = handleMouseInput(data);
+      if (mouseResult) return mouseResult;
       if (!matchesKey(data, "ctrl+t")) return undefined;
       if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
       return undefined;
@@ -581,5 +808,6 @@ export default function piTraceline(pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;
+    disableMouseReporting();
   });
 }

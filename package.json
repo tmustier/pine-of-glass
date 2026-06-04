@@ -1,6 +1,6 @@
 {
   "name": "pi-contextimate",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Observability extensions for the Pi coding agent",
   "license": "MIT",
   "type": "module",

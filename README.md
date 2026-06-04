@@ -7,7 +7,7 @@ A single pane of glass for what's happening inside a [Pi](https://github.com/ear
 | Extension | What it does |
 |---|---|
 | [`pi-contextimate`](./extensions/pi-contextimate) | Startup `[Context Estimator]` panel breaking down what is filling the model context window — system prompt, AGENTS.md files, Agent Skills, active tools, and session material. `Ctrl+O` cycles summary → compact → expanded. |
-| [`pi-traceline`](./extensions/pi-traceline) | Collapses each tool call in a turn to one scannable trace line, so the full arc of what Pi did (which path it took, what context it pulled, which outputs ballooned) reads at a glance. Follows Pi's `Ctrl+T` reasoning toggle. |
+| [`pi-traceline`](./extensions/pi-traceline) | Collapses each tool call in a turn to one scannable trace line, so the full arc of what Pi did (which path it took, what context it pulled, which outputs ballooned) reads at a glance. Follows Pi's `Ctrl+T` reasoning toggle and lets you click individual tool rows open. |
 
 Together they answer the two questions you have when you come back to a long-running session: *what's filling my context?* (`pi-contextimate`) and *what did Pi just do?* (`pi-traceline`).
 
