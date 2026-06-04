@@ -6,7 +6,15 @@ Small observability and context management tools for the [Pi coding agent](https
 
 See each extension's own `README.md` for details, and `docs/` for deeper reference.
 
-**Installation**
+## Installation
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
 - npm:
   - `pi install npm:pi-contextimate`
+
+## How they work
+### [Contextimate](./extensions/pi-contextimate)
+<img width="1477" height="589" alt="image" src="https://github.com/user-attachments/assets/8ff81aa2-f61b-4d8d-9507-f455f37c12cc" />
+
+### [Traceline](./extensions/pi-traceline)
+<img width="709" height="409" alt="image" src="https://github.com/user-attachments/assets/4a59fbae-8270-46d3-a4fc-fdf2e5c3ba8c" />
+
