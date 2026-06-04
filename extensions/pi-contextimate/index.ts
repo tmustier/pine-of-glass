@@ -1,7 +1,7 @@
 import type { Component } from "@earendil-works/pi-tui";
 import type { ContextUsage, ExtensionAPI, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-coding-agent";
-import { hyperlink, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -257,9 +257,15 @@ function fileHref(filePath: string): string | undefined {
   return pathToFileURL(expanded).href;
 }
 
-function linkText(label: string, href?: string): string {
-  if (!href) return label;
-  return hyperlink(label, safeOscHref(href));
+function styledLink(label: string, href: string | undefined, style: (text: string) => string = (text) => text): string {
+  const styled = style(label);
+  if (!href) return styled;
+  const safeHref = safeOscHref(href);
+  // BEL-terminated OSC-8 links are more reliable in some terminal/tmux paths,
+  // and Pi's ANSI wrapper preserves the original terminator across wraps.
+  // Keep the link wrapper outside SGR styling so the click target covers the
+  // exact styled label without adding visual underline clutter.
+  return `\x1b]8;;${safeHref}\x07${styled}\x1b]8;;\x07`;
 }
 
 const URL_RE = /https?:\/\/[^\s"'<>]+/g;
@@ -270,16 +276,16 @@ function trimTrailingLinkPunctuation(value: string): { core: string; trailing: s
   return { core: match?.[1] ?? value, trailing: match?.[2] ?? "" };
 }
 
-function linkifyPathsAndUrls(text: string): string {
+function linkifyPathsAndUrls(text: string, style: (text: string) => string = (value) => value): string {
   let out = "";
   let last = 0;
-  const matches: Array<{ start: number; end: number; href: string; text: string }> = [];
+  const matches: Array<{ start: number; end: number; href?: string; text: string }> = [];
   for (const match of text.matchAll(URL_RE)) {
     const raw = match[0] ?? "";
     const { core, trailing } = trimTrailingLinkPunctuation(raw);
     const start = match.index ?? 0;
     matches.push({ start, end: start + core.length, href: core, text: core });
-    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, href: "", text: trailing });
+    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, text: trailing });
   }
   for (const match of text.matchAll(PATH_RE)) {
     const raw = match[0] ?? "";
@@ -288,16 +294,16 @@ function linkifyPathsAndUrls(text: string): string {
     const { core, trailing } = trimTrailingLinkPunctuation(raw);
     const href = fileHref(core);
     if (href) matches.push({ start, end: start + core.length, href, text: core });
-    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, href: "", text: trailing });
+    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, text: trailing });
   }
   matches.sort((a, b) => a.start - b.start || b.end - a.end);
   for (const match of matches) {
     if (match.start < last) continue;
-    out += text.slice(last, match.start);
-    out += match.href ? linkText(match.text, match.href) : match.text;
+    out += style(text.slice(last, match.start));
+    out += styledLink(match.text, match.href, style);
     last = match.end;
   }
-  return out + text.slice(last);
+  return out + style(text.slice(last));
 }
 
 function unescapeXml(value: string): string {
@@ -1297,9 +1303,9 @@ function renderEstimatedTokenRow(label: string, tokens: number, chars: number | 
   return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `~${compactTokenNumber(tokens)} tokens${suffix}`)}`;
 }
 
-function renderSectionTitle(section: PrefixSection, padded = false): string {
+function renderSectionTitle(section: PrefixSection, style: (text: string) => string, padded = false): string {
   const title = padded ? padLabel(section.title) : section.title;
-  return linkText(title, section.href);
+  return styledLink(title, section.href, style);
 }
 
 function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
@@ -1315,7 +1321,7 @@ function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
   const skillRow = rawLine.match(/^• ([^\s]+) (~[^—]+) — (.*)$/);
   if (skillRow) {
     const [, name, estimate, rest] = skillRow;
-    return `  ${orange("•")} ${theme.bold(linkText(name, snapshotlessSkillHref(rest)))} ${orange(estimate.trim())} ${theme.fg("dim", "—")} ${linkifyPathsAndUrls(rest)}`;
+    return `  ${orange("•")} ${styledLink(name, snapshotlessSkillHref(rest), (value) => theme.bold(value))} ${orange(estimate.trim())} ${theme.fg("dim", "—")} ${linkifyPathsAndUrls(rest)}`;
   }
 
   const bullet = rawLine.match(/^•\s+([^:]+):(.*)$/);
@@ -1325,10 +1331,10 @@ function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
   }
 
   if (rawLine.startsWith("• ")) {
-    return `  ${orange("•")} ${theme.fg("dim", linkifyPathsAndUrls(rawLine.slice(2)))}`;
+    return `  ${orange("•")} ${linkifyPathsAndUrls(rawLine.slice(2), (value) => theme.fg("dim", value))}`;
   }
 
-  if (/Tool definitions|Context files|Skills \(|Tools \(/.test(rawLine)) return `  ${orange(theme.bold(linkifyPathsAndUrls(rawLine)))}`;
+  if (/Tool definitions|Context files|Skills \(|Tools \(/.test(rawLine)) return `  ${linkifyPathsAndUrls(rawLine, (value) => orange(theme.bold(value)))}`;
   return `  ${linkifyPathsAndUrls(rawLine)}`;
 }
 
@@ -1402,7 +1408,7 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
   const lines = renderHeader(snapshot, "summary", theme);
   lines.push("");
   for (const section of snapshot.sections) {
-    lines.push(`  ${theme.fg("muted", renderSectionTitle(section, true))}${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
+    lines.push(`  ${renderSectionTitle(section, (value) => theme.fg("muted", value), true)}${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
   }
   lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
   return lines;
@@ -1419,7 +1425,7 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] 
       : row.name.padEnd(nameWidth, " ");
     const token = tokenStrings[index].padStart(tokenWidth, " ");
     const desc = row.desc ? singleLine(row.desc, descWidth) : "";
-    return `    ${theme.fg("text", linkText(name, row.href))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+    return `    ${styledLink(name, row.href, (value) => theme.fg("text", value))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
@@ -1428,7 +1434,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   lines.push(`  ${theme.fg("dim", "Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail")}`);
   for (const section of snapshot.sections) {
     const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `  ${orange("▸")} ${theme.bold(renderSectionTitle(section))}  ${theme.fg("dim", countLabel)}`);
+    lines.push("", `  ${orange("▸")} ${renderSectionTitle(section, (value) => theme.bold(value))}  ${theme.fg("dim", countLabel)}`);
     if (section.compactRows && section.compactRows.length > 0) {
       lines.push(...renderScanRows(section.compactRows, theme, width));
     }
@@ -1444,7 +1450,7 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme): string[] {
 
   for (const section of snapshot.sections) {
     const sectionCount = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `${orange("[")}${theme.bold(renderSectionTitle(section))}${theme.fg("dim", ` - ${sectionCount}`)}${orange("]")}`, "");
+    lines.push("", `${orange("[")}${renderSectionTitle(section, (value) => theme.bold(value))}${theme.fg("dim", ` - ${sectionCount}`)}${orange("]")}`, "");
     if (section.expandedLines) {
       lines.push(...section.expandedLines.map((line) => renderExpandedDetailLine(line, theme)));
     } else {
