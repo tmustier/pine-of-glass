@@ -12,7 +12,7 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 - npm:
   - `pi install npm:pi-contextimate`
 
-## How they work
+## Screenshots
 ### [Contextimate](./extensions/pi-contextimate)
 <img width="1477" height="589" alt="image" src="https://github.com/user-attachments/assets/8ff81aa2-f61b-4d8d-9507-f455f37c12cc" />
 
