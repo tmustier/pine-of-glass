@@ -30,8 +30,8 @@ The package manifest points Pi at this extension directory, so future internal s
 - `Ctrl+O` cycles the `[Context Estimator]` view through Pi's native expand/collapse path: summary → compact → expanded.
 - `/contextimate` cycles the view.
 - `/contextimate summary`, `/contextimate compact`, and `/contextimate expanded` jump directly to a mode.
-- Compact is a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens, with the counting method shown once on the category header. Skill names link to their `SKILL.md`; AGENTS/context section names link to the source file.
-- Expanded adds the deep detail: per-section method/caveats and sources, plus syntax-highlighted minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens. Paths and URLs in expanded detail rows use unobtrusive OSC-8 hyperlinks where the terminal supports them; there is no extra underline styling. (System prompt and context files stay summarized.)
+- Compact is a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens, with the counting method shown once on the category header.
+- Expanded adds the deep detail: per-section method/caveats and sources, plus syntax-highlighted minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens. Paths and URLs are shown as text rather than terminal hyperlinks, because OSC-8 file links are unreliable in this startup-component surface. (System prompt and context files stay summarized.)
 
 ## Docs
 

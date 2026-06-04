@@ -31,13 +31,11 @@ type ScanRow = {
   name: string;
   tokens: number;
   desc?: string;
-  href?: string;
 };
 
 type PrefixSection = {
   id: string;
   title: string;
-  href?: string;
   content: string;
   countLabel?: string;
   effectiveTokens?: number;
@@ -246,64 +244,12 @@ function compactPath(filePath: string): string {
   return filePath;
 }
 
-function safeOscHref(href: string): string {
-  return href.replace(/[\x00-\x1f\x7f]/g, "");
+function styledText(label: string, style: (text: string) => string = (text) => text): string {
+  return style(label);
 }
 
-function fileHref(filePath: string): string | undefined {
-  if (!filePath) return undefined;
-  const expanded = filePath.startsWith("~/") ? resolve(homedir(), filePath.slice(2)) : filePath;
-  if (!expanded.startsWith("/")) return undefined;
-  return pathToFileURL(expanded).href;
-}
-
-function styledLink(label: string, href: string | undefined, style: (text: string) => string = (text) => text): string {
-  const styled = style(label);
-  if (!href) return styled;
-  const safeHref = safeOscHref(href);
-  // BEL-terminated OSC-8 links are more reliable in some terminal/tmux paths,
-  // and Pi's ANSI wrapper preserves the original terminator across wraps.
-  // Keep the link wrapper outside SGR styling so the click target covers the
-  // exact styled label without adding visual underline clutter.
-  return `\x1b]8;;${safeHref}\x07${styled}\x1b]8;;\x07`;
-}
-
-const URL_RE = /https?:\/\/[^\s"'<>]+/g;
-const PATH_RE = /(?:~\/|\/)[A-Za-z0-9._~@%+\-/]+/g;
-
-function trimTrailingLinkPunctuation(value: string): { core: string; trailing: string } {
-  const match = value.match(/^(.*?)([),.;:]+)?$/);
-  return { core: match?.[1] ?? value, trailing: match?.[2] ?? "" };
-}
-
-function linkifyPathsAndUrls(text: string, style: (text: string) => string = (value) => value): string {
-  let out = "";
-  let last = 0;
-  const matches: Array<{ start: number; end: number; href?: string; text: string }> = [];
-  for (const match of text.matchAll(URL_RE)) {
-    const raw = match[0] ?? "";
-    const { core, trailing } = trimTrailingLinkPunctuation(raw);
-    const start = match.index ?? 0;
-    matches.push({ start, end: start + core.length, href: core, text: core });
-    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, text: trailing });
-  }
-  for (const match of text.matchAll(PATH_RE)) {
-    const raw = match[0] ?? "";
-    const start = match.index ?? 0;
-    if (matches.some((existing) => start >= existing.start && start < existing.end)) continue;
-    const { core, trailing } = trimTrailingLinkPunctuation(raw);
-    const href = fileHref(core);
-    if (href) matches.push({ start, end: start + core.length, href, text: core });
-    if (trailing) matches.push({ start: start + core.length, end: start + raw.length, text: trailing });
-  }
-  matches.sort((a, b) => a.start - b.start || b.end - a.end);
-  for (const match of matches) {
-    if (match.start < last) continue;
-    out += style(text.slice(last, match.start));
-    out += styledLink(match.text, match.href, style);
-    last = match.end;
-  }
-  return out + style(text.slice(last));
+function stylePathsAndUrls(text: string, style: (text: string) => string = (value) => value): string {
+  return style(text);
 }
 
 function unescapeXml(value: string): string {
@@ -407,7 +353,6 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
     sections.push({
       id: `context:${filePath}`,
       title,
-      href: fileHref(filePath),
       content: body,
       denominator,
       countLabel: formatCount(body.length, denominator),
@@ -443,7 +388,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       countLabel: formatCount(content.length, denominator),
       compactRows: [...skills]
         .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
-        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description, href: fileHref(skill.location) })),
+        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description })),
       expandedLines,
     },
   };
@@ -1305,7 +1250,7 @@ function renderEstimatedTokenRow(label: string, tokens: number, chars: number | 
 
 function renderSectionTitle(section: PrefixSection, style: (text: string) => string, padded = false): string {
   const title = padded ? padLabel(section.title) : section.title;
-  return styledLink(title, section.href, style);
+  return styledText(title, style);
 }
 
 function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
@@ -1315,33 +1260,27 @@ function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
   const toolHeader = rawLine.match(/^([^—]+?) — (~[^·]+(?: · [^)]+\))?) · source: (.*)$/);
   if (toolHeader) {
     const [, name, estimate, source] = toolHeader;
-    return `  ${theme.bold(name.trim())} ${theme.fg("dim", "—")} ${orange(estimate.trim())} ${theme.fg("dim", "· source:")} ${linkifyPathsAndUrls(source.trim())}`;
+    return `  ${theme.bold(name.trim())} ${theme.fg("dim", "—")} ${orange(estimate.trim())} ${theme.fg("dim", "· source:")} ${stylePathsAndUrls(source.trim())}`;
   }
 
   const skillRow = rawLine.match(/^• ([^\s]+) (~[^—]+) — (.*)$/);
   if (skillRow) {
     const [, name, estimate, rest] = skillRow;
-    return `  ${orange("•")} ${styledLink(name, snapshotlessSkillHref(rest), (value) => theme.bold(value))} ${orange(estimate.trim())} ${theme.fg("dim", "—")} ${linkifyPathsAndUrls(rest)}`;
+    return `  ${orange("•")} ${styledText(name, (value) => theme.bold(value))} ${orange(estimate.trim())} ${theme.fg("dim", "—")} ${stylePathsAndUrls(rest)}`;
   }
 
   const bullet = rawLine.match(/^•\s+([^:]+):(.*)$/);
   if (bullet) {
     const [, label, value] = bullet;
-    return `  ${orange("•")} ${theme.bold(`${label}:`)}${value ? ` ${linkifyPathsAndUrls(value.trim())}` : ""}`;
+    return `  ${orange("•")} ${theme.bold(`${label}:`)}${value ? ` ${stylePathsAndUrls(value.trim())}` : ""}`;
   }
 
   if (rawLine.startsWith("• ")) {
-    return `  ${orange("•")} ${linkifyPathsAndUrls(rawLine.slice(2), (value) => theme.fg("dim", value))}`;
+    return `  ${orange("•")} ${stylePathsAndUrls(rawLine.slice(2), (value) => theme.fg("dim", value))}`;
   }
 
-  if (/Tool definitions|Context files|Skills \(|Tools \(/.test(rawLine)) return `  ${linkifyPathsAndUrls(rawLine, (value) => orange(theme.bold(value)))}`;
-  return `  ${linkifyPathsAndUrls(rawLine)}`;
-}
-
-function snapshotlessSkillHref(rest: string): string | undefined {
-  const match = rest.match(/\((~\/[^)]+|\/[^)]+)\)\s*$/);
-  if (!match) return undefined;
-  return fileHref(match[1]);
+  if (/Tool definitions|Context files|Skills \(|Tools \(/.test(rawLine)) return `  ${stylePathsAndUrls(rawLine, (value) => orange(theme.bold(value)))}`;
+  return `  ${stylePathsAndUrls(rawLine)}`;
 }
 
 function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme): string | undefined {
@@ -1425,7 +1364,7 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] 
       : row.name.padEnd(nameWidth, " ");
     const token = tokenStrings[index].padStart(tokenWidth, " ");
     const desc = row.desc ? singleLine(row.desc, descWidth) : "";
-    return `    ${styledLink(name, row.href, (value) => theme.fg("text", value))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+    return `    ${styledText(name, (value) => theme.fg("text", value))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
