@@ -135,7 +135,7 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 - Tool sections must never use pretty-printed/debug JSON length as the count source.
 - Keep expanded mode readable and structural: show per-skill/per-tool estimate rows, sources, parameter keys, and short guidance summaries; do not dump the full system prompt or full tool schemas by default.
 - Show Pi's current context usage separately as `Total request` after a response exists.
-- Render token counts as whole-token or whole-`k` values (`~600 tokens`, `~6k tokens`), not `x.xk tokens`; decimal-place token counts imply false precision. Character counts may remain compact (`1.6k chars`) because they are just a size cue.
+- Render token counts as whole-`k` values (`~0k tokens`, `~6k tokens`, `~11k tokens`), not whole-token values or `x.xk tokens`; decimal-place or exact-looking token counts imply false precision. Character counts may remain compact (`1.6k chars`) because they are just a size cue.
 - Future exact mode: optionally call provider token-count endpoints using the actual outgoing payload, then subtract baselines to isolate sections. This should be opt-in or cached because it adds network/API work to startup.
 
 ## Practical OpenAI-style tool heuristic

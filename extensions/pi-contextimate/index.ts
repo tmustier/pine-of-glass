@@ -209,7 +209,19 @@ function compactNumber(value: number): string {
 }
 
 function compactTokenNumber(value: number): string {
-  return value >= 1000 ? `${Math.round(value / 1000)}k` : String(Math.round(value));
+  return `${Math.round(value / 1000)}k`;
+}
+
+function estimatedTokenLabel(tokens: number, width = 0): string {
+  return `~${compactTokenNumber(tokens)}`.padStart(width, " ");
+}
+
+function exactTokenLabel(tokens: number, width = 0): string {
+  return compactTokenNumber(tokens).padStart(width, " ");
+}
+
+function estimatedTokenLabelWidth(tokens: number[]): number {
+  return Math.max(0, ...tokens.map((token) => estimatedTokenLabel(token).length));
 }
 
 function formatPercent(value: number | null): string | undefined {
@@ -229,10 +241,10 @@ function formatDenominator(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function formatCountParts(chars: number, denominator = 4): { tokens: string; chars: string } {
+function formatCountParts(chars: number, denominator = 4, tokenWidth = 0): { tokens: string; chars: string } {
   const charLabel = compactNumber(chars);
-  const tokenLabel = compactTokenNumber(estimateCharsAsTokens(chars, denominator));
-  return { tokens: `~${tokenLabel} tokens`, chars: `(${charLabel} chars/${formatDenominator(denominator)})` };
+  const tokenLabel = estimatedTokenLabel(estimateCharsAsTokens(chars, denominator), tokenWidth);
+  return { tokens: `${tokenLabel} tokens`, chars: `(${charLabel} chars/${formatDenominator(denominator)})` };
 }
 
 function formatCount(chars: number, denominator = 4): string {
@@ -240,11 +252,11 @@ function formatCount(chars: number, denominator = 4): string {
   return `${parts.tokens} ${parts.chars}`;
 }
 
-function formatTokenEstimate(tokens: number, chars?: number, detail?: string): string {
+function formatTokenEstimate(tokens: number, chars?: number, detail?: string, tokenWidth = 0): string {
   const suffix = typeof chars === "number"
     ? ` (${compactNumber(chars)} ${detail?.startsWith("chars/") ? detail : `chars${detail ? ` · ${detail}` : ""}`})`
     : "";
-  return `~${compactTokenNumber(tokens)} tokens${suffix}`;
+  return `${estimatedTokenLabel(tokens, tokenWidth)} tokens${suffix}`;
 }
 
 function formatDenominatorDetail(denominator: number): string {
@@ -1282,17 +1294,17 @@ function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): s
   ];
 }
 
-function renderTokenTotalRow(label: string, tokens: number, theme: Theme, details?: string): string {
-  return `  ${orange(theme.bold(`${padLabel(label)}~${compactTokenNumber(tokens)} tokens`))}${details ? ` ${theme.fg("dim", details)}` : ""}`;
+function renderTokenTotalRow(label: string, tokens: number, theme: Theme, details?: string, tokenWidth = 0): string {
+  return `  ${orange(theme.bold(`${padLabel(label)}${estimatedTokenLabel(tokens, tokenWidth)} tokens`))}${details ? ` ${theme.fg("dim", details)}` : ""}`;
 }
 
-function renderEstimatedTokenRow(label: string, tokens: number, chars: number | undefined, theme: Theme, details?: string): string {
+function renderEstimatedTokenRow(label: string, tokens: number, chars: number | undefined, theme: Theme, details?: string, tokenWidth = 0): string {
   const suffix = typeof chars === "number"
     ? details?.startsWith("chars/")
       ? ` (${compactNumber(chars)} ${details})`
       : ` (${compactNumber(chars)} chars${details ? ` · ${details}` : ""})`
     : details ? ` (${details})` : "";
-  return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `~${compactTokenNumber(tokens)} tokens${suffix}`)}`;
+  return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `${estimatedTokenLabel(tokens, tokenWidth)} tokens${suffix}`)}`;
 }
 
 function renderSectionTitle(section: PrefixSection, style: (text: string) => string, padded = false): string {
@@ -1323,7 +1335,7 @@ function renderExpandedSectionHeader(section: PrefixSection, snapshot: PrefixSna
   const tokens = sectionTokens(section);
   const chars = sectionChars(section);
   const method = section.methodTag ?? `text/${formatDenominator(section.denominator ?? snapshot.heuristic.textDenominator)}`;
-  const left = `  ${styledText(section.title, (value) => theme.bold(value))}  ${orange(`~${compactTokenNumber(tokens)} tokens`)}`;
+  const left = `  ${styledText(section.title, (value) => theme.bold(value))}  ${orange(`${estimatedTokenLabel(tokens)} tokens`)}`;
   const right = theme.fg("dim", `${compactNumber(chars)} chars · ${method}`);
   return joinLeftRight(left, right, Math.max(40, width));
 }
@@ -1362,7 +1374,7 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
   }
   for (const tool of content.tools) {
     out.push("");
-    const head = `    ${styledText(tool.name, (value) => theme.bold(value))}  ${orange(`~${compactTokenNumber(tool.tokens)} tokens`)}`;
+    const head = `    ${styledText(tool.name, (value) => theme.bold(value))}  ${orange(`${estimatedTokenLabel(tool.tokens)} tokens`)}`;
     const sourceWidth = Math.max(20, Math.max(40, width) - stripAnsi(head).length - 2);
     const source = middleTruncatePath(tildeAll(tool.source), sourceWidth);
     out.push(joinLeftRight(head, theme.fg("dim", source), Math.max(40, width)));
@@ -1376,14 +1388,14 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
   return out;
 }
 
-function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme): string | undefined {
+function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme, tokenWidth = 0): string | undefined {
   if (usage.tokens === null) return undefined;
   const percent = formatPercent(usage.percent);
   const window = usage.contextWindow > 0 ? compactTokenNumber(usage.contextWindow) : undefined;
   const details = percent && window
     ? `(${percent} / ${window} ctx)`
     : "(Pi usage)";
-  return `  ${orange(theme.bold(`${padLabel(label)}${compactTokenNumber(usage.tokens)} tokens`))} ${theme.fg("dim", details)}`;
+  return `  ${orange(theme.bold(`${padLabel(label)}${exactTokenLabel(usage.tokens, tokenWidth)} tokens`))} ${theme.fg("dim", details)}`;
 }
 
 type SessionEstimate = {
@@ -1417,38 +1429,57 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
   };
 }
 
-function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme): string[] {
+function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, tokenWidth = 0): string[] {
   const estimate = buildSessionEstimate(snapshot);
   if (!snapshot.session || !estimate) return [];
   const source = estimate.totalSource === "pi" ? "(Pi current - harness)" : "(heuristic fallback)";
   const rows = [
     "",
-    renderTokenTotalRow("Total session", estimate.totalTokens, theme, source),
+    renderTokenTotalRow("Total session", estimate.totalTokens, theme, source, tokenWidth),
     `    ${theme.fg("dim", `of which approx. visible buckets use chars/${formatDenominator(estimate.denominator)}; other/reasoning is residual`)}`,
-    renderEstimatedTokenRow("Tool outputs", estimate.toolOutputTokens, snapshot.session.toolOutputChars, theme, formatDenominatorDetail(estimate.denominator)),
-    renderEstimatedTokenRow("Messages", estimate.messageTokens, snapshot.session.messageChars, theme, formatDenominatorDetail(estimate.denominator)),
-    renderEstimatedTokenRow("Other / reasoning", estimate.otherTokens, undefined, theme, "residual"),
+    renderEstimatedTokenRow("Tool outputs", estimate.toolOutputTokens, snapshot.session.toolOutputChars, theme, formatDenominatorDetail(estimate.denominator), tokenWidth),
+    renderEstimatedTokenRow("Messages", estimate.messageTokens, snapshot.session.messageChars, theme, formatDenominatorDetail(estimate.denominator), tokenWidth),
+    renderEstimatedTokenRow("Other / reasoning", estimate.otherTokens, undefined, theme, "residual", tokenWidth),
   ];
   const requestTotal = snapshot.contextUsage
-    ? renderContextUsageTotalRow("Total request", snapshot.contextUsage, theme)
+    ? renderContextUsageTotalRow("Total request", snapshot.contextUsage, theme, tokenWidth)
     : undefined;
   if (requestTotal) rows.push(requestTotal);
   return rows;
 }
 
+function summaryTokenWidth(snapshot: PrefixSnapshot): number {
+  const values = [...snapshot.sections.map(sectionTokens), totalTokens(snapshot)];
+  const sessionEstimate = buildSessionEstimate(snapshot);
+  if (sessionEstimate) values.push(
+    sessionEstimate.totalTokens,
+    sessionEstimate.toolOutputTokens,
+    sessionEstimate.messageTokens,
+    sessionEstimate.otherTokens,
+  );
+  if (typeof snapshot.contextUsage?.tokens === "number") values.push(snapshot.contextUsage.tokens);
+  return estimatedTokenLabelWidth(values);
+}
+
+function alignCountLabel(countLabel: string, tokens: number, tokenWidth: number): string {
+  return countLabel.replace(/^~\d+k tokens/, `${estimatedTokenLabel(tokens, tokenWidth)} tokens`);
+}
+
 function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
   const lines = renderHeader(snapshot, "summary", theme);
+  const tokenWidth = summaryTokenWidth(snapshot);
   lines.push("");
   for (const section of snapshot.sections) {
-    lines.push(`  ${renderSectionTitle(section, (value) => theme.fg("muted", value), true)}${theme.fg("dim", section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator))}`);
+    const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
+    lines.push(`  ${renderSectionTitle(section, (value) => theme.fg("muted", value), true)}${theme.fg("dim", alignCountLabel(countLabel, sectionTokens(section), tokenWidth))}`);
   }
-  lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
+  lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`, tokenWidth), ...renderSessionRows(snapshot, theme, tokenWidth));
   return lines;
 }
 
 function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] {
   const nameWidth = Math.min(26, Math.max(...rows.map((row) => row.name.length)));
-  const tokenStrings = rows.map((row) => `~${compactTokenNumber(row.tokens)}`);
+  const tokenStrings = rows.map((row) => estimatedTokenLabel(row.tokens));
   const tokenWidth = Math.max(...tokenStrings.map((token) => token.length));
   const descWidth = Math.max(24, width - (4 + nameWidth + 2 + tokenWidth + 2));
   return rows.map((row, index) => {
@@ -1463,22 +1494,24 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number): string[] 
 
 function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "compact", theme);
+  const tokenWidth = summaryTokenWidth(snapshot);
   lines.push(`  ${theme.fg("dim", "Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail")}`);
   for (const section of snapshot.sections) {
     const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `  ${orange("▸")} ${renderSectionTitle(section, (value) => theme.bold(value))}  ${theme.fg("dim", countLabel)}`);
+    lines.push("", `  ${orange("▸")} ${renderSectionTitle(section, (value) => theme.bold(value))}  ${theme.fg("dim", alignCountLabel(countLabel, sectionTokens(section), tokenWidth))}`);
     if (section.compactRows && section.compactRows.length > 0) {
       lines.push(...renderScanRows(section.compactRows, theme, width));
     }
   }
-  lines.push("", renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
+  lines.push("", renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`, tokenWidth), ...renderSessionRows(snapshot, theme, tokenWidth));
   return lines;
 }
 
 function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "expanded", theme);
+  const tokenWidth = summaryTokenWidth(snapshot);
   lines.push(`  ${theme.fg("dim", "Expanded view: per-section subtotals, sources, and a readable schema breakdown of each active tool.")}`);
-  lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
+  lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`, tokenWidth), ...renderSessionRows(snapshot, theme, tokenWidth));
 
   for (const section of snapshot.sections) {
     lines.push("", renderExpandedSectionHeader(section, snapshot, theme, width));
