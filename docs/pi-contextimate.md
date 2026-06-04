@@ -14,9 +14,16 @@ The output is an inspector, not a billing ledger. The section rows should be clo
 
 - **Summary** — one row per category (system prompt, context files, skills, tools, session) with its token estimate.
 - **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row.
-- **Expanded** — adds deep detail: counting method/caveats and sources, plus syntax-highlighted minified JSON for each tool definition — the exact provider-shaped payload that is counted, sorted by estimated tokens. Paths and URLs are shown as text rather than terminal hyperlinks, because OSC-8 file links are unreliable in this startup-component surface.
+- **Expanded** — adds deep detail: per-section counting method/caveats and sources, plus a readable schema field tree for each active tool (name · type · required · description, with nested array/object fields indented), sorted by estimated tokens. The token counts are still computed on the minified provider-shaped payload; the tree is just the legible view of it. Paths and URLs are shown as text rather than terminal hyperlinks, because OSC-8 file links are unreliable in this startup-component surface.
 
-Summary and compact never dump raw content. Expanded shows minified tool-definition JSON; the system prompt and context files stay summarized (raw chars + short preview).
+Summary and compact never dump raw content. Expanded renders each tool's schema as an indented field tree (not raw JSON); the system prompt and context files stay summarized (raw chars + short preview).
+
+Each tool's right-aligned source line is Pi's `SourceInfo`, read as `scope · source · origin · path`:
+
+- **scope** — config level the tool was loaded from: `user` (`~/.pi/...`), `project` (repo config), or `temporary` (registered at runtime; builtins are temporary).
+- **source** — the loader/package label, e.g. `auto` (auto-discovered file), `builtin`, or `npm:<package>`.
+- **origin** — `package` (came from an installed package) vs `top-level` (a standalone extension file or builtin).
+- **path** — the defining file, or a synthetic id like `<builtin:edit>`. Paths are home-shortened to `~/…` and middle-truncated so the line stays on one row.
 
 Related note: [`pi-contextimate-codex-context-accounting.md`](./pi-contextimate-codex-context-accounting.md) compares this policy with upstream OpenAI Codex active-context accounting, especially after interruption and compaction.
 

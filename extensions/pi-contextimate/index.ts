@@ -33,16 +33,38 @@ type ScanRow = {
   desc?: string;
 };
 
+type ToolField = {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+  depth: number;
+};
+
+type ToolExpanded = {
+  name: string;
+  tokens: number;
+  source: string;
+  description: string;
+  fields: ToolField[];
+};
+
+type ExpandedContent =
+  | { kind: "text"; note?: string; preview?: string[] }
+  | { kind: "skills"; note?: string; rows: ScanRow[] }
+  | { kind: "tools"; notes: string[]; tools: ToolExpanded[] };
+
 type PrefixSection = {
   id: string;
   title: string;
   content: string;
   countLabel?: string;
+  methodTag?: string;
   effectiveTokens?: number;
   rawChars?: number;
   denominator?: number;
   compactRows?: ScanRow[];
-  expandedLines?: string[];
+  expanded?: ExpandedContent;
 };
 
 type ModelSummary = {
@@ -162,10 +184,6 @@ const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]
 const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
 const ORANGE = "\x1b[38;2;245;151;52m";
-const CYAN = "\x1b[38;2;110;200;255m";
-const GREEN = "\x1b[38;2;135;210;140m";
-const MUTED = "\x1b[38;2;145;145;145m";
-const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
 const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
@@ -245,12 +263,30 @@ function compactPath(filePath: string): string {
   return filePath;
 }
 
-function styledText(label: string, style: (text: string) => string = (text) => text): string {
-  return style(label);
+function tildePath(filePath: string): string {
+  const home = homedir();
+  return filePath.startsWith(`${home}/`) ? `~/${filePath.slice(home.length + 1)}` : filePath;
 }
 
-function stylePathsAndUrls(text: string, style: (text: string) => string = (value) => value): string {
-  return style(text);
+function tildeAll(text: string): string {
+  return text.split(`${homedir()}/`).join("~/");
+}
+
+function middleTruncatePath(text: string, width: number): string {
+  if (text.length <= width) return text;
+  if (width <= 3) return "…";
+  const keep = width - 1;
+  let tail = Math.min(Math.floor(keep * 0.5), 28);
+  const slashIndex = text.lastIndexOf("/");
+  if (slashIndex >= 0 && text.length - slashIndex <= Math.floor(keep * 0.6)) {
+    tail = text.length - slashIndex;
+  }
+  const head = Math.max(1, keep - tail);
+  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+}
+
+function styledText(label: string, style: (text: string) => string = (text) => text): string {
+  return style(label);
 }
 
 function unescapeXml(value: string): string {
@@ -282,18 +318,6 @@ function safeMinifiedJson(value: unknown): string {
   } catch (error) {
     return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
   }
-}
-
-function highlightMinifiedJson(json: string): string {
-  return json.replace(/("(?:\\.|[^"\\])*"|\b-?\d+(?:\.\d+)?(?:e[+-]?\d+)?\b|\btrue\b|\bfalse\b|\bnull\b|[{}\[\]:,])/gi, (token, _value, offset, whole) => {
-    if (token.startsWith('"')) {
-      const next = whole.slice(offset + token.length).match(/^\s*:/);
-      return next ? `${CYAN}${token}${RESET}` : `${DIM}${token}${RESET}`;
-    }
-    if (/^-?\d/.test(token)) return orange(token);
-    if (/^(true|false|null)$/i.test(token)) return `${GREEN}${token}${RESET}`;
-    return `${MUTED}${token}${RESET}`;
-  });
 }
 
 function normalizeBlankLines(text: string): string {
@@ -342,22 +366,19 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
     const filePath = rawPath ?? "";
     const title = compactPath(filePath);
     const body = content ?? "";
-    const expandedPreview = firstMeaningfulLines(body, 8).map((line) => `• ${singleLine(line, 150)}`);
-    const expandedLines = [
-      `• source: ${title}`,
-      `• path: ${filePath}`,
-      `• counted as text with ${formatDenominatorDetail(denominator)}; ${formatCount(body.length, denominator)}`,
-      "• preview only; full file is not dumped here",
-      "",
-      ...(expandedPreview.length > 0 ? expandedPreview : ["• no non-empty lines"]),
-    ];
+    const preview = firstMeaningfulLines(body, 8).map((line) => singleLine(line, 150));
     sections.push({
       id: `context:${filePath}`,
       title,
       content: body,
       denominator,
+      methodTag: `text/${formatDenominator(denominator)}`,
       countLabel: formatCount(body.length, denominator),
-      expandedLines,
+      expanded: {
+        kind: "text",
+        note: `${tildePath(filePath)} · preview only`,
+        preview: preview.length > 0 ? preview : ["(no non-empty lines)"],
+      },
     });
   }
   return sections;
@@ -368,17 +389,12 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
   if (!match) return { skills: [] };
   const content = match[0].trim();
   const skills = parseSkills(content, denominator);
-  const skillLines = [...skills]
-    .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
-    .map((skill) => `• ${skill.name} ${skill.countLabel} — ${singleLine(skill.description, 110)} (${compactPath(skill.location)})`);
+  const sortedSkills = [...skills].sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name));
+  const scanRows = sortedSkills.map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description }));
   const wrapperChars = Math.max(0, content.length - skills.reduce((sum, skill) => sum + skill.chars, 0));
-  const expandedLines = [
-    `• counted as text with ${formatDenominatorDetail(denominator)}`,
-    "• per-skill rows are sorted by estimated size; wrapper/markup is shown separately so subtotals are explainable",
-    ...(wrapperChars > 0 ? [`• skills-list wrapper/markup: ${formatCount(wrapperChars, denominator)}`] : []),
-    "",
-    ...skillLines,
-  ];
+  const wrapperNote = wrapperChars > 0
+    ? `list wrapper/markup  ${formatCount(wrapperChars, denominator)}`
+    : undefined;
   return {
     skills,
     section: {
@@ -386,11 +402,10 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       title: `Skills (${skills.length})`,
       content,
       denominator,
+      methodTag: `text/${formatDenominator(denominator)}`,
       countLabel: formatCount(content.length, denominator),
-      compactRows: [...skills]
-        .sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
-        .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description })),
-      expandedLines,
+      compactRows: scanRows,
+      expanded: { kind: "skills", note: wrapperNote, rows: scanRows },
     },
   };
 }
@@ -900,6 +915,51 @@ function schemaArrayItemProperties(property: unknown): Record<string, unknown> {
   return getSchemaProperties(items);
 }
 
+function getSchemaRequired(schema: unknown): string[] {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
+  const required = (schema as { required?: unknown }).required;
+  return Array.isArray(required) ? required.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function arrayItemsSchema(property: unknown): unknown {
+  if (!property || typeof property !== "object" || Array.isArray(property)) return undefined;
+  return (property as { items?: unknown }).items;
+}
+
+function collectToolFields(name: string, property: unknown, depth: number, required: boolean, out: ToolField[], maxDepth = 3): void {
+  out.push({
+    name,
+    type: schemaPropertyType(property),
+    required,
+    description: schemaPropertyDescription(property),
+    depth,
+  });
+  if (depth >= maxDepth) return;
+  const nested = getSchemaProperties(property);
+  if (Object.keys(nested).length > 0) {
+    const requiredKeys = new Set(getSchemaRequired(property));
+    for (const [childName, childProperty] of Object.entries(nested)) {
+      collectToolFields(childName, childProperty, depth + 1, requiredKeys.has(childName), out, maxDepth);
+    }
+  }
+  const itemProperties = schemaArrayItemProperties(property);
+  if (Object.keys(itemProperties).length > 0) {
+    const requiredKeys = new Set(getSchemaRequired(arrayItemsSchema(property)));
+    for (const [childName, childProperty] of Object.entries(itemProperties)) {
+      collectToolFields(childName, childProperty, depth + 1, requiredKeys.has(childName), out, maxDepth);
+    }
+  }
+}
+
+function buildToolFields(schema: unknown): ToolField[] {
+  const fields: ToolField[] = [];
+  const requiredKeys = new Set(getSchemaRequired(schema));
+  for (const [name, property] of Object.entries(getSchemaProperties(schema))) {
+    collectToolFields(name, property, 0, requiredKeys.has(name), fields, 3);
+  }
+  return fields;
+}
+
 function estimateOpenAIToolTextTokens(text: string): number {
   return estimateCharsAsTokens(text.length, OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR);
 }
@@ -977,19 +1037,6 @@ function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristi
   };
 }
 
-function toolCountMethodLines(numerator: ToolNumeratorResult, denominator: number): string[] {
-  if (typeof numerator.tokens === "number") {
-    return [
-      `• count method: ${numerator.label}; ${compactNumber(numerator.chars)} chars is payload size only, not a divisor; schema text fragments use chars/${formatDenominator(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`,
-      `• formula: +7/function +3/property-section +3/property -3/enum +3/enum-item +12/final; nested object properties counted recursively`,
-      "• backup: docs/pi-contextimate.md#practical-openai-style-tool-heuristic",
-    ];
-  }
-  return [
-    `• count method: ${numerator.label}; numerator is ${compactNumber(numerator.chars)} chars/${formatDenominator(denominator)}`,
-  ];
-}
-
 function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, config: ContextimateConfig): { section?: PrefixSection; tools: ToolSummary[]; loadedToolCount: number } {
   const activeNames = new Set(pi.getActiveTools());
   const allTools = pi.getAllTools();
@@ -1003,20 +1050,24 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
   const numeratorDetail = typeof numerator.tokens === "number"
     ? `payload size; ${numeratorLabel}; ${numerator.detail ?? `text/${formatDenominator(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`}`
     : `${formatDenominatorDetail(denominator)} · ${numeratorLabel}`;
-  const methodLines = toolCountMethodLines(numerator, denominator);
-  const toolSpec = resolveToolShapeSpec(heuristic.toolNumerator, config);
-  const toolShape = typeof toolSpec === "string" ? toolSpec : toolSpec.shape;
   const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic, config) }));
-  const compactToolRows = [...toolEstimates]
-    .sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name))
-    .map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description }));
-  const expandedToolLines = [...toolEstimates]
-    .sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name))
-    .flatMap(({ tool, estimate }, index) => [
-      ...(index === 0 ? [] : [""]),
-      `${tool.name} — ${formatTokenEstimate(estimate.tokens, estimate.chars, estimate.detail)} · source: ${tool.source}`,
-      safeMinifiedJson(toolPayloadForShape(tool, toolShape, toolSpec)),
-    ]);
+  const sortedEstimates = [...toolEstimates].sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name));
+  const compactToolRows = sortedEstimates.map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description }));
+  const expandedTools: ToolExpanded[] = sortedEstimates.map(({ tool, estimate }) => ({
+    name: tool.name,
+    tokens: estimate.tokens,
+    source: tool.source,
+    description: tool.description,
+    fields: buildToolFields(tool.schema),
+  }));
+  const notes = typeof numerator.tokens === "number"
+    ? [
+        "formula  +7/fn +3/prop-section +3/prop -3/enum +3/enum-item +12 once · nested counted recursively",
+        `counted on the minified provider payload (${compactNumber(numerator.chars)} chars); tree below is the readable view of it`,
+      ]
+    : [
+        `counts use ${numeratorLabel} at ${formatDenominatorDetail(denominator)} over the minified provider payload (${compactNumber(numerator.chars)} chars); the tree below is the readable view`,
+      ];
   return {
     tools,
     loadedToolCount: allTools.length,
@@ -1027,16 +1078,10 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
       effectiveTokens,
       rawChars: numerator.chars,
       denominator,
+      methodTag: typeof numerator.tokens === "number" ? "payload · OpenAI formula" : `payload · ${numeratorLabel}`,
       countLabel: formatTokenEstimate(effectiveTokens, numerator.chars, numeratorDetail),
       compactRows: compactToolRows,
-      expandedLines: [
-        ...methodLines,
-        ...(typeof numerator.tokens === "number" ? ["• per-tool rows exclude the shared +12 final tools overhead shown here", "• shared formula overhead: +12 tokens once for the whole active tool set"] : ["• per-tool rows are approximate; array/bracket/comma payload overhead is included only in the total"]),
-        "",
-        `Tool definitions (minified JSON — the provider-shaped payload counted above, sorted by estimated tokens):`,
-        "",
-        ...expandedToolLines,
-      ],
+      expanded: { kind: "tools", notes, tools: expandedTools },
     },
   };
 }
@@ -1144,19 +1189,20 @@ function buildSnapshot(
   const heuristic = resolveHeuristic(model, config);
   const textDenominator = heuristic.textDenominator;
   const promptRemainder = getPromptRemainder(systemPrompt);
-  const systemPreview = firstMeaningfulLines(promptRemainder, 5).map((line) => `• ${singleLine(line)}`);
+  const systemPreview = firstMeaningfulLines(promptRemainder, 6).map((line) => singleLine(line));
   const sections: PrefixSection[] = [
     {
       id: "system",
       title: "System prompt",
       content: promptRemainder,
       denominator: textDenominator,
+      methodTag: `text/${formatDenominator(textDenominator)}`,
       countLabel: formatCount(promptRemainder.length, textDenominator),
-      expandedLines: [
-        `• counted as text with ${formatDenominatorDetail(textDenominator)}`,
-        `• raw standalone chars: ${compactNumber(promptRemainder.length)}`,
-        ...(systemPreview.length > 0 ? ["", ...systemPreview] : []),
-      ],
+      expanded: {
+        kind: "text",
+        note: "pi harness system prompt · preview only",
+        preview: systemPreview.length > 0 ? systemPreview : ["(no non-empty lines)"],
+      },
     },
     ...parseContextSections(systemPrompt, textDenominator),
   ];
@@ -1254,34 +1300,80 @@ function renderSectionTitle(section: PrefixSection, style: (text: string) => str
   return styledText(title, style);
 }
 
-function renderExpandedDetailLine(rawLine: string, theme: Theme): string {
-  if (!rawLine) return "";
-  if (/^[{\[]/.test(stripAnsi(rawLine))) return `  ${highlightMinifiedJson(stripAnsi(rawLine))}`;
+function joinLeftRight(left: string, right: string, width: number, gap = 2): string {
+  if (!right) return left;
+  const used = stripAnsi(left).length + stripAnsi(right).length;
+  return `${left}${" ".repeat(Math.max(gap, width - used))}${right}`;
+}
 
-  const toolHeader = rawLine.match(/^([^—]+?) — (~[^·]+(?: · [^)]+\))?) · source: (.*)$/);
-  if (toolHeader) {
-    const [, name, estimate, source] = toolHeader;
-    return `  ${theme.bold(name.trim())} ${theme.fg("dim", "—")} ${orange(estimate.trim())} ${theme.fg("dim", "· source:")} ${stylePathsAndUrls(source.trim())}`;
+function wrapPlainText(text: string, width: number, maxLines: number): string[] {
+  const max = Math.max(16, width);
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const wrapped = wrapTextWithAnsi(normalized, max);
+  if (wrapped.length <= maxLines) return wrapped;
+  const capped = wrapped.slice(0, maxLines);
+  const last = capped[maxLines - 1] ?? "";
+  // Reserve a column for the ellipsis so the capped line still fits `width`.
+  capped[maxLines - 1] = last.length >= max ? `${last.slice(0, max - 1)}…` : `${last}…`;
+  return capped;
+}
+
+function renderExpandedSectionHeader(section: PrefixSection, snapshot: PrefixSnapshot, theme: Theme, width: number): string {
+  const tokens = sectionTokens(section);
+  const chars = sectionChars(section);
+  const method = section.methodTag ?? `text/${formatDenominator(section.denominator ?? snapshot.heuristic.textDenominator)}`;
+  const left = `  ${styledText(section.title, (value) => theme.bold(value))}  ${orange(`~${compactTokenNumber(tokens)} tokens`)}`;
+  const right = theme.fg("dim", `${compactNumber(chars)} chars · ${method}`);
+  return joinLeftRight(left, right, Math.max(40, width));
+}
+
+function renderExpandedNote(note: string, theme: Theme): string {
+  return `    ${theme.fg("dim", note)}`;
+}
+
+function renderExpandedPreview(lines: string[], theme: Theme, width: number): string[] {
+  const max = Math.max(24, width - 4);
+  return lines.map((line) => `    ${theme.fg("dim", singleLine(line, max))}`);
+}
+
+function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number): string[] {
+  if (fields.length === 0) return [`      ${theme.fg("dim", "(no parameters)")}`];
+  const indentFor = (depth: number) => 6 + depth * 2;
+  const nameCol = Math.min(30, Math.max(...fields.map((field) => indentFor(field.depth) + field.name.length)));
+  const typeCol = Math.min(10, Math.max(...fields.map((field) => field.type.length)));
+  const hasRequired = fields.some((field) => field.required);
+  return fields.map((field) => {
+    const rawName = `${" ".repeat(indentFor(field.depth))}${field.name}`;
+    const namePart = rawName.length > nameCol ? `${rawName.slice(0, nameCol - 1)}…` : rawName.padEnd(nameCol, " ");
+    const typePart = field.type.length > typeCol ? `${field.type.slice(0, typeCol - 1)}…` : field.type.padEnd(typeCol, " ");
+    const reqPart = hasRequired ? (field.required ? "required" : "        ") : "";
+    const prefixWidth = namePart.length + 2 + typePart.length + (hasRequired ? 2 + reqPart.length : 0);
+    const descWidth = Math.max(16, width - prefixWidth - 3);
+    const desc = field.description ? singleLine(field.description, descWidth) : "";
+    return `${styledText(namePart, (value) => theme.fg("text", value))}  ${theme.fg("muted", typePart)}${hasRequired ? `  ${theme.fg("dim", reqPart)}` : ""}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+  });
+}
+
+function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpanded[] }, theme: Theme, width: number): string[] {
+  const out: string[] = [];
+  for (const note of content.notes) {
+    for (const line of wrapPlainText(note, Math.max(24, width - 4), 4)) out.push(`    ${theme.fg("dim", line)}`);
   }
-
-  const skillRow = rawLine.match(/^• ([^\s]+) (~[^—]+) — (.*)$/);
-  if (skillRow) {
-    const [, name, estimate, rest] = skillRow;
-    return `  ${orange("•")} ${styledText(name, (value) => theme.bold(value))} ${orange(estimate.trim())} ${theme.fg("dim", "—")} ${stylePathsAndUrls(rest)}`;
+  for (const tool of content.tools) {
+    out.push("");
+    const head = `    ${styledText(tool.name, (value) => theme.bold(value))}  ${orange(`~${compactTokenNumber(tool.tokens)} tokens`)}`;
+    const sourceWidth = Math.max(20, Math.max(40, width) - stripAnsi(head).length - 2);
+    const source = middleTruncatePath(tildeAll(tool.source), sourceWidth);
+    out.push(joinLeftRight(head, theme.fg("dim", source), Math.max(40, width)));
+    if (tool.description && tool.description !== "(no description)") {
+      for (const line of wrapPlainText(tool.description, Math.max(24, width - 6), 3)) {
+        out.push(`      ${theme.fg("dim", line)}`);
+      }
+    }
+    out.push(...renderToolFieldRows(tool.fields, theme, width));
   }
-
-  const bullet = rawLine.match(/^•\s+([^:]+):(.*)$/);
-  if (bullet) {
-    const [, label, value] = bullet;
-    return `  ${orange("•")} ${theme.bold(`${label}:`)}${value ? ` ${stylePathsAndUrls(value.trim())}` : ""}`;
-  }
-
-  if (rawLine.startsWith("• ")) {
-    return `  ${orange("•")} ${stylePathsAndUrls(rawLine.slice(2), (value) => theme.fg("dim", value))}`;
-  }
-
-  if (/Tool definitions|Context files|Skills \(|Tools \(/.test(rawLine)) return `  ${stylePathsAndUrls(rawLine, (value) => orange(theme.bold(value)))}`;
-  return `  ${stylePathsAndUrls(rawLine)}`;
+  return out;
 }
 
 function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme): string | undefined {
@@ -1383,18 +1475,27 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   return lines;
 }
 
-function renderExpanded(snapshot: PrefixSnapshot, theme: Theme): string[] {
+function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "expanded", theme);
-  lines.push(`  ${theme.fg("dim", "Expanded view: per-section subtotals, sources, per-skill/per-tool estimates, and minified JSON tool definitions that are counted.")}`);
+  lines.push(`  ${theme.fg("dim", "Expanded view: per-section subtotals, sources, and a readable schema breakdown of each active tool.")}`);
   lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`), ...renderSessionRows(snapshot, theme));
 
   for (const section of snapshot.sections) {
-    const sectionCount = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push("", `${orange("[")}${renderSectionTitle(section, (value) => theme.bold(value))}${theme.fg("dim", ` - ${sectionCount}`)}${orange("]")}`, "");
-    if (section.expandedLines) {
-      lines.push(...section.expandedLines.map((line) => renderExpandedDetailLine(line, theme)));
-    } else {
-      lines.push(renderExpandedDetailLine(section.content || "(empty)", theme));
+    lines.push("", renderExpandedSectionHeader(section, snapshot, theme, width));
+    const expanded = section.expanded;
+    if (!expanded) {
+      lines.push(...renderExpandedPreview(firstMeaningfulLines(section.content || "(empty)", 6), theme, width));
+      continue;
+    }
+    if (expanded.kind === "tools") {
+      lines.push(...renderExpandedToolsBlock(expanded, theme, width));
+      continue;
+    }
+    if (expanded.note) lines.push(renderExpandedNote(expanded.note, theme));
+    if (expanded.kind === "skills") {
+      lines.push("", ...renderScanRows(expanded.rows, theme, width));
+    } else if (expanded.preview && expanded.preview.length > 0) {
+      lines.push("", ...renderExpandedPreview(expanded.preview, theme, width));
     }
   }
 
@@ -1471,7 +1572,7 @@ class StartupContextComponent implements Component {
         ? renderSummary(snapshot, theme)
         : this.mode === "compact"
           ? renderCompact(snapshot, theme, width)
-          : renderExpanded(snapshot, theme);
+          : renderExpanded(snapshot, theme, width);
 
       this.cachedSignature = snapshot.signature;
       this.cachedMode = this.mode;
