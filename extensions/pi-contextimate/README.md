@@ -1,6 +1,6 @@
 # pi-contextimate
 
-`pi-contextimate` is a Pi extension that adds a startup `[Context Estimator]` panel showing what is filling the current model context window: system prompt, AGENTS.md files, Agent Skills, active tools, and current session material.
+`pi-contextimate` is a Pi extension that adds a startup `[Context Estimator]` panel showing what is filling the current model context window: system prompt, AGENTS.md files, skill frontmatter (the always-loaded skill index, not the skill bodies), active tools, and current session material.
 
 ## Install
 

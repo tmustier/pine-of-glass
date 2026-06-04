@@ -399,7 +399,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
     skills,
     section: {
       id: "skills",
-      title: `Skills (${skills.length})`,
+      title: `Skill frontmatter (${skills.length})`,
       content,
       denominator,
       methodTag: `text/${formatDenominator(denominator)}`,
