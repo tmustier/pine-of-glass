@@ -22,7 +22,7 @@ For local development from a clone:
 pi -e ./extensions/pi-contextimate
 ```
 
-The package manifest points Pi at this extension directory, so future internal splits into multiple files can keep the same install path.
+The package manifest points Pi at this extension directory as part of the `pine-of-glass` collection, so future internal splits into multiple files can keep the same install path.
 
 ## Use
 
