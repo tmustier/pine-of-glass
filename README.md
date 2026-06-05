@@ -21,6 +21,7 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 ## Plans
 1. The current goal is to provide an interface that makes tool and agent behaviour more legible for humans using pi in their terminal interactively. 
 2. Once that's solid, we can help both humans and agents to more easily analyse previous sessions and traces, including when pi is running in RPC mode and/or remotely.
+
 *Note: A nice side benefit of 1. is that tools like `traceline` can help agents running interactive pi subagents in tmux to monitor them without risking context bloat from tool outputs.*
 
 **Status:** There are several things left to do in 1., including
