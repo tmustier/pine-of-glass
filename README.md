@@ -1,6 +1,6 @@
 # pine-of-glass
 
-Small observability and context management tools for [Pi]([https://github.com/earendil-works/pi-coding-agent](https://github.com/earendil-works/pi)) in the terminal.
+Small observability and context management tools for [Pi]((https://github.com/earendil-works/pi)) in the terminal.
 1. [`contextimate`](./extensions/pi-contextimate) breaks down what is filling your context window: sysprompt, AGENTS.md, Skill frontmatter, Tool schemas, and session material. Toggle with ctrl+o on start and /reload.
 2. [`traceline`](./extensions/pi-traceline) collapses tool calls to one trace line each, so you can see the full arc of what Pi did (path taken, context read, bloated tool results). Toggle with ctrl+t (expands/collapses both thinking blocks and tools so you can see everything your agent did since your last message).
 3. `cachemire` coming soon.
