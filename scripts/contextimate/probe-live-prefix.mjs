@@ -63,16 +63,39 @@ for (const file of fs.readdirSync(sessions, { recursive: true })) {
   }
 }
 const inputTotal = usage ? (usage.input || 0) + (usage.cacheRead || 0) + (usage.cacheWrite || 0) : null;
+const jsonChars = (value) => JSON.stringify(value ?? null).length;
+const textChars = (value) => {
+  if (typeof value === 'string') return value.length;
+  if (Array.isArray(value)) return value.reduce((sum, item) => sum + textChars(item), 0);
+  if (value && typeof value === 'object') return Object.values(value).reduce((sum, item) => sum + textChars(item), 0);
+  return 0;
+};
+const firstPresentKey = (keys) => keys.find((key) => payload[key] !== undefined) || null;
+const systemKey = firstPresentKey(['instructions', 'system', 'system_prompt']);
+const inputKey = firstPresentKey(['input', 'messages', 'contents']);
+const systemPayload = systemKey ? payload[systemKey] : null;
+const inputPayload = inputKey ? payload[inputKey] : null;
 const summary = {
   model,
   cwd,
   artifacts: { base, sessions, payloadPath, stdout: `${base}.stdout.txt`, stderr: `${base}.stderr.txt` },
   payload: {
     keys: Object.keys(payload),
-    instructionsChars: typeof payload.instructions === 'string' ? payload.instructions.length : JSON.stringify(payload.instructions ?? '').length,
-    inputChars: JSON.stringify(payload.input ?? null).length,
+    jsonChars: jsonChars(payload),
+    systemKey,
+    systemJsonChars: jsonChars(systemPayload),
+    systemTextChars: textChars(systemPayload),
+    inputKey,
+    inputJsonChars: jsonChars(inputPayload),
+    inputTextChars: textChars(inputPayload),
     toolsCount: Array.isArray(payload.tools) ? payload.tools.length : 0,
-    toolsChars: JSON.stringify(payload.tools ?? []).length,
+    toolsJsonChars: jsonChars(payload.tools ?? []),
+    toolsTextChars: textChars(payload.tools ?? []),
+    thinkingJsonChars: payload.thinking === undefined ? 0 : jsonChars(payload.thinking),
+    // Backward-compatible aliases used by older notes/scripts.
+    instructionsChars: textChars(systemPayload),
+    inputChars: jsonChars(inputPayload),
+    toolsChars: jsonChars(payload.tools ?? []),
   },
   usage,
   inputTotal,
