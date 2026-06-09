@@ -47,3 +47,4 @@ Packaged diagnostics:
 
 - `pi-contextimate-probe-prefix` — run a tiny live prefix probe and print sanitized payload-size/usage summaries.
 - `pi-contextimate-evaluate-transcripts` — evaluate local Pi JSONL session-growth heuristics against recorded usage.
+- `pi-contextimate-check-provider-tokens` — provider-exact token counts (baseline / system / all-tools / per-tool) for a captured payload, with solved tool-block overhead and suggested heuristic denominators. Anthropic is free (`count_tokens`); OpenAI probes cost a fraction of a cent.

@@ -53,6 +53,7 @@
   },
   "bin": {
     "pi-contextimate-probe-prefix": "scripts/contextimate/probe-live-prefix.mjs",
-    "pi-contextimate-evaluate-transcripts": "scripts/contextimate/evaluate-transcripts.mjs"
+    "pi-contextimate-evaluate-transcripts": "scripts/contextimate/evaluate-transcripts.mjs",
+    "pi-contextimate-check-provider-tokens": "scripts/contextimate/check-provider-tokens.mjs"
   }
 }
