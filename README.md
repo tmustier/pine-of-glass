@@ -18,6 +18,17 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 ### [Traceline](./extensions/pi-traceline)
 <img width="709" height="409" alt="image" src="https://github.com/user-attachments/assets/4a59fbae-8270-46d3-a4fc-fdf2e5c3ba8c" />
 
+## Development
+
+```bash
+npm run link-pi    # symlink the installed pi runtime into node_modules (types + contract tests)
+npm run typecheck  # tsc against the real installed pi
+npm test           # unit + golden + pi contract tests (zero deps, node:test)
+npm run test:smoke # launches real pi in tmux with an isolated HOME (local-only)
+```
+
+The contract suite pins every structural assumption about pi internals, so after `pi update` a quick `npm test` says exactly which seam (if any) drifted. Test design notes live in [`docs/testing.md`](./docs/testing.md). Goldens regenerate with `UPDATE_GOLDENS=1 npm test` — review the diff like code.
+
 ## Plans
 1. The current goal is to provide an interface that makes tool and agent behaviour more legible for humans using pi in their terminal interactively. 
 2. Once that's solid, we can help both humans and agents to more easily analyse previous sessions and traces, including when pi is running in RPC mode, remotely, or there is a large number of agent sessions we need to read to get insights from.
