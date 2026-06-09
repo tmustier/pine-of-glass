@@ -3,7 +3,7 @@
   <expand-key>: cycle view · model openai-codex/gpt-5.5 · OpenAI-Codex heuristic
   Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail
 
-  ▸ System prompt              ~0.0k tokens (137 chars/4)
+  ▸ Runtime system prompt      ~0.1k tokens (201 chars/4)
 
   ▸ Global AGENTS.md           ~0.0k tokens (64 chars/4)
 

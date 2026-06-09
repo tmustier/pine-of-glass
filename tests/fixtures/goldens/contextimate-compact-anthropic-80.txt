@@ -3,7 +3,7 @@
   <expand-key>: cycle view · model anthropic/claude-opus-4-8 · Claude 4.7+ heuristic
   Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail
 
-  ▸ System prompt              ~0.1k tokens (137 chars/2.6)
+  ▸ Runtime system prompt      ~0.1k tokens (201 chars/2.6)
 
   ▸ Global AGENTS.md           ~0.0k tokens (64 chars/2.6)
 
@@ -20,7 +20,7 @@
     bash                       ~0.1k  Execute a bash command in the current wor…
     write                       -     (inactive) Write content to a file.
 
-  Total harness                ~0.8k tokens (2.2k chars)
+  Total harness                ~0.9k tokens (2.2k chars)
 
   Tool outputs                              ~20k tokens (52.3k chars/2.6)
   Messages                                   ~3k tokens (8.1k chars/2.6)

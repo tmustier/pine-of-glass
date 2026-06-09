@@ -2,7 +2,7 @@
 [Context Estimator] summary → compact → expanded
   <expand-key>: cycle view · model anthropic/claude-opus-4-8 · Claude 4.7+ heuristic
   Expanded view: per-section subtotals, sources, and a readable schema breakdown of each active tool.
-  Total harness                              ~0.8k tokens (2.2k chars)
+  Total harness                              ~0.9k tokens (2.2k chars)
 
   Tool outputs                              ~20k tokens (52.3k chars/2.6)
   Messages                                   ~3k tokens (8.1k chars/2.6)
@@ -10,12 +10,16 @@
   Total session                             ~63k tokens (Pi current - harness)
   Total request                              64k tokens (32.2% / 200k ctx)
 
-  System prompt  ~0.1k tokens                                                                       137 chars · text/2.6
-    pi harness system prompt · preview only
+  Runtime system prompt  ~0.1k tokens                                                               201 chars · text/2.6
+    assembled at runtime: pi base prompt + tool/extension instructions · preview only
+    of which tool/extension instructions: ~0.0k tokens (2 tool snippets, 1 guideline) · already counted in this row
 
     You are a fixture harness for pine-of-glass tests.
-    Tooling guidelines: use the read tool before the edit tool.
-    Current date: 2026-06-09
+    Available tools:
+    - read: Read file contents
+    - bash: Execute bash commands
+    Guidelines:
+    - Prefer rg over grep for searching.
 
   Global AGENTS.md  ~0.0k tokens                                                                     64 chars · text/2.6
     ~/.pi/agent/AGENTS.md · preview only

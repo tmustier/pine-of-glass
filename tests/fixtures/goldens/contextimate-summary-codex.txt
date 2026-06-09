@@ -2,7 +2,7 @@
 [Context Estimator] summary → compact → expanded
   <expand-key>: cycle view · model openai-codex/gpt-5.5 · OpenAI-Codex heuristic
 
-  System prompt                              ~0.0k tokens (137 chars/4)
+  Runtime system prompt                      ~0.1k tokens (201 chars/4)
   Global AGENTS.md                           ~0.0k tokens (64 chars/4)
   ~/projects/demo/AGENTS.md                  ~0.0k tokens (52 chars/4)
   Skill frontmatter (3)                      ~0.2k tokens (743 chars/4)

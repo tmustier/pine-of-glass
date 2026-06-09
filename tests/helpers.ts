@@ -89,7 +89,12 @@ export function fixtureSystemPrompt(): string {
   const home = homedir();
   return `You are a fixture harness for pine-of-glass tests.
 
-Tooling guidelines: use the read tool before the edit tool.
+Available tools:
+- read: Read file contents
+- bash: Execute bash commands
+
+Guidelines:
+- Prefer rg over grep for searching.
 
 <project_context>
 
@@ -144,6 +149,9 @@ export const fixtureTools: ToolInfo[] = [
       },
       required: ["path"],
     },
+    // read and bash share one guideline: pi dedupes repeated guidelines in the prompt,
+    // and detectRuntimeAdditions must count the shared text once.
+    promptGuidelines: ["Prefer rg over grep for searching."],
     sourceInfo: { scope: "temporary", source: "builtin", origin: "top-level", path: "<builtin:read>" },
   },
   {
@@ -157,6 +165,7 @@ export const fixtureTools: ToolInfo[] = [
       },
       required: ["command"],
     },
+    promptGuidelines: ["Prefer rg over grep for searching."],
     sourceInfo: { scope: "temporary", source: "builtin", origin: "top-level", path: "<builtin:bash>" },
   },
   {
@@ -187,6 +196,8 @@ export const fixtureTools: ToolInfo[] = [
       },
       required: ["queries"],
     },
+    // A guideline that is NOT present in the fixture prompt: must not be attributed.
+    promptGuidelines: ["Vary search query phrasing across angles."],
     sourceInfo: { scope: "user", source: "npm:fixture-pack", origin: "package", path: `${homedir()}/.pi/agent/npm/fixture/search.ts` },
   },
   {

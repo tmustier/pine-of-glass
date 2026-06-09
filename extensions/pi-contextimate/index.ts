@@ -51,7 +51,7 @@ type ToolExpanded = {
 };
 
 type ExpandedContent =
-  | { kind: "text"; note?: string; preview?: string[] }
+  | { kind: "text"; note?: string; attribution?: string; preview?: string[] }
   | { kind: "skills"; note?: string; rows: ScanRow[] }
   | { kind: "tools"; notes: string[]; tools: ToolExpanded[] };
 
@@ -414,6 +414,47 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
     });
   }
   return sections;
+}
+
+type RuntimeAdditions = { chars: number; snippetCount: number; guidelineCount: number };
+
+// Issue #9: the runtime system prompt is assembled from pi's base prompt plus tool- and
+// extension-provided instructions (the "Available tools" snippet lines and deduplicated
+// promptGuidelines). Attribute the part we can verify: count only text that is actually
+// present in the prompt remainder, deduplicating guidelines the same way pi does, so the
+// number is evidence-based rather than a guess from tool metadata.
+function detectRuntimeAdditions(promptRemainder: string, tools: ToolSummary[]): RuntimeAdditions {
+  let chars = 0;
+  let snippetCount = 0;
+  let guidelineCount = 0;
+  const seenGuidelines = new Set<string>();
+  for (const tool of tools) {
+    const escapedName = tool.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const snippetMatch = promptRemainder.match(new RegExp(`^- ${escapedName}: .+$`, "m"));
+    if (snippetMatch) {
+      chars += snippetMatch[0].length + 1; // +1 for the newline the line occupies
+      snippetCount += 1;
+    }
+    for (const guideline of tool.promptGuidelines) {
+      const normalized = guideline.trim();
+      if (normalized.length === 0 || seenGuidelines.has(normalized)) continue;
+      seenGuidelines.add(normalized);
+      if (promptRemainder.includes(normalized)) {
+        chars += normalized.length + 1;
+        guidelineCount += 1;
+      }
+    }
+  }
+  return { chars, snippetCount, guidelineCount };
+}
+
+function runtimeAdditionsAttribution(additions: RuntimeAdditions, denominator: number): string | undefined {
+  if (additions.chars === 0) return undefined;
+  const tokens = estimateCharsAsTokens(additions.chars, denominator);
+  const parts: string[] = [];
+  if (additions.snippetCount > 0) parts.push(`${additions.snippetCount} tool snippet${additions.snippetCount === 1 ? "" : "s"}`);
+  if (additions.guidelineCount > 0) parts.push(`${additions.guidelineCount} guideline${additions.guidelineCount === 1 ? "" : "s"}`);
+  return `of which tool/extension instructions: ~${compactTokenNumber(tokens)} tokens (${parts.join(", ")}) · already counted in this row`;
 }
 
 function buildSkillsSection(systemPrompt: string, denominator: number): { section?: PrefixSection; skills: SkillSummary[] } {
@@ -1233,17 +1274,30 @@ function buildSnapshot(
   const textDenominator = heuristic.textDenominator;
   const promptRemainder = getPromptRemainder(systemPrompt);
   const systemPreview = firstMeaningfulLines(promptRemainder, 6).map((line) => singleLine(line));
+
+  // Tools are resolved before the system section so the runtime prompt row can attribute
+  // the tool/extension instructions embedded in it (issue #9).
+  let tools: ToolSummary[] = [];
+  let loadedToolCount = 0;
+  const toolsResult = safely(() => buildToolsSection(pi, heuristic, config), undefined as ReturnType<typeof buildToolsSection> | undefined);
+  if (toolsResult) {
+    tools = toolsResult.tools;
+    loadedToolCount = toolsResult.loadedToolCount;
+  }
+  const runtimeAdditions = safely(() => detectRuntimeAdditions(promptRemainder, tools), { chars: 0, snippetCount: 0, guidelineCount: 0 });
+
   const sections: PrefixSection[] = [
     {
-      id: "system",
-      title: "System prompt",
+      id: "system", // id is config/signature API — stays "system" even though the title changed
+      title: "Runtime system prompt",
       content: promptRemainder,
       denominator: textDenominator,
       methodTag: `text/${formatDenominator(textDenominator)}`,
       countLabel: formatCount(promptRemainder.length, textDenominator),
       expanded: {
         kind: "text",
-        note: "pi harness system prompt · preview only",
+        note: "assembled at runtime: pi base prompt + tool/extension instructions · preview only",
+        attribution: runtimeAdditionsAttribution(runtimeAdditions, textDenominator),
         preview: systemPreview.length > 0 ? systemPreview : ["(no non-empty lines)"],
       },
     },
@@ -1252,15 +1306,7 @@ function buildSnapshot(
 
   const { section: skillsSection, skills } = buildSkillsSection(systemPrompt, textDenominator);
   if (skillsSection) sections.push(skillsSection);
-
-  let tools: ToolSummary[] = [];
-  let loadedToolCount = 0;
-  const toolsResult = safely(() => buildToolsSection(pi, heuristic, config), undefined as ReturnType<typeof buildToolsSection> | undefined);
-  if (toolsResult) {
-    tools = toolsResult.tools;
-    loadedToolCount = toolsResult.loadedToolCount;
-    if (toolsResult.section) sections.push(toolsResult.section);
-  }
+  if (toolsResult?.section) sections.push(toolsResult.section);
 
   const session = buildSessionBreakdown(sessionManager);
   const contextUsage = safely(() => getContextUsage?.(), undefined);
@@ -1611,6 +1657,7 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): 
       continue;
     }
     if (expanded.note) lines.push(renderExpandedNote(expanded.note, theme));
+    if (expanded.kind === "text" && expanded.attribution) lines.push(renderExpandedNote(expanded.attribution, theme));
     if (expanded.kind === "skills") {
       lines.push("", ...renderScanRows(expanded.rows, theme, width));
     } else if (expanded.preview && expanded.preview.length > 0) {
@@ -1863,6 +1910,9 @@ export const internals = {
   estimatedTokenField,
   exactTokenLabel,
   formatCount,
+  // runtime-addition attribution (issue #9)
+  detectRuntimeAdditions,
+  runtimeAdditionsAttribution,
   // snapshot + renderers
   buildSnapshot,
   totalTokens,

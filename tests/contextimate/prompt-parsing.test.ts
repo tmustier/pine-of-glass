@@ -5,9 +5,19 @@ import assert from "node:assert/strict";
 import { homedir } from "node:os";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
-import { fixtureSystemPrompt } from "../helpers.ts";
+import type { ToolSummary } from "../../extensions/pi-contextimate/index.ts";
+import { fakePi, fixtureSystemPrompt, anthropicModel } from "../helpers.ts";
 
-const { getPromptRemainder, parseSkills, parseContextSections, buildSkillsSection, AVAILABLE_SKILLS_RE } = internals;
+const {
+  getPromptRemainder,
+  parseSkills,
+  parseContextSections,
+  buildSkillsSection,
+  AVAILABLE_SKILLS_RE,
+  detectRuntimeAdditions,
+  runtimeAdditionsAttribution,
+  buildSnapshot,
+} = internals;
 
 test("context sections split per file with Global AGENTS.md special-cased", () => {
   const sections = parseContextSections(fixtureSystemPrompt(), 4);
@@ -52,6 +62,48 @@ test("prompt remainder strips project context and skills blocks entirely", () =>
   assert.ok(!remainder.includes("alpha-skill"));
   assert.ok(remainder.includes("You are a fixture harness"));
   assert.ok(remainder.includes("Current date: 2026-06-09"));
+});
+
+test("runtime-addition attribution counts only verified, deduplicated prompt text (#9)", () => {
+  const remainder = getPromptRemainder(fixtureSystemPrompt());
+  const summarize = (name: string, guidelines: string[]): ToolSummary => ({
+    name,
+    description: "",
+    source: "builtin",
+    parameterKeys: [],
+    schema: {},
+    promptGuidelines: guidelines,
+  });
+  const shared = "Prefer rg over grep for searching.";
+  const tools = [
+    summarize("read", [shared]),
+    summarize("bash", [shared]), // duplicate guideline — pi dedupes, so must count once
+    summarize("search", ["Vary search query phrasing across angles."]), // absent from prompt
+  ];
+  const additions = detectRuntimeAdditions(remainder, tools);
+  assert.equal(additions.snippetCount, 2, "read + bash snippet lines are present");
+  assert.equal(additions.guidelineCount, 1, "shared guideline counted once, absent one not at all");
+  const expectedChars =
+    "- read: Read file contents".length + 1 +
+    "- bash: Execute bash commands".length + 1 +
+    shared.length + 1;
+  assert.equal(additions.chars, expectedChars);
+
+  const attribution = runtimeAdditionsAttribution(additions, 4)!;
+  assert.ok(attribution.includes("2 tool snippets, 1 guideline"), attribution);
+  assert.ok(attribution.includes("already counted in this row"), "must not read as an extra cost");
+  assert.equal(runtimeAdditionsAttribution({ chars: 0, snippetCount: 0, guidelineCount: 0 }, 4), undefined);
+});
+
+test("system section: title renamed for #9 but id stays 'system' (config/signature compat)", () => {
+  const snapshot = buildSnapshot(fakePi(), () => fixtureSystemPrompt(), undefined, () => undefined, () => anthropicModel, {});
+  const system = snapshot.sections[0]!;
+  assert.equal(system.id, "system");
+  assert.equal(system.title, "Runtime system prompt");
+  assert.ok(system.expanded && system.expanded.kind === "text");
+  const expanded = system.expanded as { note?: string; attribution?: string };
+  assert.ok(expanded.note!.includes("assembled at runtime"));
+  assert.ok(expanded.attribution!.includes("tool/extension instructions"));
 });
 
 test("prompt without context/skills blocks degrades to remainder-only", () => {
