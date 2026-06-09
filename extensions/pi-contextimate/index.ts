@@ -588,6 +588,9 @@ function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | 
   return {
     ...base,
     ...normalized,
+    // An absent label in a patch must not clobber the base label: unknown providers
+    // otherwise reach renderHeader with label undefined and crash formatHeuristicLabel.
+    label: normalized.label ?? base.label,
     source,
     textDenominator: cleanDenominator(normalized.textDenominator, base.textDenominator),
     sessionDenominator: cleanDenominator(normalized.sessionDenominator, base.sessionDenominator),
@@ -1640,11 +1643,17 @@ class StartupContextComponent implements Component {
   private cachedWidth?: number;
   private cachedLines?: string[];
 
-  constructor(
-    private readonly snapshot: () => PrefixSnapshot,
-    private readonly getTheme: () => Theme,
-    private mode: ViewMode,
-  ) {}
+  // No TS parameter properties: keep the source compatible with Node's strip-only
+  // type stripping so the zero-dependency test harness can import this file directly.
+  private readonly snapshot: () => PrefixSnapshot;
+  private readonly getTheme: () => Theme;
+  private mode: ViewMode;
+
+  constructor(snapshot: () => PrefixSnapshot, getTheme: () => Theme, mode: ViewMode) {
+    this.snapshot = snapshot;
+    this.getTheme = getTheme;
+    this.mode = mode;
+  }
 
   getMode(): ViewMode {
     return this.mode;
@@ -1815,6 +1824,63 @@ function setMode(mode: ViewMode): void {
   g.__piContextimateBlock?.setMode(mode);
   g.__piContextimateTui?.requestRender?.(true);
 }
+
+// Test-only surface. Pi loads extensions via `jiti.import(path, { default: true })`,
+// so named exports are runtime-inert; this object exists for the repo test suites
+// (see docs/testing.md) and is not a stable public API.
+export const internals = {
+  // system-prompt parsing
+  PROJECT_CONTEXT_RE,
+  PROJECT_INSTRUCTIONS_RE,
+  AVAILABLE_SKILLS_RE,
+  SKILL_RE,
+  RESOURCE_HEADER_RE,
+  getPromptRemainder,
+  parseSkills,
+  parseContextSections,
+  buildSkillsSection,
+  // heuristic resolution
+  defaultHeuristic,
+  cleanDenominator,
+  resolveHeuristic,
+  // provider payload shaping
+  resolveToolShapeSpec,
+  substituteToolTemplate,
+  toolPayloadForShape,
+  aggregateToolPayloadForShape,
+  buildToolNumerator,
+  buildToolDisplayEstimate,
+  // OpenAI cookbook-style formula
+  estimateOpenAIToolDefinitionTokens,
+  estimateOpenAIFunctionToolTokens,
+  // session accounting
+  buildSessionBreakdown,
+  buildSessionEstimate,
+  // token label layout
+  compactTokenNumber,
+  tokenLabelLayout,
+  estimatedTokenLabel,
+  estimatedTokenField,
+  exactTokenLabel,
+  formatCount,
+  // snapshot + renderers
+  buildSnapshot,
+  totalTokens,
+  renderSummary,
+  renderCompact,
+  renderExpanded,
+  stripAnsi,
+};
+
+export type {
+  PrefixSnapshot,
+  PrefixSection,
+  ToolSummary,
+  ModelSummary,
+  ContextimateConfig,
+  ResolvedHeuristic,
+  SessionBreakdown,
+};
 
 export default function piContextimate(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {

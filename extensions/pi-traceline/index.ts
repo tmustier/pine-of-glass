@@ -786,6 +786,37 @@ function tryPatch(): void {
   }
 }
 
+// Test-only surface. Pi loads extensions via `jiti.import(path, { default: true })`,
+// so named exports are runtime-inert; this object exists for the repo test suites
+// (see docs/testing.md) and is not a stable public API.
+export const internals = {
+  // duck-typed pi-internal detection (contract-tested against the installed pi)
+  isToolRow,
+  isAssistantRow,
+  // ANSI-aware text machinery
+  stripAnsi,
+  stripSgrBackgrounds,
+  stripSgrForegrounds,
+  rawIndexAtVisibleIndex,
+  rawIndexBeforeVisibleIndex,
+  middleTruncate,
+  fitOneLineAndSuffix,
+  tildify,
+  // row grammar
+  formatCharCount,
+  lineRange,
+  toolStatus,
+  fallbackInvocationLine,
+  oneLine,
+  leadingBlank,
+  // mouse / click state machine
+  parseSgrMouse,
+  isLeftMousePress,
+  shouldEnableClicks,
+  setClickHandling,
+  armClickOnce,
+};
+
 export default function piTraceline(pi: ExtensionAPI) {
   pi.registerShortcut("ctrl+shift+o", {
     description: "Arm one pi-traceline row click",

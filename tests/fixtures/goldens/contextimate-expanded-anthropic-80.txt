@@ -1,0 +1,60 @@
+
+[Context Estimator] summary → compact → expanded
+  <expand-key>: cycle view · model anthropic/claude-opus-4-8 · Claude 4.7+ heuristic
+  Expanded view: per-section subtotals, sources, and a readable schema breakdown of each active tool.
+  Total harness                              ~0.8k tokens (2.2k chars)
+
+  Tool outputs                              ~20k tokens (52.3k chars/2.6)
+  Messages                                   ~3k tokens (8.1k chars/2.6)
+  Other / reasoning                         ~40k tokens (residual)
+  Total session                             ~63k tokens (Pi current - harness)
+  Total request                              64k tokens (32.2% / 200k ctx)
+
+  System prompt  ~0.1k tokens                               137 chars · text/2.6
+    pi harness system prompt · preview only
+
+    You are a fixture harness for pine-of-glass tests.
+    Tooling guidelines: use the read tool before the edit tool.
+    Current date: 2026-06-09
+
+  Global AGENTS.md  ~0.0k tokens                             64 chars · text/2.6
+    ~/.pi/agent/AGENTS.md · preview only
+
+    # Global guidance
+    Prefer clarity &amp; precision in every reply.
+
+  ~/projects/demo/AGENTS.md  ~0.0k tokens                    52 chars · text/2.6
+    ~/projects/demo/AGENTS.md · preview only
+
+    # Demo project
+    Run the demo suite before committing.
+
+  Skill frontmatter (3)  ~0.3k tokens                       743 chars · text/2.6
+    list wrapper/markup  ~0.1k tokens (195 chars/2.6)
+
+    alpha-skill  ~0.1k  Handles A & B cases with a long description so it sorts…
+    beta-skill   ~0.1k  It's the medium one.
+    gamma        ~0.1k  Tiny.
+
+  Tools (3/4 active)  ~0.5k tokens  1.2k chars · payload · Anthropic tool payload
+    counts use Anthropic tool payload at chars/2.6 over the minified provider
+    payload (1.2k chars); the tree below is the readable view
+
+    search · user · npm:fixture-pack · package · ~/.pi/agent/n…/search.ts  ~0.2k
+      Search the web with one or more queries.
+      queries       array   required  Queries searched in sequence
+        text        string  required  Query text
+        recency     string            Recency filter
+      options       object            Search options
+        numResults  number            Results per query
+
+    read · temporary · builtin · top-level · <builtin:read>                ~0.1k
+      Read the contents of a file.
+      path    string  required  Path to the file to read
+      offset  number            Line number to start reading from
+      limit   number            Maximum number of lines to read
+
+    bash · temporary · builtin · top-level · <builtin:bash>                ~0.1k
+      Execute a bash command in the current working directory.
+      command  string  required  Bash command to execute
+      timeout  number            Timeout in seconds
