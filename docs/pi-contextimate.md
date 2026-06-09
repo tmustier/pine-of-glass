@@ -569,11 +569,10 @@ After compaction, Pi deliberately does not trust pre-compaction assistant usage.
 Use the Pi/current-context total as the anchor, then split only the locally countable pieces. Do not estimate hidden thinking from encrypted/signature payload character length.
 
 ```text
-Total session: x tokens
-  of which approx. using provider-shaped chars / denominator
-  Tool outputs:        y tokens
-  Messages:            z tokens
-  Other / reasoning:   x - y - z tokens
+Tool outputs:        y tokens
+Messages:            z tokens
+Other / reasoning:   x - y - z tokens
+Total session:       x tokens
 ```
 
 Where:

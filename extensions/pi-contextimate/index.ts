@@ -1476,11 +1476,10 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, tokenLayout?:
   const source = estimate.totalSource === "pi" ? "(Pi current - harness)" : "(heuristic fallback)";
   const rows = [
     "",
-    renderTokenTotalRow("Total session", estimate.totalTokens, theme, source, tokenLayout),
-    `    ${theme.fg("dim", `of which approx. visible buckets use chars/${formatDenominator(estimate.denominator)}; other/reasoning is residual`)}`,
     renderEstimatedTokenRow("Tool outputs", estimate.toolOutputTokens, snapshot.session.toolOutputChars, theme, formatDenominatorDetail(estimate.denominator), tokenLayout),
     renderEstimatedTokenRow("Messages", estimate.messageTokens, snapshot.session.messageChars, theme, formatDenominatorDetail(estimate.denominator), tokenLayout),
     renderEstimatedTokenRow("Other / reasoning", estimate.otherTokens, undefined, theme, "residual", tokenLayout),
+    renderTokenTotalRow("Total session", estimate.totalTokens, theme, source, tokenLayout),
   ];
   const requestTotal = snapshot.contextUsage
     ? renderContextUsageTotalRow("Total request", snapshot.contextUsage, theme, tokenLayout)
