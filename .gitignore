@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 .pi/
 *.log
+*.local.md
 
 # pi-contextimate local validation artifacts
 .pi-contextimate-*/
