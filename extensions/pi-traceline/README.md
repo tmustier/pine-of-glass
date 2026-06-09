@@ -69,6 +69,15 @@ Or add it to your Pi config's extension list pointing at this directory. If you 
 - Plain terminal scrolling stays available by default. To expand/collapse one row with the mouse, press `Ctrl+Shift+O` or run `/traceline-click`, then click the row within 8 seconds.
 - If you prefer always-on click handling, run `/traceline-clicks on`; this uses terminal mouse reporting and may capture wheel/trackpad scrolling until `/traceline-clicks off`. You can also start Pi with `PI_TRACELINE_CLICK=1` to opt into persistent click handling by default.
 
+### Why clicks are off by default (design decision)
+
+Receiving click events requires terminal mouse reporting (`1000` + SGR `1006`), and once that is on, terminals route wheel/trackpad scroll through the application instead of native scrollback — making Pi feel broken in the way users notice most. That cost is too high for a convenience feature, so the resolution (issue #7) is:
+
+- **No mouse reporting by default, ever.** Plain terminal scrolling always wins.
+- **One-shot arm is the primary path**: `Ctrl+Shift+O` or `/traceline-click` enables reporting for a single click or 8 seconds, whichever comes first, then releases the terminal. Every exit path (click consumed, TTL expiry, explicit disable) ends with mouse reporting off — this invariant is pinned by the test suite (`tests/traceline/click-state.test.ts`).
+- **Persistent mode stays as an explicit escape hatch** (`/traceline-clicks on`, `PI_TRACELINE_CLICK=1`) for users who accept the scroll tradeoff knowingly.
+- **Keyboard-first remains `Ctrl+T`** for the whole-turn toggle. A dedicated keyboard row-picker was considered and deferred: it would add modal selection UI for a gap the one-shot click already covers. Revisit if real usage shows the one-shot is too clunky.
+
 The collapse state is read from a live assistant row (falling back to `~/.pi/agent/settings.json`'s `hideThinkingBlock`), so the tool view can never desync from the reasoning view.
 
 ## How it works
