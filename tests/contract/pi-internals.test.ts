@@ -145,6 +145,44 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   assert.equal(traceline.toolStatus(comp), "error");
 });
 
+test("real ToolExecutionComponent: bash multiline render + tool-surface seams traceline borrows", () => {
+  pi.initTheme(undefined, false);
+  const comp = new pi.ToolExecutionComponent(
+    "bash",
+    "tool-2",
+    { command: 'python3 -c "\nimport json\nprint(1)\n" && echo done', timeout: 70 },
+    undefined,
+    undefined,
+    {} as never,
+    tmpdir(),
+  );
+
+  // Multiline commands render one line per real newline, timeout suffix on the last —
+  // the shape flattenInvocationLines + stripTimeoutSuffix assume (issue #10).
+  const callComp = (comp as unknown as { callRendererComponent?: { render?: (w: number) => string[] } }).callRendererComponent;
+  assert.ok(callComp && typeof callComp.render === "function", "bash callRendererComponent gone — one-line path falls back");
+  const lines = callComp.render(10_000);
+  assert.ok(lines.length >= 4, `bash call no longer renders one line per newline: ${JSON.stringify(lines)}`);
+  assert.ok(traceline.stripAnsi(lines[lines.length - 1]!).includes("(timeout 70s)"), "timeout suffix moved off the last line");
+
+  const flat = traceline.stripAnsi(traceline.oneLine(comp as never, 200));
+  assert.ok(flat.includes("echo done"), `flattened bash row lost its tail: ${flat}`);
+
+  // The shaded surface: contentBox.bgFn is the status-synced theme background, and its
+  // output shape (open + text + bg-only close) is what shadeRow's \u0000 split parses.
+  const box = (comp as unknown as { contentBox?: { bgFn?: (text: string) => string } }).contentBox;
+  assert.ok(box && typeof box.bgFn === "function", "contentBox.bgFn gone — traceline rows lose the tool surface");
+  const [open = "", close = ""] = box.bgFn("\u0000").split("\u0000");
+  assert.ok(/^\x1b\[48;/.test(open), `theme.bg open is no longer a bg SGR prefix: ${JSON.stringify(open)}`);
+  assert.equal(close, "\x1b[49m", "theme.bg no longer closes with bg-only reset — shadeRow re-assertion breaks");
+  // Anything other than "self" composes through the bg-painted contentBox; rowBackground
+  // only opts out on "self", so the invariant to pin is bash not being self-framed.
+  const shell = (comp as unknown as { getRenderShell?: () => string }).getRenderShell?.();
+  assert.ok(typeof shell === "string" && shell !== "self", `bash render shell became self-framed (${shell}) — rows lose the shade`);
+  const shaded = traceline.oneLine(comp as never, 80);
+  assert.ok(shaded.startsWith(open), "real row did not open on the theme tool background");
+});
+
 test("real AssistantMessageComponent satisfies traceline's assistant duck type", () => {
   const component = new pi.AssistantMessageComponent({ role: "assistant", content: [{ type: "text", text: "hi" }] } as never);
   assert.equal(traceline.isAssistantRow(component), true, "AssistantMessageComponent no longer matches isAssistantRow");
