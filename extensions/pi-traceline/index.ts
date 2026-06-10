@@ -401,12 +401,17 @@ function resultCharSuffix(comp: any): string {
 // Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
 // width (e.g. bash `cd /Users/me/... && ...` -> `cd ~/... && ...`). OSC sequences are
 // skipped: a read row's OSC 8 hyperlink carries a file:// URL containing the home path,
-// and tildifying *that* would corrupt the click target.
-function tildify(text: string): string {
+// and tildifying *that* would corrupt the click target. The pattern is built once —
+// tildify runs for every visible row on every frame.
+const TILDIFY_PATTERN = (() => {
   const home = homedir();
-  if (!home) return text;
-  const pattern = new RegExp(`${OSC_SEQUENCE.source}|${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g");
-  return text.replace(pattern, (match) => (match === home ? "~" : match));
+  if (!home) return undefined;
+  return new RegExp(`${OSC_SEQUENCE.source}|${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g");
+})();
+
+function tildify(text: string): string {
+  if (!TILDIFY_PATTERN) return text;
+  return text.replace(TILDIFY_PATTERN, (match) => (match.startsWith("\x1b") ? match : "~"));
 }
 
 function isVisibleBoundary(ch: string): boolean {
