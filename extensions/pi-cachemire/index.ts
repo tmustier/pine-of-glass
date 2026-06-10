@@ -75,6 +75,9 @@ export interface CallClassification {
 export interface CallRecord {
   index: number;
   at: number;
+  /** Request-start anchor (when the provider wrote/refreshed this call's cache entry);
+   * `at` is response end. Absent on restored records, whose timestamps are response-ish. */
+  requestAt?: number;
   gapMs?: number;
   usage: UsageLike;
   expectedRead: number;
@@ -1122,10 +1125,13 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const fingerprintCause = s.prevFingerprint && s.pendingFingerprint
       ? diffFingerprints(s.prevFingerprint, s.pendingFingerprint)
       : undefined;
+    // Entry ages use the request-start anchor (entries are written/refreshed during
+    // request processing); restored records fall back to their response-ish message
+    // timestamp — marginally optimistic, same caveat as the restore-time TTL anchor.
     const entryMatch = s.window.kind === "band"
       ? matchPriorEntry(
           usage.cacheRead,
-          s.records.map((record) => ({ index: record.index, at: record.at, promptTokens: promptTokens(record.usage) })),
+          s.records.map((record) => ({ index: record.index, at: record.requestAt ?? record.at, promptTokens: promptTokens(record.usage) })),
           requestAt,
           s.window.hardMs,
         )
@@ -1145,6 +1151,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const record: CallRecord = {
       index: s.records.length + 1,
       at: now,
+      requestAt,
       gapMs,
       usage,
       expectedRead: s.expectedRead,
