@@ -149,6 +149,17 @@ try {
   pane = capture({ visibleOnly: true });
   const blocks = (pane.match(/\[Context Estimator\]/g) ?? []).length;
   check("exactly one estimator block after /reload", blocks === 1, `found ${blocks}`);
+
+  // 4. Cachemire chat lines persist across pi's chat rebuild (Ctrl+T toggles reasoning
+  // visibility by clearing + rebuilding the chat container from session messages, which
+  // drops raw appended children). /cache appends a ledger line; it must still be on
+  // screen after the rebuild. Visible-only: scrollback retains pre-toggle frames.
+  run(["tmux", "send-keys", "-t", session, "/cache", "Enter"]);
+  waitFor("cachemire ledger renders", (text) => text.includes("cache & loop ledger"));
+  run(["tmux", "send-keys", "-t", session, "C-t"]);
+  pane = waitFor("thinking toggle status", (text) => /Thinking blocks: (hidden|visible)/.test(capture({ visibleOnly: true })));
+  pane = capture({ visibleOnly: true });
+  check("cachemire ledger survives the Ctrl+T chat rebuild", pane.includes("cache & loop ledger"));
 } finally {
   run(["tmux", "send-keys", "-t", session, "/exit", "Enter"]);
   sleep(1000);

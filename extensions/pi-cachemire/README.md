@@ -228,3 +228,12 @@ Scrollback lines are appended to pi's chat container directly (found structurall
 traceline); if that internal seam ever drifts, cachemire degrades to plain `notify`
 lines and the contract test suite names the break. Nothing in pi's `node_modules` is
 modified, so this survives `pi update`.
+
+The lines also **persist across pi's chat rebuilds**. Ctrl+T (and compaction, tree
+navigation) rebuild the chat from session messages — raw appended children, including
+pi's own status lines, are dropped. Status lines are flotsam; cachemire's lines are
+forensic records, so each is tracked with a durable anchor (the nearest preceding tool
+row's `toolCallId`, or a message component's `role#timestamp`, plus its offset) and
+re-attached in place after every rebuild. When a rebuild no longer contains the anchor
+(compaction, branch navigation), the context the line annotated is gone — it is dropped
+rather than re-attached somewhere misleading.

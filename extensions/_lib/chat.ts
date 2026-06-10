@@ -2,6 +2,7 @@
 // against extension-visible component shapes and contract-tested against the
 // installed pi (tests/contract/pi-internals.test.ts), never imported from
 // pi internals — that is what lets the family survive `pi update`.
+import { stripAnsi } from "./ansi.ts";
 
 /** A tool execution row: has setExpanded() and a toolName property. */
 export function isToolRow(component: unknown): boolean {
@@ -41,7 +42,27 @@ export function findContainerBy(
   return undefined;
 }
 
-/** pi's chat container: the one whose direct children include the chat rows. */
+// The startup resource listing pi renders into the chat container at session start:
+// leaf ExpandableText sections whose first line is a [Section] header. This is the
+// chat container's only reliable pre-rows tenant (the welcome/changelog block is
+// gated on updates), and the same seam pi-contextimate has anchored on since v1.
+const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
+
+function isResourceRow(component: unknown): boolean {
+  const c = component as { render?: (width: number) => string[]; children?: unknown };
+  if (!c || typeof c.render !== "function" || Array.isArray(c.children)) return false;
+  try {
+    return RESOURCE_HEADER_RE.test(stripAnsi(c.render(200).join("\n")));
+  } catch {
+    return false;
+  }
+}
+
+/** pi's chat container: the one whose direct children include the chat rows — or, in a
+ * fresh session with no rows yet, the startup resource listing. */
 export function findChatContainer(node: unknown): ContainerLike | undefined {
-  return findContainerBy(node, (children) => children.some((c) => isToolRow(c) || isAssistantRow(c)));
+  return (
+    findContainerBy(node, (children) => children.some((c) => isToolRow(c) || isAssistantRow(c))) ??
+    findContainerBy(node, (children) => children.some((c) => isResourceRow(c)))
+  );
 }

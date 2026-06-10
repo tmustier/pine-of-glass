@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as piTui from "@earendil-works/pi-tui";
 
+import { internals as cachemire } from "../../extensions/pi-cachemire/index.ts";
 import { internals as contextimate } from "../../extensions/pi-contextimate/index.ts";
 import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
 
@@ -191,6 +192,48 @@ test("real AssistantMessageComponent satisfies traceline's assistant duck type",
   assert.equal(peek.hideThinkingBlock, false);
   component.setHideThinkingBlock(true);
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
+});
+
+test("chat-rebuild surface cachemire's line persistence depends on", () => {
+  // Ctrl+T (and compaction/navigation) rebuild the chat container from session messages:
+  // clear() + re-render drops raw appended children. Cachemire re-attaches its lines
+  // after every clear(), anchored on durable component identity.
+  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
+  assert.ok(
+    /toggleThinkingBlockVisibility\(\)\s*\{[^}]*this\.chatContainer\.clear\(\)/s.test(source),
+    "Ctrl+T no longer clears the chat container — re-verify whether cachemire's clear hook is still needed/sufficient",
+  );
+  assert.ok(source.includes("rebuildChatFromMessages"), "rebuildChatFromMessages gone — rebuild path renamed");
+
+  // Anchor identities: tool rows by toolCallId, assistant rows by lastMessage role#timestamp.
+  pi.initTheme(undefined, false);
+  const toolComp = new pi.ToolExecutionComponent("read", "tool-9", { path: "/tmp/x" }, undefined, undefined, {} as never, tmpdir());
+  assert.equal(cachemire.childAnchorKey(toolComp), "tool#tool-9", "toolCallId drifted — tool-row anchors break");
+
+  const ts = "2026-06-10T22:00:00.000Z";
+  const assistantComp = new pi.AssistantMessageComponent(
+    { role: "assistant", content: [{ type: "text", text: "hi" }], timestamp: ts } as never,
+  );
+  assert.equal(
+    cachemire.childAnchorKey(assistantComp),
+    `assistant#${ts}`,
+    "AssistantMessageComponent.lastMessage role/timestamp drifted — assistant anchors break",
+  );
+
+  // The container instance exposes clear() and a mutable children array to hook.
+  const container = new piTui.Container();
+  assert.equal(typeof container.clear, "function", "Container.clear gone — clear hook cannot install");
+
+  // Pre-rows chat detection: the startup resource listing must still be rendered into
+  // chatContainer as sections (the seam both contextimate and _lib findChatContainer's
+  // fresh-session fallback anchor on), and its [Section] headers must keep their names.
+  assert.ok(
+    /addLoadedSection[\s\S]{0,400}this\.chatContainer\.addChild\(section\)/.test(source),
+    "startup resource sections no longer added to chatContainer — pre-rows chat detection dies",
+  );
+  for (const name of ["Skills", "Prompts", "Extensions", "Themes"]) {
+    assert.ok(source.includes(`"${name}"`), `startup section [${name}] renamed — RESOURCE_HEADER_RE drifts`);
+  }
 });
 
 test("TUI prototype chain still contains a patchable Container", () => {

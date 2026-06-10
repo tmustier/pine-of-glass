@@ -839,6 +839,73 @@ export function loadConfig(cwd: string): CachemireConfig {
 // --- chat scrollback append (display-only; never touches LLM context) -------------------
 // ctx.ui.notify force-dims and replaces consecutive status lines, so ledger lines are
 // appended straight to pi's chat container (found structurally via the shared _lib).
+//
+// Persistence: pi rebuilds that container from session messages on several events
+// (Ctrl+T's reasoning toggle, compaction, tree navigation) — chatContainer.clear() plus
+// a re-render drops every raw appended child, including pi's own status lines. Status
+// lines are flotsam; cachemire's lines are forensic records, so each one is tracked
+// with a durable anchor — the nearest preceding child with rebuild-stable identity (a
+// tool row's toolCallId, or a message component's role#timestamp) plus the count of
+// unkeyed children between anchor and line — and re-attached after every rebuild. When
+// a rebuild no longer contains the anchor (compaction, branch navigation), the context
+// the line annotated is gone, so it is dropped rather than re-attached misleadingly.
+
+export interface AnchoredLine<C = unknown> {
+  spacer: C;
+  text: C;
+  /** Durable key of the nearest preceding keyed child; undefined = anchored to chat start. */
+  anchorKey?: string;
+  /** Unkeyed, non-cachemire children between the anchor and this line's spacer. */
+  gap: number;
+}
+
+export function childAnchorKey(child: unknown): string | undefined {
+  const c = child as { toolCallId?: unknown; lastMessage?: { role?: unknown; timestamp?: unknown } } | undefined;
+  if (typeof c?.toolCallId === "string") return `tool#${c.toolCallId}`;
+  const message = c?.lastMessage;
+  if (typeof message?.role === "string" && message.timestamp !== undefined) {
+    return `${message.role}#${message.timestamp}`;
+  }
+  return undefined;
+}
+
+export function anchorForAppend(children: unknown[], anchored: AnchoredLine[]): { anchorKey?: string; gap: number } {
+  const ours = new Set(anchored.flatMap((line) => [line.spacer, line.text]));
+  let gap = 0;
+  for (let i = children.length - 1; i >= 0; i--) {
+    const key = childAnchorKey(children[i]);
+    if (key !== undefined) return { anchorKey: key, gap };
+    if (!ours.has(children[i])) gap++;
+  }
+  return { gap };
+}
+
+/** Re-insert tracked lines into a rebuilt children array (mutated in place). Returns the
+ * survivors; lines whose anchor vanished are dropped. Idempotent: lines still present
+ * (e.g. the hook fired without a rebuild) are left where they are. */
+export function reattachAnchored(children: unknown[], anchored: AnchoredLine[]): AnchoredLine[] {
+  const ours = new Set(anchored.flatMap((line) => [line.spacer, line.text]));
+  const survivors: AnchoredLine[] = [];
+  for (const line of anchored) {
+    if (children.includes(line.text)) {
+      survivors.push(line);
+      continue;
+    }
+    let index = 0;
+    if (line.anchorKey !== undefined) {
+      const at = children.findIndex((child) => childAnchorKey(child) === line.anchorKey);
+      if (at === -1) continue;
+      index = at + 1;
+    }
+    // Walk the gap (skipping lines of ours already re-inserted, which don't count), then
+    // past any of ours sitting exactly at the target so append order is preserved.
+    let remaining = line.gap;
+    while (index < children.length && (ours.has(children[index]) || remaining-- > 0)) index++;
+    children.splice(index, 0, line.spacer, line.text);
+    survivors.push(line);
+  }
+  return survivors;
+}
 
 // --- live state ------------------------------------------------------------------------
 
@@ -866,6 +933,11 @@ interface CachemireState {
   providerLabel?: string;
   compacted: boolean;
   inCompaction: boolean;
+  /** Chat lines cachemire appended, with anchors for re-attachment after pi rebuilds. */
+  anchored: AnchoredLine[];
+  /** Cached chat container: rebuilds empty it of recognizable rows, but the instance
+   * lives for the whole interactive session, so the first find stays valid. */
+  chat?: { addChild?: (child: unknown) => void; children: unknown[] };
   /** Records before this index belong to a dead cache lineage (pre-compaction, or before
    * a model/system/tools/history/thinking change): entries the current prefix cannot
    * read, so entry matching never names them. */
@@ -898,6 +970,7 @@ function state(): CachemireState {
       expectedRead: 0,
       compacted: false,
       inCompaction: false,
+      anchored: [],
       lineageStart: 0,
     };
   }
@@ -936,14 +1009,44 @@ function updateWidget(now = Date.now()): void {
   s.ui.setWidget("pi-cachemire", text === "" ? undefined : [text]);
 }
 
+const CHAT_CLEAR_HOOK_VERSION = 1;
+
+// Wrap the chat container's clear() (instance-level, original preserved) so every
+// rebuild is followed by a re-attach. The rebuild that follows clear() is synchronous;
+// a microtask runs after it completes — including pi's own trailing status line — so
+// anchors are matched against the final rebuilt children.
+function ensureChatClearHook(chat: Record<string, unknown>): void {
+  if (typeof chat.clear !== "function" || chat.__piCachemireClearVersion === CHAT_CLEAR_HOOK_VERSION) return;
+  const original = (chat.__piCachemireOriginalClear as (() => unknown) | undefined) ??
+    (chat.clear as () => unknown).bind(chat);
+  chat.__piCachemireOriginalClear = original;
+  chat.clear = () => {
+    const result = original();
+    queueMicrotask(() => {
+      const s = state();
+      const children = (chat as { children?: unknown[] }).children;
+      if (!Array.isArray(children) || s.anchored.length === 0) return;
+      s.anchored = reattachAnchored(children, s.anchored);
+      s.tui?.requestRender?.(true);
+    });
+    return result;
+  };
+  chat.__piCachemireClearVersion = CHAT_CLEAR_HOOK_VERSION;
+}
+
 function appendChatLine(text: string): Text | undefined {
   const s = state();
-  const chat = s.tui ? findChatContainer(s.tui) : undefined;
-  if (chat?.addChild) {
+  const chat = (s.tui ? findChatContainer(s.tui) : undefined) ?? s.chat;
+  if (chat?.addChild && Array.isArray(chat.children)) {
+    s.chat = chat as CachemireState["chat"];
     try {
       const line = new Text(text, 1, 0);
-      chat.addChild(new Spacer(1));
+      const spacer = new Spacer(1);
+      const anchor = anchorForAppend(chat.children, s.anchored);
+      chat.addChild(spacer);
       chat.addChild(line);
+      s.anchored.push({ spacer, text: line, ...anchor });
+      ensureChatClearHook(chat as unknown as Record<string, unknown>);
       s.tui?.requestRender?.(true);
       return line;
     } catch {
@@ -1265,6 +1368,9 @@ export const internals = {
   formatTokensK,
   formatUsd,
   formatDuration,
+  childAnchorKey,
+  anchorForAppend,
+  reattachAnchored,
   cacheClock,
   renderRunSummary,
   renderMissLine,
