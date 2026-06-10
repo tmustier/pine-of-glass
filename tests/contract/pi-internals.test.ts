@@ -180,3 +180,20 @@ test("ExtensionAPI still declares the tool surface contextimate reads", () => {
     assert.ok(declarations.includes(field), `ToolInfo.${field} gone — contextimate tool rows degrade`);
   }
 });
+
+test("thinking-level surface cachemire reads stays where it is", () => {
+  const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
+  assert.ok(
+    declarations.includes('on(event: "thinking_level_select"'),
+    "thinking_level_select event gone — cachemire's proactive stale flip dies silently",
+  );
+  assert.ok(declarations.includes("previousLevel: ThinkingLevel"), "previousLevel gone from the event");
+  // getThinkingLevel lives on the runtime API object, not the per-event ctx: the runner
+  // wires it onto runtime, and createContext() never includes it. Cachemire calls
+  // pi.getThinkingLevel(); if it moves to ctx-only this anchor should flag it.
+  const runner = readFileSync(join(piRoot, "dist/core/extensions/runner.js"), "utf8");
+  assert.ok(
+    runner.includes("this.runtime.getThinkingLevel = actions.getThinkingLevel"),
+    "runtime.getThinkingLevel wiring drifted — verify pi.getThinkingLevel() still works",
+  );
+});

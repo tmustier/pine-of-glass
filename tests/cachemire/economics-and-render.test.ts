@@ -10,7 +10,7 @@ const {
   formatTokensK, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
-  windowForProvider, windowLabel, windowExpiry, OPENAI_WINDOW,
+  windowForProvider, windowLabel, windowExpiry, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -81,11 +81,24 @@ test("cache clock phases", () => {
   assert.equal(stale.phase, "stale");
   assert.equal(stale.text, "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix");
 
-  // Model switch: per-model caches everywhere, and the stored count is in the old
-  // tokenizer's currency — definite cold, no numbers.
-  const switched = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true });
+  // Model switch: per-model caches everywhere — definite cold. The stored count is in
+  // the old tokenizer's currency, so it appears only with an explicit denomination tag
+  // (and never a $, which would compound the conversion error).
+  const switched = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true, oldModelId: "claude-fable-5" });
   assert.equal(switched.phase, "cold");
-  assert.equal(switched.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt");
+  assert.equal(switched.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt (~142.3k claude-fable-5 tokens)");
+  // Without a currency tag available the number is withheld outright.
+  const untagged = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
+  assert.equal(untagged.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt");
+
+  // Thinking level change: Anthropic documents message-breakpoint invalidation with
+  // system/tools surviving — a contract-backed stale state. Compaction outranks it.
+  const thinking = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, thinkingChanged: true });
+  assert.equal(thinking.phase, "stale");
+  assert.equal(thinking.text, "cache stale \u00b7 thinking level changed \u00b7 next send re-writes the prompt");
+  // Effort lives outside OpenAI's prompt prefix: a band window makes no claim.
+  const bandThinking = cacheClock({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true });
+  assert.equal(bandThinking.text, "cache likely warm \u00b7 3m since last call");
 });
 
 test("openai band: warm → fading → hard-cap cold", () => {
@@ -97,6 +110,25 @@ test("openai band: warm → fading → hard-cap cold", () => {
   const capped = cacheClock({ ...base, now: 90 * MIN });
   assert.equal(capped.phase, "cold");
   assert.equal(capped.text, "cache cold (idle 1h30m > 1h cap) \u00b7 next send re-sends ~109.8k uncached (~$1.37)");
+});
+
+test("thinking level changes are material only when they change the wire params", () => {
+  // Wire mapping mirrors pi-ai's mapThinkingLevelToEffort + the off→disabled case.
+  assert.equal(wireThinkingEffort(undefined, "minimal"), "low");
+  assert.equal(wireThinkingEffort(undefined, "xhigh"), "high", "unmapped xhigh falls back to high");
+  assert.equal(wireThinkingEffort({ xhigh: "xhigh" }, "xhigh"), "xhigh");
+  assert.equal(wireThinkingEffort(undefined, "off"), "off");
+
+  assert.equal(thinkingLevelsDiffer(undefined, "low", "high"), true);
+  assert.equal(thinkingLevelsDiffer(undefined, undefined, "high"), false, "unknown baseline: never invent a break");
+  // claude-fable-5 (adaptive, map { xhigh: "xhigh" }): minimal→low is a wire no-op —
+  // both become effort "low" (live-verified: byte-identical payload, 100% cache hit).
+  const fable = { xhigh: "xhigh" } as Record<string, string | null>;
+  assert.equal(thinkingLevelsDiffer(fable, "minimal", "low"), false);
+  assert.equal(thinkingLevelsDiffer(fable, "low", "medium"), true, "effort low → medium changes output_config");
+  assert.equal(thinkingLevelsDiffer(fable, "minimal", "off"), true, "off disables thinking on the wire");
+  assert.equal(thinkingLevelsDiffer(fable, "off", "xhigh"), true);
+  assert.equal(thinkingLevelsDiffer(fable, "xhigh", "high"), true);
 });
 
 test("window resolution and labels", () => {
@@ -135,6 +167,17 @@ test("run summary and miss lines read exactly as designed", () => {
   assert.equal(
     renderRunSummary(run, 161_000),
     "turn: 7 calls \u00b7 2m41s \u00b7 read 940.1k (99.6% cached) \u00b7 wrote 11.2k \u00b7 out 4.2k \u00b7 $0.092",
+  );
+
+  // Singular call, near-total hit rate collapsing to a clean "100", M-units past a
+  // million so a 59-call turn reads 9.1M, not 9062.9k.
+  const bigTurn = {
+    startedAt: 0, calls: 1, input: 3_700, cacheRead: 9_062_900, cacheWrite: 222_900,
+    output: 103_500, costUsd: 17.03,
+  };
+  assert.equal(
+    renderRunSummary(bigTurn, 1_777_000),
+    "turn: 1 call \u00b7 29m37s \u00b7 read 9.1M (100% cached) \u00b7 wrote 222.9k \u00b7 out 103.5k \u00b7 $17.03",
   );
 
   const miss: CallRecord = {
@@ -209,6 +252,24 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   })!;
   assert.equal(model.expectedRewriteTokens, undefined);
   assert.equal(renderBreakingLine(model), "cache breaking \u00b7 re-writing the full prompt \u00b7 cause: model switched a \u2192 b");
+
+  // Thinking change: contract window (Anthropic, documented) predicts an unsized
+  // re-write; a band window predicts nothing — effort is outside the prompt prefix.
+  // Budget changes carry the documented system/tools survival; adaptive effort changes
+  // make no survival claim (live test on claude-fable-5: 100% of the prompt re-wrote).
+  const budgetCause = { kind: "thinking", detail: "thinking changed (thinking budget 4096 \u2192 thinking budget 16384)" } as const;
+  const budget = predictBreak({ ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: budgetCause })!;
+  assert.equal(budget.expectedRewriteTokens, undefined);
+  assert.equal(
+    renderBreakingLine(budget),
+    "cache breaking \u00b7 re-writing history (system/tools stay cached) \u00b7 cause: thinking changed (thinking budget 4096 \u2192 thinking budget 16384)",
+  );
+  const effortCause = { kind: "thinking", detail: "thinking changed (thinking effort xhigh \u2192 thinking effort low)" } as const;
+  assert.equal(
+    renderBreakingLine(predictBreak({ ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: effortCause })!),
+    "cache breaking \u00b7 re-writing the prompt \u00b7 cause: thinking changed (thinking effort xhigh \u2192 thinking effort low)",
+  );
+  assert.equal(predictBreak({ ...base, gapMs: 1_000, window: OPENAI_WINDOW, fingerprintCause: budgetCause }), undefined);
 
   // Compaction: the event is material but the new prefix size is unknowable.
   const compaction = predictBreak({ ...base, compacted: true, gapMs: 1_000, window: CONTRACT_5M })!;

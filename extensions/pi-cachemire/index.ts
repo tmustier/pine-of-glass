@@ -53,11 +53,16 @@ export interface RequestFingerprint {
   toolHashes: Array<{ name: string; hash: string }>;
   messageHashes: string[];
   ttlMs?: number; // from observed cache_control: 5m default, 1h when ttl:"1h"; undefined = implicit/unknown
+  /** Canonical description of the thinking/reasoning request params (e.g. "thinking budget
+   * 8192", "effort high"). Anthropic documents that changing these invalidates message
+   * cache breakpoints (system/tools stay cached); OpenAI's effort lives outside the
+   * prompt prefix, so there it is forensic context, not a predicted break. */
+  thinking?: string;
 }
 
 export type CauseKind =
-  | "cold" | "ttl" | "compaction" | "compaction-work" | "model" | "system" | "tools"
-  | "history" | "restored" | "unknown";
+  | "cold" | "ttl" | "compaction" | "compaction-work" | "model" | "thinking" | "system"
+  | "tools" | "history" | "restored" | "unknown";
 
 export interface CallCause { kind: CauseKind; detail: string }
 
@@ -101,7 +106,7 @@ export interface CachemireConfig {
 export const DEFAULT_CONFIG: CachemireConfig = {
   widget: true,
   turnSummary: true,
-  turnSummaryMinCalls: 2,
+  turnSummaryMinCalls: 1, // every turn: a single-call turn omitting the line felt inconsistent
   missWarnings: true,
   missWarnUsd: 0.05,
   missWarnTokens: 20_000,
@@ -161,6 +166,40 @@ export function windowExpiry(
   if (window.kind === "contract") return gapMs > window.ttlMs ? "past" : "within";
   if (gapMs > window.hardMs) return "past";
   return gapMs > window.softMs ? "maybe" : "within";
+}
+
+/**
+ * What a pi thinking level becomes on the anthropic wire — mirrors pi-ai's
+ * mapThinkingLevelToEffort (model map override first, then minimal/low→low,
+ * medium→medium, high→high, anything else→high) plus the off→disabled case.
+ */
+export function wireThinkingEffort(
+  map: Record<string, string | null> | undefined,
+  level: string,
+): string {
+  if (level === "off") return "off";
+  const mapped = map?.[level];
+  if (typeof mapped === "string") return mapped;
+  if (level === "minimal" || level === "low") return "low";
+  if (level === "medium" || level === "high") return level;
+  return "high";
+}
+
+/**
+ * Whether switching pi thinking levels changes what actually goes on the wire. Two
+ * levels mapping to the same effort are a wire no-op: live-verified on claude-fable-5,
+ * where minimal→low (both effort "low") produced a byte-identical payload and a 100%
+ * cache hit — a naive "any level change breaks cache" flip would have lied. This is the
+ * effort-based (adaptive) view; budget models can differ where efforts collide, which
+ * under-flips the widget — the send-time fingerprint diff still catches those exactly.
+ */
+export function thinkingLevelsDiffer(
+  map: Record<string, string | null> | undefined,
+  a: string | undefined,
+  b: string | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return false;
+  return wireThinkingEffort(map, a) !== wireThinkingEffort(map, b);
 }
 
 // Shared cause wording for predictions and resolved classifications.
@@ -246,6 +285,7 @@ export function fingerprintPayload(payload: unknown): RequestFingerprint {
       }),
       messageHashes: (Array.isArray(body.input) ? body.input : []).map((item) => hashOf(item)),
       ttlMs: undefined,
+      thinking: `effort ${(body.reasoning as { effort?: string } | undefined)?.effort ?? "default"}`,
     };
   }
   if (Array.isArray(body.messages)) {
@@ -260,9 +300,24 @@ export function fingerprintPayload(payload: unknown): RequestFingerprint {
       })),
       messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheControl(message))),
       ttlMs: findTtlMs(body),
+      thinking: describeAnthropicThinking(body.thinking, body.output_config),
     };
   }
   return { kind: "unknown", toolHashes: [], messageHashes: [] };
+}
+
+// pi-ai puts thinking on the anthropic wire three ways: budget models get
+// thinking:{type:"enabled",budget_tokens}, adaptive models (forceAdaptiveThinking) get
+// thinking:{type:"adaptive"} plus output_config:{effort}, and off is {type:"disabled"}
+// or absent. All three must be told apart, or effort changes diff as no-ops.
+function describeAnthropicThinking(thinking: unknown, outputConfig: unknown): string {
+  const t = thinking as { type?: string; budget_tokens?: number } | undefined;
+  if (t?.type === "enabled") return `thinking budget ${t.budget_tokens ?? "?"}`;
+  if (t?.type === "adaptive") {
+    const effort = (outputConfig as { effort?: string } | undefined)?.effort;
+    return effort ? `thinking effort ${effort}` : "thinking adaptive";
+  }
+  return "thinking off";
 }
 
 // --- forensics: name the first divergent prefix segment --------------------------------
@@ -290,6 +345,11 @@ export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerpri
     if (removed) parts.push(`${removed} removed`);
     if (modified) parts.push(`${modified} modified`);
     return { kind: "tools", detail: `tools changed (${parts.join(", ")})` };
+  }
+  // Before history: a thinking change is the root cause; any history-rendering churn it
+  // drags along (e.g. thinking blocks stripped on disable) is a side effect.
+  if (prev.thinking !== cur.thinking) {
+    return { kind: "thinking", detail: `thinking changed (${prev.thinking ?? "?"} \u2192 ${cur.thinking ?? "?"})` };
   }
   // History: the previous request's messages must be a prefix of the current ones.
   const checkable = Math.min(prev.messageHashes.length, cur.messageHashes.length);
@@ -383,7 +443,15 @@ export function predictBreak(args: {
     // Model switches break the cache for certain (caches are per-model on every provider)
     // but the stored size is denominated in the *old* model's tokenizer — withhold it
     // rather than show a number in the wrong currency.
-    return args.fingerprintCause.kind === "model" ? { cause: args.fingerprintCause } : sized(args.fingerprintCause);
+    if (args.fingerprintCause.kind === "model") return { cause: args.fingerprintCause };
+    if (args.fingerprintCause.kind === "thinking") {
+      // Anthropic documents this break (messages invalidate; system/tools stay cached), so
+      // a contract window earns an in-flight claim — unsized, because the surviving
+      // system/tools share of expectedRead is unknowable. OpenAI's effort lives outside
+      // the prompt prefix: no claim until usage proves a miss.
+      return args.window?.kind === "contract" ? { cause: args.fingerprintCause } : undefined;
+    }
+    return sized(args.fingerprintCause);
   }
   // Only a *definite* expiry earns an in-flight "breaking" line: contract TTL passed, or
   // the band's hard cap passed. The band's maybe-zone stays silent — if the prefix was
@@ -454,9 +522,15 @@ export interface ClockInput {
   rewriteUsd?: number;
   /** History was compacted since the last call: the next send re-writes regardless of TTL. */
   compacted?: boolean;
-  /** Model changed since the last billed call: caches are per-model, so the cache is dead
-   * and the stored token count is in the old tokenizer's currency — show neither. */
+  /** Model changed since the last billed call: caches are per-model, so the cache is dead.
+   * The stored size is in the old tokenizer's currency, so it is shown only with an
+   * explicit old-model denomination tag (and no $, which would compound the error). */
   modelSwitched?: boolean;
+  /** Currency tag for the stored size while modelSwitched: the model id that billed it. */
+  oldModelId?: string;
+  /** Thinking level changed since the last billed call. Material only under a contract
+   * window (Anthropic documents message-breakpoint invalidation; system/tools survive). */
+  thinkingChanged?: boolean;
 }
 
 function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number, qualifier = ""): string {
@@ -468,7 +542,10 @@ function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number,
 export function cacheClock(input: ClockInput): ClockState {
   if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
   if (input.modelSwitched) {
-    return { phase: "cold", text: "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt" };
+    const scale = input.cachedTokens && input.oldModelId
+      ? ` (~${formatTokensK(input.cachedTokens)} ${input.oldModelId} tokens)`
+      : "";
+    return { phase: "cold", text: `cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt${scale}` };
   }
   if (input.compacted) {
     // The prefix the clock was timing no longer exists; TTL is moot until the next send.
@@ -476,6 +553,11 @@ export function cacheClock(input: ClockInput): ClockState {
   }
   const since = input.now - input.lastRequestAt;
   const window = input.window ?? UNKNOWN_WINDOW;
+  if (input.thinkingChanged && window.kind === "contract") {
+    // No survival promise here: docs say system/tools outlive *budget* changes, but a
+    // live adaptive-effort change on claude-fable-5 re-wrote 100% of the prompt.
+    return { phase: "stale", text: "cache stale \u00b7 thinking level changed \u00b7 next send re-writes the prompt" };
+  }
   if (window.kind === "contract") {
     const remaining = window.ttlMs - since;
     if (remaining <= 0) {
@@ -519,9 +601,9 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
   const promptTokens = run.input + run.cacheRead;
   const cachedPct = promptTokens > 0 ? (run.cacheRead / promptTokens) * 100 : 0;
   const parts = [
-    `turn: ${run.calls} calls`,
+    `turn: ${run.calls} ${run.calls === 1 ? "call" : "calls"}`,
     formatDuration(endedAt - run.startedAt),
-    `read ${formatTokensK(run.cacheRead)} (${cachedPct.toFixed(1)}% cached)`,
+    `read ${formatTokensK(run.cacheRead)} (${cachedPct >= 99.95 ? "100" : cachedPct.toFixed(1)}% cached)`,
     `wrote ${formatTokensK(run.cacheWrite)}`,
     `out ${formatTokensK(run.output)}`,
   ];
@@ -537,7 +619,14 @@ export function renderBreakingLine(prediction: BreakPrediction): string {
     ? ` \u00b7 re-writing ~${formatTokensK(prediction.expectedRewriteTokens)}${prediction.expectedUsd !== undefined ? ` (~${formatUsd(prediction.expectedUsd)})` : ""}`
     : prediction.cause.kind === "compaction"
       ? " \u00b7 re-writing the new prefix"
-      : " \u00b7 re-writing the full prompt"; // unsized non-compaction: model switch (old-tokenizer count withheld)
+      : prediction.cause.kind === "thinking"
+        // Anthropic documents that system/tools survive *budget* changes; for adaptive
+        // effort changes a live test on claude-fable-5 broke 100% of the prompt
+        // (read 0, re-wrote 30.0k of 30.0k), so no survival claim is made there.
+        ? prediction.cause.detail.includes("thinking budget")
+          ? " \u00b7 re-writing history (system/tools stay cached)"
+          : " \u00b7 re-writing the prompt"
+        : " \u00b7 re-writing the full prompt"; // unsized model switch: old-tokenizer count withheld
   return `cache breaking${size} \u00b7 cause: ${prediction.cause.detail}`;
 }
 
@@ -695,6 +784,10 @@ interface CachemireState {
   lastCallModelId?: string;
   currentModelId?: string;
   modelSwitched: boolean;
+  /** Thinking level at the last billed call vs now; mirrors the model-switch pair. */
+  lastCallThinkingLevel?: string;
+  currentThinkingLevel?: string;
+  thinkingChanged: boolean;
   expectedRead: number;
   cachedTokens?: number;
   rates?: ModelRates;
@@ -726,6 +819,7 @@ function state(): CachemireState {
       records: [],
       window: UNKNOWN_WINDOW,
       modelSwitched: false,
+      thinkingChanged: false,
       expectedRead: 0,
       compacted: false,
       inCompaction: false,
@@ -757,6 +851,8 @@ function updateWidget(now = Date.now()): void {
     rewriteUsd: s.cachedTokens !== undefined ? rewriteCostUsd(s.cachedTokens, s.rates) : undefined,
     compacted: s.compacted,
     modelSwitched: s.modelSwitched,
+    oldModelId: s.lastCallModelId,
+    thinkingChanged: s.thinkingChanged,
   });
   const text = clock.phase === "idle" ? "" : `${toneFor(clock.phase)}${GLYPH} ${clock.text}${RESET}`;
   if (text === s.lastWidgetText) return;
@@ -815,6 +911,12 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.currentModelId = model.id;
       s.modelLabel = model.provider ? `${model.provider}/${model.id}` : model.id;
     }
+    // Settings restore with the session, so the current level stands in for the level of
+    // the session's last billed call. Note: getThinkingLevel lives on the runtime API
+    // (`pi`), not the per-event ctx — ctx.getThinkingLevel?.() silently yields undefined.
+    try {
+      s.lastCallThinkingLevel = s.currentThinkingLevel = pi.getThinkingLevel();
+    } catch { /* level stays unknown; thinking flips are then ignored, never invented */ }
     // Restored sessions get the provider's real freshness window immediately (anthropic:
     // inferred contract TTL; openai: documented band); the first live request's observed
     // payload replaces the inference.
@@ -881,7 +983,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         rates: s.rates,
       });
       const material = prediction !== undefined && (
-        prediction.expectedRewriteTokens === undefined || // compaction: size unknowable, event still material
+        prediction.expectedRewriteTokens === undefined || // unsized (compaction/model/thinking): explicit user action, the notice is its explanation
         prediction.expectedRewriteTokens >= s.config.missWarnTokens ||
         (prediction.expectedUsd ?? 0) >= s.config.missWarnUsd
       );
@@ -909,6 +1011,20 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (!(model?.provider === "anthropic" && s.window.kind === "contract" && s.window.source === "observed")) {
       s.window = windowForProvider(model?.provider) ?? UNKNOWN_WINDOW;
     }
+    updateWidget();
+  });
+
+  pi.on("thinking_level_select", async (event, ctx) => {
+    // First flip in a session: the event's own previousLevel is the level every billed
+    // call so far used — a baseline that needs no session_start timing assumptions.
+    s.lastCallThinkingLevel ??= (event as { previousLevel?: string }).previousLevel;
+    s.currentThinkingLevel = event.level;
+    // Material only when something was billed at the old level AND the new level changes
+    // the wire params for this model (see thinkingLevelsDiffer); cycling back before the
+    // next call revives the cache. The send-time fingerprint diff remains the authority.
+    const model = ctx.model as { reasoning?: boolean; thinkingLevelMap?: Record<string, string | null> } | undefined;
+    s.thinkingChanged = s.records.length > 0 && model?.reasoning === true &&
+      thinkingLevelsDiffer(model.thinkingLevelMap, s.lastCallThinkingLevel, event.level);
     updateWidget();
   });
 
@@ -968,6 +1084,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // Fresh usage re-baselines the currency: counts are now denominated in this model.
     s.lastCallModelId = s.currentModelId ?? s.lastCallModelId;
     s.modelSwitched = false;
+    s.lastCallThinkingLevel = s.currentThinkingLevel ?? s.lastCallThinkingLevel;
+    s.thinkingChanged = false;
     // Keep the request-start anchor: resetting to response end here would credit the cache
     // with the whole generation time (a 4m thinking block would show 5m TTL remaining when
     // the prefix written at request start has ~1m left).
@@ -1028,6 +1146,8 @@ export const internals = {
   stripCacheControl,
   fingerprintPayload,
   inferAnthropicTtlMs,
+  wireThinkingEffort,
+  thinkingLevelsDiffer,
   windowForProvider,
   windowLabel,
   windowExpiry,

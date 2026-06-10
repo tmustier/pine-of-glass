@@ -80,6 +80,42 @@ test("fingerprint detects provider kind and TTL from observed cache_control", ()
   assert.equal(fingerprintPayload({ random: true }).kind, "unknown");
 });
 
+test("fingerprint canonicalizes thinking/reasoning params", () => {
+  assert.equal(fingerprintPayload(anthropicPayload()).thinking, "thinking off");
+  assert.equal(
+    fingerprintPayload({ ...anthropicPayload(), thinking: { type: "disabled" } }).thinking,
+    "thinking off",
+  );
+  assert.equal(
+    fingerprintPayload({ ...anthropicPayload(), thinking: { type: "enabled", budget_tokens: 8192 } }).thinking,
+    "thinking budget 8192",
+  );
+  // Adaptive models (claude-fable-5 et al.) carry the level in output_config.effort.
+  assert.equal(
+    fingerprintPayload({
+      ...anthropicPayload(),
+      thinking: { type: "adaptive", display: "summarized" },
+      output_config: { effort: "xhigh" },
+    }).thinking,
+    "thinking effort xhigh",
+  );
+  const openaiBody = {
+    model: "gpt-5.5",
+    instructions: "fixture",
+    input: [{ role: "user", content: [{ type: "input_text", text: "hi" }] }],
+  };
+  assert.equal(fingerprintPayload(openaiBody).thinking, "effort default");
+  assert.equal(fingerprintPayload({ ...openaiBody, reasoning: { effort: "high" } }).thinking, "effort high");
+
+  // The diff names the thinking change as the root cause — even though disabling thinking
+  // can also churn rendered history, the param change is what the user did.
+  const before = fingerprintPayload({ ...anthropicPayload(), thinking: { type: "enabled", budget_tokens: 4096 } });
+  const after = fingerprintPayload({ ...anthropicPayload(), thinking: { type: "enabled", budget_tokens: 16384 } });
+  const cause = diffFingerprints(before, after)!;
+  assert.equal(cause.kind, "thinking");
+  assert.equal(cause.detail, "thinking changed (thinking budget 4096 \u2192 thinking budget 16384)");
+});
+
 test("diff names the first divergent segment", () => {
   const base = anthropicPayload({
     tools: [

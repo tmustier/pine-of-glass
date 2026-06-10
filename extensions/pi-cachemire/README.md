@@ -56,15 +56,32 @@ Everything above is four provider-general rules, which is the whole mental model
    OpenAI create/refresh entries while reading the input; "inactivity" is measured from
    last use). Generation time burns the window.
 2. **Scope** — a cache entry belongs to (provider, model, byte-exact prefix). Caches are
-   per-model everywhere, so **any model switch means definite cold**: the widget flips to
-   `cache cold · model switched · next send re-writes the full prompt`.
+   per-model everywhere, so **any model switch means definite cold**: the widget flips
+   *before you send anything*, sized in the only currency it has — explicitly tagged:
+   `cache cold · model switched · next send re-writes the full prompt (~222.9k
+   claude-fable-5 tokens)`.
 3. **Window** — strength varies by provider: Anthropic has a contract TTL (observed,
    else inferred), OpenAI a documented band (soft ~5m / hard 1h), everyone else is
    unknown. Wording always matches the strength: countdown / fading / likely.
 4. **Currency** — token counts and $ are only ever shown in the tokenizer and price card
-   that billed them. After a model switch the stored size is in the wrong currency, so it
-   is withheld (`re-writes the full prompt`, no number) until the first new-model usage
+   that billed them. After a model switch the stored size keeps its old-model tag and
+   gets no $ (which would compound the conversion error) until the first new-model usage
    re-baselines it. Exactness arrives one call later — the only honest time it can.
+
+Thinking levels are the same pattern one notch weaker. On Anthropic a thinking-param
+change breaks cache, so on a contract window the widget flips at the keystroke —
+`cache stale · thinking level changed · next send re-writes the prompt` — and the
+send-time notice names the wire-level change: `cause: thinking changed (thinking effort
+xhigh → thinking effort low)`. How *much* breaks depends on the wire form: Anthropic
+documents that system/tools survive `budget_tokens` changes, but a live adaptive-effort
+change on claude-fable-5 re-wrote 100% of the prompt (read 0, re-wrote 30.0k of 30.0k),
+so the survival claim only appears for budget-style payloads. Crucially, the flip keys on
+the *wire*, not the keystroke: pi levels that map to the same provider effort (fable's
+minimal→low, both effort "low") are byte-identical requests — live-verified as a 100%
+hit — and stay silent. OpenAI's `reasoning.effort` lives outside the prompt-prefix
+tokens that key its cache, so no claim is made there: the param is fingerprinted, and
+only if a miss materializes does the cause name it. Cycling the level back before the
+next send revives the cache, and the widget follows.
 
 **2. Cache forensics** — every provider request is fingerprinted (system prompt, each
 tool, each history message; `cache_control` breakpoints stripped, since pi moves the
@@ -96,10 +113,12 @@ labelled, not warned about. Notices only appear above a materiality threshold
 (e.g. provider-side eviction) still gets a resolved-form line when usage arrives; a
 send that aborts before usage resolves the notice to an explicit "outcome unknown".
 
-**3. A turn ledger** — one line after any user turn that took ≥2 model calls:
+**3. A turn ledger** — one line after every user turn (`turnSummaryMinCalls` raises the
+bar if you want the old ≥2-calls behaviour):
 
 ```
 ◍ turn: 7 calls · 2m41s · read 940.1k (99.6% cached) · wrote 11.2k · out 4.2k · $0.09
+◍ turn: 59 calls · 29m37s · read 9.1M (100% cached) · wrote 222.9k · out 103.5k · $17.03
 ```
 
 and `/cache` for the full per-call table:
@@ -136,7 +155,7 @@ billed at base input rates — the honest answer to "is caching working?".
 {
   "widget": true,
   "turnSummary": true,
-  "turnSummaryMinCalls": 2,
+  "turnSummaryMinCalls": 1,
   "missWarnings": true,
   "missWarnUsd": 0.05,
   "missWarnTokens": 20000
