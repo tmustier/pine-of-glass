@@ -282,6 +282,47 @@ export function classifyCall(args: ClassifyInput): CallClassification {
   return { kind: ratio <= MISS_RATIO ? "miss" : "partial", cause };
 }
 
+// --- break prediction (at request time, before usage exists) ---------------------------
+// Almost every break cause is knowable when the request is sent: the idle gap vs TTL,
+// pi's compact events, and the payload fingerprint diff. Predicting at send time lets the
+// notice sit between the user's action and the response — where the causality lives —
+// and the resolved actuals replace it in place when usage arrives.
+
+export interface BreakPrediction {
+  cause: CallCause;
+  /** Expected re-write size (last call's prompt). undefined when unknowable (compaction). */
+  expectedRewriteTokens?: number;
+  expectedUsd?: number;
+}
+
+export function predictBreak(args: {
+  isFirst: boolean;
+  inCompaction: boolean;
+  compacted: boolean;
+  gapMs?: number;
+  ttlMs?: number;
+  expectedRead: number;
+  fingerprintCause?: CallCause;
+  rates?: ModelRates;
+}): BreakPrediction | undefined {
+  // Cold starts are healthy and the compaction summarizer call is labelled, not warned.
+  if (args.isFirst || args.inCompaction || args.expectedRead <= 0) return undefined;
+  if (args.compacted) {
+    // The old prefix is gone; the new one's size is unknowable until usage arrives.
+    return { cause: { kind: "compaction", detail: "history compacted" } };
+  }
+  const sized = (cause: CallCause): BreakPrediction => ({
+    cause,
+    expectedRewriteTokens: args.expectedRead,
+    expectedUsd: rewriteCostUsd(args.expectedRead, args.rates),
+  });
+  if (args.fingerprintCause) return sized(args.fingerprintCause);
+  if (args.ttlMs !== undefined && args.gapMs !== undefined && args.gapMs > args.ttlMs) {
+    return sized({ kind: "ttl", detail: `idle ${formatDuration(args.gapMs)} > ${formatDuration(args.ttlMs)} TTL` });
+  }
+  return undefined;
+}
+
 // --- economics -------------------------------------------------------------------------
 
 export function uncachedCostUsd(usage: UsageLike, rates?: ModelRates): number | undefined {
@@ -394,11 +435,37 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
   return parts.join(" \u00b7 ");
 }
 
+// Tense grammar: in-flight predictions are progressive with ~estimates ("breaking ·
+// re-writing ~77.7k"); resolved lines are past tense with exact usage ("broke · re-wrote
+// 77.7k of 80.1k prompt (97%)").
+export function renderBreakingLine(prediction: BreakPrediction): string {
+  const size = prediction.expectedRewriteTokens
+    ? ` \u00b7 re-writing ~${formatTokensK(prediction.expectedRewriteTokens)}${prediction.expectedUsd !== undefined ? ` (~${formatUsd(prediction.expectedUsd)})` : ""}`
+    : " \u00b7 re-writing the new prefix";
+  return `cache breaking${size} \u00b7 cause: ${prediction.cause.detail}`;
+}
+
+function promptTokens(usage: UsageLike): number {
+  return usage.input + usage.cacheRead + usage.cacheWrite;
+}
+
 export function renderMissLine(record: CallRecord): string {
+  const prompt = promptTokens(record.usage);
+  const pct = prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}% of prompt)` : "";
   const what = record.classification.kind === "partial"
-    ? `cache partial \u00b7 read ${formatTokensK(record.usage.cacheRead)} of ${formatTokensK(record.expectedRead)}`
-    : `cache broke \u00b7 re-wrote ${formatTokensK(record.rewroteTokens)}${record.costUsd !== undefined ? ` (${formatUsd(record.costUsd)})` : ""}`;
+    ? `cache partial \u00b7 read ${formatTokensK(record.usage.cacheRead)} of ${formatTokensK(record.expectedRead)} expected` +
+      ` \u00b7 re-wrote ${formatTokensK(record.rewroteTokens)}${pct}`
+    : `cache broke \u00b7 re-wrote ${formatTokensK(record.rewroteTokens)} of ${formatTokensK(prompt)} prompt` +
+      `${prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}%)` : ""}` +
+      `${record.costUsd !== undefined ? ` \u00b7 ${formatUsd(record.costUsd)}` : ""}`;
   return `${what} \u00b7 cause: ${record.classification.cause?.detail ?? "unknown"}`;
+}
+
+// A predicted break that resolved into a hit — good news, and a small lesson about
+// shared-prefix warmth (another session with the same harness prefix kept it alive).
+export function renderHeldLine(record: CallRecord): string {
+  return `cache held \u00b7 read ${formatTokensK(record.usage.cacheRead)} of ${formatTokensK(record.expectedRead)} expected` +
+    " \u00b7 prefix stayed warm";
 }
 
 const EVENT_GLYPHS: Record<CallClassification["kind"], string> = {
@@ -536,6 +603,8 @@ interface CachemireState {
   providerLabel?: string;
   compacted: boolean;
   inCompaction: boolean;
+  /** In-flight break notice placed at request time; resolved in place when usage arrives. */
+  pendingNotice?: Text;
   run?: RunAggregate;
   ui?: {
     setWidget: (key: string, content: string[] | undefined) => void;
@@ -593,20 +662,30 @@ function updateWidget(now = Date.now()): void {
   s.ui.setWidget("pi-cachemire", text === "" ? undefined : [text]);
 }
 
-function appendChatLine(text: string): void {
+function appendChatLine(text: string): Text | undefined {
   const s = state();
   const chat = s.tui ? findChatContainer(s.tui) : undefined;
   if (chat?.addChild) {
     try {
+      const line = new Text(text, 1, 0);
       chat.addChild(new Spacer(1));
-      chat.addChild(new Text(text, 1, 0));
+      chat.addChild(line);
       s.tui?.requestRender?.(true);
-      return;
+      return line;
     } catch {
       // fall through to notify
     }
   }
   s.ui?.notify(stripAnsi(text), "info");
+  return undefined;
+}
+
+function resolveNotice(text: string): void {
+  const s = state();
+  if (!s.pendingNotice) return;
+  s.pendingNotice.setText(text);
+  s.pendingNotice = undefined;
+  s.tui?.requestRender?.(true);
 }
 
 // --- extension entry --------------------------------------------------------------------
@@ -674,6 +753,31 @@ export default function piCachemire(pi: ExtensionAPI): void {
     }
     if (s.pendingFingerprint.kind === "anthropic") s.providerLabel = "anthropic";
     else if (s.pendingFingerprint.kind === "openai-responses") s.providerLabel = "openai";
+
+    // Place the break notice where the causality lives: between the user's action and the
+    // response. It shows the expectation now and is resolved in place when usage arrives.
+    if (s.config.missWarnings) {
+      const prediction = predictBreak({
+        isFirst: s.records.length === 0,
+        inCompaction: s.inCompaction,
+        compacted: s.compacted,
+        gapMs: s.prevCallRequestAt !== undefined ? s.pendingRequestAt - s.prevCallRequestAt : undefined,
+        ttlMs: s.ttlMs,
+        expectedRead: s.expectedRead,
+        fingerprintCause: s.prevFingerprint ? diffFingerprints(s.prevFingerprint, s.pendingFingerprint) : undefined,
+        rates: s.rates,
+      });
+      const material = prediction !== undefined && (
+        prediction.expectedRewriteTokens === undefined || // compaction: size unknowable, event still material
+        prediction.expectedRewriteTokens >= s.config.missWarnTokens ||
+        (prediction.expectedUsd ?? 0) >= s.config.missWarnUsd
+      );
+      if (material) {
+        const text = `${YELLOW}${GLYPH} ${renderBreakingLine(prediction)}${RESET}`;
+        if (s.pendingNotice) s.pendingNotice.setText(text); // provider retry: reuse the line
+        else s.pendingNotice = appendChatLine(text);
+      }
+    }
     updateWidget();
   });
 
@@ -760,18 +864,27 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.run.costUsd += usage.cost?.total ?? 0;
     }
 
-    if (
-      s.config.missWarnings &&
-      (classification.kind === "miss" || classification.kind === "partial") &&
-      classification.cause?.kind !== "compaction-work" &&
+    const broke = (classification.kind === "miss" || classification.kind === "partial") &&
+      classification.cause?.kind !== "compaction-work";
+    if (s.pendingNotice) {
+      // Resolve the in-flight notice with actuals — yellow when the break happened, green
+      // when the prediction was wrong and the prefix held (shared-prefix warmth).
+      resolveNotice(broke
+        ? `${YELLOW}${GLYPH} ${renderMissLine(record)}${RESET}`
+        : `${GREEN}${GLYPH} ${renderHeldLine(record)}${RESET}`);
+    } else if (
+      s.config.missWarnings && broke &&
       ((record.costUsd ?? 0) >= s.config.missWarnUsd || record.rewroteTokens >= s.config.missWarnTokens)
     ) {
+      // Unpredicted break (e.g. provider-side eviction): append at resolution time.
       appendChatLine(`${YELLOW}${GLYPH} ${renderMissLine(record)}${RESET}`);
     }
     updateWidget(now);
   });
 
   pi.on("agent_end", async () => {
+    // A notice whose call never produced usage (abort/error) must not dangle as "breaking".
+    resolveNotice(`${MUTED_GREY}${GLYPH} cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown${RESET}`);
     const run = s.run;
     s.run = undefined;
     if (!run || !s.config.turnSummary || run.calls < s.config.turnSummaryMinCalls) return;
@@ -797,6 +910,9 @@ export const internals = {
   stripCacheControl,
   fingerprintPayload,
   inferAnthropicTtlMs,
+  predictBreak,
+  renderBreakingLine,
+  renderHeldLine,
   diffFingerprints,
   classifyCall,
   uncachedCostUsd,

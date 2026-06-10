@@ -9,7 +9,7 @@ const {
   uncachedCostUsd, rewriteCostUsd, sessionSavings,
   formatTokensK, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
-  inferAnthropicTtlMs,
+  inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
 } = internals;
 
 // claude-opus-4-8-style rates, USD per Mtok (write carries the 1.25x premium already).
@@ -103,14 +103,65 @@ test("run summary and miss lines read exactly as designed", () => {
     classification: { kind: "miss", cause: { kind: "ttl", detail: "idle 6m42s > 5m TTL" } },
     rewroteTokens: 138_200, costUsd: 0.52,
   };
-  assert.equal(renderMissLine(miss), "cache broke \u00b7 re-wrote 138.2k ($0.52) \u00b7 cause: idle 6m42s > 5m TTL");
+  // prompt = 1.4k input + 0 read + 138.2k write = 139.6k; 138.2/139.6 → 99%
+  assert.equal(
+    renderMissLine(miss),
+    "cache broke \u00b7 re-wrote 138.2k of 139.6k prompt (99%) \u00b7 $0.52 \u00b7 cause: idle 6m42s > 5m TTL",
+  );
 
   const partial: CallRecord = {
     ...miss,
     usage: { ...miss.usage, cacheRead: 41_200 },
     classification: { kind: "partial", cause: { kind: "system", detail: "system prompt changed" } },
   };
-  assert.equal(renderMissLine(partial), "cache partial \u00b7 read 41.2k of 138.2k \u00b7 cause: system prompt changed");
+  // prompt = 1.4k + 41.2k + 138.2k = 180.8k; rewrote 138.2k → 76%
+  assert.equal(
+    renderMissLine(partial),
+    "cache partial \u00b7 read 41.2k of 138.2k expected \u00b7 re-wrote 138.2k (76% of prompt) \u00b7 cause: system prompt changed",
+  );
+
+  const held: CallRecord = {
+    ...miss,
+    usage: { ...miss.usage, cacheRead: 76_000 },
+    expectedRead: 77_700,
+    classification: { kind: "hit" },
+  };
+  assert.equal(renderHeldLine(held), "cache held \u00b7 read 76.0k of 77.7k expected \u00b7 prefix stayed warm");
+});
+
+test("break prediction: knowable at request time, silent when healthy", () => {
+  const base = { isFirst: false, inCompaction: false, compacted: false, expectedRead: 138_200, rates: RATES };
+
+  // Healthy paths predict nothing.
+  assert.equal(predictBreak({ ...base, gapMs: 30_000, ttlMs: 5 * MIN }), undefined);
+  assert.equal(predictBreak({ ...base, isFirst: true, gapMs: 590 * MIN, ttlMs: 5 * MIN }), undefined);
+  assert.equal(predictBreak({ ...base, inCompaction: true, gapMs: 590 * MIN, ttlMs: 5 * MIN }), undefined);
+  assert.equal(predictBreak({ ...base, expectedRead: 0, gapMs: 590 * MIN, ttlMs: 5 * MIN }), undefined);
+  // Unknown TTL: no contract, no definite prediction.
+  assert.equal(predictBreak({ ...base, gapMs: 590 * MIN }), undefined);
+
+  // Past TTL: sized from the last call's provider-billed prompt.
+  const ttl = predictBreak({ ...base, gapMs: 590 * MIN, ttlMs: 5 * MIN })!;
+  assert.equal(ttl.cause.kind, "ttl");
+  assert.equal(ttl.expectedRewriteTokens, 138_200);
+  assert.equal(ttl.expectedUsd, 2.591_25); // 138.2k at $18.75/M write
+  assert.equal(
+    renderBreakingLine(ttl),
+    "cache breaking \u00b7 re-writing ~138.2k (~$2.59) \u00b7 cause: idle 9h50m > 5m TTL",
+  );
+
+  // A named segment mutation outranks the TTL explanation, same as classification.
+  const tools = predictBreak({
+    ...base, gapMs: 590 * MIN, ttlMs: 5 * MIN,
+    fingerprintCause: { kind: "tools", detail: "tools changed (+2 added)" },
+  })!;
+  assert.equal(tools.cause.kind, "tools");
+
+  // Compaction: the event is material but the new prefix size is unknowable.
+  const compaction = predictBreak({ ...base, compacted: true, gapMs: 1_000, ttlMs: 5 * MIN })!;
+  assert.equal(compaction.cause.kind, "compaction");
+  assert.equal(compaction.expectedRewriteTokens, undefined);
+  assert.equal(renderBreakingLine(compaction), "cache breaking \u00b7 re-writing the new prefix \u00b7 cause: history compacted");
 });
 
 test("ledger view: rows, totals, and the savings line", () => {

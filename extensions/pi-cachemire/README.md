@@ -43,18 +43,32 @@ reserved for providers with no TTL contract at all.
 **2. Cache forensics** — every provider request is fingerprinted (system prompt, each
 tool, each history message; `cache_control` breakpoints stripped, since pi moves the
 breakpoint every call by design). When a call's `cacheRead` collapses, the diff names
-the culprit — exact bytes, not vibes:
+the culprit — exact bytes, not vibes.
+
+Almost every break cause is knowable at *send* time (idle gap vs TTL, compact events,
+fingerprint diff), so the notice is placed when the request goes out — between your
+action and the response, where the causality lives — and then updated **in place** when
+the provider's usage arrives. The tense tells you which state you're reading:
+progressive + `~` = in-flight expectation, past tense = exact actuals.
 
 ```
-◍ cache broke · re-wrote 138.2k ($0.52) · cause: idle 6m42s > 5m TTL
-◍ cache broke · re-wrote 138.2k ($0.52) · cause: tools changed (+12 added)
-◍ cache partial · read 41.2k of 138.2k · cause: system prompt changed
+◍ cache breaking · re-writing ~138.2k (~$2.59) · cause: idle 9h50m > 5m TTL   (in flight)
+◍ cache broke · re-wrote 138.2k of 139.6k prompt (99%) · $0.52 · cause: idle 9h50m > 5m TTL
+◍ cache partial · read 41.2k of 138.2k expected · re-wrote 138.2k (76% of prompt) · cause: system prompt changed
+◍ cache held · read 76.0k of 77.7k expected · prefix stayed warm              (prediction wrong — good news)
 ```
+
+The `(99%)` is the share of this request's prompt-side tokens (input + cacheRead +
+cacheWrite) that had to be re-written. `cache held` (green) appears when a predicted
+break didn't happen — usually shared-prefix warmth: another session with the same
+harness prefix kept the early breakpoints alive past your idle gap.
 
 Cause ladder: compaction (from pi's compact events) → named segment mutation (model /
 system / tools / history) → TTL expiry → unknown. Compaction's own summarizer call is
-labelled, not warned about. Warnings only appear above a materiality threshold
-(default: $0.05 or 20k re-written tokens) — silence when healthy.
+labelled, not warned about. Notices only appear above a materiality threshold
+(default: $0.05 or 20k re-written tokens) — silence when healthy. An unpredicted break
+(e.g. provider-side eviction) still gets a resolved-form line when usage arrives; a
+send that aborts before usage resolves the notice to an explicit "outcome unknown".
 
 **3. A turn ledger** — one line after any user turn that took ≥2 model calls:
 
