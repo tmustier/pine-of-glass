@@ -866,6 +866,10 @@ interface CachemireState {
   providerLabel?: string;
   compacted: boolean;
   inCompaction: boolean;
+  /** Records before this index belong to a dead cache lineage (pre-compaction, or before
+   * a model/system/tools/history/thinking change): entries the current prefix cannot
+   * read, so entry matching never names them. */
+  lineageStart: number;
   /** In-flight break notice placed at request time; resolved in place when usage arrives. */
   pendingNotice?: Text;
   run?: RunAggregate;
@@ -894,6 +898,7 @@ function state(): CachemireState {
       expectedRead: 0,
       compacted: false,
       inCompaction: false,
+      lineageStart: 0,
     };
   }
   return g.__piCachemire;
@@ -1005,6 +1010,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
       // and cachedTokens is denominated in the old model's tokenizer.
       s.lastCallModelId = restoredModelId ?? s.lastCallModelId;
       s.modelSwitched = s.lastCallModelId !== undefined && model?.id !== undefined && s.lastCallModelId !== model.id;
+      // Restored under a different model: the restored entries are unreadable (caches are
+      // per-model), so they are out of lineage for entry matching from the start.
+      if (s.modelSwitched) s.lineageStart = s.records.length;
     }
     if (!ctx.hasUI) return;
     s.ui = ctx.ui as unknown as CachemireState["ui"];
@@ -1125,13 +1133,19 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const fingerprintCause = s.prevFingerprint && s.pendingFingerprint
       ? diffFingerprints(s.prevFingerprint, s.pendingFingerprint)
       : undefined;
+    // Any invalidating change re-keys the cache: records before it are a dead lineage
+    // whose entries this prefix cannot read, and a 512-bucket collision with one would
+    // name an unreadable entry. Conservative on purpose — a mutation that happened to
+    // leave the cache warm still advances the boundary (false negatives degrade to the
+    // generic unknown hint; false positives would be dishonest).
+    if (s.compacted || fingerprintCause) s.lineageStart = s.records.length;
     // Entry ages use the request-start anchor (entries are written/refreshed during
     // request processing); restored records fall back to their response-ish message
     // timestamp — marginally optimistic, same caveat as the restore-time TTL anchor.
     const entryMatch = s.window.kind === "band"
       ? matchPriorEntry(
           usage.cacheRead,
-          s.records.map((record) => ({ index: record.index, at: record.requestAt ?? record.at, promptTokens: promptTokens(record.usage) })),
+          s.records.slice(s.lineageStart).map((record) => ({ index: record.index, at: record.requestAt ?? record.at, promptTokens: promptTokens(record.usage) })),
           requestAt,
           s.window.hardMs,
         )
