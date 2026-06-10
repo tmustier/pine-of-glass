@@ -3,7 +3,7 @@
 Small observability and context management tools for [Pi](https://github.com/earendil-works/pi) in the terminal.
 1. [`contextimate`](./extensions/pi-contextimate) breaks down what is filling your context window: sysprompt, AGENTS.md, Skill frontmatter, Tool schemas, and session material. Toggle with ctrl+o on start and /reload.
 2. [`traceline`](./extensions/pi-traceline) collapses tool calls to one trace line each, so you can see the full arc of what Pi did (path taken, context read, bloated tool results). Toggle with ctrl+t (expands/collapses both thinking blocks and tools so you can see everything your agent did since your last message).
-3. `cachemire` coming soon.
+3. [`cachemire`](./extensions/pi-cachemire) (**WIP / proof-of-concept**) explains cache behaviour and agent-loop economics: a cache TTL clock above the editor, predicted-then-resolved cache-break notices, a per-turn ledger, and `/cache` forensics. Local-only and excluded from the npm package while the UX settles.
 
 See each extension's own `README.md` for details, and `docs/` for deeper reference.
 
@@ -43,7 +43,7 @@ The contract suite pins every structural assumption about pi internals, so after
 *Note: A nice side benefit of 1. is that tools like `traceline` can help agents running interactive pi subagents in tmux to monitor them without risking context bloat from tool outputs.*
 
 **Status:** There are several things left to do in 1., including
-- maturing [`cachemire`](./extensions/pi-cachemire) (cache TTL clock, miss forensics, turn ledger — implemented, local/unpublished while the UX settles),
+- maturing [`cachemire`](./extensions/pi-cachemire) (currently WIP/PoC: implemented and live-tested, but local/unpublished while the UX settles — see issue #6),
 - UI improvements for `traceline` (filepath/multi-read UI, tool result size)
 - making `contextimate` more useful beyond upfront context (for example, are my MCP servers and skills efficient when loaded?)
 - and other refinements tracked in issues.
