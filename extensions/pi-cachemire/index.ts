@@ -17,7 +17,8 @@ import { compactCount } from "../_lib/fmt.ts";
  *   2. "Why did the cache break?"  → forensics: every provider request is fingerprinted
  *      (system / tools / history segments, cache_control stripped); on a miss the diff
  *      names the culprit — TTL expiry, compaction, model switch, system prompt edit,
- *      tool-list change, or history mutation — with the exact re-written tokens and cost.
+ *      tool-list change, history mutation, or (on best-effort caches) a stale replica
+ *      identified by entry arithmetic — with the exact re-written tokens and cost.
  *   3. "Am I using too many calls?"→ a one-line ledger entry per user turn (auto-shown for
  *      multi-call turns) and a /cache command with the full per-call table plus actual vs
  *      counterfactual-uncached spend ("caching saved $X").
@@ -62,7 +63,7 @@ export interface RequestFingerprint {
 
 export type CauseKind =
   | "cold" | "ttl" | "compaction" | "compaction-work" | "model" | "thinking" | "system"
-  | "tools" | "history" | "restored" | "unknown";
+  | "tools" | "history" | "replica" | "restored" | "unknown";
 
 export interface CallCause { kind: CauseKind; detail: string }
 
@@ -364,6 +365,42 @@ export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerpri
   return undefined;
 }
 
+// --- forensics: which entry did a best-effort read hit? --------------------------------
+
+// OpenAI's backend checkpoints cache entries at 512-token granularity: in live gpt-5.5
+// sessions (the README's double-break case; session 019e9758's burst of breaks within
+// seconds) every hit read exactly floor512 of an earlier call's prompt total. Matching a
+// later cacheRead against stored prompt totals therefore names *which* entry the request
+// hit — and a match behind the latest write is the replica-routing tell: a single cache
+// could not serve an older, shorter entry between two reads of a newer, longer one. The
+// public API documents 128-token increments; matching stays at the observed 512 until
+// live evidence demands widening (a looser bucket would multiply coincidental matches).
+const ENTRY_GRANULARITY = 512;
+
+export interface PriorEntry { index: number; at: number; promptTokens: number }
+export interface EntryMatch { index: number; ageMs: number }
+
+export function matchPriorEntry(
+  cacheRead: number,
+  priors: PriorEntry[],
+  now: number,
+  maxAgeMs: number,
+): EntryMatch | undefined {
+  if (cacheRead <= 0 || cacheRead % ENTRY_GRANULARITY !== 0) return undefined;
+  // Newest match wins: several prompts can share a 512-token bucket, and recent entries
+  // are the ones still alive. Age-gates on write time (read-refreshes are not tracked):
+  // an entry older than the hard cap cannot be asserted, so the match degrades to the
+  // generic unknown hint rather than naming a dead entry.
+  for (let i = priors.length - 1; i >= 0; i--) {
+    const prior = priors[i]!;
+    if (now - prior.at > maxAgeMs) break;
+    if (Math.floor(prior.promptTokens / ENTRY_GRANULARITY) * ENTRY_GRANULARITY === cacheRead) {
+      return { index: prior.index, ageMs: Math.max(0, now - prior.at) };
+    }
+  }
+  return undefined;
+}
+
 // --- classification --------------------------------------------------------------------
 
 export interface ClassifyInput {
@@ -377,6 +414,8 @@ export interface ClassifyInput {
   fingerprintCause?: CallCause;
   /** The previous call re-wrote the prefix (was itself a miss/cold write). */
   prevWrote?: boolean;
+  /** This read equals floor512 of an earlier call's prompt total (see matchPriorEntry). */
+  entryMatch?: EntryMatch;
 }
 
 // Hint wording for a miss nothing else explains. Window-aware: under a contract TTL
@@ -414,8 +453,19 @@ export function classifyCall(args: ClassifyInput): CallClassification {
       : args.fingerprintCause;
   } else if (idleCause) {
     // For a band window's "maybe" zone the observed miss is itself the confirmation:
-    // the prefix was evicted within the documented typical window.
-    cause = idleCause;
+    // the prefix was evicted within the documented typical window. An entry match refines
+    // it: the newer entries were evicted, and the read fell back to a surviving older one.
+    cause = args.entryMatch
+      ? { ...idleCause, detail: `${idleCause.detail} \u00b7 fell back to call #${args.entryMatch.index}'s entry (${formatDuration(args.entryMatch.ageMs)} old)` }
+      : idleCause;
+  } else if (args.entryMatch && args.window?.kind === "band") {
+    // Nothing else explains the miss, but the arithmetic names the entry it hit. Behind
+    // the latest write with no idle gap, a different replica is the only consistent story.
+    cause = {
+      kind: "replica",
+      detail: `read matches call #${args.entryMatch.index}'s entry (${formatDuration(args.entryMatch.ageMs)} old)` +
+        " \u00b7 likely a different replica from the last write",
+    };
   } else {
     // Rendered behind "cause: " — the detail must not restate the word.
     cause = { kind: "unknown", detail: unknownMissDetail(args) };
@@ -1072,6 +1122,14 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const fingerprintCause = s.prevFingerprint && s.pendingFingerprint
       ? diffFingerprints(s.prevFingerprint, s.pendingFingerprint)
       : undefined;
+    const entryMatch = s.window.kind === "band"
+      ? matchPriorEntry(
+          usage.cacheRead,
+          s.records.map((record) => ({ index: record.index, at: record.at, promptTokens: promptTokens(record.usage) })),
+          requestAt,
+          s.window.hardMs,
+        )
+      : undefined;
     const classification = classifyCall({
       isFirst: s.records.length === 0,
       gapMs,
@@ -1082,6 +1140,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       inCompaction: s.inCompaction,
       fingerprintCause,
       prevWrote: ["miss", "cold", "partial"].includes(s.records.at(-1)?.classification.kind ?? ""),
+      entryMatch,
     });
     const record: CallRecord = {
       index: s.records.length + 1,
@@ -1177,6 +1236,7 @@ export const internals = {
   renderBreakingLine,
   renderHeldLine,
   diffFingerprints,
+  matchPriorEntry,
   classifyCall,
   uncachedCostUsd,
   rewriteCostUsd,

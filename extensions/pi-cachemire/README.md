@@ -103,6 +103,23 @@ alone would still have hit the unchanged ~15k early prefix. The unknown-cause hi
 window-aware for this — band windows say `best-effort cache: fresh write not yet
 readable, or replica routing` instead of Anthropic's `provider-side eviction?`.
 
+Cachemire now runs that entry arithmetic itself. Every call's prompt total is kept, and
+when a later read on a band cache equals `floor₅₁₂` of one — within the 1h hard cap,
+newest match wins — the cause names the entry instead of shrugging:
+
+```
+◍ cache partial · read 49.2k of 63.1k expected · re-wrote 14.0k (22% of prompt)
+  · cause: read matches call #38's entry (13m24s old) · likely a different replica from the last write
+```
+
+When an idle gap *does* explain the miss, the entry refines rather than replaces it:
+`evicted after idle 11m48s (typical window 5m–1h) · fell back to call #38's entry (13m
+old)`. Live motivation: session 019e9758 produced a burst of breaks within seconds —
+reads alternating 62,464 → 49,152 → 62,464 → 65,024 — which a single cache cannot do
+(eviction cannot resurrect a shorter entry between two reads of a longer one); ≥3
+replica lineages were advancing independently, and each break was one replica's
+first-touch. The matcher turns that hand analysis into the default diagnosis.
+
 **2. Cache forensics** — every provider request is fingerprinted (system prompt, each
 tool, each history message; `cache_control` breakpoints stripped, since pi moves the
 breakpoint every call by design). When a call's `cacheRead` collapses, the diff names
@@ -127,8 +144,9 @@ break didn't happen — usually shared-prefix warmth: another session with the s
 harness prefix kept the early breakpoints alive past your idle gap.
 
 Cause ladder: compaction (from pi's compact events) → named segment mutation (model /
-system / tools / history) → TTL expiry → unknown. Compaction's own summarizer call is
-labelled, not warned about. Notices only appear above a materiality threshold
+system / tools / history) → TTL expiry (refined by an entry match when one exists) →
+entry match on band caches (`read matches call #N's entry · likely a different replica`)
+→ unknown. Compaction's own summarizer call is labelled, not warned about. Notices only appear above a materiality threshold
 (default: $0.05 or 20k re-written tokens) — silence when healthy. An unpredicted break
 (e.g. provider-side eviction) still gets a resolved-form line when usage arrives; a
 send that aborts before usage resolves the notice to an explicit "outcome unknown".
