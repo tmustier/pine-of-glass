@@ -66,3 +66,28 @@ cache-preserving alternative for sessions carrying large MCP catalogs — the pr
 stays byte-identical while discovery happens in history. Possible upstream direction:
 an opt-in flag that marks tools `defer_loading`, injects the search tool, and handles
 the two extra stream block types.
+
+## 3. (TBD) Status lines and appended chat children dropped on chat rebuilds
+
+**Observed:** pi 0.79.1 · diagnosed 2026-06-10 while fixing
+[pine-of-glass#16](https://github.com/tmustier/pine-of-glass/pull/16) · status: **TBD**
+— not yet decided whether this is worth raising; it may be intended behaviour.
+
+`toggleThinkingBlockVisibility()` (Ctrl+T) and `rebuildChatFromMessages()` (also used
+by compaction and tree navigation) rebuild the chat container from session messages:
+`this.chatContainer.clear()` + re-render
+(`dist/modes/interactive/interactive-mode.js`). Any child not derived from a session
+message is silently dropped — including **pi's own `showStatus` lines** (`/model`
+confirmations, toggle notices, etc.) and anything extensions append to the chat
+scrollback.
+
+For transient flotsam this is arguably fine, which is why this entry is TBD. The cost
+is that (a) a user scrolling back after a Ctrl+T loses status context that was visibly
+part of the conversation record, and (b) extensions have no sanctioned way to put a
+persistent non-message line into the scrollback — this repo's cachemire now carries its
+own anchor/re-attach machinery (hooking the container's `clear()`) purely to survive
+these rebuilds, and contextimate independently grew equivalent re-attach logic for its
+estimator block. Two extensions re-deriving the same workaround suggests a seam worth
+an API. Possible upstream direction: either a documented “persistent chat line”
+extension API that survives rebuilds, or rebuilds that preserve/replay status lines at
+their original positions.
