@@ -3,7 +3,7 @@ import { isKeyRelease, isKeyRepeat, matchesKey, truncateToWidth, visibleWidth } 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { stripAnsi } from "../_lib/ansi.ts";
+import { OSC_SEQUENCE, stripAnsi } from "../_lib/ansi.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer, isAssistantRow, isToolRow } from "../_lib/chat.ts";
 import { compactCount } from "../_lib/fmt.ts";
@@ -21,6 +21,12 @@ import { compactCount } from "../_lib/fmt.ts";
  *
  * One-line rendering reuses pi's native tool call renderer, so visual defaults
  * (bold command name, accent paths/backticks, warning line ranges, etc.) drift with pi.
+ * Each row sits on pi's own status-tinted tool background (the same shaded surface the
+ * expanded block uses, borrowed live from the row's contentBox), so collapsed and
+ * expanded read as the same object at different zoom — and consecutive rows tile into
+ * one shaded slab per tool group. Multiline bash commands are flattened into the one
+ * trace line with a dim ↵ marking each original break, so heredocs and inline scripts
+ * keep their operative tail instead of collapsing to `$ python3 -c "`.
  * The ink follows an information hierarchy: shell plumbing (`&&`, `|`, `2>/dev/null`,
  * heredoc markers) is dimmed so command segments pop, and the boilerplate `(timeout Ns)`
  * suffix is dropped — the full invocation is one Ctrl+T away. Home-dir prefixes are
@@ -76,7 +82,8 @@ const TOOL_AFTER_BULLET = " ";
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const ONE_LINE_ELLIPSIS = "\u2026";
-const TRACELINE_PATCH_VERSION = 10;
+const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
+const TRACELINE_PATCH_VERSION = 11;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const MIN_HEAD_COLS = 6;
 const TAIL_RATIO = 0.55;
@@ -392,11 +399,19 @@ function resultCharSuffix(comp: any): string {
 }
 
 // Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
-// width (e.g. bash `cd /Users/me/... && ...` -> `cd ~/... && ...`). Safe on ANSI strings: the
-// home path is contiguous text and never contains escape codes.
-function tildify(text: string): string {
+// width (e.g. bash `cd /Users/me/... && ...` -> `cd ~/... && ...`). OSC sequences are
+// skipped: a read row's OSC 8 hyperlink carries a file:// URL containing the home path,
+// and tildifying *that* would corrupt the click target. The pattern is built once —
+// tildify runs for every visible row on every frame.
+const TILDIFY_PATTERN = (() => {
   const home = homedir();
-  return home ? text.split(home).join("~") : text;
+  if (!home) return undefined;
+  return new RegExp(`${OSC_SEQUENCE.source}|${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g");
+})();
+
+function tildify(text: string): string {
+  if (!TILDIFY_PATTERN) return text;
+  return text.replace(TILDIFY_PATTERN, (match) => (match.startsWith("\x1b") ? match : "~"));
 }
 
 function isVisibleBoundary(ch: string): boolean {
@@ -490,6 +505,18 @@ function compactJson(value: unknown): string {
 
 function firstVisibleLine(lines: string[]): string | undefined {
   return lines.find((line) => stripAnsi(line).trim().length > 0);
+}
+
+// Bash commands keep their real newlines (heredocs, inline python, chained pipelines),
+// so first-line-only collapses them to an uninformative prefix like `$ python3 -c "`
+// (issue #10). Flatten every visible line into the one trace line, with a dim ↵ where
+// each break was — middle truncation then keeps the head *and* the operative tail.
+function flattenInvocationLines(lines: string[]): string | undefined {
+  const visible = lines
+    .filter((line) => stripAnsi(line).trim().length > 0)
+    .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
+  if (visible.length === 0) return undefined;
+  return visible.join(` ${MUTED_GREY}${LINE_BREAK_MARK}${RESET} `);
 }
 
 function filterSgrParams(
@@ -655,7 +682,11 @@ function colourCommandPrefix(comp: any, line: string): string {
 function nativeInvocationLine(comp: any): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
-  const line = firstVisibleLine(withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH)));
+  const rendered = withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH));
+  const lines = Array.isArray(rendered) ? rendered : [];
+  // Bash: every rendered line is invocation (the command's own newlines), so flatten.
+  // Other tools keep first-line-only — that is what suppresses their preview/body lines.
+  const line = toolLabel(comp?.toolName) === "bash" ? flattenInvocationLines(lines) : firstVisibleLine(lines);
   return line
     ? colourCommandPrefix(comp, stripSgrBackgrounds(stripTimeoutSuffix(stripTrailingExpandHint(line))))
     : undefined;
@@ -693,6 +724,30 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
   return `${statusColor(comp)}${BOLD}read${BOLD_OFF}${RESET} ${MUTED_GREY}${dir}${RESET}${base}${MUTED_GREY}${range}${RESET}`;
 }
 
+// The shaded tool surface, borrowed live from the row itself. pi keeps contentBox.bgFn
+// status-synced (toolPendingBg / toolSuccessBg / toolErrorBg from the active theme), so
+// the collapsed row inherits the exact background the expanded block would have — theme,
+// light/dark, and colour-mode handling all come for free, and the band retints when the
+// result lands. Self-framing tools have no native shade, so they get none here either.
+function rowBackground(comp: any): ((text: string) => string) | undefined {
+  try {
+    if (typeof comp?.getRenderShell === "function" && comp.getRenderShell() === "self") return undefined;
+    const bgFn = comp?.contentBox?.bgFn;
+    return typeof bgFn === "function" ? bgFn : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Full-width band: pad to width, then re-assert the background after every full SGR
+// reset (traceline's own ink uses \x1b[0m liberally) so the surface never punches holes.
+function shadeRow(line: string, width: number, bgFn: (text: string) => string): string {
+  const [open = "", close = ""] = bgFn("\u0000").split("\u0000");
+  if (!open) return line;
+  const padded = `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`;
+  return `${open}${padded.split(RESET).join(`${RESET}${open}`)}${close}`;
+}
+
 function oneLine(comp: any, width: number): string {
   const lineWidth = Math.max(1, width);
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
@@ -701,7 +756,9 @@ function oneLine(comp: any, width: number): string {
   const tilded = tildify(base);
   const invocation = toolLabel(comp?.toolName) === "bash" ? dimShellPlumbing(tilded) : tilded;
   const fitted = fitOneLineAndSuffix(invocation, resultCharSuffix(comp), available);
-  return truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ONE_LINE_ELLIPSIS);
+  const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ONE_LINE_ELLIPSIS);
+  const bgFn = rowBackground(comp);
+  return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
 }
 
 // An assistant turn that renders nothing (a tool-call-only turn with no visible
@@ -826,6 +883,9 @@ export const internals = {
   tildify,
   stripTimeoutSuffix,
   dimShellPlumbing,
+  flattenInvocationLines,
+  rowBackground,
+  shadeRow,
   // row grammar
   formatCharCount,
   lineRange,

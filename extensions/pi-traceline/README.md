@@ -28,11 +28,23 @@ When tool rows are collapsed, each one renders as a single line:
 
 Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults. On top of that sits an **ink hierarchy**: shell plumbing in bash rows (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) is dimmed so the command segments carry the brightness, and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight, and a tool row sits tight under the collapsed `Thinking...` line that motivated it, so each thought→action couplet reads as one unit.
 
+### The tool surface
+
+Each trace line sits on Pi's own status-tinted tool background — the same shaded surface the expanded block uses (`toolPendingBg` / `toolSuccessBg` / `toolErrorBg` from your active theme, borrowed live from the row itself, so themes and light/dark handling come for free). Collapsed and expanded views read as the *same object at different zoom*, trace rows stop dissolving into surrounding prose, and consecutive calls tile into one shaded slab per tool group. The band retints when a result lands (pending → success/error), and tools that render their own framing get no band — exactly matching native. 
+
+### Multiline commands stay one line
+
+Bash commands keep their real newlines — heredocs, inline `python3 -c` scripts, chained `tmux` pipelines. Taking only the first rendered line collapsed them to an uninformative prefix like `$ python3 -c "` (issue #10). Instead, the whole command is flattened into the one trace line with a dim `↵` marking each original break, and middle truncation then keeps both the head and the *operative tail* — the checks at the end of a pipeline, not just its preamble:
+
+```
+› $ python3 -c " ↵ import json ↵ p='~/.pi/agent/… -p -t pog-th | grep -E "cache|fable" | tail -4   257 ch
+```
+
 ### Reading the end of the line
 
 The discriminating part of a row usually lives at the **tail** — the filename + `:line-range` for a path, or the operative end of a command — while the head is boilerplate (long `~/projects/...` prefixes, `cd ... &&` preambles). So instead of a trailing ellipsis that deletes the signal, `pi-traceline`:
 
-- **tildifies** home directories (`/Users/you/...` -> `~/...`) to reclaim width before truncating;
+- **tildifies** home directories (`/Users/you/...` -> `~/...`) to reclaim width before truncating (OSC 8 hyperlink URLs are left intact, so click targets keep working);
 - **middle-truncates** with a dimmed `…`, protecting the tail so the basename and `:range` survive, snapping the cut to a nearby `/` or space;
 - **dims the directory** on plain file reads so the basename — *which* file — stands out.
 
