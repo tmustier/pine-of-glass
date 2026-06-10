@@ -225,3 +225,34 @@ test("classification ladder", () => {
   const summarizer = classifyCall({ isFirst: false, usage: usage(0), expectedRead: 100_000, inCompaction: true });
   assert.equal(summarizer.cause!.kind, "compaction-work");
 });
+
+test("unknown-miss hint is window-aware", () => {
+  // Live-observed on gpt-5.5 (session 019eb190): call 1 misses (thinking change) and
+  // re-writes; call 2 fires seconds later with an identical prefix and reads exactly 0.
+  // OpenAI's best-effort cache (prefix-hash replica routing, write propagation) is the
+  // explanation — not eviction, and not a content change (cacheRead 0 with an unchanged
+  // early prefix would still hit the first increments if the entry were reachable).
+  const base = {
+    isFirst: false,
+    gapMs: 8_000,
+    expectedRead: 17_397,
+    usage: { input: 18_500, output: 51, cacheRead: 0, cacheWrite: 0 },
+  };
+  const band: { kind: "band"; softMs: number; hardMs: number } = { kind: "band", softMs: 5 * MIN, hardMs: 60 * MIN };
+
+  const afterWrite = classifyCall({ ...base, window: band, prevWrote: true });
+  assert.equal(afterWrite.kind, "miss");
+  assert.equal(afterWrite.cause!.detail, "unknown (best-effort cache: fresh write not yet readable, or replica routing)");
+
+  const afterHit = classifyCall({ ...base, window: band, prevWrote: false });
+  assert.equal(afterHit.cause!.detail, "unknown (best-effort cache: replica routing or early eviction)");
+
+  // Contract windows (Anthropic) keep the eviction hint — the cache there is a promise,
+  // so an unexplained miss points at the provider side.
+  const contract = classifyCall({
+    ...base,
+    window: { kind: "contract", ttlMs: 5 * MIN, source: "observed" },
+    prevWrote: true,
+  });
+  assert.equal(contract.cause!.detail, "unknown (provider-side eviction?)");
+});

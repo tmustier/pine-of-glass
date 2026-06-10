@@ -84,8 +84,20 @@ the *wire*, not the keystroke: pi levels that map to the same provider effort (f
 minimal→low, both effort "low") are byte-identical requests — live-verified as a 100%
 hit — and stay silent. OpenAI's `reasoning.effort` lives outside the prompt-prefix
 tokens that key its cache, so no claim is made there: the param is fingerprinted, and
-only if a miss materializes does the cause name it. Cycling the level back before the
+only if a miss materializes does the cause name it (live on gpt-5.5, effort changes did
+start 2/2 turns with `cacheRead 0`). Cycling the level back before the
 next send revives the cache, and the widget follows.
+
+OpenAI's cache is also **best-effort**: entries are prefix-hash routed across replicas,
+so a byte-identical follow-up can read exactly 0 — typically right after a miss wrote a
+fresh entry that hasn't propagated, or when the request lands on a replica without it.
+Live on gpt-5.5 (session 019eb190): a thinking change broke call 1 as named, then call 2
+broke again seconds later with an unchanged prefix — and a third such miss happened in
+the same session with no parameter change at all. `cacheRead 0` (not partial) is the
+tell: a real content change would still hit the unchanged early prefix increments. The
+unknown-cause hint is window-aware for this — band windows say `best-effort cache:
+fresh write not yet readable, or replica routing` instead of Anthropic's
+`provider-side eviction?`.
 
 **2. Cache forensics** — every provider request is fingerprinted (system prompt, each
 tool, each history message; `cache_control` breakpoints stripped, since pi moves the

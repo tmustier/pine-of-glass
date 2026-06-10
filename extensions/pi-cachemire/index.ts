@@ -375,6 +375,23 @@ export interface ClassifyInput {
   compacted?: boolean;
   inCompaction?: boolean;
   fingerprintCause?: CallCause;
+  /** The previous call re-wrote the prefix (was itself a miss/cold write). */
+  prevWrote?: boolean;
+}
+
+// Hint wording for a miss nothing else explains. Window-aware: under a contract TTL
+// (Anthropic) an unexplained miss points at provider-side eviction. Under a best-effort
+// band (OpenAI) the cache is prefix-hash routed across replicas, so an entry can simply
+// be unreachable — most often right after the previous call wrote it (cacheRead 0 with a
+// byte-identical early prefix means the entry was not found, not that content changed;
+// a real content change would still hit the unchanged first increments).
+function unknownMissDetail(args: ClassifyInput): string {
+  if (args.window?.kind === "band") {
+    return args.prevWrote && args.usage.cacheRead === 0
+      ? "unknown (best-effort cache: fresh write not yet readable, or replica routing)"
+      : "unknown (best-effort cache: replica routing or early eviction)";
+  }
+  return "unknown (provider-side eviction?)";
 }
 
 export function classifyCall(args: ClassifyInput): CallClassification {
@@ -401,7 +418,7 @@ export function classifyCall(args: ClassifyInput): CallClassification {
     cause = idleCause;
   } else {
     // Rendered behind "cause: " — the detail must not restate the word.
-    cause = { kind: "unknown", detail: "unknown (provider-side eviction?)" };
+    cause = { kind: "unknown", detail: unknownMissDetail(args) };
   }
   return { kind: ratio <= MISS_RATIO ? "miss" : "partial", cause };
 }
@@ -1064,6 +1081,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       compacted: s.compacted,
       inCompaction: s.inCompaction,
       fingerprintCause,
+      prevWrote: ["miss", "cold", "partial"].includes(s.records.at(-1)?.classification.kind ?? ""),
     });
     const record: CallRecord = {
       index: s.records.length + 1,
