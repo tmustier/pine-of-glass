@@ -1,0 +1,68 @@
+# Upstream candidates — potential pi issues
+
+Observations about **pi itself** (not this repo's extensions) collected while building
+and live-testing the pine-of-glass family. Each entry records facts and evidence so a
+future issue can be written without re-deriving the diagnosis.
+
+> **Process: upstreaming is manual.** Nothing in this file is auto-filed. If we decide
+> an entry is worth raising, a human reviews the facts and writes the upstream issue.
+> Agents add/update entries here; they do not open issues against pi.
+
+Entries pin the pi version inspected — internals drift, so re-verify before filing.
+
+---
+
+## 1. Doubled `Thinking...` lines when reasoning is hidden
+
+**Observed:** pi 0.79.1 · live sessions, 2026-06-10 · diagnosed in
+[pine-of-glass#14](https://github.com/tmustier/pine-of-glass/issues/14)
+
+With reasoning hidden (Ctrl+T), `AssistantMessageComponent` renders the collapsed
+`Thinking...` label **once per thinking block, not per message**
+(`dist/modes/interactive/components/assistant-message.js` — the content loop emits a
+label for each `thinking` block, with a spacer when more visible content follows). An
+assistant message containing adjacent thinking blocks therefore renders two or more
+consecutive `Thinking...` lines with nothing between them.
+
+Frequency evidence from one live session (`019eb262`): **24 instances** of adjacent
+thinking blocks within a single assistant message; **0** consecutive thinking-only
+messages — so the doubling is intra-message block adjacency (models emitting multiple
+reasoning segments per response), not message boundaries.
+
+Two collapsed labels carry no more information than one; the duplication is purely an
+artifact of per-block rendering. Possible upstream direction: coalesce a *run* of
+adjacent thinking blocks into one collapsed label. (A downstream workaround would mean
+extending this repo's patching from tool rows to assistant rows — heavier than the
+upstream fix.)
+
+## 2. Anthropic tool search (`defer_loading`) not wired through pi-ai
+
+**Observed:** pi 0.79.1 (pi-ai anthropic provider) · inspected 2026-06-05 · full notes
+in `TOOL-SEARCH-NOTES.local.md` (local-only, gitignored)
+
+Anthropic's tool-search feature lets large tool catalogs be **deferred** out of the
+prompt prefix: a search tool + non-deferred tools sit in the prefix, the rest are
+discovered on demand and appended inline as `tool_reference` blocks — documented to
+leave the cached prefix untouched. The SDK pi bundles (`@anthropic-ai/sdk@^0.91.1`)
+already has the feature in its **stable** types (`defer_loading`,
+`ToolSearchToolResultBlock`).
+
+pi-ai's anthropic provider does not wire it up (evidence:
+`pi-ai/dist/providers/anthropic.js`):
+
+1. **Request side** — `convertTools` emits only name/description/schema/cache_control;
+   no `defer_loading`, and nothing injects a `tool_search_tool_*` object into
+   `params.tools`. pi's internal `ToolInfo` has no deferral concept.
+2. **Response side** — the stream parser handles only `text` / `thinking` /
+   `redacted_thinking` / `tool_use` block types; `server_tool_use` and
+   `tool_search_tool_result` blocks would be silently dropped, so discovery turns
+   cannot work even if the params were forced in.
+3. **Beta headers** — only fine-grained-tool-streaming and interleaved-thinking are
+   sent; no tool-search beta.
+
+Why it matters: pi's existing active/inactive tools mechanism *changes the `tools`
+array*, which busts the prompt cache on every toggle. Tool search is the
+cache-preserving alternative for sessions carrying large MCP catalogs — the prefix
+stays byte-identical while discovery happens in history. Possible upstream direction:
+an opt-in flag that marks tools `defer_loading`, injects the search tool, and handles
+the two extra stream block types.
