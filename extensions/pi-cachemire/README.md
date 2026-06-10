@@ -88,16 +88,20 @@ only if a miss materializes does the cause name it (live on gpt-5.5, effort chan
 start 2/2 turns with `cacheRead 0`). Cycling the level back before the
 next send revives the cache, and the widget follows.
 
-OpenAI's cache is also **best-effort**: entries are prefix-hash routed across replicas,
-so a byte-identical follow-up can read exactly 0 — typically right after a miss wrote a
-fresh entry that hasn't propagated, or when the request lands on a replica without it.
-Live on gpt-5.5 (session 019eb190): a thinking change broke call 1 as named, then call 2
-broke again seconds later with an unchanged prefix — and a third such miss happened in
-the same session with no parameter change at all. `cacheRead 0` (not partial) is the
-tell: a real content change would still hit the unchanged early prefix increments. The
-unknown-cause hint is window-aware for this — band windows say `best-effort cache:
-fresh write not yet readable, or replica routing` instead of Anthropic's
-`provider-side eviction?`.
+OpenAI's cache is also **best-effort and per-machine**: requests route by a hash of the
+first ~256 tokens (+ `prompt_cache_key`, which pi sets to the session id), stickiness
+spills over under load, and "caching only works if two requests share the same prefix
+and land on the same machine" (OpenAI docs). Live on gpt-5.5 (session 019eb190) this
+produced a *double* break after one thinking change — and the arithmetic proves the
+mechanism: the Codex backend checkpoints entries at 512-token granularity, and every
+hit in the session read exactly `floor₅₁₂` of a specific earlier call's prompt total.
+Mapping reads to entries shows the turn alternated between two machines (A-write,
+B-write, A-hit 16,896 = floor₅₁₂(17,397), B-hit 18,432 = floor₅₁₂(18,500)): the effort
+change re-keyed both machines' caches and each paid one cold write. `cacheRead 0` (not
+partial) was the tell that effort participates in the cache key — a content change
+alone would still have hit the unchanged ~15k early prefix. The unknown-cause hint is
+window-aware for this — band windows say `best-effort cache: fresh write not yet
+readable, or replica routing` instead of Anthropic's `provider-side eviction?`.
 
 **2. Cache forensics** — every provider request is fingerprinted (system prompt, each
 tool, each history message; `cache_control` breakpoints stripped, since pi moves the
