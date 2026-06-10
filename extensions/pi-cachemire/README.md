@@ -185,6 +185,22 @@ billed at base input rates — the honest answer to "is caching working?".
 - `--continue`d sessions restore the ledger from session usage; restored rows are
   marked and excluded from savings (their pricing context is unknown).
 
+## State & lifecycle
+
+Working state is in-memory and dies with the process. What survives an exit is exactly
+what the provider billed — usage on assistant messages in the session transcript — from
+which `--continue` rebuilds the ledger (and entry matching still works across a quick
+exit+resume, since prompt totals are recoverable). Request-time observations — payload
+fingerprints, request-start anchors, the observed `cache_control` TTL — exist only at
+the event boundary and are never persisted: restored rows say `cause unknown` rather
+than reconstruct a diagnosis from vibes, and cachemire writes nothing into session
+entries or exports (UI-only contract).
+
+This trade-off fits the current goal — live legibility (repo README, plan 1). Plan 2 —
+post-hoc analysis of stored sessions and traces, RPC/remote runs, fleets of agent
+sessions — would need those request-time observations *after* the fact, which means
+persisting them to a sidecar artifact (never the session itself). Revisit then.
+
 ## Config
 
 `~/.pi/agent/pi-cachemire.json` or `<project>/.pi/pi-cachemire.json`:
