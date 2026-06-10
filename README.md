@@ -36,7 +36,7 @@ The contract suite pins every structural assumption about pi internals, so after
 *Note: A nice side benefit of 1. is that tools like `traceline` can help agents running interactive pi subagents in tmux to monitor them without risking context bloat from tool outputs.*
 
 **Status:** There are several things left to do in 1., including
-- making the agent loop/cache behaviour more transparent (`cachemire` - e.g. am I using too many agent turns? am I past TTL? if I am mutating the prefix, is the cache miss worth it?),
+- maturing [`cachemire`](./extensions/pi-cachemire) (cache TTL clock, miss forensics, turn ledger — implemented, local/unpublished while the UX settles),
 - UI improvements for `traceline` (filepath/multi-read UI, tool result size)
 - making `contextimate` more useful beyond upfront context (for example, are my MCP servers and skills efficient when loaded?)
 - and other refinements tracked in issues.

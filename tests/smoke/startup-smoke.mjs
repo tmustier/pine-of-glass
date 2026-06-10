@@ -93,6 +93,7 @@ writeFileSync(
       extensions: [
         join(repoRoot, "extensions", "pi-contextimate", "index.ts"),
         join(repoRoot, "extensions", "pi-traceline", "index.ts"),
+        join(repoRoot, "extensions", "pi-cachemire", "index.ts"),
       ],
     },
     null,
