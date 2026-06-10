@@ -21,11 +21,18 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 ## Development
 
 ```bash
-npm run link-pi    # symlink the installed pi runtime into node_modules (types + contract tests)
-npm run typecheck  # tsc against the real installed pi
-npm test           # unit + golden + pi contract tests (zero deps, node:test)
-npm run test:smoke # launches real pi in tmux with an isolated HOME (local-only)
+npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests)
+npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
+npm run typecheck       # tsc against the real installed pi
+npm test                # unit + golden + pi contract tests (zero deps, node:test)
+npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)
 ```
+
+Extensions share code through [`extensions/_lib`](./extensions/_lib) (number grammar,
+ANSI helpers, chat-container detection, config convention). pi resolves extension-relative
+imports against the symlink path, so local installs must link the extension *directories*
+plus `_lib` — `npm run link-extensions` does exactly that. `_lib` has no `index.ts`, so
+pi's extension discovery skips it.
 
 The contract suite pins every structural assumption about pi internals, so after `pi update` a quick `npm test` says exactly which seam (if any) drifted. Test design notes live in [`docs/testing.md`](./docs/testing.md). Goldens regenerate with `UPDATE_GOLDENS=1 npm test` — review the diff like code.
 

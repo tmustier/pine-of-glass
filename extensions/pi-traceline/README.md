@@ -11,18 +11,18 @@ It is built for the "I let Pi run for a couple of minutes and came back" moment.
 When tool rows are collapsed, each one renders as a single line:
 
 ```
-› read resource .pi/agent/AGENTS.md:1-20            (chars 1.4k)
-› [skill] google-workspace-stack:1-20               (chars 1.0k)
-› [skill] tmux:1-20                                 (chars 0.9k)
-› subagent list                                     (chars 1.1k)
-› subagent delegate                                 (chars 0.1k)
-› write /tmp/pi-extension-test-...-elephant.txt     (chars 0.1k)
-› $ rm /tmp/pi-extension-test-...-elephant.txt ...  (chars 0.0k)
+› read resource .pi/agent/AGENTS.md:1-20                 1.4k ch
+› [skill] google-workspace-stack:1-20                    1.0k ch
+› [skill] tmux:1-20                                       912 ch
+› subagent list                                          1.1k ch
+› subagent delegate                                       131 ch
+› write /tmp/pi-extension-test-...-elephant.txt            85 ch
+› $ rm /tmp/pi-extension-test-...-elephant.txt ...          0 ch
 ```
 
 - **The arc of the turn** - every tool call in order, one line each, so you see the path Pi took.
 - **What context Pi got** - which files it read and how much of them (`read ... :1-20`), which skills it invoked (`[skill] ...`), which subagents ran.
-- **Which outputs were massive** - a right-aligned `(chars x.xk)` result-size suffix per row makes an over-large tool output (often a sign of a tool or guidance issue) jump out.
+- **Which outputs were massive** - a right-aligned, dimmed result-size suffix per row (`1.4k ch`, in the family number grammar shared with `pi-contextimate` and `pi-cachemire`) makes an over-large tool output (often a sign of a tool or guidance issue) jump out.
 - **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error.
 - **Selective expansion** - arm a one-shot click and then click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
 
@@ -37,9 +37,9 @@ The discriminating part of a row usually lives at the **tail** — the filename 
 - **dims the directory** on plain file reads so the basename — *which* file — stands out.
 
 ```
-›  read ~/projects/pine-of-glass/.../pi-traceline/README.md:1-300   (chars 3.8k)
-›  read ~/projects/pine-of-glass/.../pi-traceline/index.ts:1-200    (chars 18.5k)
-›  $ cd ~/projects/pine-of-glass && rm -f docs/img/...-native.png   (chars 0.0k)
+›  read ~/projects/pine-of-glass/.../pi-traceline/README.md:1-300        3.8k ch
+›  read ~/projects/pine-of-glass/.../pi-traceline/index.ts:1-200        18.5k ch
+›  $ cd ~/projects/pine-of-glass && rm -f docs/img/...-native.png           0 ch
 ```
 
 ## Install
@@ -66,8 +66,8 @@ Or add it to your Pi config's extension list pointing at this directory. If you 
   - **reasoning shown** → native tool rows, untouched (full detail).
   - **reasoning hidden** → each tool row collapses to one trace line.
 - So one keystroke flips the whole turn between "full detail" and "trace line", and back again when you want to expand.
-- Plain terminal scrolling stays available by default. To expand/collapse one row with the mouse, press `Ctrl+Shift+O` or run `/traceline-click`, then click the row within 8 seconds.
-- If you prefer always-on click handling, run `/traceline-clicks on`; this uses terminal mouse reporting and may capture wheel/trackpad scrolling until `/traceline-clicks off`. You can also start Pi with `PI_TRACELINE_CLICK=1` to opt into persistent click handling by default.
+- Plain terminal scrolling stays available by default. To expand/collapse one row with the mouse, press `Ctrl+Shift+O` or run `/traceline-click` (optionally `/traceline-click 20` for a 20s window), then click the row.
+- If you prefer always-on click handling, run `/traceline-click on`; this uses terminal mouse reporting and may capture wheel/trackpad scrolling until `/traceline-click off`. You can also start Pi with `PI_TRACELINE_CLICK=1` to opt into persistent click handling by default.
 
 ### Why clicks are off by default (design decision)
 
@@ -75,7 +75,8 @@ Receiving click events requires terminal mouse reporting (`1000` + SGR `1006`), 
 
 - **No mouse reporting by default, ever.** Plain terminal scrolling always wins.
 - **One-shot arm is the primary path**: `Ctrl+Shift+O` or `/traceline-click` enables reporting for a single click or 8 seconds, whichever comes first, then releases the terminal. Every exit path (click consumed, TTL expiry, explicit disable) ends with mouse reporting off — this invariant is pinned by the test suite (`tests/traceline/click-state.test.ts`).
-- **Persistent mode stays as an explicit escape hatch** (`/traceline-clicks on`, `PI_TRACELINE_CLICK=1`) for users who accept the scroll tradeoff knowingly.
+- **Persistent mode stays as an explicit escape hatch** (`/traceline-click on`, `PI_TRACELINE_CLICK=1`) for users who accept the scroll tradeoff knowingly.
+- **Hit-map tracking is lazy**: the render-layout pass that maps screen rows to tool components only runs while click handling is armed or enabled, so the default configuration pays zero render-time cost for the feature.
 - **Keyboard-first remains `Ctrl+T`** for the whole-turn toggle. A dedicated keyboard row-picker was considered and deferred: it would add modal selection UI for a gap the one-shot click already covers. Revisit if real usage shows the one-shot is too clunky.
 
 The collapse state is read from a live assistant row (falling back to `~/.pi/agent/settings.json`'s `hideThinkingBlock`), so the tool view can never desync from the reasoning view.

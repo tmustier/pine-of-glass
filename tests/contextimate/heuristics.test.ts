@@ -48,7 +48,7 @@ test("built-in model routing boundaries", () => {
 });
 
 test("precedence: defaults < built-in rule < config rules, in rule order", () => {
-  const config: ContextimateConfig = { defaultTextDenominator: 9 };
+  const config: ContextimateConfig = { defaults: { textDenominator: 9 } };
   // Built-in model rule overrides flat config defaults.
   assert.equal(resolveHeuristic(anthropicModel, config).textDenominator, 2.6);
   // ...but defaults apply when no built-in rule matches.

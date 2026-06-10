@@ -2,9 +2,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { stripAnsi } from "../_lib/ansi.ts";
+import { captureTui } from "../_lib/capture.ts";
+import { findChatContainer } from "../_lib/chat.ts";
+import { configPaths, readJsonConfig } from "../_lib/config.ts";
+import { compactCount } from "../_lib/fmt.ts";
 
 /**
  * pi-cachemire — explains the cache and loop economics of a pi session.
@@ -296,9 +298,7 @@ export function sessionSavings(records: CallRecord[]): { actual: number; uncache
 // --- formatting ------------------------------------------------------------------------
 
 export function formatTokensK(value: number): string {
-  if (!Number.isFinite(value)) return "?";
-  if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return `${Math.round(value)}`;
+  return compactCount(value);
 }
 
 export function formatUsd(value: number): string {
@@ -485,48 +485,16 @@ export function restoreFromMessages(messages: Array<Record<string, unknown>>): C
 
 // --- config ----------------------------------------------------------------------------
 
-function readConfigFile(filePath: string): Partial<CachemireConfig> | undefined {
-  try {
-    if (!existsSync(filePath)) return undefined;
-    const parsed = JSON.parse(readFileSync(filePath, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export function loadConfig(cwd: string): CachemireConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    ...readConfigFile(join(homedir(), ".pi", "agent", "pi-cachemire.json")),
-    ...readConfigFile(join(cwd, ".pi", "pi-cachemire.json")),
-  };
+  return configPaths("pi-cachemire", cwd).reduce(
+    (config, filePath) => ({ ...config, ...readJsonConfig<Partial<CachemireConfig>>(filePath) }),
+    { ...DEFAULT_CONFIG },
+  );
 }
 
 // --- chat scrollback append (display-only; never touches LLM context) -------------------
 // ctx.ui.notify force-dims and replaces consecutive status lines, so ledger lines are
-// appended straight to pi's chat container (found structurally, like pi-traceline).
-
-function isChatRow(component: unknown): boolean {
-  const c = component as { setHideThinkingBlock?: unknown; setExpanded?: unknown; toolName?: unknown };
-  if (!c || typeof c !== "object") return false;
-  if (typeof c.setHideThinkingBlock === "function") return true; // assistant row
-  return typeof c.setExpanded === "function" && "toolName" in c; // tool row
-}
-
-function findChat(node: unknown, seen = new Set<unknown>()): { children: unknown[]; addChild?: (c: unknown) => void } | undefined {
-  if (!node || typeof node !== "object" || seen.has(node)) return undefined;
-  seen.add(node);
-  const kids = (node as { children?: unknown[] }).children;
-  if (Array.isArray(kids)) {
-    if (kids.some(isChatRow)) return node as { children: unknown[]; addChild?: (c: unknown) => void };
-    for (const kid of kids) {
-      const found = findChat(kid, seen);
-      if (found) return found;
-    }
-  }
-  return undefined;
-}
+// appended straight to pi's chat container (found structurally via the shared _lib).
 
 // --- live state ------------------------------------------------------------------------
 
@@ -604,7 +572,7 @@ function updateWidget(now = Date.now()): void {
 
 function appendChatLine(text: string): void {
   const s = state();
-  const chat = s.tui ? findChat(s.tui) : undefined;
+  const chat = s.tui ? findChatContainer(s.tui) : undefined;
   if (chat?.addChild) {
     try {
       chat.addChild(new Spacer(1));
@@ -615,7 +583,7 @@ function appendChatLine(text: string): void {
       // fall through to notify
     }
   }
-  s.ui?.notify(text.replace(/\u001b\[[0-9;]*m/g, ""), "info");
+  s.ui?.notify(stripAnsi(text), "info");
 }
 
 // --- extension entry --------------------------------------------------------------------
@@ -645,11 +613,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     }
     if (!ctx.hasUI) return;
     s.ui = ctx.ui as unknown as CachemireState["ui"];
-    ctx.ui.setWidget("__pi_cachemire_capture", ((tui: CachemireState["tui"]) => {
-      s.tui = tui;
-      return { render: () => [] as string[], invalidate: () => {} };
-    }) as never);
-    ctx.ui.setWidget("__pi_cachemire_capture", undefined);
+    captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
+      s.tui = tui as CachemireState["tui"];
+    });
     if (g.__piCachemireTimer) clearInterval(g.__piCachemireTimer);
     g.__piCachemireTimer = setInterval(() => updateWidget(), 1000);
     updateWidget();

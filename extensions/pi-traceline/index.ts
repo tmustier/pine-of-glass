@@ -3,6 +3,10 @@ import { isKeyRelease, isKeyRepeat, matchesKey, truncateToWidth, visibleWidth } 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { stripAnsi } from "../_lib/ansi.ts";
+import { captureTui } from "../_lib/capture.ts";
+import { findChatContainer, isAssistantRow, isToolRow } from "../_lib/chat.ts";
+import { compactCount } from "../_lib/fmt.ts";
 
 /**
  * pi-traceline — collapse each tool call to one scannable trace line so the full arc of
@@ -21,7 +25,7 @@ import { join } from "node:path";
  * dimmed `...` so the tail survives — the basename + `:line-range` for a path, or the
  * operative end of a command — because that is where the discriminating information lives;
  * the cut snaps to a nearby `/` or space. Plain file reads additionally dim the directory
- * so the basename stands out. Once a result exists, a right-aligned `(chars x.xk)`
+ * so the basename stands out. Once a result exists, a right-aligned dimmed `1.2k ch`
  * result-size suffix is reserved at the end. Spacing: one blank line before a tool group
  * (restoring the spacer pi drops), none between consecutive tools. One-shot click mode
  * toggles a clicked row only, without changing Pi's global tool expansion state.
@@ -69,7 +73,7 @@ const TOOL_AFTER_BULLET = " ";
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const ONE_LINE_ELLIPSIS = "...";
-const TRACELINE_PATCH_VERSION = 8;
+const TRACELINE_PATCH_VERSION = 9;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const MIN_HEAD_COLS = 6;
 const TAIL_RATIO = 0.55;
@@ -78,38 +82,13 @@ const MOUSE_REPORTING_ENABLE = "\x1b[?1000h\x1b[?1006h";
 const MOUSE_REPORTING_DISABLE = "\x1b[?1000l\x1b[?1006l";
 
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
-
-function isToolRow(c: any): boolean {
-  if (!c) return false;
-  if (c.constructor?.name === "ToolExecutionComponent") return true;
-  return typeof c.render === "function" && typeof c.setExpanded === "function" && "toolName" in c;
-}
-
-function isAssistantRow(c: any): boolean {
-  return (
-    !!c && typeof c.setHideThinkingBlock === "function" && typeof c.hideThinkingBlock === "boolean"
-  );
-}
-
-// The container whose direct children include the tool rows (pi's chatContainer).
-function findChat(node: any, seen = new Set<any>()): any {
-  if (!node || typeof node !== "object" || seen.has(node)) return undefined;
-  seen.add(node);
-  const kids = node.children;
-  if (Array.isArray(kids)) {
-    if (kids.some(isToolRow)) return node;
-    for (const k of kids) {
-      const f = findChat(k, seen);
-      if (f) return f;
-    }
-  }
-  return undefined;
-}
+// Structural detection (isToolRow / isAssistantRow / findChatContainer) lives in _lib
+// and is shared across the extension family.
 
 function chatChildren(): any[] | undefined {
   let chat = g.__tracelineChat;
   if (!chat || !Array.isArray(chat.children)) {
-    chat = g.__tracelineTui ? findChat(g.__tracelineTui) : undefined;
+    chat = g.__tracelineTui ? findChatContainer(g.__tracelineTui) : undefined;
     g.__tracelineChat = chat;
   }
   return chat?.children;
@@ -184,6 +163,9 @@ function setClickHandling(enabled: boolean, options: { oneShot?: boolean; ttlMs?
 
   if (enabled) {
     enableMouseReporting();
+    // Hit-map layout tracking only runs while clicks are enabled; render now so the
+    // map is populated before the click lands.
+    g.__tracelineTui?.requestRender?.(true);
     if (g.__tracelineClickOneShot && options.ttlMs && options.ttlMs > 0) {
       g.__tracelineClickArmTimer = setTimeout(() => {
         if (g.__tracelineClickOneShot) setClickHandling(false);
@@ -257,6 +239,12 @@ function wrapTuiRender(tui: any): void {
   tui.__tracelineOriginalRender = original;
   tui.render = function (width: number) {
     if (g.__tracelineLayoutActive) return original.call(this, width);
+    // Hit-map tracking exists only for click-to-expand. Clicks are opt-in, so the
+    // tracking pass must cost nothing while they are off.
+    if (!shouldEnableClicks()) {
+      g.__tracelineHitMap = undefined;
+      return original.call(this, width);
+    }
 
     g.__tracelineLayoutActive = true;
     g.__tracelineLayoutRow = 0;
@@ -382,12 +370,7 @@ function hiddenToolPrefix(comp: any): string {
 }
 
 function formatCharCount(value: number): string {
-  const chars = Math.max(0, Math.floor(value));
-  const roundedTenths = Math.round(chars / 100) / 10;
-  return `${roundedTenths.toLocaleString("en-US", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })}k`;
+  return compactCount(Math.max(0, Math.floor(value)));
 }
 
 function resultTextCharCount(comp: any): number | undefined {
@@ -402,7 +385,7 @@ function resultTextCharCount(comp: any): number | undefined {
 
 function resultCharSuffix(comp: any): string {
   const chars = resultTextCharCount(comp);
-  return chars === undefined ? "" : `${MUTED_GREY}(chars ${formatCharCount(chars)})${RESET}`;
+  return chars === undefined ? "" : `${MUTED_GREY}${formatCharCount(chars)} ch${RESET}`;
 }
 
 // Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
@@ -500,12 +483,6 @@ function compactJson(value: unknown): string {
   } catch {
     return String(value ?? "");
   }
-}
-
-function stripAnsi(text: string): string {
-  return text
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
 }
 
 function firstVisibleLine(lines: string[]): string | undefined {
@@ -826,43 +803,36 @@ export default function piTraceline(pi: ExtensionAPI) {
     },
   });
 
+  // One command for the whole click feature: no args = arm one click for 8s,
+  // `<seconds>` = arm one click with a custom TTL, `on`/`off` = persistent mode
+  // (uses terminal mouse reporting, which may capture wheel/trackpad scroll).
   pi.registerCommand("traceline-click", {
-    description: "Arm one pi-traceline row click without keeping mouse reporting on",
+    description: "Click-to-expand tool rows: no args/<seconds> arms one click; on/off toggles persistent mode",
     handler: async (args, ctx) => {
-      const seconds = Number.parseFloat(args.trim());
+      const value = args.trim().toLowerCase();
+      if (value === "on") {
+        setClickHandling(true);
+        ctx.ui.notify("pi-traceline persistent clicks enabled; terminal scroll may be captured", "info");
+        return;
+      }
+      if (value === "off") {
+        setClickHandling(false);
+        ctx.ui.notify("pi-traceline clicks disabled; terminal scroll restored", "info");
+        return;
+      }
+      const seconds = Number.parseFloat(value);
       const ttlMs = Number.isFinite(seconds) && seconds > 0 ? Math.max(500, seconds * 1000) : 8_000;
       armClickOnce(ttlMs);
       ctx.ui.notify(`pi-traceline click armed for ${Math.round(ttlMs / 1000)}s`, "info");
     },
   });
 
-  pi.registerCommand("traceline-clicks", {
-    description: "Toggle persistent pi-traceline click-to-expand rows (captures terminal scroll)",
-    handler: async (args, ctx) => {
-      const value = args.trim().toLowerCase();
-      const next =
-        value === "on" || value === "enable" || value === "enabled" || value === "1" || value === "true"
-          ? true
-          : value === "off" || value === "disable" || value === "disabled" || value === "0" || value === "false"
-            ? false
-            : !shouldEnableClicks();
-
-      setClickHandling(next);
-      ctx.ui.notify(
-        next
-          ? "pi-traceline persistent clicks enabled; terminal scroll may be captured"
-          : "pi-traceline persistent clicks disabled; terminal scroll restored",
-        "info",
-      );
-    },
-  });
-
   pi.on("session_start", async (_event, ctx) => {
     // Capture the real TUI (passed synchronously to the widget factory), then patch only
     // extension-visible seams: render for hit-map capture, requestRender for delayed
-    // tool-row patching, and raw terminal input for SGR mouse click events. Then remove
-    // the throwaway widget so there is no visible artifact.
-    ctx.ui.setWidget("__pi_traceline_capture", (t: any) => {
+    // tool-row patching, and raw terminal input for SGR mouse click events.
+    captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
+      const t = tui as any;
       g.__tracelineTui = t;
       patchContainerPrototype(t);
       wrapTuiRender(t);
@@ -876,9 +846,7 @@ export default function piTraceline(pi: ExtensionAPI) {
         t.__tracelineRRWrapVersion = TRACELINE_PATCH_VERSION;
       }
       tryPatch();
-      return { render: () => [] as string[], invalidate: () => {} };
     });
-    ctx.ui.setWidget("__pi_traceline_capture", undefined);
     enableMouseReporting();
 
     // Make reload/session-start idempotent: do not stack raw-input listeners.

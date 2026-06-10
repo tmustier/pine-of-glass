@@ -116,9 +116,10 @@ try {
   // be slow: the fresh HOME means a cold jiti cache for both TS extensions.
   pane = waitFor("startup render", (text) => text.includes("[Context Estimator]"), 60000);
   check("estimator block present at startup", pane.includes("[Context Estimator]"));
-  // The header always shows the full cycle legend; the mode-specific hint lines are the
-  // reliable tell. Summary mode renders neither.
-  check("summary mode is the startup default", !/Scan view:|Expanded view:/.test(pane));
+  // The header always shows the full cycle legend; mode-specific markers are the
+  // reliable tell. Summary mode renders neither the compact ▸ section glyph nor the
+  // expanded tools-tree note.
+  check("summary mode is the startup default", !/▸ |readable view/.test(pane));
   check("harness total row rendered", pane.includes("Total harness"));
   check("no extension error surfaced", !/Error loading extension|extension error/i.test(pane));
 
@@ -130,12 +131,12 @@ try {
 
   // 2. Mode switching via the slash command actually changes the rendered block.
   run(["tmux", "send-keys", "-t", session, "/contextimate compact", "Enter"]);
-  pane = waitFor("compact mode", (text) => /Scan view:/.test(text));
-  check("compact mode renders the scan view", /Scan view:/.test(pane));
+  pane = waitFor("compact mode", (text) => /▸ Runtime system prompt/.test(text));
+  check("compact mode renders the scan view", /▸ Runtime system prompt/.test(pane));
 
   run(["tmux", "send-keys", "-t", session, "/contextimate expanded", "Enter"]);
-  pane = waitFor("expanded mode", (text) => /Expanded view:/.test(text));
-  check("expanded mode renders the detail view", /Expanded view:/.test(pane));
+  pane = waitFor("expanded mode", (text) => /readable view/.test(text));
+  check("expanded mode renders the detail view", /readable view/.test(pane));
 
   // 3. /reload keeps exactly one estimator block (regression: duplicate insertion).
   // Back to summary first so the block fits the viewport, and count on the visible

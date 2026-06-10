@@ -2,10 +2,10 @@ import type { Component } from "@earendil-works/pi-tui";
 import type { ContextUsage, ExtensionAPI, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { stripAnsi } from "../_lib/ansi.ts";
+import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
+import { compactCount } from "../_lib/fmt.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -15,7 +15,6 @@ type SkillSummary = {
   location: string;
   chars: number;
   tokens: number;
-  countLabel: string;
 };
 
 type ToolSummary = {
@@ -59,8 +58,8 @@ type PrefixSection = {
   id: string;
   title: string;
   content: string;
-  countLabel?: string;
-  methodTag?: string;
+  /** Dim suffix after the char count, e.g. "÷ 2.6" or "÷ 2.6 · Anthropic tool payload". */
+  detail?: string;
   effectiveTokens?: number;
   rawChars?: number;
   denominator?: number;
@@ -74,20 +73,9 @@ type ModelSummary = {
   api: string;
 };
 
-type ToolNumeratorTemplate = {
-  label?: string;
-  shape?: string;
-  template?: unknown;
-  denominator?: number;
-  url?: string;
-  referenceUrl?: string;
-};
+type ToolNumeratorSpec = string;
 
-type ToolNumeratorSpec = string | ToolNumeratorTemplate;
-
-type HeuristicProfile = Partial<Pick<ResolvedHeuristic, "label" | "textDenominator" | "sessionDenominator" | "toolDenominator" | "toolNumerator">> & {
-  toolNumeratorShape?: ToolNumeratorSpec;
-};
+type HeuristicProfile = Partial<Pick<ResolvedHeuristic, "label" | "textDenominator" | "sessionDenominator" | "toolDenominator" | "toolNumerator">>;
 
 type HeuristicRule = HeuristicProfile & {
   profile?: string;
@@ -102,12 +90,7 @@ type HeuristicRule = HeuristicProfile & {
 type ContextimateConfig = {
   profiles?: Record<string, HeuristicProfile>;
   defaults?: Partial<Pick<ResolvedHeuristic, "textDenominator" | "sessionDenominator" | "toolDenominator" | "toolNumerator">> & { profile?: string };
-  defaultTextDenominator?: number;
-  defaultSessionDenominator?: number;
-  defaultToolDenominator?: number;
-  defaultToolNumerator?: ToolNumeratorSpec;
   rules?: HeuristicRule[];
-  toolShapes?: Record<string, ToolNumeratorSpec>;
 };
 
 type ResolvedHeuristic = {
@@ -136,14 +119,11 @@ type ToolNumeratorResult = {
   chars: number;
   tokens?: number;
   denominator?: number;
-  referenceUrl?: string;
-  detail?: string;
 };
 
 type ToolDisplayEstimate = {
   tokens: number;
   chars: number;
-  detail: string;
 };
 
 type SessionBreakdown = {
@@ -186,27 +166,10 @@ const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m
 const DEFAULT_MODE: ViewMode = "summary";
 const ORANGE = "\x1b[38;2;245;151;52m";
 const RESET = "\x1b[0m";
-const OPENAI_COOKBOOK_TOKEN_COUNTING_URL = "https://developers.openai.com/cookbook/examples/how_to_count_tokens_with_tiktoken";
 const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
-
-function localCalculationNoteUrl(): string {
-  try {
-    const docsPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../docs/pi-contextimate.md");
-    if (existsSync(docsPath)) return `${pathToFileURL(docsPath).href}#practical-openai-style-tool-heuristic`;
-  } catch {
-    // Fall back to the public formula lineage when running in an unusual loader.
-  }
-  return OPENAI_COOKBOOK_TOKEN_COUNTING_URL;
-}
-
-const OPENAI_TOOL_CALCULATION_REFERENCE_URL = localCalculationNoteUrl();
 
 function orange(text: string): string {
   return `${ORANGE}${text}${RESET}`;
-}
-
-function compactNumber(value: number): string {
-  return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(Math.round(value));
 }
 
 type TokenLabelLayout = { unitWidth: number; fieldWidth: number };
@@ -261,26 +224,18 @@ function formatDenominator(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function formatCountParts(chars: number, denominator = 4, tokenLayout?: TokenLabelLayout): { tokens: string; chars: string } {
-  const charLabel = compactNumber(chars);
-  const tokenLabel = estimatedTokenLabel(estimateCharsAsTokens(chars, denominator), tokenLayout);
-  return { tokens: `${tokenLabel} tokens`, chars: `(${charLabel} chars/${formatDenominator(denominator)})` };
+// --- the family number grammar: `~0.5k tokens (1.2k ch ÷ 2.6)` -------------------------
+
+function ratioDetail(denominator: number): string {
+  return `÷ ${formatDenominator(denominator)}`;
 }
 
-function formatCount(chars: number, denominator = 4): string {
-  const parts = formatCountParts(chars, denominator);
-  return `${parts.tokens} ${parts.chars}`;
+function countDetail(chars: number, detail?: string): string {
+  return `(${compactCount(chars)} ch${detail ? ` ${detail}` : ""})`;
 }
 
-function formatTokenEstimate(tokens: number, chars?: number, detail?: string, tokenLayout?: TokenLabelLayout): string {
-  const suffix = typeof chars === "number"
-    ? ` (${compactNumber(chars)} ${detail?.startsWith("chars/") ? detail : `chars${detail ? ` · ${detail}` : ""}`})`
-    : "";
-  return `${estimatedTokenLabel(tokens, tokenLayout)} tokens${suffix}`;
-}
-
-function formatDenominatorDetail(denominator: number): string {
-  return `chars/${formatDenominator(denominator)}`;
+function inlineCount(chars: number, denominator: number): string {
+  return `~${compactTokenNumber(estimateCharsAsTokens(chars, denominator))} tokens ${countDetail(chars, ratioDetail(denominator))}`;
 }
 
 function formatHeuristicLabel(label: string): string {
@@ -317,10 +272,6 @@ function middleTruncatePath(text: string, width: number): string {
   return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
 }
 
-function styledText(label: string, style: (text: string) => string = (text) => text): string {
-  return style(label);
-}
-
 function unescapeXml(value: string): string {
   return value
     .replace(/&apos;/g, "'")
@@ -328,12 +279,6 @@ function unescapeXml(value: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&lt;/g, "<")
     .replace(/&amp;/g, "&");
-}
-
-function stripAnsi(text: string): string {
-  return text
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
 }
 
 function safeJson(value: unknown): string {
@@ -379,14 +324,12 @@ function getPromptRemainder(systemPrompt: string): string {
 function parseSkills(content: string, denominator: number): SkillSummary[] {
   return [...content.matchAll(SKILL_RE)].map((m) => {
     const chars = (m[0] ?? "").length;
-    const tokens = estimateCharsAsTokens(chars, denominator);
     return {
       name: unescapeXml((m[1] ?? "").trim()),
       description: unescapeXml((m[2] ?? "").trim()),
       location: unescapeXml((m[3] ?? "").trim()),
       chars,
-      tokens,
-      countLabel: formatCount(chars, denominator),
+      tokens: estimateCharsAsTokens(chars, denominator),
     };
   });
 }
@@ -404,8 +347,7 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
       title,
       content: body,
       denominator,
-      methodTag: `text/${formatDenominator(denominator)}`,
-      countLabel: formatCount(body.length, denominator),
+      detail: ratioDetail(denominator),
       expanded: {
         kind: "text",
         note: `${tildePath(filePath)} · preview only`,
@@ -466,7 +408,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
   const scanRows = sortedSkills.map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description }));
   const wrapperChars = Math.max(0, content.length - skills.reduce((sum, skill) => sum + skill.chars, 0));
   const wrapperNote = wrapperChars > 0
-    ? `list wrapper/markup  ${formatCount(wrapperChars, denominator)}`
+    ? `list wrapper/markup  ${inlineCount(wrapperChars, denominator)}`
     : undefined;
   return {
     skills,
@@ -475,8 +417,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       title: `Skill frontmatter (${skills.length})`,
       content,
       denominator,
-      methodTag: `text/${formatDenominator(denominator)}`,
-      countLabel: formatCount(content.length, denominator),
+      detail: ratioDetail(denominator),
       compactRows: scanRows,
       expanded: { kind: "skills", note: wrapperNote, rows: scanRows },
     },
@@ -522,23 +463,6 @@ function modelLabel(model?: ModelSummary): string {
   return model ? `${model.provider}/${model.id}` : "unknown model";
 }
 
-function expandHomePath(filePath: string): string {
-  if (filePath === "~") return homedir();
-  if (filePath.startsWith("~/")) return join(homedir(), filePath.slice(2));
-  return filePath;
-}
-
-function readJsonConfig(filePath: string): ContextimateConfig | undefined {
-  try {
-    const expanded = expandHomePath(filePath);
-    if (!existsSync(expanded)) return undefined;
-    const parsed = JSON.parse(readFileSync(expanded, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed as ContextimateConfig : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function mergeContextimateConfig(base: ContextimateConfig, next?: ContextimateConfig): ContextimateConfig {
   if (!next) return base;
   return {
@@ -546,26 +470,20 @@ function mergeContextimateConfig(base: ContextimateConfig, next?: ContextimateCo
     ...next,
     defaults: { ...(base.defaults ?? {}), ...(next.defaults ?? {}) },
     profiles: { ...(base.profiles ?? {}), ...(next.profiles ?? {}) },
-    toolShapes: { ...(base.toolShapes ?? {}), ...(next.toolShapes ?? {}) },
     rules: [...(base.rules ?? []), ...(Array.isArray(next.rules) ? next.rules : [])],
   };
 }
 
 function splitConfigPaths(value: string | undefined): string[] {
-  return (value ?? "").split(":").map((entry) => entry.trim()).filter(Boolean);
+  return (value ?? "").split(":").map((entry) => expandHomePath(entry.trim())).filter(Boolean);
 }
 
 function loadContextimateConfig(cwd: string): ContextimateConfig {
-  const configPaths = [
-    join(homedir(), ".pi", "agent", "pi-contextimate.json"),
-    join(cwd, ".pi", "pi-contextimate.json"),
-    // Legacy names from the original prefix-inspector predecessor.
-    join(homedir(), ".pi", "agent", "prefix-inspector.json"),
-    join(cwd, ".pi", "prefix-inspector.json"),
-    ...splitConfigPaths(process.env.PI_CONTEXTIMATE_CONFIG),
-    ...splitConfigPaths(process.env.PI_PREFIX_INSPECTOR_CONFIG),
-  ];
-  return configPaths.reduce<ContextimateConfig>((config, filePath) => mergeContextimateConfig(config, readJsonConfig(filePath)), {});
+  const paths = [...configPaths("pi-contextimate", cwd), ...splitConfigPaths(process.env.PI_CONTEXTIMATE_CONFIG)];
+  return paths.reduce<ContextimateConfig>(
+    (config, filePath) => mergeContextimateConfig(config, readJsonConfig<ContextimateConfig>(filePath)),
+    {},
+  );
 }
 
 function configSignature(config: ContextimateConfig): string {
@@ -613,19 +531,14 @@ function defaultHeuristic(): ResolvedHeuristic {
   };
 }
 
-function normalizeHeuristicPatch(patch: HeuristicProfile | Partial<ResolvedHeuristic> | undefined): Partial<ResolvedHeuristic> {
-  if (!patch) return {};
-  return {
+function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | Partial<ResolvedHeuristic> | undefined, source: string): ResolvedHeuristic {
+  const normalized: Partial<ResolvedHeuristic> = patch ? {
     label: patch.label,
     textDenominator: patch.textDenominator,
     sessionDenominator: patch.sessionDenominator,
     toolDenominator: patch.toolDenominator,
-    toolNumerator: patch.toolNumerator ?? (patch as HeuristicProfile).toolNumeratorShape,
-  };
-}
-
-function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | Partial<ResolvedHeuristic> | undefined, source: string): ResolvedHeuristic {
-  const normalized = normalizeHeuristicPatch(patch);
+    toolNumerator: patch.toolNumerator,
+  } : {};
   return {
     ...base,
     ...normalized,
@@ -741,34 +654,29 @@ function builtInHeuristicForModel(model?: ModelSummary): Partial<ResolvedHeurist
   };
 }
 
+// Heuristic resolution is one flat candidate list merged left to right with a single
+// patch function: fallback < defaults.profile < defaults < built-in model rule <
+// matching config rules (each optionally pulling in a named profile first).
 function resolveHeuristic(model: ModelSummary | undefined, config: ContextimateConfig): ResolvedHeuristic {
-  let heuristic = defaultHeuristic();
+  const candidates: Array<{ patch: HeuristicProfile | Partial<ResolvedHeuristic> | undefined; source: string }> = [];
   const defaults = config.defaults ?? {};
   if (defaults.profile && config.profiles?.[defaults.profile]) {
-    heuristic = applyHeuristicPatch(heuristic, config.profiles[defaults.profile], `profile:${defaults.profile}`);
+    candidates.push({ patch: config.profiles[defaults.profile], source: `profile:${defaults.profile}` });
   }
-  heuristic = applyHeuristicPatch(heuristic, {
-    textDenominator: config.defaultTextDenominator ?? defaults.textDenominator,
-    sessionDenominator: config.defaultSessionDenominator ?? defaults.sessionDenominator,
-    toolDenominator: config.defaultToolDenominator ?? defaults.toolDenominator,
-    toolNumerator: config.defaultToolNumerator ?? defaults.toolNumerator,
-  }, "configured fallback");
+  candidates.push({ patch: defaults, source: "configured defaults" });
   const builtIn = builtInHeuristicForModel(model);
-  if (builtIn) heuristic = applyHeuristicPatch(heuristic, builtIn, builtIn.label ?? "provider-aware heuristic");
+  if (builtIn) candidates.push({ patch: builtIn, source: builtIn.label ?? "provider-aware heuristic" });
   for (const rule of config.rules ?? []) {
     if (!ruleMatchesModel(rule, model)) continue;
     if (rule.profile && config.profiles?.[rule.profile]) {
-      heuristic = applyHeuristicPatch(heuristic, config.profiles[rule.profile], `profile:${rule.profile}`);
+      candidates.push({ patch: config.profiles[rule.profile], source: `profile:${rule.profile}` });
     }
-    heuristic = applyHeuristicPatch(heuristic, {
-      label: rule.label ?? heuristic.label,
-      textDenominator: rule.textDenominator,
-      sessionDenominator: rule.sessionDenominator,
-      toolDenominator: rule.toolDenominator,
-      toolNumerator: rule.toolNumerator ?? rule.toolNumeratorShape,
-    }, rule.label ?? (rule.profile ? `rule:${rule.profile}` : "custom rule"));
+    candidates.push({ patch: rule, source: rule.label ?? (rule.profile ? `rule:${rule.profile}` : "custom rule") });
   }
-  return heuristic;
+  return candidates.reduce(
+    (heuristic, { patch, source }) => applyHeuristicPatch(heuristic, patch, source),
+    defaultHeuristic(),
+  );
 }
 
 function openAIResponsesToolPayload(tool: ToolSummary): unknown {
@@ -830,48 +738,7 @@ function rawToolPayload(tool: ToolSummary): unknown {
   };
 }
 
-function substituteToolTemplate(value: unknown, tool: ToolSummary): unknown {
-  const placeholders: Record<string, unknown> = {
-    "$name": tool.name,
-    "$description": tool.description,
-    "$schema": tool.schema,
-    "$parameters": tool.schema,
-    "$source": tool.source,
-    "$parameterKeys": tool.parameterKeys,
-    "$promptGuidelines": tool.promptGuidelines,
-    "$strict": null,
-  };
-  if (typeof value === "string") {
-    if (value in placeholders) return placeholders[value];
-    return value
-      .replace(/\{\{name\}\}/g, tool.name)
-      .replace(/\{\{description\}\}/g, tool.description)
-      .replace(/\{\{source\}\}/g, tool.source);
-  }
-  if (Array.isArray(value)) return value.map((entry) => substituteToolTemplate(entry, tool));
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, substituteToolTemplate(entry, tool)]));
-}
-
-function resolveToolShapeSpec(spec: ToolNumeratorSpec, config: ContextimateConfig, seen = new Set<string>()): ToolNumeratorSpec {
-  if (typeof spec !== "string") return spec;
-  const custom = config.toolShapes?.[spec];
-  if (!custom || seen.has(spec)) return spec;
-  seen.add(spec);
-  return resolveToolShapeSpec(custom, config, seen);
-}
-
-function referenceUrlForToolSpec(spec: ToolNumeratorSpec, shape?: string): string | undefined {
-  // Retain reference metadata for config compatibility and future renderers even
-  // though the default TUI avoids OSC-8 links because several Pi paths strip them.
-  if (typeof spec === "object") {
-    if (spec.referenceUrl) return spec.referenceUrl;
-    if (spec.url) return spec.url;
-  }
-  return shape === "openai-cookbook" ? OPENAI_TOOL_CALCULATION_REFERENCE_URL : undefined;
-}
-
-function toolPayloadForShape(tool: ToolSummary, shape: string | undefined, spec: ToolNumeratorSpec): unknown {
+function toolPayloadForShape(tool: ToolSummary, shape: string | undefined): unknown {
   switch (shape) {
     case "openai-chat":
     case "openai-completions":
@@ -888,14 +755,13 @@ function toolPayloadForShape(tool: ToolSummary, shape: string | undefined, spec:
     case "raw-schema":
       return rawToolPayload(tool);
     default:
-      if (typeof spec === "object" && spec.template !== undefined) return substituteToolTemplate(spec.template, tool);
       return openAIResponsesToolPayload(tool);
   }
 }
 
-function aggregateToolPayloadForShape(tools: ToolSummary[], shape: string | undefined, spec: ToolNumeratorSpec): unknown {
+function aggregateToolPayloadForShape(tools: ToolSummary[], shape: string | undefined): unknown {
   if (shape === "gemini" || shape === "google" || shape === "vertex") return geminiToolPayload(tools);
-  return tools.map((tool) => toolPayloadForShape(tool, shape, spec));
+  return tools.map((tool) => toolPayloadForShape(tool, shape));
 }
 
 function toolPayloadLabel(shape: string | undefined): string {
@@ -922,32 +788,23 @@ function toolPayloadLabel(shape: string | undefined): string {
   }
 }
 
-function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic, config: ContextimateConfig): ToolNumeratorResult {
-  const spec = resolveToolShapeSpec(heuristic.toolNumerator, config);
-  const denominator = typeof spec === "object" ? cleanDenominator(spec.denominator, heuristic.toolDenominator) : heuristic.toolDenominator;
-  const shape = typeof spec === "string" ? spec : spec.shape;
+function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic): ToolNumeratorResult {
+  const shape = heuristic.toolNumerator;
   if (shape === "openai-cookbook") {
     const content = safeMinifiedJson(tools.map(openAIResponsesToolPayload));
     return {
-      label: typeof spec === "object" && spec.label ? spec.label : "OpenAI-style local formula",
+      label: "OpenAI-style local formula",
       content,
       chars: content.length,
       tokens: estimateOpenAIFunctionToolTokens(tools),
-      detail: `schema text/${formatDenominator(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`,
-      referenceUrl: referenceUrlForToolSpec(spec, shape),
     };
   }
-
-  let label = typeof spec === "object" && spec.label ? spec.label : toolPayloadLabel(shape);
-  const payload = aggregateToolPayloadForShape(tools, shape, spec);
-  if (typeof spec === "object" && spec.label) label = spec.label;
-  const content = safeMinifiedJson(payload);
+  const content = safeMinifiedJson(aggregateToolPayloadForShape(tools, shape));
   return {
-    label,
+    label: toolPayloadLabel(shape),
     content,
     chars: content.length,
-    denominator,
-    referenceUrl: referenceUrlForToolSpec(spec, shape),
+    denominator: heuristic.toolDenominator,
   };
 }
 
@@ -1093,27 +950,16 @@ function estimateOpenAIFunctionToolTokens(tools: ToolSummary[]): number {
   return tokens;
 }
 
-function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristic, config: ContextimateConfig): ToolDisplayEstimate {
-  const spec = resolveToolShapeSpec(heuristic.toolNumerator, config);
-  const denominator = typeof spec === "object" ? cleanDenominator(spec.denominator, heuristic.toolDenominator) : heuristic.toolDenominator;
-  const shape = typeof spec === "string" ? spec : spec.shape;
-  const payload = toolPayloadForShape(tool, shape, spec);
-  const chars = safeMinifiedJson(payload).length;
+function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristic): ToolDisplayEstimate {
+  const shape = heuristic.toolNumerator;
+  const chars = safeMinifiedJson(toolPayloadForShape(tool, shape)).length;
   if (shape === "openai-cookbook") {
-    return {
-      tokens: estimateOpenAIToolDefinitionTokens(tool),
-      chars,
-      detail: `OpenAI formula; text/${formatDenominator(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`,
-    };
+    return { tokens: estimateOpenAIToolDefinitionTokens(tool), chars };
   }
-  return {
-    tokens: estimateCharsAsTokens(chars, denominator),
-    chars,
-    detail: `${formatDenominatorDetail(denominator)} · ${typeof spec === "object" && spec.label ? spec.label : toolPayloadLabel(shape)}`,
-  };
+  return { tokens: estimateCharsAsTokens(chars, heuristic.toolDenominator), chars };
 }
 
-function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, config: ContextimateConfig): { section?: PrefixSection; tools: ToolSummary[]; loadedToolCount: number } {
+function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { section?: PrefixSection; tools: ToolSummary[]; loadedToolCount: number } {
   const activeNames = new Set(pi.getActiveTools());
   const allTools = pi.getAllTools();
   const activeToolInfos = allTools.filter((tool) => activeNames.has(tool.name));
@@ -1124,14 +970,14 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
   const tools = activeToolInfos.map(summarizeTool);
   if (tools.length === 0) return { tools, loadedToolCount: allTools.length };
 
-  const numerator = buildToolNumerator(tools, heuristic, config);
+  const numerator = buildToolNumerator(tools, heuristic);
   const denominator = numerator.denominator ?? heuristic.toolDenominator;
   const effectiveTokens = numerator.tokens ?? estimateCharsAsTokens(numerator.chars, denominator);
   const numeratorLabel = numerator.label;
-  const numeratorDetail = typeof numerator.tokens === "number"
-    ? `payload size; ${numeratorLabel}; ${numerator.detail ?? `text/${formatDenominator(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`}`
-    : `${formatDenominatorDetail(denominator)} · ${numeratorLabel}`;
-  const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic, config) }));
+  const sectionDetail = typeof numerator.tokens === "number"
+    ? `· OpenAI formula · schema text ${ratioDetail(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`
+    : `${ratioDetail(denominator)} · ${numeratorLabel}`;
+  const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic) }));
   const sortedEstimates = [...toolEstimates].sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name));
   const compactToolRows: ScanRow[] = [
     ...sortedEstimates.map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description })),
@@ -1147,10 +993,10 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
   const notes = typeof numerator.tokens === "number"
     ? [
         "formula  +7/fn +3/prop-section +3/prop -3/enum +3/enum-item +12 once · nested counted recursively",
-        `counted on the minified provider payload (${compactNumber(numerator.chars)} chars); tree below is the readable view of it`,
+        `counted on the minified provider payload (${compactCount(numerator.chars)} ch); tree below is the readable view of it`,
       ]
     : [
-        `counts use ${numeratorLabel} at ${formatDenominatorDetail(denominator)} over the minified provider payload (${compactNumber(numerator.chars)} chars); the tree below is the readable view`,
+        `counts use ${numeratorLabel} at ch ${ratioDetail(denominator)} over the minified provider payload (${compactCount(numerator.chars)} ch); the tree below is the readable view`,
       ];
   return {
     tools,
@@ -1162,8 +1008,7 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic, confi
       effectiveTokens,
       rawChars: numerator.chars,
       denominator,
-      methodTag: typeof numerator.tokens === "number" ? "payload · OpenAI formula" : `payload · ${numeratorLabel}`,
-      countLabel: formatTokenEstimate(effectiveTokens, numerator.chars, numeratorDetail),
+      detail: sectionDetail,
       compactRows: compactToolRows,
       expanded: { kind: "tools", notes, tools: expandedTools },
     },
@@ -1279,7 +1124,7 @@ function buildSnapshot(
   // the tool/extension instructions embedded in it (issue #9).
   let tools: ToolSummary[] = [];
   let loadedToolCount = 0;
-  const toolsResult = safely(() => buildToolsSection(pi, heuristic, config), undefined as ReturnType<typeof buildToolsSection> | undefined);
+  const toolsResult = safely(() => buildToolsSection(pi, heuristic), undefined as ReturnType<typeof buildToolsSection> | undefined);
   if (toolsResult) {
     tools = toolsResult.tools;
     loadedToolCount = toolsResult.loadedToolCount;
@@ -1292,8 +1137,7 @@ function buildSnapshot(
       title: "Runtime system prompt",
       content: promptRemainder,
       denominator: textDenominator,
-      methodTag: `text/${formatDenominator(textDenominator)}`,
-      countLabel: formatCount(promptRemainder.length, textDenominator),
+      detail: ratioDetail(textDenominator),
       expanded: {
         kind: "text",
         note: "assembled at runtime: pi base prompt + tool/extension instructions · preview only",
@@ -1371,22 +1215,32 @@ function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): s
   ];
 }
 
-function renderTokenTotalRow(label: string, tokens: number, theme: Theme, details?: string, tokenLayout?: TokenLabelLayout): string {
-  return `  ${orange(theme.bold(`${padLabel(label)}${estimatedTokenLabel(tokens, tokenLayout)} tokens`))}${details ? ` ${theme.fg("dim", details)}` : ""}`;
+// One renderer for every label/tokens/detail row — section rows, session rows, and
+// totals all flow through here, so alignment and grammar can never diverge.
+type MetricRow = {
+  label: string;
+  tokens: number;
+  /** pi-reported numbers render without the ~ estimate marker. */
+  exact?: boolean;
+  /** total rows: orange + bold. */
+  emphasis?: boolean;
+  /** dim suffix, parens included, e.g. "(1.2k ch ÷ 2.6)" or "(residual)". */
+  detail?: string;
+};
+
+function renderMetricRow(row: MetricRow, theme: Theme, layout?: TokenLabelLayout): string {
+  const tokenText = `${row.exact ? exactTokenLabel(row.tokens, layout) : estimatedTokenLabel(row.tokens, layout)} tokens`;
+  if (row.emphasis) {
+    return `  ${orange(theme.bold(`${padLabel(row.label)}${tokenText}`))}${row.detail ? ` ${theme.fg("dim", row.detail)}` : ""}`;
+  }
+  return `  ${theme.fg("muted", padLabel(row.label))}${theme.fg("dim", `${tokenText}${row.detail ? ` ${row.detail}` : ""}`)}`;
 }
 
-function renderEstimatedTokenRow(label: string, tokens: number, chars: number | undefined, theme: Theme, details?: string, tokenLayout?: TokenLabelLayout): string {
-  const suffix = typeof chars === "number"
-    ? details?.startsWith("chars/")
-      ? ` (${compactNumber(chars)} ${details})`
-      : ` (${compactNumber(chars)} chars${details ? ` · ${details}` : ""})`
-    : details ? ` (${details})` : "";
-  return `  ${theme.fg("muted", padLabel(label))}${theme.fg("dim", `${estimatedTokenLabel(tokens, tokenLayout)} tokens${suffix}`)}`;
-}
-
-function renderSectionTitle(section: PrefixSection, style: (text: string) => string, padded = false): string {
-  const title = padded ? padLabel(section.title) : section.title;
-  return styledText(title, style);
+function sectionDetailText(section: PrefixSection, fallbackDenominator: number): string {
+  return countDetail(
+    sectionChars(section),
+    section.detail ?? ratioDetail(section.denominator ?? fallbackDenominator),
+  );
 }
 
 function joinLeftRight(left: string, right: string, width: number, gap = 2): string {
@@ -1411,9 +1265,9 @@ function wrapPlainText(text: string, width: number, maxLines: number): string[] 
 function renderExpandedSectionHeader(section: PrefixSection, snapshot: PrefixSnapshot, theme: Theme, width: number): string {
   const tokens = sectionTokens(section);
   const chars = sectionChars(section);
-  const method = section.methodTag ?? `text/${formatDenominator(section.denominator ?? snapshot.heuristic.textDenominator)}`;
-  const left = `  ${styledText(section.title, (value) => theme.bold(value))}  ${orange(`${estimatedTokenLabel(tokens)} tokens`)}`;
-  const right = theme.fg("dim", `${compactNumber(chars)} chars · ${method}`);
+  const method = section.detail ?? ratioDetail(section.denominator ?? snapshot.heuristic.textDenominator);
+  const left = `  ${theme.bold(section.title)}  ${orange(`${estimatedTokenLabel(tokens)} tokens`)}`;
+  const right = theme.fg("dim", `${compactCount(chars)} ch ${method}`);
   return joinLeftRight(left, right, Math.max(40, width));
 }
 
@@ -1440,7 +1294,7 @@ function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number): 
     const prefixWidth = namePart.length + 2 + typePart.length + (hasRequired ? 2 + reqPart.length : 0);
     const descWidth = Math.max(16, width - prefixWidth - 3);
     const desc = field.description ? singleLine(field.description, descWidth) : "";
-    return `${styledText(namePart, (value) => theme.fg("text", value))}  ${theme.fg("muted", typePart)}${hasRequired ? `  ${theme.fg("dim", reqPart)}` : ""}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+    return `${theme.fg("text", namePart)}  ${theme.fg("muted", typePart)}${hasRequired ? `  ${theme.fg("dim", reqPart)}` : ""}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
@@ -1456,7 +1310,7 @@ function renderExpandedToolHeader(tool: ToolExpanded, tokenLayout: TokenLabelLay
   const sourceWidth = Math.max(12, maxWidth - indent.length - gap - tokenLayout.fieldWidth);
   const label = middleTruncatePath(expandedToolLabel(tool), sourceWidth);
   const used = indent.length + stripAnsi(label).length + tokenLayout.fieldWidth;
-  return `${indent}${styledText(label, (value) => theme.fg("text", value))}${" ".repeat(Math.max(gap, maxWidth - used))}${orange(token)}`;
+  return `${indent}${theme.fg("text", label)}${" ".repeat(Math.max(gap, maxWidth - used))}${orange(token)}`;
 }
 
 function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpanded[] }, theme: Theme, width: number): string[] {
@@ -1476,16 +1330,6 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
     out.push(...renderToolFieldRows(tool.fields, theme, width));
   }
   return out;
-}
-
-function renderContextUsageTotalRow(label: string, usage: ContextUsage, theme: Theme, tokenLayout?: TokenLabelLayout): string | undefined {
-  if (usage.tokens === null) return undefined;
-  const percent = formatPercent(usage.percent);
-  const window = usage.contextWindow > 0 ? compactTokenNumber(usage.contextWindow) : undefined;
-  const details = percent && window
-    ? `(${percent} / ${window} ctx)`
-    : "(Pi usage)";
-  return `  ${orange(theme.bold(`${padLabel(label)}${exactTokenLabel(usage.tokens, tokenLayout)} tokens`))} ${theme.fg("dim", details)}`;
 }
 
 type SessionEstimate = {
@@ -1519,21 +1363,34 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
   };
 }
 
-function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, tokenLayout?: TokenLabelLayout): string[] {
+function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, layout?: TokenLabelLayout): string[] {
   const estimate = buildSessionEstimate(snapshot);
   if (!snapshot.session || !estimate) return [];
-  const source = estimate.totalSource === "pi" ? "(Pi current - harness)" : "(heuristic fallback)";
+  const ratio = ratioDetail(estimate.denominator);
   const rows = [
     "",
-    renderEstimatedTokenRow("Tool outputs", estimate.toolOutputTokens, snapshot.session.toolOutputChars, theme, formatDenominatorDetail(estimate.denominator), tokenLayout),
-    renderEstimatedTokenRow("Messages", estimate.messageTokens, snapshot.session.messageChars, theme, formatDenominatorDetail(estimate.denominator), tokenLayout),
-    renderEstimatedTokenRow("Other / reasoning", estimate.otherTokens, undefined, theme, "residual", tokenLayout),
-    renderTokenTotalRow("Total session", estimate.totalTokens, theme, source, tokenLayout),
+    renderMetricRow({ label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(snapshot.session.toolOutputChars, ratio) }, theme, layout),
+    renderMetricRow({ label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars, ratio) }, theme, layout),
+    renderMetricRow({ label: "Other / reasoning", tokens: estimate.otherTokens, detail: "(residual)" }, theme, layout),
+    renderMetricRow({
+      label: "Total session",
+      tokens: estimate.totalTokens,
+      emphasis: true,
+      detail: estimate.totalSource === "pi" ? "(Pi current - harness)" : "(heuristic fallback)",
+    }, theme, layout),
   ];
-  const requestTotal = snapshot.contextUsage
-    ? renderContextUsageTotalRow("Total request", snapshot.contextUsage, theme, tokenLayout)
-    : undefined;
-  if (requestTotal) rows.push(requestTotal);
+  const usage = snapshot.contextUsage;
+  if (usage && usage.tokens !== null) {
+    const percent = formatPercent(usage.percent);
+    const window = usage.contextWindow > 0 ? compactTokenNumber(usage.contextWindow) : undefined;
+    rows.push(renderMetricRow({
+      label: "Total request",
+      tokens: usage.tokens,
+      exact: true,
+      emphasis: true,
+      detail: percent && window ? `(${percent} / ${window} ctx)` : "(Pi usage)",
+    }, theme, layout));
+  }
   return rows;
 }
 
@@ -1550,19 +1407,21 @@ function summaryTokenWidth(snapshot: PrefixSnapshot): TokenLabelLayout {
   return tokenLabelLayout(values);
 }
 
-function alignCountLabel(countLabel: string, tokens: number, tokenLayout: TokenLabelLayout): string {
-  return countLabel.replace(/^\s*~\d+(?:\.\d)?k tokens/, `${estimatedTokenLabel(tokens, tokenLayout)} tokens`);
-}
-
 function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
   const lines = renderHeader(snapshot, "summary", theme);
-  const tokenWidth = summaryTokenWidth(snapshot);
+  const layout = summaryTokenWidth(snapshot);
   lines.push("");
   for (const section of snapshot.sections) {
-    const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
-    lines.push(`  ${renderSectionTitle(section, (value) => theme.fg("muted", value), true)}${theme.fg("dim", alignCountLabel(countLabel, sectionTokens(section), tokenWidth))}`);
+    lines.push(renderMetricRow({
+      label: section.title,
+      tokens: sectionTokens(section),
+      detail: sectionDetailText(section, snapshot.heuristic.textDenominator),
+    }, theme, layout));
   }
-  lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`, tokenWidth), ...renderSessionRows(snapshot, theme, tokenWidth));
+  lines.push(
+    renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: countDetail(totalChars(snapshot)) }, theme, layout),
+    ...renderSessionRows(snapshot, theme, layout),
+  );
   return lines;
 }
 
@@ -1612,24 +1471,23 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number, layout?: C
     if (row.inactive) {
       return theme.fg("dim", `    ${name}  ${token}${desc ? `  ${desc}` : ""}`);
     }
-    return `    ${styledText(name, (value) => theme.fg("text", value))}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+    return `    ${theme.fg("text", name)}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
 function renderCompactTotalRow(snapshot: PrefixSnapshot, theme: Theme, layout: CompactLayout): string {
   const label = compactLabel("Total harness", layout.labelWidth + 2);
   const token = `${estimatedTokenLabel(totalTokens(snapshot), layout.tokenLayout)} tokens`;
-  return `  ${orange(theme.bold(`${label}  ${token}`))} ${theme.fg("dim", `(${compactNumber(totalChars(snapshot))} chars)`)}`;
+  return `  ${orange(theme.bold(`${label}  ${token}`))} ${theme.fg("dim", countDetail(totalChars(snapshot)))}`;
 }
 
 function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "compact", theme);
   const layout = compactLayout(snapshot);
-  lines.push(`  ${theme.fg("dim", "Scan view: one line per skill/tool, sorted by estimated tokens · Ctrl+O for full detail")}`);
   for (const section of snapshot.sections) {
-    const countLabel = section.countLabel ?? formatCount(section.content.length, section.denominator ?? snapshot.heuristic.textDenominator);
     const title = compactLabel(section.title, layout.labelWidth);
-    lines.push("", `  ${orange("▸")} ${styledText(title, (value) => theme.bold(value))}  ${theme.fg("dim", alignCountLabel(countLabel, sectionTokens(section), layout.tokenLayout))}`);
+    const counts = `${estimatedTokenLabel(sectionTokens(section), layout.tokenLayout)} tokens ${sectionDetailText(section, snapshot.heuristic.textDenominator)}`;
+    lines.push("", `  ${orange("▸")} ${theme.bold(title)}  ${theme.fg("dim", counts)}`);
     if (section.compactRows && section.compactRows.length > 0) {
       lines.push(...renderScanRows(section.compactRows, theme, width, layout));
     }
@@ -1641,9 +1499,11 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
 
 function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "expanded", theme);
-  const tokenWidth = summaryTokenWidth(snapshot);
-  lines.push(`  ${theme.fg("dim", "Expanded view: per-section subtotals, sources, and a readable schema breakdown of each active tool.")}`);
-  lines.push(renderTokenTotalRow("Total harness", totalTokens(snapshot), theme, `(${compactNumber(totalChars(snapshot))} chars)`, tokenWidth), ...renderSessionRows(snapshot, theme, tokenWidth));
+  const layout = summaryTokenWidth(snapshot);
+  lines.push(
+    renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: countDetail(totalChars(snapshot)) }, theme, layout),
+    ...renderSessionRows(snapshot, theme, layout),
+  );
 
   for (const section of snapshot.sections) {
     lines.push("", renderExpandedSectionHeader(section, snapshot, theme, width));
@@ -1891,8 +1751,6 @@ export const internals = {
   cleanDenominator,
   resolveHeuristic,
   // provider payload shaping
-  resolveToolShapeSpec,
-  substituteToolTemplate,
   toolPayloadForShape,
   aggregateToolPayloadForShape,
   buildToolNumerator,
@@ -1909,7 +1767,10 @@ export const internals = {
   estimatedTokenLabel,
   estimatedTokenField,
   exactTokenLabel,
-  formatCount,
+  inlineCount,
+  countDetail,
+  ratioDetail,
+  renderMetricRow,
   // runtime-addition attribution (issue #9)
   detectRuntimeAdditions,
   runtimeAdditionsAttribution,
@@ -1933,6 +1794,18 @@ export type {
 };
 
 export default function piContextimate(pi: ExtensionAPI) {
+  // Snapshot building is expensive (system-prompt regex parse, JSON serialization of
+  // every tool schema, a full session walk) while rendering is frequent. Rebuild only
+  // after a context-changing event or a short staleness window — never per render frame.
+  const SNAPSHOT_TTL_MS = 5_000;
+  const cache: { value?: PrefixSnapshot; builtAt: number; dirty: boolean } = { builtAt: 0, dirty: true };
+  const markDirty = () => {
+    cache.dirty = true;
+  };
+
+  pi.on("message_end", async () => markDirty());
+  pi.on("session_compact", async () => markDirty());
+
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
@@ -1942,15 +1815,24 @@ export default function piContextimate(pi: ExtensionAPI) {
     const currentMode = g.__piContextimateMode ?? DEFAULT_MODE;
     const config = loadContextimateConfig(ctx.cwd);
     g.__piContextimateModel = toModelSummary(ctx.model);
+    markDirty();
     const block = new StartupContextComponent(
-      () => buildSnapshot(
-        pi,
-        () => ctx.getSystemPrompt(),
-        ctx.sessionManager,
-        () => ctx.getContextUsage(),
-        () => g.__piContextimateModel ?? toModelSummary(ctx.model),
-        config,
-      ),
+      () => {
+        const now = Date.now();
+        if (!cache.value || cache.dirty || now - cache.builtAt > SNAPSHOT_TTL_MS) {
+          cache.value = buildSnapshot(
+            pi,
+            () => ctx.getSystemPrompt(),
+            ctx.sessionManager,
+            () => ctx.getContextUsage(),
+            () => g.__piContextimateModel ?? toModelSummary(ctx.model),
+            config,
+          );
+          cache.builtAt = now;
+          cache.dirty = false;
+        }
+        return cache.value;
+      },
       () => ctx.ui.theme,
       currentMode,
     );
@@ -1977,6 +1859,7 @@ export default function piContextimate(pi: ExtensionAPI) {
 
   pi.on("model_select", async (event, ctx) => {
     g.__piContextimateModel = toModelSummary(event.model);
+    markDirty();
     g.__piContextimateBlock?.invalidate();
     if (ctx.hasUI) g.__piContextimateTui?.requestRender?.(true);
   });

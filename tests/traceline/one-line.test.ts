@@ -43,9 +43,10 @@ beforeEach(() => {
 });
 
 test("row grammar units", () => {
-  assert.equal(formatCharCount(0), "0.0k");
-  assert.equal(formatCharCount(49), "0.0k");
-  assert.equal(formatCharCount(50), "0.1k");
+  // Family number grammar: raw integers below 1000, one-decimal k above.
+  assert.equal(formatCharCount(0), "0");
+  assert.equal(formatCharCount(49), "49");
+  assert.equal(formatCharCount(412), "412");
   assert.equal(formatCharCount(1437), "1.4k");
   assert.equal(formatCharCount(10_000), "10.0k");
   assert.equal(lineRange({ offset: 1, limit: 20 }), ":1-20");
@@ -64,7 +65,7 @@ test("tool status reflects result/partial state", () => {
 
 test("suffix fitting: right-aligned, never overlapping, suffix wins when starved", () => {
   const invocation = "read ~/projects/demo/some/deeply/nested/path/file.ts:1-40";
-  const suffix = "(chars 9.9k)";
+  const suffix = "9.9k ch";
   for (let width = 1; width <= 120; width++) {
     const out = fitOneLineAndSuffix(invocation, suffix, width);
     assert.ok(visibleWidth(out) <= width, `width ${width}: ${visibleWidth(out)} cols`);
@@ -79,7 +80,7 @@ test("one-line read row: emphasized path, range kept, suffix right-aligned", () 
   const visible = stripAnsi(line);
   assert.ok(visibleWidth(line) <= 80);
   assert.ok(visible.startsWith("  › read ~/projects/demo/file.ts:1-40"), visible);
-  assert.ok(visible.endsWith("(chars 1.4k)"), visible);
+  assert.ok(visible.endsWith("1.4k ch"), visible);
   // Emphasis dims the directory separately from the basename: the raw line must restyle
   // the directory span, not just pass the native text through.
   assert.ok(line.includes("\x1b[38;2;128;128;128m~/projects/demo/\x1b[0m"), "directory must be dimmed");

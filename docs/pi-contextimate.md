@@ -125,8 +125,8 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 - Keep built-in provider defaults in one auditable table in `extensions/pi-contextimate/index.ts` (`BUILT_IN_HEURISTIC_RULES`).
 - Keep the header lightweight; show accounting provenance on each row instead of a global accounting line.
 - Unknown providers fall back to `chars / 4`.
-- Text rows show their denominator inline, e.g. `~3k tokens (10.0k chars/4)`.
-- The aggregate `Tools` row shows the provider-shaped numerator and estimator inline, e.g. `~5k tokens (47.9k chars · payload size; OpenAI-style local formula; schema text/6.6)` or `~14k tokens (48.2k chars/2.6 · Anthropic tool payload)`.
+- Text rows show their denominator inline using the family number grammar, e.g. `~3k tokens (10.0k ch ÷ 4)`.
+- The aggregate `Tools` row shows the provider-shaped numerator and estimator inline, e.g. `~5k tokens (47.9k ch · OpenAI formula · schema text ÷ 6.6)` or `~14k tokens (48.2k ch ÷ 2.6 · Anthropic tool payload)`.
 - Individual tool detail rows use that tool's own provider-shaped/minified payload size (or OpenAI formula subtotal) rather than repeating the aggregate payload character count.
 - For OpenAI-style local formula rows, the minified payload character count is a size cue only; it is **not** divided by 6.6. The formula uses fixed constants plus name/description/property text fragments estimated with `chars/6.6`.
 - Compact/expanded modes add method lines under `Tools`, including the formula/provenance for OpenAI-style local estimates, so the UI does not depend on clickable terminal links for calculation backup.
@@ -175,7 +175,7 @@ text fragments:     chars / 6.6 for name:description, propertyName:type:descript
 recursion:          nested object properties and object-array item properties are counted recursively
 ```
 
-This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI-style local formula` and `schema text/6.6`, not `openai-cookbook ÷5.5` or raw payload `chars/6.6`. Compact/expanded modes print the formula and point to this section (`docs/pi-contextimate.md#practical-openai-style-tool-heuristic`) so the calculation backup is visible without relying on terminal hyperlinks.
+This is a schema-summary formula, not a raw JSON denominator. Therefore the tool row says `OpenAI formula · schema text ÷ 6.6`, not `openai-cookbook ÷ 5.5` or a raw payload ratio. The expanded view prints the formula constants inline so the calculation backup is visible without relying on terminal hyperlinks; the derivation lives in this section (`docs/pi-contextimate.md#practical-openai-style-tool-heuristic`).
 
 ## Follow-up tokenizer/provider experiment from 2026-06-02
 
@@ -451,16 +451,20 @@ Run artifact: `/tmp/pi-contextimate-synthetic-schema-ablation/results.json`.
 
 ## User configuration
 
-The extension reads optional JSON config from these paths, in order:
+The extension reads optional JSON config from these paths, in order (the family-standard
+locations shared by all pine-of-glass extensions, plus an env override):
 
 1. `~/.pi/agent/pi-contextimate.json`
 2. `<cwd>/.pi/pi-contextimate.json`
-3. legacy fallback: `~/.pi/agent/prefix-inspector.json`
-4. legacy fallback: `<cwd>/.pi/prefix-inspector.json`
-5. any colon-separated paths in `PI_CONTEXTIMATE_CONFIG`
-6. legacy fallback: any colon-separated paths in `PI_PREFIX_INSPECTOR_CONFIG`
+3. any colon-separated paths in `PI_CONTEXTIMATE_CONFIG`
 
-Later files override scalar/default fields; `profiles` and `toolShapes` are merged by name; `rules` are appended and later matching rules win because they are applied last. This keeps the built-in provider-aware defaults as the base while allowing project or user overrides.
+Later files override scalar/default fields; `profiles` are merged by name; `rules` are appended and later matching rules win because they are applied last. This keeps the built-in provider-aware defaults as the base while allowing project or user overrides.
+
+> Removed in 0.4.0: the legacy `prefix-inspector.json` / `PI_PREFIX_INSPECTOR_CONFIG`
+> fallbacks, the flat `defaultTextDenominator`-style aliases (use `defaults.*`), and
+> custom `toolShapes` templates. For provider-exact calibration, run
+> `pi-contextimate-check-provider-tokens` against a captured payload and put the
+> suggested denominators in a `rules` entry.
 
 A profile is a reusable counting recipe. A rule can select a profile by provider/model/API and optionally override any field inline.
 
@@ -512,36 +516,10 @@ Built-in tool numerator shapes:
 - `bedrock` — `{ toolSpec: { name, description, inputSchema: { json } } }` per tool.
 - `raw-schema` — direct readable schema fallback.
 
-Users can define custom numerator shapes under `toolShapes`. A custom `template` is applied once per active tool and the minified JSON array is used as the numerator. Optional `url` or `referenceUrl` fields are retained as best-effort hyperlink metadata for renderers that preserve OSC-8 links, but visible labels/method lines should stand on their own because some Pi terminal render paths strip those escapes. Supported placeholders are `$name`, `$description`, `$schema`/`$parameters`, `$source`, `$parameterKeys`, `$promptGuidelines`, and `$strict`; string interpolation also supports `{{name}}`, `{{description}}`, and `{{source}}`.
-
-```json
-{
-  "toolShapes": {
-    "my-provider-tools": {
-      "label": "My provider tool payload",
-      "denominator": 4.8,
-      "url": "https://example.com/my-provider-token-accounting",
-      "template": {
-        "kind": "function",
-        "fn": {
-          "name": "$name",
-          "description": "$description",
-          "schema": "$schema"
-        }
-      }
-    }
-  },
-  "rules": [
-    {
-      "label": "My provider calibration",
-      "match": { "provider": "my-provider" },
-      "textDenominator": 4,
-      "sessionDenominator": 4,
-      "toolNumerator": "my-provider-tools"
-    }
-  ]
-}
-```
+Unknown shape names fall back to the OpenAI Responses payload. Custom `toolShapes`
+templates were removed in 0.4.0: a configurable approximation cannot beat measuring the
+real payload, so calibrate unknown providers with `pi-contextimate-check-provider-tokens`
+and encode the result as a `rules` entry (denominators + the closest built-in shape).
 
 ## Current session total policy
 

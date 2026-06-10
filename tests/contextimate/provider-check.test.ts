@@ -30,7 +30,7 @@ function capturedAnthropicPayload() {
     max_tokens: 8192,
     system: [{ type: "text", text: fixtureSystemPrompt() }],
     messages: [{ role: "user", content: [{ type: "text", text: "real conversation" }] }],
-    tools: snapshot.tools.slice(0, 3).map((tool) => toolPayloadForShape(tool, "anthropic", "anthropic")),
+    tools: snapshot.tools.slice(0, 3).map((tool) => toolPayloadForShape(tool, "anthropic")),
     displayedToolCount: activeTools.length, // not part of the provider body; ignored by builders
   };
 }

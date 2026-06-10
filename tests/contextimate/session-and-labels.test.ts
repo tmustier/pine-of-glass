@@ -90,7 +90,7 @@ test("snapshot signature changes exactly when inputs that affect rendering chang
     "model must invalidate",
   );
   assert.notEqual(
-    build(["read", "bash", "search"], anthropicModel, { defaultTextDenominator: 9 }).signature,
+    build(["read", "bash", "search"], anthropicModel, { defaults: { textDenominator: 9 } }).signature,
     base.signature,
     "config must invalidate",
   );

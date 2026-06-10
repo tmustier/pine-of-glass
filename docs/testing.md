@@ -118,9 +118,9 @@ mock. Anything requiring a live terminal goes to the smoke layer instead.
   `claude-sonnet-4-5` → 4.5/4.6 rule; other anthropic → generic; `openai-codex` vs
   `openai` vs `mistral` vs `gemini` vs `bedrock` routing by provider/api.
 - **Tool payload shaping**: for one frozen `ToolSummary` fixture, the exact JSON emitted
-  per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`) and
-  the *aggregated* gemini `functionDeclarations` form; template substitution
-  (`$schema`, `{{name}}`) and recursive `toolShapes` alias resolution with cycle guard.
+  per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`),
+  the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to
+  the OpenAI Responses payload.
   Consistency invariant: `buildToolDisplayEstimate` counts the same payload shape that
   `buildToolNumerator` counts (per-tool vs aggregate) — this is also the invariant the
   issue-#8 checker must preserve.
