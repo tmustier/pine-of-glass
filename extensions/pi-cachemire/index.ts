@@ -109,6 +109,15 @@ export const DEFAULT_CONFIG: CachemireConfig = {
 
 const TTL_SHORT_MS = 5 * 60 * 1000;
 const TTL_LONG_MS = 60 * 60 * 1000;
+
+// pi-coding-agent never passes cacheRetention to pi-ai, so pi-ai's resolveCacheRetention
+// falls through to this env var alone ("long" → 1h where the model supports it, else 5m).
+// Mirroring that rule lets a restored session show a definite TTL before any live request;
+// the observed cache_control from the first real request replaces the inference (and also
+// covers models without long-retention support).
+export function inferAnthropicTtlMs(env: Record<string, string | undefined> = process.env): number {
+  return env.PI_CACHE_RETENTION === "long" ? TTL_LONG_MS : TTL_SHORT_MS;
+}
 const UNKNOWN_TTL_WARM_MS = 10 * 60 * 1000; // soft "likely cold" horizon for implicit caches
 const HIT_RATIO = 0.8;
 const MISS_RATIO = 0.2;
@@ -321,7 +330,7 @@ export function formatDuration(ms: number): string {
 // --- cache clock (pure state → text; tones applied by the widget layer) -----------------
 
 export interface ClockState {
-  phase: "idle" | "fresh" | "closing" | "cold" | "warm-unknown" | "cold-unknown";
+  phase: "idle" | "fresh" | "closing" | "cold" | "stale" | "warm-unknown" | "cold-unknown";
   text: string;
 }
 
@@ -331,23 +340,35 @@ export interface ClockInput {
   ttlMs?: number;
   cachedTokens?: number;
   rewriteUsd?: number;
+  /** History was compacted since the last call: the next send re-writes regardless of TTL. */
+  compacted?: boolean;
+}
+
+function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number, qualifier = ""): string {
+  if (!cachedTokens) return "";
+  const bill = rewriteUsd !== undefined ? ` (~${formatUsd(rewriteUsd)})` : "";
+  return ` \u00b7 next send ${verb} ~${formatTokensK(cachedTokens)}${qualifier}${bill}`;
 }
 
 export function cacheClock(input: ClockInput): ClockState {
   if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
+  if (input.compacted) {
+    // The prefix the clock was timing no longer exists; TTL is moot until the next send.
+    return { phase: "stale", text: "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix" };
+  }
   const since = input.now - input.lastRequestAt;
   if (input.ttlMs === undefined) {
-    // Implicit caching (OpenAI etc.): no contract, only soft language.
+    // Implicit caching (OpenAI etc.): no contract, only soft language — but past the soft
+    // horizon we still know exactly how much prompt would be re-sent uncached.
     if (since > UNKNOWN_TTL_WARM_MS) {
-      return { phase: "cold-unknown", text: `cache likely cold (idle ${formatDuration(since)})` };
+      const suffix = rewriteSuffix("re-sends", input.cachedTokens, input.rewriteUsd, " uncached");
+      return { phase: "cold-unknown", text: `cache likely cold (idle ${formatDuration(since)})${suffix}` };
     }
     return { phase: "warm-unknown", text: `cache likely warm \u00b7 ${formatDuration(since)} since last call` };
   }
   const remaining = input.ttlMs - since;
   if (remaining <= 0) {
-    const size = input.cachedTokens ? ` \u00b7 next send re-writes ~${formatTokensK(input.cachedTokens)}` : "";
-    const bill = input.rewriteUsd !== undefined ? ` (~${formatUsd(input.rewriteUsd)})` : "";
-    return { phase: "cold", text: `cache cold${size}${bill}` };
+    return { phase: "cold", text: `cache cold${rewriteSuffix("re-writes", input.cachedTokens, input.rewriteUsd)}` };
   }
   // Coarse display above 90s so the widget only re-renders when the label changes.
   const display = remaining > 90_000 ? Math.floor(remaining / 15_000) * 15_000 : remaining;
@@ -507,6 +528,7 @@ interface CachemireState {
   prevCallRequestAt?: number;
   lastRequestAt?: number;
   ttlMs?: number;
+  ttlSource?: "observed" | "inferred";
   expectedRead: number;
   cachedTokens?: number;
   rates?: ModelRates;
@@ -549,7 +571,7 @@ function toneFor(phase: ClockState["phase"]): string {
       return GREEN;
     case "closing":
       return YELLOW;
-    default:
+    default: // cold, stale, cold-unknown, idle
       return MUTED_GREY;
   }
 }
@@ -563,6 +585,7 @@ function updateWidget(now = Date.now()): void {
     ttlMs: s.ttlMs,
     cachedTokens: s.cachedTokens,
     rewriteUsd: s.cachedTokens !== undefined ? rewriteCostUsd(s.cachedTokens, s.rates) : undefined,
+    compacted: s.compacted,
   });
   const text = clock.phase === "idle" ? "" : `${toneFor(clock.phase)}${GLYPH} ${clock.text}${RESET}`;
   if (text === s.lastWidgetText) return;
@@ -604,10 +627,19 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const model = ctx.model as { id?: string; provider?: string; cost?: ModelRates } | undefined;
     if (model?.cost) s.rates = model.cost;
     if (model?.id) s.modelLabel = model.provider ? `${model.provider}/${model.id}` : model.id;
+    // Restored anthropic sessions get a definite TTL immediately (see inferAnthropicTtlMs);
+    // the first live request's observed cache_control replaces the inference.
+    if (s.ttlMs === undefined && model?.provider === "anthropic") {
+      s.ttlMs = inferAnthropicTtlMs();
+      s.ttlSource = "inferred";
+    }
     if (s.records.length > 0) {
       const last = s.records[s.records.length - 1]!;
       s.expectedRead = last.usage.input + last.usage.cacheRead + last.usage.cacheWrite;
       s.cachedTokens = s.expectedRead;
+      // Message timestamps are response-end-ish; the true TTL anchor (request processing
+      // start) is slightly earlier, so this is marginally optimistic — irrelevant at the
+      // hours-scale gaps where restore matters.
       s.lastRequestAt = last.at || undefined;
       s.prevCallRequestAt = last.at || undefined;
     }
@@ -629,8 +661,17 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("before_provider_request", async (event) => {
     s.pendingFingerprint = fingerprintPayload(event.payload);
     s.pendingRequestAt = Date.now();
+    // TTL anchor = request start: Anthropic reads/refreshes/writes cache entries while
+    // processing the request input (entries become available once the response *begins*),
+    // so the TTL burns during generation — a long thinking block eats into it.
     s.lastRequestAt = s.pendingRequestAt;
-    if (s.pendingFingerprint.ttlMs !== undefined) s.ttlMs = s.pendingFingerprint.ttlMs;
+    if (s.pendingFingerprint.kind !== "unknown") {
+      // Observation is authoritative per provider kind: anthropic payloads carry the real
+      // cache_control TTL; openai-responses payloads have no TTL contract (implicit cache),
+      // which also clears any anthropic TTL inferred/observed before a model switch.
+      s.ttlMs = s.pendingFingerprint.ttlMs;
+      s.ttlSource = "observed";
+    }
     if (s.pendingFingerprint.kind === "anthropic") s.providerLabel = "anthropic";
     else if (s.pendingFingerprint.kind === "openai-responses") s.providerLabel = "openai";
     updateWidget();
@@ -640,6 +681,16 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const model = event.model as { id?: string; provider?: string; cost?: ModelRates } | undefined;
     if (model?.cost) s.rates = model.cost;
     if (model?.id) s.modelLabel = model.provider ? `${model.provider}/${model.id}` : model.id;
+    // Keep the TTL honest across provider switches until the next observation lands.
+    if (model?.provider === "anthropic") {
+      if (s.ttlMs === undefined) {
+        s.ttlMs = inferAnthropicTtlMs();
+        s.ttlSource = "inferred";
+      }
+    } else if (s.ttlSource === "inferred") {
+      s.ttlMs = undefined;
+      s.ttlSource = undefined;
+    }
   });
 
   pi.on("agent_start", async () => {
@@ -695,7 +746,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.prevCallRequestAt = requestAt;
     s.expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
     s.cachedTokens = s.expectedRead;
-    s.lastRequestAt = now;
+    // Keep the request-start anchor: resetting to response end here would credit the cache
+    // with the whole generation time (a 4m thinking block would show 5m TTL remaining when
+    // the prefix written at request start has ~1m left).
+    s.lastRequestAt = requestAt;
 
     if (s.run) {
       s.run.calls += 1;
@@ -742,6 +796,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
 export const internals = {
   stripCacheControl,
   fingerprintPayload,
+  inferAnthropicTtlMs,
   diffFingerprints,
   classifyCall,
   uncachedCostUsd,

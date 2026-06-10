@@ -13,11 +13,32 @@ last request (Anthropic: 5m, or 1h with long retention — read from the observe
 ```
 ◍ cache 4m30s                                    (green → yellow under 60s)
 ◍ cache cold · next send re-writes ~142.3k (~$2.67)
+◍ cache stale · history compacted · next send re-writes the new prefix
 ```
 
 So you know *before* you hit Enter whether the send is cheap or re-bills the whole
-prefix. Providers without a TTL contract (OpenAI's implicit caching) get soft wording:
-`cache likely warm · 3m since last call`.
+prefix. Providers without a TTL contract (OpenAI's implicit caching) get soft wording
+with the same exact re-send size once past the soft horizon:
+`cache likely warm · 3m since last call`, then
+`cache likely cold (idle 12m) · next send re-sends ~109.8k uncached (~$1.37)`.
+
+The re-write size is provider-exact, not estimated: it is `input + cacheRead +
+cacheWrite` from the last assistant message's usage — the prompt-side token count of
+the last request as the provider billed it. The `~` covers what the clock cannot know:
+the next send adds your new message on top, and shared-prefix warmth (other sessions
+on the same org with an identical harness prefix) can make the actual write smaller.
+
+**When the clock starts.** The TTL anchor is *request start*, not response end:
+Anthropic reads/refreshes/writes cache entries while processing the request input
+(entries become available once the response begins), so a long thinking block burns
+TTL while it streams. The clock ticking during generation is correct — after a 4m
+thinking block on a 5m TTL, the prefix really does have ~1m left.
+
+**Cold vs likely cold.** `cold` is contract-backed: the TTL was taken from the actual
+`cache_control` pi sent (or, for a freshly restored anthropic session before its first
+request, inferred by the same rule pi-ai itself uses — `PI_CACHE_RETENTION=long` → 1h,
+else 5m — with the first live observation replacing the inference). `likely cold` is
+reserved for providers with no TTL contract at all.
 
 **2. Cache forensics** — every provider request is fingerprinted (system prompt, each
 tool, each history message; `cache_control` breakpoints stripped, since pi moves the

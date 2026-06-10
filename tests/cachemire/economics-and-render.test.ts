@@ -9,6 +9,7 @@ const {
   uncachedCostUsd, rewriteCostUsd, sessionSavings,
   formatTokensK, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
+  inferAnthropicTtlMs,
 } = internals;
 
 // claude-opus-4-8-style rates, USD per Mtok (write carries the 1.25x premium already).
@@ -64,9 +65,25 @@ test("cache clock phases", () => {
   assert.equal(cold.phase, "cold");
   assert.equal(cold.text, "cache cold \u00b7 next send re-writes ~142.3k (~$2.67)");
 
-  // No TTL contract (OpenAI etc.): soft language only.
+  // No TTL contract (OpenAI etc.): soft language, but the re-send size is still exact.
   assert.equal(cacheClock({ now: 3 * MIN, lastRequestAt: 0 }).text, "cache likely warm \u00b7 3m since last call");
-  assert.equal(cacheClock({ now: 12 * MIN, lastRequestAt: 0 }).phase, "cold-unknown");
+  const coldUnknown = cacheClock({ now: 535 * MIN, lastRequestAt: 0, cachedTokens: 109_800, rewriteUsd: 1.37 });
+  assert.equal(coldUnknown.phase, "cold-unknown");
+  assert.equal(coldUnknown.text, "cache likely cold (idle 8h55m) \u00b7 next send re-sends ~109.8k uncached (~$1.37)");
+  // Without token info the bare form survives (e.g. before any usage was ever observed).
+  assert.equal(cacheClock({ now: 12 * MIN, lastRequestAt: 0 }).text, "cache likely cold (idle 12m)");
+
+  // Compaction invalidates the timed prefix outright — TTL is moot until the next send.
+  const stale = cacheClock({ now: MIN, lastRequestAt: 0, ttlMs: 5 * MIN, cachedTokens: 142_300, compacted: true });
+  assert.equal(stale.phase, "stale");
+  assert.equal(stale.text, "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix");
+});
+
+test("anthropic TTL inference mirrors pi-ai's env resolution", () => {
+  assert.equal(inferAnthropicTtlMs({}), 5 * MIN);
+  assert.equal(inferAnthropicTtlMs({ PI_CACHE_RETENTION: "long" }), 60 * MIN);
+  // Anything else falls through to short, exactly like pi-ai's resolveCacheRetention.
+  assert.equal(inferAnthropicTtlMs({ PI_CACHE_RETENTION: "short" }), 5 * MIN);
 });
 
 test("run summary and miss lines read exactly as designed", () => {
