@@ -26,20 +26,20 @@ When tool rows are collapsed, each one renders as a single line:
 - **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error.
 - **Selective expansion** - arm a one-shot click and then click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
 
-Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults. One blank line precedes a group of tool calls; consecutive tool calls stay tight.
+Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults. On top of that sits an **ink hierarchy**: shell plumbing in bash rows (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) is dimmed so the command segments carry the brightness, and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight, and a tool row sits tight under the collapsed `Thinking...` line that motivated it, so each thought→action couplet reads as one unit.
 
 ### Reading the end of the line
 
 The discriminating part of a row usually lives at the **tail** — the filename + `:line-range` for a path, or the operative end of a command — while the head is boilerplate (long `~/projects/...` prefixes, `cd ... &&` preambles). So instead of a trailing ellipsis that deletes the signal, `pi-traceline`:
 
 - **tildifies** home directories (`/Users/you/...` -> `~/...`) to reclaim width before truncating;
-- **middle-truncates** with a dimmed `...`, protecting the tail so the basename and `:range` survive, snapping the cut to a nearby `/` or space;
+- **middle-truncates** with a dimmed `…`, protecting the tail so the basename and `:range` survive, snapping the cut to a nearby `/` or space;
 - **dims the directory** on plain file reads so the basename — *which* file — stands out.
 
 ```
-›  read ~/projects/pine-of-glass/.../pi-traceline/README.md:1-300        3.8k ch
-›  read ~/projects/pine-of-glass/.../pi-traceline/index.ts:1-200        18.5k ch
-›  $ cd ~/projects/pine-of-glass && rm -f docs/img/...-native.png           0 ch
+›  read ~/projects/pine-of-glass/…/pi-traceline/README.md:1-300         3.8k ch
+›  read ~/projects/pine-of-glass/…/pi-traceline/index.ts:1-200         18.5k ch
+›  $ cd ~/projects/pine-of-glass && rm -f docs/img/…-native.png            0 ch
 ```
 
 ## Install

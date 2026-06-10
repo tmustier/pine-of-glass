@@ -400,7 +400,8 @@ export function classifyCall(args: ClassifyInput): CallClassification {
     // the prefix was evicted within the documented typical window.
     cause = idleCause;
   } else {
-    cause = { kind: "unknown", detail: "cause unknown (provider-side eviction?)" };
+    // Rendered behind "cause: " — the detail must not restate the word.
+    cause = { kind: "unknown", detail: "unknown (provider-side eviction?)" };
   }
   return { kind: ratio <= MISS_RATIO ? "miss" : "partial", cause };
 }

@@ -21,8 +21,11 @@ import { compactCount } from "../_lib/fmt.ts";
  *
  * One-line rendering reuses pi's native tool call renderer, so visual defaults
  * (bold command name, accent paths/backticks, warning line ranges, etc.) drift with pi.
- * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with a
- * dimmed `...` so the tail survives — the basename + `:line-range` for a path, or the
+ * The ink follows an information hierarchy: shell plumbing (`&&`, `|`, `2>/dev/null`,
+ * heredoc markers) is dimmed so command segments pop, and the boilerplate `(timeout Ns)`
+ * suffix is dropped — the full invocation is one Ctrl+T away. Home-dir prefixes are
+ * tildified, and over-long invocations are *middle*-truncated with a
+ * dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
  * operative end of a command — because that is where the discriminating information lives;
  * the cut snaps to a nearby `/` or space. Plain file reads additionally dim the directory
  * so the basename stands out. Once a result exists, a right-aligned dimmed `1.2k ch`
@@ -72,8 +75,8 @@ const TOOL_BULLET = "›";
 const TOOL_AFTER_BULLET = " ";
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const ONE_LINE_ELLIPSIS = "...";
-const TRACELINE_PATCH_VERSION = 9;
+const ONE_LINE_ELLIPSIS = "\u2026";
+const TRACELINE_PATCH_VERSION = 10;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const MIN_HEAD_COLS = 6;
 const TAIL_RATIO = 0.55;
@@ -595,6 +598,28 @@ function stripTrailingExpandHint(line: string): string {
   return `${line.slice(0, rawStart)}${RESET}`;
 }
 
+// Native bash rows append " (timeout Ns)". It is near-constant boilerplate — the same
+// dim parenthetical on every row — so in one-line mode it only spends width and adds
+// noise; the full invocation (timeout included) is one Ctrl+T / click away.
+function stripTimeoutSuffix(line: string): string {
+  const visible = stripAnsi(line);
+  const hint = visible.match(/ \(timeout [^)]*\)\s*$/i)?.[0];
+  if (!hint) return line;
+  const rawStart = rawIndexAtVisibleIndex(line, visible.length - hint.length);
+  return `${line.slice(0, rawStart)}${RESET}`;
+}
+
+// Ink hierarchy for command rows: dim the shell plumbing (connectors, null redirects,
+// heredoc markers) so the command segments carry the brightness. Matches only
+// space-delimited operator tokens, which keeps it out of SGR params and most quoted
+// strings; a dimmed operator inside a quoted string would be a cosmetic-only miss.
+const SHELL_PLUMBING =
+  / (&&|\|\||\||;|2>&1|[&12]?>>?\s?\/dev\/null|<<-?\s?'?[A-Za-z_][A-Za-z0-9_]*'?)(?= |$)/g;
+
+function dimShellPlumbing(line: string): string {
+  return line.replace(SHELL_PLUMBING, (_m, op: string) => ` ${MUTED_GREY}${op}${RESET}`);
+}
+
 function commandPrefixLength(comp: any, line: string): number {
   const visible = stripAnsi(line).trimStart();
   const name = toolLabel(comp?.toolName);
@@ -631,7 +656,9 @@ function nativeInvocationLine(comp: any): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
   const line = firstVisibleLine(withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH)));
-  return line ? colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))) : undefined;
+  return line
+    ? colourCommandPrefix(comp, stripSgrBackgrounds(stripTimeoutSuffix(stripTrailingExpandHint(line))))
+    : undefined;
 }
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
@@ -671,7 +698,8 @@ function oneLine(comp: any, width: number): string {
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
   const native = nativeInvocationLine(comp);
   const base = (native && pathEmphasisLine(comp, native)) ?? native ?? `${statusColor(comp)}${fallbackInvocationLine(comp)}${RESET}`;
-  const invocation = tildify(base);
+  const tilded = tildify(base);
+  const invocation = toolLabel(comp?.toolName) === "bash" ? dimShellPlumbing(tilded) : tilded;
   const fitted = fitOneLineAndSuffix(invocation, resultCharSuffix(comp), available);
   return truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ONE_LINE_ELLIPSIS);
 }
@@ -700,8 +728,24 @@ function componentLocation(comp: any): { sibs: any[]; index: number } | undefine
   return Array.isArray(sibs) && index >= 0 ? { sibs, index } : undefined;
 }
 
+// A reasoning-only turn while thinking is hidden: pi collapses it to a single dim
+// "Thinking..." line. The tool row that follows is that thought's action, so the two
+// should read as one thought→action couplet rather than separate paragraphs.
+function isCollapsedThinkingRow(c: any): boolean {
+  if (!isAssistantRow(c) || c.hideThinkingBlock !== true) return false;
+  const content = c.lastMessage?.content;
+  if (!Array.isArray(content)) return false;
+  let hasThinking = false;
+  for (const b of content) {
+    if (b?.type === "text" && b.text?.trim()) return false; // visible prose → real paragraph
+    if (b?.type === "thinking" && b.thinking?.trim()) hasThinking = true;
+  }
+  return hasThinking;
+}
+
 // One blank line before a tool *group*, none within it: walk back past invisible
-// connector turns; tight if the nearest visible sibling is another collapsed tool row.
+// connector turns; tight if the nearest visible sibling is another collapsed tool row
+// or the collapsed "Thinking..." line that motivated this call.
 function leadingBlank(comp: any): boolean {
   const found = componentLocation(comp);
   if (!found || found.index <= 0) return true;
@@ -710,6 +754,7 @@ function leadingBlank(comp: any): boolean {
     const prev = sibs[j];
     if (isToolRow(prev)) return false; // adjacent (through connectors) to another tool
     if (isEmptyConnector(prev)) continue; // skip invisible tool-call-only turns
+    if (isCollapsedThinkingRow(prev)) return false; // tight under its Thinking... line
     return true; // hit visible content → blank before the group
   }
   return true;
@@ -779,6 +824,8 @@ export const internals = {
   middleTruncate,
   fitOneLineAndSuffix,
   tildify,
+  stripTimeoutSuffix,
+  dimShellPlumbing,
   // row grammar
   formatCharCount,
   lineRange,

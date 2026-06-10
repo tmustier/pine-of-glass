@@ -19,6 +19,8 @@ const {
   stripAnsi,
   isToolRow,
   isAssistantRow,
+  stripTimeoutSuffix,
+  dimShellPlumbing,
 } = internals;
 
 const g = globalThis as Record<string, unknown>;
@@ -101,6 +103,29 @@ test("fallback rendering when a tool has no native call renderer", () => {
   assert.ok(visible.includes('mcp {"foo":"bar"}'), visible);
 });
 
+test("bash rows: timeout boilerplate stripped, shell plumbing dimmed, segments bright", () => {
+  const comp = toolComp({
+    toolName: "bash",
+    args: { command: "pwd && git remote -v" },
+    callRendererComponent: {
+      render: () => ["$ pwd && git remote -v 2>/dev/null | head -5 (timeout 10s)"],
+    },
+  });
+  const line = oneLine(comp, 120);
+  const visible = stripAnsi(line);
+  assert.ok(!visible.includes("timeout"), `timeout boilerplate must be stripped: ${visible}`);
+  // Plumbing is dimmed; the command segments around it keep full brightness.
+  assert.ok(line.includes("\x1b[38;2;128;128;128m&&\x1b[0m"), "&& must be dimmed");
+  assert.ok(line.includes("\x1b[38;2;128;128;128m2>/dev/null\x1b[0m"), "2>/dev/null must be dimmed");
+  assert.ok(line.includes("\x1b[38;2;128;128;128m|\x1b[0m"), "pipe must be dimmed");
+
+  // Unit edges: heredoc markers dim; quoted near-misses and SGR params stay untouched.
+  assert.ok(dimShellPlumbing("cat <<'EOF'").includes("\x1b[38;2;128;128;128m<<'EOF'\x1b[0m"));
+  assert.equal(dimShellPlumbing("echo 'a&&b'"), "echo 'a&&b'", "unspaced operators are left alone");
+  assert.equal(stripTimeoutSuffix("$ ls (timeout 10s)"), "$ ls\x1b[0m");
+  assert.equal(stripTimeoutSuffix("$ ls"), "$ ls");
+});
+
 test("native invocation drops the expand hint and keeps only the first visible line", () => {
   const comp = toolComp({
     callRendererComponent: { render: () => ["read ~/projects/demo/file.ts:1-40 (ctrl+o to expand)", "  body line"] },
@@ -131,4 +156,27 @@ test("tool-group spacing: blank before a group, tight within it, connectors skip
   assert.equal(leadingBlank(toolA), true, "blank after visible assistant content");
   assert.equal(leadingBlank(toolB), false, "tight through an invisible connector turn");
   assert.equal(leadingBlank(toolC), true, "new group after visible content");
+});
+
+test("thought→action couplet: tight under a collapsed Thinking... line", () => {
+  const tool = toolComp();
+  const collapsedThinking = {
+    setHideThinkingBlock: () => {},
+    hideThinkingBlock: true,
+    lastMessage: { content: [{ type: "thinking", thinking: "let me check the repo" }] },
+  };
+  const thinkingWithProse = {
+    setHideThinkingBlock: () => {},
+    hideThinkingBlock: true,
+    lastMessage: {
+      content: [
+        { type: "thinking", thinking: "hmm" },
+        { type: "text", text: "Here is what I found." },
+      ],
+    },
+  };
+  g.__tracelineChat = { children: [collapsedThinking, tool] };
+  assert.equal(leadingBlank(tool), false, "reasoning-only turn reads as this call's thought");
+  g.__tracelineChat = { children: [thinkingWithProse, tool] };
+  assert.equal(leadingBlank(tool), true, "visible prose still opens a new paragraph");
 });

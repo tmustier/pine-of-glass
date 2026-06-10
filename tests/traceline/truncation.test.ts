@@ -8,7 +8,7 @@ import { internals } from "../../extensions/pi-traceline/index.ts";
 
 const { middleTruncate, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } = internals;
 
-const ELLIPSIS = "...";
+const ELLIPSIS = "\u2026";
 
 const plainLong = "read ~/projects/pine-of-glass/extensions/pi-traceline/index.ts:1-200";
 const ansiLong = `\x1b[1mread\x1b[22m \x1b[38;5;245m~/projects/pine-of-glass/extensions/\x1b[0mpi-traceline/index.ts\x1b[2m:1-200\x1b[0m`;
