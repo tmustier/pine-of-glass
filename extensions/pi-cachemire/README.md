@@ -17,10 +17,17 @@ last request (Anthropic: 5m, or 1h with long retention — read from the observe
 ```
 
 So you know *before* you hit Enter whether the send is cheap or re-bills the whole
-prefix. Providers without a TTL contract (OpenAI's implicit caching) get soft wording
-with the same exact re-send size once past the soft horizon:
-`cache likely warm · 3m since last call`, then
-`cache likely cold (idle 12m) · next send re-sends ~109.8k uncached (~$1.37)`.
+prefix. OpenAI's implicit cache has no per-request TTL but does have documented
+behaviour — typically evicted after ~5–10m idle, *always* removed within 1h of last
+use — so it gets a three-zone band with honest wording per zone:
+
+```
+◍ cache likely warm · 3m since last call
+◍ cache fading · idle 12m of 5m–1h window · next send may re-send ~109.8k (~$1.37)
+◍ cache cold (idle 1h12m > 1h cap) · next send re-sends ~109.8k uncached (~$1.37)
+```
+
+Unknown providers keep pure soft language (`cache likely cold (idle 12m) · …`).
 
 The re-write size is provider-exact, not estimated: it is `input + cacheRead +
 cacheWrite` from the last assistant message's usage — the prompt-side token count of
@@ -34,11 +41,30 @@ Anthropic reads/refreshes/writes cache entries while processing the request inpu
 TTL while it streams. The clock ticking during generation is correct — after a 4m
 thinking block on a 5m TTL, the prefix really does have ~1m left.
 
-**Cold vs likely cold.** `cold` is contract-backed: the TTL was taken from the actual
-`cache_control` pi sent (or, for a freshly restored anthropic session before its first
-request, inferred by the same rule pi-ai itself uses — `PI_CACHE_RETENTION=long` → 1h,
-else 5m — with the first live observation replacing the inference). `likely cold` is
-reserved for providers with no TTL contract at all.
+**Cold vs likely cold.** `cold` is contract-backed: an observed `cache_control` TTL
+passed (or, for a freshly restored anthropic session, the TTL inferred by the same rule
+pi-ai itself uses — `PI_CACHE_RETENTION=long` → 1h, else 5m — until the first live
+observation replaces it), or OpenAI's documented 1h hard cap passed. `fading` covers
+OpenAI's typical-eviction zone, and `likely` wording is reserved for providers cachemire
+knows nothing about.
+
+## One model across providers
+
+Everything above is four provider-general rules, which is the whole mental model:
+
+1. **Anchor** — the freshness clock starts at *request processing* (both Anthropic and
+   OpenAI create/refresh entries while reading the input; "inactivity" is measured from
+   last use). Generation time burns the window.
+2. **Scope** — a cache entry belongs to (provider, model, byte-exact prefix). Caches are
+   per-model everywhere, so **any model switch means definite cold**: the widget flips to
+   `cache cold · model switched · next send re-writes the full prompt`.
+3. **Window** — strength varies by provider: Anthropic has a contract TTL (observed,
+   else inferred), OpenAI a documented band (soft ~5m / hard 1h), everyone else is
+   unknown. Wording always matches the strength: countdown / fading / likely.
+4. **Currency** — token counts and $ are only ever shown in the tokenizer and price card
+   that billed them. After a model switch the stored size is in the wrong currency, so it
+   is withheld (`re-writes the full prompt`, no number) until the first new-model usage
+   re-baselines it. Exactness arrives one call later — the only honest time it can.
 
 **2. Cache forensics** — every provider request is fingerprinted (system prompt, each
 tool, each history message; `cache_control` breakpoints stripped, since pi moves the
@@ -96,7 +122,8 @@ billed at base input rates — the honest answer to "is caching working?".
   estimated. Forensic causes come from observed payload diffs — never inferred.
 - Everything cachemire draws is UI-only: nothing enters LLM context, session entries,
   or exports.
-- TTL state is labelled "likely" where the provider gives no contract. Savings are
+- Freshness wording always matches the strength of what is known: contract TTL →
+  definite, documented band → fading/cap wording, nothing → "likely". Savings are
   flagged as notional under subscription auth.
 - `--continue`d sessions restore the ledger from session usage; restored rows are
   marked and excluded from savings (their pricing context is unknown).

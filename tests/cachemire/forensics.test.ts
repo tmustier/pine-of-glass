@@ -132,13 +132,33 @@ test("classification ladder", () => {
   const ttlMiss = classifyCall({
     isFirst: false,
     gapMs: 6.7 * MIN,
-    ttlMs: 5 * MIN,
+    window: { kind: "contract", ttlMs: 5 * MIN, source: "observed" },
     usage: usage(0),
     expectedRead: 100_000,
   });
   assert.equal(ttlMiss.kind, "miss");
   assert.equal(ttlMiss.cause!.kind, "ttl");
   assert.equal(ttlMiss.cause!.detail, "idle 6m42s > 5m TTL");
+
+  // OpenAI-style band: a miss in the maybe-zone is attributed to typical eviction; past
+  // the documented hard cap the wording is definite.
+  const bandMaybe = classifyCall({
+    isFirst: false,
+    gapMs: 12 * MIN,
+    window: { kind: "band", softMs: 5 * MIN, hardMs: 60 * MIN },
+    usage: usage(0),
+    expectedRead: 100_000,
+  });
+  assert.equal(bandMaybe.cause!.kind, "ttl");
+  assert.equal(bandMaybe.cause!.detail, "evicted after idle 12m (typical window 5m\u20131h)");
+  const bandPast = classifyCall({
+    isFirst: false,
+    gapMs: 90 * MIN,
+    window: { kind: "band", softMs: 5 * MIN, hardMs: 60 * MIN },
+    usage: usage(0),
+    expectedRead: 100_000,
+  });
+  assert.equal(bandPast.cause!.detail, "idle 1h30m > 1h cache cap");
 
   // Compaction outranks the fingerprint diff (the diff would only say "history").
   const compaction = classifyCall({
@@ -154,7 +174,7 @@ test("classification ladder", () => {
   const both = classifyCall({
     isFirst: false,
     gapMs: 9 * MIN,
-    ttlMs: 5 * MIN,
+    window: { kind: "contract", ttlMs: 5 * MIN, source: "observed" },
     usage: usage(0),
     expectedRead: 100_000,
     fingerprintCause: { kind: "tools", detail: "tools changed (+12 added)" },

@@ -10,7 +10,10 @@ const {
   formatTokensK, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
+  windowForProvider, windowLabel, windowExpiry, OPENAI_WINDOW,
 } = internals;
+
+const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
 
 // claude-opus-4-8-style rates, USD per Mtok (write carries the 1.25x premium already).
 const RATES = { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 };
@@ -53,15 +56,15 @@ test("cache clock phases", () => {
   assert.equal(cacheClock({ now: 0 }).phase, "idle");
 
   // Fresh: coarse 15s steps above 90s remaining, so the widget re-renders sparsely.
-  const fresh = cacheClock({ now: 100_000, lastRequestAt: 0, ttlMs: 5 * MIN });
+  const fresh = cacheClock({ now: 100_000, lastRequestAt: 0, window: CONTRACT_5M });
   assert.equal(fresh.phase, "fresh");
   assert.equal(fresh.text, "cache 3m15s"); // 200s remaining → floored to 195s
 
-  const closing = cacheClock({ now: 4 * MIN + 15_000, lastRequestAt: 0, ttlMs: 5 * MIN });
+  const closing = cacheClock({ now: 4 * MIN + 15_000, lastRequestAt: 0, window: CONTRACT_5M });
   assert.equal(closing.phase, "closing");
   assert.equal(closing.text, "cache 45s");
 
-  const cold = cacheClock({ now: 6 * MIN, lastRequestAt: 0, ttlMs: 5 * MIN, cachedTokens: 142_300, rewriteUsd: 2.67 });
+  const cold = cacheClock({ now: 6 * MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67 });
   assert.equal(cold.phase, "cold");
   assert.equal(cold.text, "cache cold \u00b7 next send re-writes ~142.3k (~$2.67)");
 
@@ -74,9 +77,47 @@ test("cache clock phases", () => {
   assert.equal(cacheClock({ now: 12 * MIN, lastRequestAt: 0 }).text, "cache likely cold (idle 12m)");
 
   // Compaction invalidates the timed prefix outright — TTL is moot until the next send.
-  const stale = cacheClock({ now: MIN, lastRequestAt: 0, ttlMs: 5 * MIN, cachedTokens: 142_300, compacted: true });
+  const stale = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, compacted: true });
   assert.equal(stale.phase, "stale");
   assert.equal(stale.text, "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix");
+
+  // Model switch: per-model caches everywhere, and the stored count is in the old
+  // tokenizer's currency — definite cold, no numbers.
+  const switched = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true });
+  assert.equal(switched.phase, "cold");
+  assert.equal(switched.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt");
+});
+
+test("openai band: warm → fading → hard-cap cold", () => {
+  const base = { lastRequestAt: 0, window: OPENAI_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
+  assert.equal(cacheClock({ ...base, now: 3 * MIN }).text, "cache likely warm \u00b7 3m since last call");
+  const fading = cacheClock({ ...base, now: 12 * MIN });
+  assert.equal(fading.phase, "fading");
+  assert.equal(fading.text, "cache fading \u00b7 idle 12m of 5m\u20131h window \u00b7 next send may re-send ~109.8k (~$1.37)");
+  const capped = cacheClock({ ...base, now: 90 * MIN });
+  assert.equal(capped.phase, "cold");
+  assert.equal(capped.text, "cache cold (idle 1h30m > 1h cap) \u00b7 next send re-sends ~109.8k uncached (~$1.37)");
+});
+
+test("window resolution and labels", () => {
+  assert.deepEqual(windowForProvider("anthropic"), { kind: "contract", ttlMs: 5 * MIN, source: "inferred" });
+  assert.equal(windowForProvider("openai-codex"), OPENAI_WINDOW);
+  assert.equal(windowForProvider("openai"), OPENAI_WINDOW);
+  assert.equal(windowForProvider("mistral"), undefined);
+  assert.equal(windowForProvider(undefined), undefined);
+
+  assert.equal(windowLabel(CONTRACT_5M), "5m TTL");
+  assert.equal(windowLabel({ kind: "contract", ttlMs: 60 * MIN, source: "inferred" }), "1h TTL (inferred)");
+  assert.equal(windowLabel(OPENAI_WINDOW), "5m\u20131h window");
+  assert.equal(windowLabel({ kind: "unknown" }), "TTL unknown");
+
+  assert.equal(windowExpiry(CONTRACT_5M, 4 * MIN), "within");
+  assert.equal(windowExpiry(CONTRACT_5M, 6 * MIN), "past");
+  assert.equal(windowExpiry(OPENAI_WINDOW, 3 * MIN), "within");
+  assert.equal(windowExpiry(OPENAI_WINDOW, 12 * MIN), "maybe");
+  assert.equal(windowExpiry(OPENAI_WINDOW, 90 * MIN), "past");
+  assert.equal(windowExpiry({ kind: "unknown" }, 90 * MIN), "unknown");
+  assert.equal(windowExpiry(undefined, 90 * MIN), "unknown");
 });
 
 test("anthropic TTL inference mirrors pi-ai's env resolution", () => {
@@ -133,15 +174,19 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   const base = { isFirst: false, inCompaction: false, compacted: false, expectedRead: 138_200, rates: RATES };
 
   // Healthy paths predict nothing.
-  assert.equal(predictBreak({ ...base, gapMs: 30_000, ttlMs: 5 * MIN }), undefined);
-  assert.equal(predictBreak({ ...base, isFirst: true, gapMs: 590 * MIN, ttlMs: 5 * MIN }), undefined);
-  assert.equal(predictBreak({ ...base, inCompaction: true, gapMs: 590 * MIN, ttlMs: 5 * MIN }), undefined);
-  assert.equal(predictBreak({ ...base, expectedRead: 0, gapMs: 590 * MIN, ttlMs: 5 * MIN }), undefined);
-  // Unknown TTL: no contract, no definite prediction.
+  assert.equal(predictBreak({ ...base, gapMs: 30_000, window: CONTRACT_5M }), undefined);
+  assert.equal(predictBreak({ ...base, isFirst: true, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
+  assert.equal(predictBreak({ ...base, inCompaction: true, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
+  assert.equal(predictBreak({ ...base, expectedRead: 0, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
+  // Unknown window: no contract, no definite prediction.
   assert.equal(predictBreak({ ...base, gapMs: 590 * MIN }), undefined);
+  // Band maybe-zone: eviction is not certain, so no in-flight claim — but the band's
+  // documented hard cap is contract enough.
+  assert.equal(predictBreak({ ...base, gapMs: 12 * MIN, window: OPENAI_WINDOW }), undefined);
+  assert.equal(predictBreak({ ...base, gapMs: 90 * MIN, window: OPENAI_WINDOW })!.cause.detail, "idle 1h30m > 1h cache cap");
 
   // Past TTL: sized from the last call's provider-billed prompt.
-  const ttl = predictBreak({ ...base, gapMs: 590 * MIN, ttlMs: 5 * MIN })!;
+  const ttl = predictBreak({ ...base, gapMs: 590 * MIN, window: CONTRACT_5M })!;
   assert.equal(ttl.cause.kind, "ttl");
   assert.equal(ttl.expectedRewriteTokens, 138_200);
   assert.equal(ttl.expectedUsd, 2.591_25); // 138.2k at $18.75/M write
@@ -152,13 +197,21 @@ test("break prediction: knowable at request time, silent when healthy", () => {
 
   // A named segment mutation outranks the TTL explanation, same as classification.
   const tools = predictBreak({
-    ...base, gapMs: 590 * MIN, ttlMs: 5 * MIN,
+    ...base, gapMs: 590 * MIN, window: CONTRACT_5M,
     fingerprintCause: { kind: "tools", detail: "tools changed (+2 added)" },
   })!;
   assert.equal(tools.cause.kind, "tools");
 
+  // Model switch: certain break, but the size is in the old tokenizer — withheld.
+  const model = predictBreak({
+    ...base, gapMs: 1_000, window: CONTRACT_5M,
+    fingerprintCause: { kind: "model", detail: "model switched a \u2192 b" },
+  })!;
+  assert.equal(model.expectedRewriteTokens, undefined);
+  assert.equal(renderBreakingLine(model), "cache breaking \u00b7 re-writing the full prompt \u00b7 cause: model switched a \u2192 b");
+
   // Compaction: the event is material but the new prefix size is unknowable.
-  const compaction = predictBreak({ ...base, compacted: true, gapMs: 1_000, ttlMs: 5 * MIN })!;
+  const compaction = predictBreak({ ...base, compacted: true, gapMs: 1_000, window: CONTRACT_5M })!;
   assert.equal(compaction.cause.kind, "compaction");
   assert.equal(compaction.expectedRewriteTokens, undefined);
   assert.equal(renderBreakingLine(compaction), "cache breaking \u00b7 re-writing the new prefix \u00b7 cause: history compacted");
@@ -178,7 +231,7 @@ test("ledger view: rows, totals, and the savings line", () => {
       rewroteTokens: 1_800, costUsd: 0.04, uncachedUsd: 2.38,
     },
   ];
-  const lines = renderLedger(records, { providerLabel: "anthropic", ttlMs: 5 * MIN, modelLabel: "anthropic/claude-opus-4-8" });
+  const lines = renderLedger(records, { providerLabel: "anthropic", window: CONTRACT_5M, modelLabel: "anthropic/claude-opus-4-8" });
   assert.match(lines[0]!, /Cachemire — cache & loop ledger\s+anthropic · 5m TTL · anthropic\/claude-opus-4-8/);
   assert.match(lines[2]!, /^\s+1\s+—\s+12\.1k\s+0\s+138\.2k\s+400\s+\$0\.55\s+○ cold start$/);
   assert.match(lines[3]!, /14s.*150\.3k.*● hit$/);
