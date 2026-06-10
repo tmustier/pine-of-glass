@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 
-const { stripCacheControl, fingerprintPayload, diffFingerprints, classifyCall } = internals;
+const { stripCacheControl, fingerprintPayload, diffFingerprints, classifyCall, matchPriorEntry } = internals;
 
 const MIN = 60_000;
 
@@ -224,6 +224,77 @@ test("classification ladder", () => {
 
   const summarizer = classifyCall({ isFirst: false, usage: usage(0), expectedRead: 100_000, inCompaction: true });
   assert.equal(summarizer.cause!.kind, "compaction-work");
+});
+
+test("matchPriorEntry names which prior call's entry a read hit", () => {
+  // Live arithmetic from session 019e9758: call #38 (prompt 49,417) wrote the entry that
+  // a burst of later calls read as exactly floor512(49,417) = 49,152 — while interleaved
+  // calls read a newer 62k entry. Mapping reads back to prompt totals is the diagnosis.
+  const now = 1_000_000_000;
+  const MIN_MS = 60_000;
+  const priors = [
+    { index: 37, at: now - 30 * MIN_MS, promptTokens: 49_300 }, // same 512-bucket, older
+    { index: 38, at: now - 13 * MIN_MS, promptTokens: 49_417 },
+    { index: 39, at: now - 12 * MIN_MS, promptTokens: 62_932 },
+  ];
+
+  const match = matchPriorEntry(49_152, priors, now, 60 * MIN_MS)!;
+  assert.equal(match.index, 38, "newest matching entry wins");
+  assert.equal(match.ageMs, 13 * MIN_MS);
+
+  // Entries older than the hard cap cannot be asserted — they are documented as removed.
+  assert.equal(matchPriorEntry(49_152, priors, now, 10 * MIN_MS), undefined);
+  // Reads that are not on a 512 checkpoint, or zero, never match.
+  assert.equal(matchPriorEntry(49_200, priors, now, 60 * MIN_MS), undefined);
+  assert.equal(matchPriorEntry(0, priors, now, 60 * MIN_MS), undefined);
+  // A read with no bucket-mate stays unmatched (falls to the generic unknown hint).
+  assert.equal(matchPriorEntry(51_200, priors, now, 60 * MIN_MS), undefined);
+});
+
+test("entry match upgrades unknown band misses and refines idle evictions", () => {
+  const band: { kind: "band"; softMs: number; hardMs: number } = { kind: "band", softMs: 5 * MIN, hardMs: 60 * MIN };
+  const base = {
+    isFirst: false,
+    expectedRead: 63_000,
+    usage: { input: 13_987, output: 319, cacheRead: 49_152, cacheWrite: 0 },
+  };
+
+  // No idle gap, read matches an older call's entry: the replica story, named.
+  const bounce = classifyCall({ ...base, gapMs: 5_000, window: band, entryMatch: { index: 38, ageMs: 13 * MIN } });
+  assert.equal(bounce.kind, "partial");
+  assert.equal(bounce.cause!.kind, "replica");
+  assert.equal(
+    bounce.cause!.detail,
+    "read matches call #38's entry (13m old) \u00b7 likely a different replica from the last write",
+  );
+
+  // Idle past the soft window: eviction stays the headline, the entry refines it.
+  const evicted = classifyCall({ ...base, gapMs: 11.8 * MIN, window: band, entryMatch: { index: 38, ageMs: 13 * MIN } });
+  assert.equal(evicted.cause!.kind, "ttl");
+  assert.equal(
+    evicted.cause!.detail,
+    "evicted after idle 11m48s (typical window 5m\u20131h) \u00b7 fell back to call #38's entry (13m old)",
+  );
+
+  // Named mutations outrank the entry match — the user's action is the root cause.
+  const mutated = classifyCall({
+    ...base,
+    gapMs: 5_000,
+    window: band,
+    fingerprintCause: { kind: "system", detail: "system prompt changed" },
+    entryMatch: { index: 38, ageMs: 13 * MIN },
+  });
+  assert.equal(mutated.cause!.kind, "system");
+
+  // Contract windows (Anthropic) use explicit breakpoints, not floor512 checkpoints —
+  // the arithmetic does not apply, so the match is ignored.
+  const contract = classifyCall({
+    ...base,
+    gapMs: 5_000,
+    window: { kind: "contract", ttlMs: 5 * MIN, source: "observed" },
+    entryMatch: { index: 38, ageMs: 13 * MIN },
+  });
+  assert.equal(contract.cause!.kind, "unknown");
 });
 
 test("unknown-miss hint is window-aware", () => {
