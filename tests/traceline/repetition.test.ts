@@ -116,6 +116,22 @@ test("elision requires the same directory, a real `&&` tail, and a thinking line
   // Unit edges: lines that are not `$ cd … && …` pass through unchanged.
   assert.equal(elideCdPreamble("$ ls -la"), "$ ls -la");
   assert.equal(elideCdPreamble("read ~/x.ts:1-2"), "read ~/x.ts:1-2");
+  assert.equal(elideCdPreamble("$ cd /tmp"), "$ cd /tmp", "a bare cd has no tail");
+});
+
+test("elision is quote-aware: an && inside a quoted directory never becomes the cut point", () => {
+  const quotedDir = '"/tmp/a && b"';
+  const a = bashComp(`cd ${quotedDir} && ls`);
+  const b = bashComp(`cd ${quotedDir} && npm test`);
+  g.__tracelineChat = { children: [a, b] };
+  assert.equal(repeatsPreviousCdPreamble(b), true, "quoted dirs still detect as repeats");
+
+  const visible = stripAnsi(oneLine(b, 120));
+  assert.ok(visible.includes(`$ ${FOLD_MARK} && npm test`), visible);
+  assert.ok(!visible.includes('b"'), `the quoted directory must not leak past the cut: ${visible}`);
+
+  // Unit edge: the raw helper cuts after the quoted segment, not inside it.
+  assert.equal(stripAnsi(elideCdPreamble('$ cd "/tmp/a && b" && npm test')), `$ ${FOLD_MARK} && npm test`);
 });
 
 test("consecutive reads of one file fold into a single row with combined ranges and size", () => {
@@ -152,6 +168,28 @@ test("a running last page keeps the fold live: running bullet, no premature size
   assert.ok(line.includes("\x1b[34m\u203a"), "bullet must reflect the in-flight last call");
   const visible = stripAnsi(line);
   assert.ok(visible.trimEnd().endsWith("2 calls · 9.0k ch"), `only landed results count: ${visible}`);
+});
+
+test("error pages never fold: the red row survives and breaks the run on both sides", () => {
+  const path = `${homedir()}/projects/demo/big-file.ts`;
+  const err = {
+    ...readComp(path, 201, 200),
+    result: { content: [{ type: "text", text: "line 201 out of range" }], isError: true },
+  };
+  // ok · ERR · ok · ok — the error renders individually; only the trailing pair folds.
+  const r1 = readComp(path, 1, 200);
+  const r3 = readComp(path, 201, 200);
+  const r4 = readComp(path, 401, 200);
+  g.__tracelineChat = { children: [r1, err, r3, r4] };
+
+  assert.equal(readRun(r1), undefined, "an error after a single ok page leaves it unfolded");
+  assert.equal(readRun(err), undefined, "the error row itself never folds");
+  const tail = readRun(r3);
+  assert.ok(tail && tail.rows.length === 2, "ok pages after the error fold among themselves");
+
+  const errLine = renderTraceRow(err, 120);
+  assert.ok(errLine.length > 0, "the error row must render its own line");
+  assert.ok(errLine.at(-1)!.includes("\x1b[31m›"), "the error row keeps its red bullet");
 });
 
 test("runs break on anything visible between the reads — and on a different file", () => {

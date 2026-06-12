@@ -745,11 +745,16 @@ function repeatsPreviousCdPreamble(comp: any): boolean {
 
 function elideCdPreamble(line: string): string {
   const visible = stripAnsi(line);
-  if (!visible.startsWith("$ cd ")) return line;
-  const ampIndex = visible.indexOf(" && ");
-  if (ampIndex < 0) return line;
+  if (!visible.startsWith("$ ")) return line;
+  // Find the separator with the same quote-aware parse used to detect the repeat: a
+  // plain indexOf(" && ") would cut inside a quoted directory (`cd "/tmp/a && b" && …`)
+  // and corrupt the command. The match tail is `\s*&&\s`, so its last `&&` *is* the
+  // separator, after any quoted segment.
+  const preamble = CD_PREAMBLE.exec(visible.slice(2));
+  if (!preamble) return line;
+  const ampIndex = 2 + preamble[0].lastIndexOf("&&");
   const head = line.slice(0, rawIndexAtVisibleIndex(line, 2)); // `$ ` with its styling
-  const rest = line.slice(rawIndexAtVisibleIndex(line, ampIndex + 1)); // from `&& …`
+  const rest = line.slice(rawIndexAtVisibleIndex(line, ampIndex)); // from `&& …`
   return `${head}${dim(PREAMBLE_MARK)} ${rest}`;
 }
 
@@ -766,8 +771,17 @@ function readPath(comp: any): string | undefined {
   return typeof path === "string" && path.length > 0 ? path : undefined;
 }
 
-function readRun(comp: any): { rows: any[]; index: number } | undefined {
+// A read row that may participate in a fold: error rows never fold — a failed page must
+// keep its own red row, not vanish into a folded one whose tone reflects only the last
+// call. An error therefore also breaks the run on both sides.
+function foldableReadPath(comp: any): string | undefined {
   const path = readPath(comp);
+  if (path === undefined) return undefined;
+  return toolStatus(comp) === "error" ? undefined : path;
+}
+
+function readRun(comp: any): { rows: any[]; index: number } | undefined {
+  const path = foldableReadPath(comp);
   if (path === undefined) return undefined;
   const found = componentLocation(comp);
   if (!found) return undefined;
@@ -777,14 +791,14 @@ function readRun(comp: any): { rows: any[]; index: number } | undefined {
   for (let j = index - 1; j >= 0; j--) {
     const prev = sibs[j];
     if (isEmptyConnector(prev)) continue;
-    if (readPath(prev) !== path) break;
+    if (foldableReadPath(prev) !== path) break;
     rows.unshift(prev);
     selfIndex++;
   }
   for (let j = index + 1; j < sibs.length; j++) {
     const next = sibs[j];
     if (isEmptyConnector(next)) continue;
-    if (readPath(next) !== path) break;
+    if (foldableReadPath(next) !== path) break;
     rows.push(next);
   }
   return rows.length > 1 ? { rows, index: selfIndex } : undefined;
