@@ -6,7 +6,7 @@ import { stripAnsi } from "../_lib/ansi.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
-import { compactCount } from "../_lib/fmt.ts";
+import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 
 /**
  * pi-cachemire — explains the cache and loop economics of a pi session.
@@ -556,26 +556,13 @@ export function sessionSavings(records: CallRecord[]): { actual: number; uncache
 }
 
 // --- formatting ------------------------------------------------------------------------
+// formatUsd / formatDuration live in _lib/fmt.ts (family number grammar); re-exported
+// here because the test suite reaches them through this module's internals surface.
+
+export { formatDuration, formatUsd } from "../_lib/fmt.ts";
 
 export function formatTokensK(value: number): string {
   return compactCount(value);
-}
-
-export function formatUsd(value: number): string {
-  return value >= 0.10 ? `$${value.toFixed(2)}` : `$${value.toFixed(3)}`;
-}
-
-export function formatDuration(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    const rest = seconds % 60;
-    return rest > 0 ? `${minutes}m${rest.toString().padStart(2, "0")}s` : `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const restMinutes = minutes % 60;
-  return restMinutes > 0 ? `${hours}h${restMinutes}m` : `${hours}h`;
 }
 
 // --- cache clock (pure state → text; tones applied by the widget layer) -----------------

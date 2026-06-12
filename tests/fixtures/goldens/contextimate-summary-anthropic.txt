@@ -2,10 +2,10 @@
 [Context Estimator] summary → compact → expanded
   <expand-key>: cycle view · model anthropic/claude-opus-4-8 · Claude 4.7+ heuristic
 
-  Runtime system prompt                      ~0.1k tokens (201 ch ÷ 2.6)
-  Global AGENTS.md                           ~0.0k tokens (64 ch ÷ 2.6)
-  ~/projects/demo/AGENTS.md                  ~0.0k tokens (52 ch ÷ 2.6)
-  Skill frontmatter (3)                      ~0.3k tokens (743 ch ÷ 2.6)
+  Runtime system prompt                      ~0.1k tokens (0.2k ch ÷ 2.6)
+  Global AGENTS.md                           ~0.0k tokens (0.1k ch ÷ 2.6)
+  ~/projects/demo/AGENTS.md                  ~0.0k tokens (0.1k ch ÷ 2.6)
+  Skill frontmatter (3)                      ~0.3k tokens (0.7k ch ÷ 2.6)
   Tools (3/4 active)                         ~0.5k tokens (1.2k ch ÷ 2.6 · Anthropic tool payload)
   Total harness                              ~0.9k tokens (2.2k ch)
 

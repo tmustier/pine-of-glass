@@ -9,7 +9,7 @@
   Total session                             ~63k tokens (Pi current - harness)
   Total request                              64k tokens (32.2% / 200k ctx)
 
-  Runtime system prompt  ~0.1k tokens                                                                       201 ch ÷ 2.6
+  Runtime system prompt  ~0.1k tokens                                                                      0.2k ch ÷ 2.6
     assembled at runtime: pi base prompt + tool/extension instructions · preview only
     of which tool/extension instructions: ~0.0k tokens (2 tool snippets, 1 guideline) · already counted in this row
 
@@ -20,20 +20,20 @@
     Guidelines:
     - Prefer rg over grep for searching.
 
-  Global AGENTS.md  ~0.0k tokens                                                                             64 ch ÷ 2.6
+  Global AGENTS.md  ~0.0k tokens                                                                           0.1k ch ÷ 2.6
     ~/.pi/agent/AGENTS.md · preview only
 
     # Global guidance
     Prefer clarity &amp; precision in every reply.
 
-  ~/projects/demo/AGENTS.md  ~0.0k tokens                                                                    52 ch ÷ 2.6
+  ~/projects/demo/AGENTS.md  ~0.0k tokens                                                                  0.1k ch ÷ 2.6
     ~/projects/demo/AGENTS.md · preview only
 
     # Demo project
     Run the demo suite before committing.
 
-  Skill frontmatter (3)  ~0.3k tokens                                                                       743 ch ÷ 2.6
-    list wrapper/markup  ~0.1k tokens (195 ch ÷ 2.6)
+  Skill frontmatter (3)  ~0.3k tokens                                                                      0.7k ch ÷ 2.6
+    list wrapper/markup  ~0.1k tokens (0.2k ch ÷ 2.6)
 
     alpha-skill  ~0.1k  Handles A & B cases with a long description so it sorts first in token order for the fixture.
     beta-skill   ~0.1k  It's the medium one.

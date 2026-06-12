@@ -125,7 +125,7 @@ One formatter family in `_lib/fmt.ts`, used by everyone. Private formatters
 | chars | count + ` ch` (`formatChars`) | `0.4k ch`, `1.4k ch`, `35.2k ch` |
 | tokens, estimated | `~` + count + ` tokens` (unit word may be dropped in columns) | `~0.1k tokens`, `~14.2k tokens` |
 | tokens, provider-reported | count, **no `~`** | `64.1k tokens` |
-| money | `$` two decimals; `~` when projected | `$0.05`, `$17.03`, `~$2.67` |
+| money | `$` two decimals (three below $0.10, where the third digit is significant); `~` when projected | `$0.052`, `$17.03`, `~$2.67` |
 | duration | compact mixed units, no spaces | `14s`, `4m30s`, `9h50m` |
 | share | integer percent in parens; one decimal only for context-window usage | `(97%)`, `32.2% / 200k ctx` |
 
