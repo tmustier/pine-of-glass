@@ -194,6 +194,33 @@ test("real AssistantMessageComponent satisfies traceline's assistant duck type",
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
 });
 
+test("adjacent thinking blocks double the collapsed label natively; traceline coalesces them", () => {
+  pi.initTheme(undefined, false);
+  const component = new pi.AssistantMessageComponent({
+    role: "assistant",
+    content: [
+      { type: "thinking", thinking: "first reasoning segment" },
+      { type: "thinking", thinking: "second reasoning segment" },
+    ],
+  } as never);
+  component.setHideThinkingBlock(true);
+
+  const native = component.render(80);
+  const labelCount = (lines: string[]) =>
+    lines.filter((line) => traceline.stripAnsi(line).trim() === "Thinking...").length;
+  // The seam itself (issue #14 №3): pi renders one collapsed label per thinking *block*.
+  // If this drops to 1, pi fixed it upstream — retire dedupeThinkingLabels.
+  assert.equal(labelCount(native), 2, "adjacent thinking blocks no longer double the label — dedupe may be retirable");
+
+  const deduped = traceline.dedupeThinkingLabels(component, native);
+  assert.equal(labelCount(deduped), 1, "dedupe must coalesce the doubled labels");
+
+  // pi marks the message's first and last lines with OSC 133 zone marks; the dedupe must
+  // never lose control sequences from dropped lines.
+  const zoneMarks = (lines: string[]) => (lines.join("").match(/\x1b\]133;[^\x07\x1b]*(?:\x07|\x1b\\)/g) ?? []).length;
+  assert.equal(zoneMarks(deduped), zoneMarks(native), "OSC 133 zone marks must survive the dedupe");
+});
+
 test("chat-rebuild surface cachemire's line persistence depends on", () => {
   // Ctrl+T (and compaction/navigation) rebuild the chat container from session messages:
   // clear() + re-render drops raw appended children. Cachemire re-attaches its lines

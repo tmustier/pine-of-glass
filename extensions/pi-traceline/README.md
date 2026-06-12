@@ -22,11 +22,35 @@ When tool rows are collapsed, each one renders as a single line:
 
 - **The arc of the turn** - every tool call in order, one line each, so you see the path Pi took.
 - **What context Pi got** - which files it read and how much of them (`read ... :1-20`), which skills it invoked (`[skill] ...`), which subagents ran.
-- **Which outputs were massive** - a right-aligned, dimmed result-size suffix per row (`1.4k ch`, in the family number grammar shared with `pi-contextimate` and `pi-cachemire`) makes an over-large tool output (often a sign of a tool or guidance issue) jump out.
+- **Which outputs were massive** - a right-aligned result-size suffix per row (`1.4k ch`, in the family number grammar shared with `pi-contextimate` and `pi-cachemire`). The suffix is **severity-tinted**: dim while healthy, warning-coloured at ≥10k ch, error-coloured at ≥50k ch — so an over-large tool output (often a sign of a tool or guidance issue) jumps out of the column. Thresholds are overridable via the family config convention (`~/.pi/agent/pi-traceline.json` or `<cwd>/.pi/pi-traceline.json`: `{ "sizeWarningChars": 10000, "sizeErrorChars": 50000 }`).
 - **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error.
 - **Selective expansion** - arm a one-shot click and then click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
 
-Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults. On top of that sits an **ink hierarchy**: shell plumbing in bash rows (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) is dimmed so the command segments carry the brightness, and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight, and a tool row sits tight under the collapsed `Thinking...` line that motivated it, so each thought→action couplet reads as one unit.
+Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults, and traceline's own ink is **theme-derived** (the family `ink()` helper — see `docs/design-language.md`), so it follows your active theme. On top of that sits an **ink hierarchy**: shell plumbing in bash rows (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) is dimmed so the command segments carry the brightness, and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight, and a tool row sits tight under the collapsed `Thinking...` line that motivated it, so each thought→action couplet reads as one unit.
+
+### Repetition folds instead of re-printing (issue #14)
+
+The information-dense diff between adjacent rows is often small — the command tail, a line
+range — while a shared prefix dominates. Three folds keep the trace skimmable:
+
+- **Repeated `cd <dir> && ` preambles** — pi's bash tool is stateless per call, so agents
+  working outside the session cwd re-`cd` on *every* call (90% of bash rows in a measured
+  session). When a row's preamble repeats the previous bash row's, it renders as a dim
+  `⋯`, giving the width back to the part of the command that differs. The first
+  occurrence always keeps the full path, and a `⋯` never points across visible prose.
+- **Paginated reads** — consecutive reads of the same file (paging past the read cap)
+  fold into one row with the combined ranges, call count, and total size. Anything
+  visible between the reads breaks the fold, and clicking the folded row open restores
+  the individual rows.
+- **Doubled `Thinking...` lines** — pi renders the collapsed label once per thinking
+  *block*, so a message with adjacent reasoning segments prints two identical labels;
+  traceline coalesces them into one.
+
+```
+  › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5      1.4k ch
+  › $ ⋯ && npm run typecheck                                            14.2k ch
+  › read ~/projects/pine-of-gl…index.ts:1-200,201-400,401-600 3 calls · 51.1k ch
+```
 
 ### The tool surface
 
@@ -95,7 +119,7 @@ The collapse state is read from a live assistant row (falling back to `~/.pi/age
 
 ## How it works
 
-- On `session_start` it captures the real TUI and wraps `requestRender`, then patches the shared tool-row component prototype's `render` the moment a tool row exists. The patch is versioned and idempotent across reloads and session resumes.
+- On `session_start` it captures the real TUI and wraps `requestRender`, then patches the shared tool-row component prototype's `render` the moment a tool row exists (and the assistant-row prototype, for the doubled-`Thinking...` coalesce). The patches are versioned and idempotent across reloads and session resumes.
 - It also wraps the captured TUI render path to build a row-to-tool hit map. One-shot click mode briefly enables SGR mouse reporting and consumes SGR click events through Pi's public raw-input hook, then disables mouse reporting again so terminal scrolling works normally.
 - While reasoning is shown, `render` defers to Pi's original implementation unchanged. While reasoning is hidden, it emits the single trace line unless that individual row has been clicked open.
 - Any failure inside the one-line path falls back to Pi's original `render`, so the extension can never break a frame.

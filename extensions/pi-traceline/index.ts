@@ -1,12 +1,26 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, isKeyRepeat, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { OSC_SEQUENCE, stripAnsi } from "../_lib/ansi.ts";
+import { OSC_SEQUENCE, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer, isAssistantRow, isToolRow } from "../_lib/chat.ts";
+import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
+import {
+  ELLIPSIS,
+  GLYPH,
+  SEP,
+  SIZE_THRESHOLDS,
+  ink,
+  middleTruncate,
+  rightAlignSuffix,
+  sizeTone,
+  tildify,
+  type SizeThresholds,
+  type Tone,
+} from "../_lib/style.ts";
 
 /**
  * pi-traceline — collapse each tool call to one scannable trace line so the full arc of
@@ -27,17 +41,28 @@ import { compactCount } from "../_lib/fmt.ts";
  * one shaded slab per tool group. Multiline bash commands are flattened into the one
  * trace line with a dim ↵ marking each original break, so heredocs and inline scripts
  * keep their operative tail instead of collapsing to `$ python3 -c "`.
- * The ink follows an information hierarchy: shell plumbing (`&&`, `|`, `2>/dev/null`,
- * heredoc markers) is dimmed so command segments pop, and the boilerplate `(timeout Ns)`
- * suffix is dropped — the full invocation is one Ctrl+T away. Home-dir prefixes are
- * tildified, and over-long invocations are *middle*-truncated with a
- * dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
+ * The ink follows the family hierarchy (docs/design-language.md): shell plumbing (`&&`,
+ * `|`, `2>/dev/null`, heredoc markers) is dimmed so command segments pop, and the
+ * boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
+ * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
+ * a dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
  * operative end of a command — because that is where the discriminating information lives;
  * the cut snaps to a nearby `/` or space. Plain file reads additionally dim the directory
- * so the basename stands out. Once a result exists, a right-aligned dimmed `1.2k ch`
- * result-size suffix is reserved at the end. Spacing: one blank line before a tool group
- * (restoring the spacer pi drops), none between consecutive tools. One-shot click mode
- * toggles a clicked row only, without changing Pi's global tool expansion state.
+ * so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
+ * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
+ * balloons past the size thresholds, so "what flooded the context" pops out of the column.
+ * All ink is theme-derived (style.ts ink()), with raw-ANSI fallbacks before a theme exists.
+ *
+ * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
+ * whose `cd <dir> && ` preamble repeats the previous bash row's renders it as a dim `⋯`,
+ * giving the width back to the part of the command that differs; consecutive reads paging
+ * through one file collapse into a single `read path:1-200,201-400 · 2 calls` row; and an
+ * assistant message whose adjacent thinking blocks would print two collapsed `Thinking...`
+ * labels gets them coalesced into one.
+ *
+ * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
+ * between consecutive tools. One-shot click mode toggles a clicked row only, without
+ * changing Pi's global tool expansion state.
  *
  * Nothing in pi's node_modules is modified, so this survives `pi update`.
  */
@@ -66,28 +91,40 @@ type TracelineGlobal = typeof globalThis & {
   __tracelineClickOneShot?: boolean;
   __tracelineClickArmTimer?: ReturnType<typeof setTimeout>;
   __tracelineMouseReportingEnabled?: boolean;
+  __tracelineGetTheme?: () => Theme | undefined;
+  __tracelineAssistantPatchVersion?: number;
 };
 const g = globalThis as TracelineGlobal;
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
-const RED = "\x1b[31m";
-const GREEN = "\x1b[32m";
-const BLUE = "\x1b[34m";
-const MUTED_GREY = "\x1b[38;2;128;128;128m";
 const TOOL_GUTTER = "  ";
-const TOOL_BULLET = "›";
+const TOOL_BULLET = GLYPH.tool;
 const TOOL_AFTER_BULLET = " ";
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const ONE_LINE_ELLIPSIS = "\u2026";
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
-const TRACELINE_PATCH_VERSION = 11;
+const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
+const TRACELINE_PATCH_VERSION = 12;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
-const MIN_HEAD_COLS = 6;
-const TAIL_RATIO = 0.55;
-const SNAP_WINDOW = 8;
+const TRACELINE_ASSISTANT_PATCH_VERSION = 1;
+
+// --- theme-derived ink (design language §3) --------------------------------------------
+// The live Theme handle is captured at session_start; before that (and in unit tests
+// without one) ink() falls back to basic raw ANSI.
+
+function currentTheme(): Theme | undefined {
+  try {
+    return g.__tracelineGetTheme?.();
+  } catch {
+    return undefined;
+  }
+}
+
+function dim(text: string): string {
+  return ink(currentTheme(), "dim", text);
+}
 const MOUSE_REPORTING_ENABLE = "\x1b[?1000h\x1b[?1006h";
 const MOUSE_REPORTING_DISABLE = "\x1b[?1000l\x1b[?1006l";
 
@@ -364,23 +401,45 @@ function toolStatus(comp: any): ToolStatus {
   return "running";
 }
 
-function statusColor(comp: any): string {
+function statusTone(comp: any): Tone {
   const status = toolStatus(comp);
-  if (status === "error") return RED;
-  if (status === "success") return GREEN;
-  return BLUE;
+  if (status === "error") return "error";
+  if (status === "success") return "success";
+  return "running";
 }
 
-function hiddenToolPrefixColor(color: string): string {
-  return `${TOOL_GUTTER}${color}${TOOL_BULLET}${RESET}${TOOL_AFTER_BULLET}`;
+function toolPrefix(tone: Tone): string {
+  return `${TOOL_GUTTER}${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
 }
 
 function hiddenToolPrefix(comp: any): string {
-  return hiddenToolPrefixColor(statusColor(comp));
+  return toolPrefix(statusTone(comp));
 }
 
 function formatCharCount(value: number): string {
   return compactCount(Math.max(0, Math.floor(value)));
+}
+
+// Severity thresholds (design language §6): dim while healthy, warning/error when an
+// output balloons. Overridable via the family config convention
+// (~/.pi/agent/pi-traceline.json / <cwd>/.pi/pi-traceline.json).
+let sizeThresholds: SizeThresholds = SIZE_THRESHOLDS;
+
+function configureSizeThresholds(config: { sizeWarningChars?: unknown; sizeErrorChars?: unknown } | undefined): void {
+  const warning =
+    typeof config?.sizeWarningChars === "number" && config.sizeWarningChars > 0
+      ? Math.floor(config.sizeWarningChars)
+      : SIZE_THRESHOLDS.warning;
+  const error =
+    typeof config?.sizeErrorChars === "number" && config.sizeErrorChars > 0
+      ? Math.floor(config.sizeErrorChars)
+      : SIZE_THRESHOLDS.error;
+  sizeThresholds = { warning, error: Math.max(error, warning) };
+}
+
+function charSuffix(chars: number | undefined): string {
+  if (chars === undefined) return "";
+  return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
 }
 
 function resultTextCharCount(comp: any): number | undefined {
@@ -394,93 +453,11 @@ function resultTextCharCount(comp: any): number | undefined {
 }
 
 function resultCharSuffix(comp: any): string {
-  const chars = resultTextCharCount(comp);
-  return chars === undefined ? "" : `${MUTED_GREY}${formatCharCount(chars)} ch${RESET}`;
+  return charSuffix(resultTextCharCount(comp));
 }
 
-// Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
-// width (e.g. bash `cd /Users/me/... && ...` -> `cd ~/... && ...`). OSC sequences are
-// skipped: a read row's OSC 8 hyperlink carries a file:// URL containing the home path,
-// and tildifying *that* would corrupt the click target. The pattern is built once —
-// tildify runs for every visible row on every frame.
-const TILDIFY_PATTERN = (() => {
-  const home = homedir();
-  if (!home) return undefined;
-  return new RegExp(`${OSC_SEQUENCE.source}|${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g");
-})();
-
-function tildify(text: string): string {
-  if (!TILDIFY_PATTERN) return text;
-  return text.replace(TILDIFY_PATTERN, (match) => (match.startsWith("\x1b") ? match : "~"));
-}
-
-function isVisibleBoundary(ch: string): boolean {
-  return ch === "/" || ch === " ";
-}
-
-// ANSI-aware middle truncation that protects the *tail* of the line — the basename +
-// :line-range for a path, or the operative end of a command — because that is where the
-// information distinguishing one row from the next lives. The cut snaps to a nearby "/"
-// or space boundary, and the ellipsis is dimmed so it reads as a UI marker rather than as
-// part of the path/command. Falls back to tail truncation only when the width is too
-// small to keep both ends.
-function middleTruncate(line: string, width: number): string {
-  const maxWidth = Math.max(1, width);
-  if (visibleWidth(line) <= maxWidth) return line;
-
-  const vis = stripAnsi(line);
-  const visLen = vis.length;
-  const ellipsisWidth = visibleWidth(ONE_LINE_ELLIPSIS);
-  const budget = Math.max(1, maxWidth - ellipsisWidth); // reserve columns for the ellipsis
-
-  const maxTail = Math.min(budget - MIN_HEAD_COLS, Math.max(12, Math.floor(budget * TAIL_RATIO)));
-  if (maxTail < 1) return truncateToWidth(line, maxWidth, ONE_LINE_ELLIPSIS);
-
-  // Longest tail that fits `maxTail` and starts at a separator, so it reads as `.../seg`.
-  let tailStart = -1;
-  for (let i = Math.max(0, visLen - maxTail); i < visLen; i++) {
-    if (isVisibleBoundary(vis[i])) {
-      tailStart = i;
-      break;
-    }
-  }
-  if (tailStart < 0) tailStart = visLen - maxTail; // no boundary in range: keep the end
-
-  const dimEllipsis = `${MUTED_GREY}${ONE_LINE_ELLIPSIS}${RESET}`;
-  const tailRaw = line.slice(rawIndexAtVisibleIndex(line, tailStart));
-
-  let headEnd = budget - (visLen - tailStart);
-  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
-
-  // Snap the head back to a nearby boundary so the ellipsis lands on a clean edge: keep a
-  // trailing "/" on the head side, drop a trailing space. Search from the last kept char
-  // inward so keeping the "/" can never push the head past its budget.
-  for (let i = headEnd - 1; i >= Math.max(0, headEnd - SNAP_WINDOW); i--) {
-    if (isVisibleBoundary(vis[i])) {
-      headEnd = vis[i] === "/" ? i + 1 : i;
-      break;
-    }
-  }
-  headEnd = Math.min(headEnd, tailStart);
-  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
-
-  const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headEnd));
-  return `${headRaw}${RESET}${dimEllipsis}${tailRaw}`;
-}
-
-function fitOneLineAndSuffix(invocation: string, suffix: string, width: number): string {
-  const maxWidth = Math.max(1, width);
-  const invocationText = invocation.trimEnd();
-  if (!suffix) return middleTruncate(invocationText, maxWidth);
-
-  const suffixWidth = visibleWidth(suffix);
-  if (suffixWidth >= maxWidth) return truncateToWidth(suffix, maxWidth, ONE_LINE_ELLIPSIS);
-
-  const invocationWidth = Math.max(0, maxWidth - suffixWidth - 1);
-  const fittedInvocation = invocationWidth > 0 ? middleTruncate(invocationText, invocationWidth) : "";
-  const gapWidth = Math.max(1, maxWidth - visibleWidth(fittedInvocation) - suffixWidth);
-  return `${fittedInvocation}${" ".repeat(gapWidth)}${suffix}`;
-}
+// tildify / middleTruncate / rightAlignSuffix live in _lib/style.ts — traceline's rules,
+// promoted to family rules (design language §5).
 
 function displayPath(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -516,7 +493,7 @@ function flattenInvocationLines(lines: string[]): string | undefined {
     .filter((line) => stripAnsi(line).trim().length > 0)
     .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
   if (visible.length === 0) return undefined;
-  return visible.join(` ${MUTED_GREY}${LINE_BREAK_MARK}${RESET} `);
+  return visible.join(` ${dim(LINE_BREAK_MARK)} `);
 }
 
 function filterSgrParams(
@@ -565,48 +542,7 @@ function stripSgrForegrounds(text: string): string {
   });
 }
 
-function ansiEndIndex(line: string, i: number): number | undefined {
-  if (line[i] !== "\x1b") return undefined;
-  if (line[i + 1] === "[") {
-    const end = line.slice(i).search(/[A-Za-z~]/);
-    return end >= 0 ? i + end : undefined;
-  }
-  if (line[i + 1] === "]") {
-    const bel = line.indexOf("\x07", i + 2);
-    const st = line.indexOf("\x1b\\", i + 2);
-    const end = bel === -1 ? st : st === -1 ? bel : Math.min(bel, st);
-    return end >= 0 ? end + (line[end] === "\x1b" ? 1 : 0) : undefined;
-  }
-  return undefined;
-}
-
-function rawIndexAtVisibleIndex(line: string, target: number): number {
-  let visible = 0;
-  for (let i = 0; i < line.length; i++) {
-    const ansiEnd = ansiEndIndex(line, i);
-    if (ansiEnd !== undefined) {
-      i = ansiEnd;
-      continue;
-    }
-    if (visible === target) return i;
-    visible++;
-  }
-  return line.length;
-}
-
-function rawIndexBeforeVisibleIndex(line: string, target: number): number {
-  let visible = 0;
-  for (let i = 0; i < line.length; i++) {
-    if (visible === target) return i;
-    const ansiEnd = ansiEndIndex(line, i);
-    if (ansiEnd !== undefined) {
-      i = ansiEnd;
-      continue;
-    }
-    visible++;
-  }
-  return line.length;
-}
+// ansiEndIndex / rawIndexAtVisibleIndex / rawIndexBeforeVisibleIndex live in _lib/ansi.ts.
 
 function trimLeadingVisibleWhitespace(line: string): string {
   const visible = stripAnsi(line);
@@ -644,7 +580,7 @@ const SHELL_PLUMBING =
   / (&&|\|\||\||;|2>&1|[&12]?>>?\s?\/dev\/null|<<-?\s?'?[A-Za-z_][A-Za-z0-9_]*'?)(?= |$)/g;
 
 function dimShellPlumbing(line: string): string {
-  return line.replace(SHELL_PLUMBING, (_m, op: string) => ` ${MUTED_GREY}${op}${RESET}`);
+  return line.replace(SHELL_PLUMBING, (_m, op: string) => ` ${dim(op)}`);
 }
 
 function commandPrefixLength(comp: any, line: string): number {
@@ -672,7 +608,7 @@ function colourCommandPrefix(comp: any, line: string): string {
   const rawEnd = rawIndexBeforeVisibleIndex(trimmed, prefixLen);
   const prefix = stripSgrForegrounds(trimmed.slice(0, rawEnd));
   const rest = trimmed.slice(rawEnd);
-  return `${statusColor(comp)}${BOLD}${prefix}${BOLD_OFF}${RESET}${rest}`;
+  return `${ink(currentTheme(), statusTone(comp), `${BOLD}${prefix}${BOLD_OFF}`)}${rest}`;
 }
 
 // Prefer pi's own renderCall output for one-line mode. This borrows the native visual
@@ -721,7 +657,7 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
   const dir = tildePath.slice(0, lastSlash + 1);
   const base = tildePath.slice(lastSlash + 1);
   const range = lineRange(comp?.args);
-  return `${statusColor(comp)}${BOLD}read${BOLD_OFF}${RESET} ${MUTED_GREY}${dir}${RESET}${base}${MUTED_GREY}${range}${RESET}`;
+  return `${ink(currentTheme(), statusTone(comp), `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${dim(range)}`;
 }
 
 // The shaded tool surface, borrowed live from the row itself. pi keeps contentBox.bgFn
@@ -752,12 +688,135 @@ function oneLine(comp: any, width: number): string {
   const lineWidth = Math.max(1, width);
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
   const native = nativeInvocationLine(comp);
-  const base = (native && pathEmphasisLine(comp, native)) ?? native ?? `${statusColor(comp)}${fallbackInvocationLine(comp)}${RESET}`;
+  const base =
+    (native && pathEmphasisLine(comp, native)) ??
+    native ??
+    ink(currentTheme(), statusTone(comp), fallbackInvocationLine(comp));
   const tilded = tildify(base);
-  const invocation = toolLabel(comp?.toolName) === "bash" ? dimShellPlumbing(tilded) : tilded;
-  const fitted = fitOneLineAndSuffix(invocation, resultCharSuffix(comp), available);
-  const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ONE_LINE_ELLIPSIS);
+  let invocation = tilded;
+  if (toolLabel(comp?.toolName) === "bash") {
+    if (repeatsPreviousCdPreamble(comp)) invocation = elideCdPreamble(invocation);
+    invocation = dimShellPlumbing(invocation);
+  }
+  const fitted = rightAlignSuffix(invocation, resultCharSuffix(comp), available, currentTheme());
+  const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(comp);
+  return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
+}
+
+// --- repetition folding (issue #14, design language §9/traceline 3+5) -------------------
+
+// pi's bash tool is stateless per call, so agents working outside the session cwd re-`cd`
+// on every call — measured at 90% of bash rows in a live session. When a row's
+// `cd <dir> && ` preamble repeats the previous bash row's, the repeated head carries no
+// information and its ~half-row width starves middle truncation of the part that
+// *differs*; render it as a dim `⋯` instead.
+const CD_PREAMBLE = /^cd\s+("[^"]*"|'[^']*'|\S+)\s*&&\s/;
+
+function cdPreambleDir(comp: any): string | undefined {
+  if (toolLabel(comp?.toolName) !== "bash") return undefined;
+  const command = comp?.args?.command;
+  if (typeof command !== "string") return undefined;
+  return CD_PREAMBLE.exec(command)?.[1];
+}
+
+// The previous bash row within the same visual group: reads and other tools interleave
+// freely, but visible prose opens a new paragraph — a `⋯` must never point across one.
+function previousBashRow(comp: any): any | undefined {
+  const found = componentLocation(comp);
+  if (!found) return undefined;
+  for (let j = found.index - 1; j >= 0; j--) {
+    const prev = found.sibs[j];
+    if (isToolRow(prev)) {
+      if (toolLabel(prev?.toolName) === "bash") return prev;
+      continue;
+    }
+    if (isEmptyConnector(prev) || isCollapsedThinkingRow(prev)) continue;
+    return undefined;
+  }
+  return undefined;
+}
+
+function repeatsPreviousCdPreamble(comp: any): boolean {
+  const dir = cdPreambleDir(comp);
+  if (dir === undefined) return false;
+  return cdPreambleDir(previousBashRow(comp)) === dir;
+}
+
+function elideCdPreamble(line: string): string {
+  const visible = stripAnsi(line);
+  if (!visible.startsWith("$ cd ")) return line;
+  const ampIndex = visible.indexOf(" && ");
+  if (ampIndex < 0) return line;
+  const head = line.slice(0, rawIndexAtVisibleIndex(line, 2)); // `$ ` with its styling
+  const rest = line.slice(rawIndexAtVisibleIndex(line, ampIndex + 1)); // from `&& …`
+  return `${head}${dim(PREAMBLE_MARK)} ${rest}`;
+}
+
+// Consecutive reads paging through one file (read → truncation notice → read with offset)
+// differ only in the range; fold the run into one row —
+// `read path:1-200,201-400 · 2 calls` with the combined result size — carried by the
+// run's first row while the later rows render nothing. Runs are broken by anything
+// visible between the reads (prose, a collapsed Thinking… line, another tool), so the
+// fold never reorders what the transcript shows; clicking the folded row open restores
+// the individual rows.
+function readPath(comp: any): string | undefined {
+  if (toolLabel(comp?.toolName) !== "read") return undefined;
+  const path = comp?.args?.path;
+  return typeof path === "string" && path.length > 0 ? path : undefined;
+}
+
+function readRun(comp: any): { rows: any[]; index: number } | undefined {
+  const path = readPath(comp);
+  if (path === undefined) return undefined;
+  const found = componentLocation(comp);
+  if (!found) return undefined;
+  const { sibs, index } = found;
+  const rows: any[] = [comp];
+  let selfIndex = 0;
+  for (let j = index - 1; j >= 0; j--) {
+    const prev = sibs[j];
+    if (isEmptyConnector(prev)) continue;
+    if (readPath(prev) !== path) break;
+    rows.unshift(prev);
+    selfIndex++;
+  }
+  for (let j = index + 1; j < sibs.length; j++) {
+    const next = sibs[j];
+    if (isEmptyConnector(next)) continue;
+    if (readPath(next) !== path) break;
+    rows.push(next);
+  }
+  return rows.length > 1 ? { rows, index: selfIndex } : undefined;
+}
+
+function foldedReadLine(rows: any[], width: number): string {
+  const lineWidth = Math.max(1, width);
+  const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
+  const theme = currentTheme();
+  const last = rows[rows.length - 1];
+  const tone = statusTone(last);
+  const path = tildify(String(rows[0]?.args?.path ?? ""));
+  const lastSlash = path.lastIndexOf("/");
+  const dir = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : "";
+  const base = lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
+  const ranges = rows
+    .map((row) => lineRange(row?.args).slice(1))
+    .filter(Boolean)
+    .join(",");
+  const body = `${ink(theme, tone, `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${dim(ranges ? `:${ranges}` : "")}`;
+  let total: number | undefined;
+  for (const row of rows) {
+    const chars = resultTextCharCount(row);
+    if (chars !== undefined) total = (total ?? 0) + chars;
+  }
+  // Call count rides the right-aligned suffix (fact order: what · how many · how big),
+  // so middle truncation protects the discriminating basename+ranges tail of the body.
+  const calls = `${rows.length} calls`;
+  const suffix = total === undefined ? dim(calls) : `${dim(`${calls}${SEP}`)}${charSuffix(total)}`;
+  const fitted = rightAlignSuffix(body, suffix, available, theme);
+  const row = truncateToWidth(`${toolPrefix(tone)}${fitted}`, lineWidth, ELLIPSIS);
+  const bgFn = rowBackground(last);
   return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
 }
 
@@ -817,6 +876,77 @@ function leadingBlank(comp: any): boolean {
   return true;
 }
 
+// One row's worth of one-line output: folded-run handling plus the group-spacing rule.
+// Shared by the prototype patch and the test suites.
+function renderTraceRow(comp: any, width: number): string[] {
+  const run = readRun(comp);
+  if (run && !run.rows.some((row) => toolIsIndividuallyExpanded(row))) {
+    if (run.index > 0) return []; // a later page: the run's first row carries the fold
+    const line = foldedReadLine(run.rows, width);
+    return leadingBlank(comp) ? ["", line] : [line];
+  }
+  const line = oneLine(comp, width);
+  return leadingBlank(comp) ? ["", line] : [line];
+}
+
+// --- doubled Thinking… labels (issue #14, pi-native rendering) --------------------------
+
+// pi renders the collapsed thinking label once per thinking *block*, not per message, so
+// a message with adjacent thinking blocks prints consecutive identical `Thinking...`
+// lines that carry no more information than one. Coalesce them at render time. Dropped
+// lines can carry OSC 133 zone marks (pi marks the message's first and last line), so
+// any control sequences on dropped lines are transplanted onto the last kept line.
+function oscSequences(line: string): string {
+  return (line.match(OSC_SEQUENCE) ?? []).join("");
+}
+
+function dedupeThinkingLabels(comp: any, lines: string[]): string[] {
+  const label =
+    typeof comp?.hiddenThinkingLabel === "string" && comp.hiddenThinkingLabel.length > 0
+      ? comp.hiddenThinkingLabel
+      : "Thinking...";
+  const out: string[] = [];
+  let lastLabelAt = -1; // index in `out` of the last kept label, with only blanks after it
+  let salvaged = "";
+  for (const line of lines) {
+    const visible = stripAnsi(line).trim();
+    if (visible === label) {
+      if (lastLabelAt >= 0) {
+        while (out.length > lastLabelAt + 1) salvaged += oscSequences(out.pop()!);
+        salvaged += oscSequences(line);
+        continue;
+      }
+      lastLabelAt = out.length;
+      out.push(line);
+      continue;
+    }
+    if (visible.length > 0) lastLabelAt = -1;
+    out.push(line);
+  }
+  if (salvaged && out.length > 0) out[out.length - 1] = `${salvaged}${out[out.length - 1]}`;
+  return out;
+}
+
+function patchAssistantRowPrototype(proto: any): void {
+  if (!proto || typeof proto.render !== "function") return;
+  if (proto.__tracelineAssistantPatchVersion === TRACELINE_ASSISTANT_PATCH_VERSION) return;
+  const original = proto.__tracelineOriginalAssistantRender ?? proto.render;
+  proto.__tracelineOriginalAssistantRender = original;
+  proto.render = function (width: number) {
+    const lines = original.call(this, width);
+    try {
+      if (this.hideThinkingBlock === true && Array.isArray(lines)) {
+        return dedupeThinkingLabels(this, lines);
+      }
+    } catch {
+      /* never let pi-traceline break a render */
+    }
+    return lines;
+  };
+  proto.__tracelineAssistantPatchVersion = TRACELINE_ASSISTANT_PATCH_VERSION;
+  g.__tracelineAssistantPatchVersion = TRACELINE_ASSISTANT_PATCH_VERSION;
+}
+
 // --- prototype patch (shared by every current + future tool row, applied once) --------
 
 function currentPatchInstalled(): boolean {
@@ -844,8 +974,7 @@ function patchToolRowPrototype(proto: any): void {
       return original.call(this, width);
     }
     try {
-      const line = oneLine(this, width);
-      return leadingBlank(this) ? ["", line] : [line];
+      return renderTraceRow(this, width);
     } catch {
       return original.call(this, width); // never let pi-traceline break a render
     }
@@ -854,12 +983,23 @@ function patchToolRowPrototype(proto: any): void {
   g.__tracelinePatchVersion = TRACELINE_PATCH_VERSION;
 }
 
+function assistantPatchInstalled(): boolean {
+  return g.__tracelineAssistantPatchVersion === TRACELINE_ASSISTANT_PATCH_VERSION;
+}
+
 function tryPatch(): void {
-  if (currentPatchInstalled() || !g.__tracelineTui) return;
+  if ((currentPatchInstalled() && assistantPatchInstalled()) || !g.__tracelineTui) return;
   try {
     const sibs = chatChildren();
-    const row = Array.isArray(sibs) ? sibs.find(isToolRow) : undefined;
-    if (row) patchToolRowPrototype(Object.getPrototypeOf(row));
+    if (!Array.isArray(sibs)) return;
+    if (!currentPatchInstalled()) {
+      const row = sibs.find(isToolRow);
+      if (row) patchToolRowPrototype(Object.getPrototypeOf(row));
+    }
+    if (!assistantPatchInstalled()) {
+      const assistant = sibs.find(isAssistantRow);
+      if (assistant) patchAssistantRowPrototype(Object.getPrototypeOf(assistant));
+    }
   } catch {
     /* never let pi-traceline break a render */
   }
@@ -879,7 +1019,7 @@ export const internals = {
   rawIndexAtVisibleIndex,
   rawIndexBeforeVisibleIndex,
   middleTruncate,
-  fitOneLineAndSuffix,
+  rightAlignSuffix,
   tildify,
   stripTimeoutSuffix,
   dimShellPlumbing,
@@ -888,11 +1028,22 @@ export const internals = {
   shadeRow,
   // row grammar
   formatCharCount,
+  charSuffix,
+  configureSizeThresholds,
   lineRange,
   toolStatus,
   fallbackInvocationLine,
   oneLine,
   leadingBlank,
+  renderTraceRow,
+  // repetition folding + thinking-label dedupe (issue #14)
+  cdPreambleDir,
+  repeatsPreviousCdPreamble,
+  elideCdPreamble,
+  readRun,
+  foldedReadLine,
+  dedupeThinkingLabels,
+  patchAssistantRowPrototype,
   // mouse / click state machine
   parseSgrMouse,
   isLeftMousePress,
@@ -938,6 +1089,21 @@ export default function piTraceline(pi: ExtensionAPI) {
     // Capture the real TUI (passed synchronously to the widget factory), then patch only
     // extension-visible seams: render for hit-map capture, requestRender for delayed
     // tool-row patching, and raw terminal input for SGR mouse click events.
+    g.__tracelineGetTheme = () => {
+      try {
+        return (ctx.ui as any).theme;
+      } catch {
+        return undefined;
+      }
+    };
+    configureSizeThresholds(
+      Object.assign(
+        {},
+        ...configPaths("pi-traceline", process.cwd()).map(
+          (path) => readJsonConfig<Record<string, unknown>>(path) ?? {},
+        ),
+      ),
+    );
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
       const t = tui as any;
       g.__tracelineTui = t;

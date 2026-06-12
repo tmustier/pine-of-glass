@@ -10,8 +10,10 @@ import { internals } from "../../extensions/pi-traceline/index.ts";
 
 const {
   oneLine,
-  fitOneLineAndSuffix,
+  rightAlignSuffix,
   formatCharCount,
+  charSuffix,
+  configureSizeThresholds,
   lineRange,
   tildify,
   toolStatus,
@@ -24,9 +26,17 @@ const {
   flattenInvocationLines,
   rowBackground,
   shadeRow,
+  renderTraceRow,
+  repeatsPreviousCdPreamble,
+  elideCdPreamble,
+  readRun,
+  dedupeThinkingLabels,
 } = internals;
 
 const g = globalThis as Record<string, unknown>;
+
+// Without a theme handle, all family ink falls back to basic raw ANSI (style.ts):
+const DIM = "\x1b[90m";
 
 type SyntheticComp = Record<string, unknown>;
 
@@ -45,6 +55,8 @@ function toolComp(overrides: SyntheticComp = {}): SyntheticComp {
 
 beforeEach(() => {
   g.__tracelineChat = undefined;
+  g.__tracelineGetTheme = undefined;
+  configureSizeThresholds(undefined);
 });
 
 test("row grammar units", () => {
@@ -73,7 +85,7 @@ test("suffix fitting: right-aligned, never overlapping, suffix wins when starved
   const invocation = "read ~/projects/demo/some/deeply/nested/path/file.ts:1-40";
   const suffix = "9.9k ch";
   for (let width = 1; width <= 120; width++) {
-    const out = fitOneLineAndSuffix(invocation, suffix, width);
+    const out = rightAlignSuffix(invocation, suffix, width);
     assert.ok(visibleWidth(out) <= width, `width ${width}: ${visibleWidth(out)} cols`);
     if (width > suffix.length + 2) {
       assert.ok(stripAnsi(out).endsWith(suffix), `width ${width} must keep the suffix`);
@@ -89,7 +101,38 @@ test("one-line read row: emphasized path, range kept, suffix right-aligned", () 
   assert.ok(visible.endsWith("1.4k ch"), visible);
   // Emphasis dims the directory separately from the basename: the raw line must restyle
   // the directory span, not just pass the native text through.
-  assert.ok(line.includes("\x1b[38;2;128;128;128m~/projects/demo/\x1b[0m"), "directory must be dimmed");
+  assert.ok(line.includes(`${DIM}~/projects/demo/\x1b[0m`), "directory must be dimmed");
+});
+
+test("result-size suffix severity: dim while healthy, warning ≥10k ch, error ≥50k ch", () => {
+  assert.ok(charSuffix(1_437).startsWith(DIM), "healthy sizes stay dim");
+  assert.ok(charSuffix(10_000).startsWith("\x1b[33m"), "≥10k ch must tint warning");
+  assert.ok(charSuffix(50_000).startsWith("\x1b[31m"), "≥50k ch must tint error");
+  assert.equal(charSuffix(undefined), "");
+  assert.equal(stripAnsi(charSuffix(50_000)), "50.0k ch");
+
+  // Thresholds follow the family config convention (~/.pi/agent/pi-traceline.json).
+  configureSizeThresholds({ sizeWarningChars: 100, sizeErrorChars: 1_000 });
+  assert.ok(charSuffix(500).startsWith("\x1b[33m"));
+  assert.ok(charSuffix(2_000).startsWith("\x1b[31m"));
+  configureSizeThresholds(undefined);
+  assert.ok(charSuffix(500).startsWith(DIM));
+});
+
+test("ink derives from the theme when one is active", () => {
+  // A theme whose palette is distinguishable from every raw-ANSI fallback: 256-colour
+  // codes per role (real escape sequences, so width math stays honest).
+  const codes: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };
+  g.__tracelineGetTheme = () => ({
+    fg: (color: string, text: string) => `\x1b[38;5;${codes[color] ?? 250}m${text}\x1b[39m`,
+    bold: (text: string) => text,
+    bg: (_color: string, text: string) => text,
+  });
+  const line = oneLine(toolComp(), 80);
+  assert.ok(line.includes("\x1b[38;5;245m~/projects/demo/"), `directory must use theme dim: ${JSON.stringify(line)}`);
+  assert.ok(line.includes("\x1b[38;5;41m"), "status ink must use the theme success role");
+  assert.ok(line.includes("\x1b[38;5;245m1.4k ch"), "healthy suffix must use theme dim");
+  assert.ok(!line.includes(DIM), "no raw fallback grey may leak while a theme is active");
 });
 
 test("error status colours the bullet red; running is blue; success green", () => {
@@ -119,12 +162,12 @@ test("bash rows: timeout boilerplate stripped, shell plumbing dimmed, segments b
   const visible = stripAnsi(line);
   assert.ok(!visible.includes("timeout"), `timeout boilerplate must be stripped: ${visible}`);
   // Plumbing is dimmed; the command segments around it keep full brightness.
-  assert.ok(line.includes("\x1b[38;2;128;128;128m&&\x1b[0m"), "&& must be dimmed");
-  assert.ok(line.includes("\x1b[38;2;128;128;128m2>/dev/null\x1b[0m"), "2>/dev/null must be dimmed");
-  assert.ok(line.includes("\x1b[38;2;128;128;128m|\x1b[0m"), "pipe must be dimmed");
+  assert.ok(line.includes(`${DIM}&&\x1b[0m`), "&& must be dimmed");
+  assert.ok(line.includes(`${DIM}2>/dev/null\x1b[0m`), "2>/dev/null must be dimmed");
+  assert.ok(line.includes(`${DIM}|\x1b[0m`), "pipe must be dimmed");
 
   // Unit edges: heredoc markers dim; quoted near-misses and SGR params stay untouched.
-  assert.ok(dimShellPlumbing("cat <<'EOF'").includes("\x1b[38;2;128;128;128m<<'EOF'\x1b[0m"));
+  assert.ok(dimShellPlumbing("cat <<'EOF'").includes(`${DIM}<<'EOF'\x1b[0m`));
   assert.equal(dimShellPlumbing("echo 'a&&b'"), "echo 'a&&b'", "unspaced operators are left alone");
   assert.equal(stripTimeoutSuffix("$ ls (timeout 10s)"), "$ ls\x1b[0m");
   assert.equal(stripTimeoutSuffix("$ ls"), "$ ls");
@@ -150,7 +193,7 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   assert.ok(visible.startsWith('  › $ python3 -c "'), visible);
   assert.ok(visible.includes("capture-pane"), `operative tail must survive: ${visible}`);
   assert.ok(visible.includes("\u21b5"), `original line breaks must be marked: ${visible}`);
-  assert.ok(line.includes("\x1b[38;2;128;128;128m\u21b5\x1b[0m"), "break marks must be dimmed");
+  assert.ok(line.includes(`${DIM}\u21b5\x1b[0m`), "break marks must be dimmed");
   assert.ok(!visible.includes("timeout"), `timeout boilerplate stays stripped after flatten: ${visible}`);
 
   // Narrow widths middle-truncate but still keep both ends of the flattened command.
@@ -198,7 +241,7 @@ test("hyperlinked read rows (OSC 8, ST-terminated): text survives stripAnsi, URL
   const comp = toolComp({ callRendererComponent: { render: () => [linked] } });
   const line = oneLine(comp, 80);
   assert.ok(
-    line.includes("\x1b[38;2;128;128;128m~/projects/demo/\x1b[0m"),
+    line.includes(`${DIM}~/projects/demo/\x1b[0m`),
     `path emphasis must apply on hyperlink terminals: ${JSON.stringify(line)}`,
   );
 });
