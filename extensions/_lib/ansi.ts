@@ -12,3 +12,49 @@ export function stripAnsi(text: string): string {
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(OSC_SEQUENCE, "");
 }
+
+/** Index of the last char of the escape sequence starting at `i`, or undefined. */
+export function ansiEndIndex(line: string, i: number): number | undefined {
+  if (line[i] !== "\x1b") return undefined;
+  if (line[i + 1] === "[") {
+    const end = line.slice(i).search(/[A-Za-z~]/);
+    return end >= 0 ? i + end : undefined;
+  }
+  if (line[i + 1] === "]") {
+    const bel = line.indexOf("\x07", i + 2);
+    const st = line.indexOf("\x1b\\", i + 2);
+    const end = bel === -1 ? st : st === -1 ? bel : Math.min(bel, st);
+    return end >= 0 ? end + (line[end] === "\x1b" ? 1 : 0) : undefined;
+  }
+  return undefined;
+}
+
+/** Raw string index of the visible character at visible index `target` (escape-aware). */
+export function rawIndexAtVisibleIndex(line: string, target: number): number {
+  let visible = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ansiEnd = ansiEndIndex(line, i);
+    if (ansiEnd !== undefined) {
+      i = ansiEnd;
+      continue;
+    }
+    if (visible === target) return i;
+    visible++;
+  }
+  return line.length;
+}
+
+/** Like rawIndexAtVisibleIndex, but lands *before* any escapes preceding the char. */
+export function rawIndexBeforeVisibleIndex(line: string, target: number): number {
+  let visible = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (visible === target) return i;
+    const ansiEnd = ansiEndIndex(line, i);
+    if (ansiEnd !== undefined) {
+      i = ansiEnd;
+      continue;
+    }
+    visible++;
+  }
+  return line.length;
+}

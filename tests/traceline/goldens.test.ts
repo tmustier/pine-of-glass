@@ -1,0 +1,109 @@
+// Visual regression net for the one-line trace grammar (design language §9/traceline):
+// a realistic scripted sequence — repeated cd preambles, a paginated read run, healthy
+// and ballooned outputs, a flattened multiline command — rendered at 80 and 120 columns.
+// Colour is not under test (see docs/testing.md); structure, alignment, folding, and
+// wording are. Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
+import { test, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { homedir } from "node:os";
+
+import { internals } from "../../extensions/pi-traceline/index.ts";
+import { expectGolden } from "../helpers.ts";
+
+const { renderTraceRow, stripAnsi, isToolRow } = internals;
+
+const g = globalThis as Record<string, unknown>;
+
+function bash(command: string, options: { rendered?: string[]; chars?: number; error?: boolean; running?: boolean } = {}) {
+  return {
+    toolName: "bash",
+    args: { command },
+    result: options.running
+      ? undefined
+      : { content: [{ type: "text", text: "x".repeat(options.chars ?? 200) }], isError: options.error === true },
+    isPartial: options.running === true,
+    render: () => [],
+    setExpanded: () => {},
+    callRendererComponent: { render: () => options.rendered ?? [`$ ${command} (timeout 30s)`] },
+  };
+}
+
+function read(path: string, offset: number, limit: number, chars: number) {
+  return {
+    toolName: "read",
+    args: { path, offset, limit },
+    result: { content: [{ type: "text", text: "x".repeat(chars) }], isError: false },
+    isPartial: false,
+    render: () => [],
+    setExpanded: () => {},
+    callRendererComponent: { render: () => [`read ${path}:${offset}-${offset + limit - 1}`] },
+  };
+}
+
+function prose(text: string) {
+  return {
+    setHideThinkingBlock: () => {},
+    hideThinkingBlock: false,
+    lastMessage: { content: [{ type: "text", text }] },
+    __prose: text,
+  };
+}
+
+function thinking() {
+  return {
+    setHideThinkingBlock: () => {},
+    hideThinkingBlock: true,
+    lastMessage: { content: [{ type: "thinking", thinking: "..." }] },
+    __thinking: true,
+  };
+}
+
+beforeEach(() => {
+  g.__tracelineChat = undefined;
+  g.__tracelineGetTheme = undefined;
+});
+
+test("one-line trace goldens at 80 and 120 columns", () => {
+  const repo = `${homedir()}/projects/pine-of-glass`;
+  const children = [
+    prose("Let me look at the failing suite."),
+    bash(`cd ${repo} && npm test 2>/dev/null | tail -5`, { chars: 1_437 }),
+    thinking(),
+    bash(`cd ${repo} && npm run typecheck`, { chars: 14_200 }),
+    read(`${repo}/extensions/pi-cachemire/index.ts`, 1, 200, 18_400),
+    read(`${repo}/extensions/pi-cachemire/index.ts`, 201, 200, 18_400),
+    read(`${repo}/extensions/pi-cachemire/index.ts`, 401, 200, 14_300),
+    bash(`cd ${repo} && rm -f /tmp/pog-scratch.txt`, { chars: 0 }),
+    prose("The typecheck output looks wrong — checking the runner script."),
+    bash("python3 -c '...'", {
+      rendered: ["$ python3 -c '", "  import json", "  print(json.dumps(cfg))", "  ' | tail -2 (timeout 70s)"],
+      chars: 56_300,
+      error: true,
+    }),
+    bash("git status --short", { running: true }),
+  ];
+  g.__tracelineChat = { children };
+
+  const renderAt = (width: number): string => {
+    const lines: string[] = [];
+    for (const child of children) {
+      if (isToolRow(child)) {
+        for (const line of renderTraceRow(child, width)) lines.push(stripAnsi(line));
+        continue;
+      }
+      const marker = (child as { __prose?: string; __thinking?: boolean }).__prose ?? "Thinking...";
+      lines.push("", marker);
+    }
+    return `${lines.join("\n")}\n`;
+  };
+
+  expectGolden("traceline-rows-80.txt", renderAt(80));
+  expectGolden("traceline-rows-120.txt", renderAt(120));
+
+  // The golden never exceeds its width budget.
+  for (const width of [80, 120]) {
+    for (const line of renderAt(width).split("\n")) {
+      assert.ok(line.length <= width, `line exceeds ${width} cols: ${JSON.stringify(line)}`);
+    }
+  }
+});
