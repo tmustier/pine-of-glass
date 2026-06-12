@@ -13,11 +13,11 @@ When tool rows are collapsed, each one renders as a single line:
 ```
 › read resource .pi/agent/AGENTS.md:1-20                 1.4k ch
 › [skill] google-workspace-stack:1-20                    1.0k ch
-› [skill] tmux:1-20                                       912 ch
+› [skill] tmux:1-20                                      0.9k ch
 › subagent list                                          1.1k ch
-› subagent delegate                                       131 ch
-› write /tmp/pi-extension-test-...-elephant.txt            85 ch
-› $ rm /tmp/pi-extension-test-...-elephant.txt ...          0 ch
+› subagent delegate                                      0.1k ch
+› write /tmp/pi-extension-test-...-elephant.txt          0.1k ch
+› $ rm /tmp/pi-extension-test-...-elephant.txt ...       0.0k ch
 ```
 
 - **The arc of the turn** - every tool call in order, one line each, so you see the path Pi took.
@@ -37,7 +37,7 @@ Each trace line sits on Pi's own status-tinted tool background — the same shad
 Bash commands keep their real newlines — heredocs, inline `python3 -c` scripts, chained `tmux` pipelines. Taking only the first rendered line collapsed them to an uninformative prefix like `$ python3 -c "` (issue #10). Instead, the whole command is flattened into the one trace line with a dim `↵` marking each original break, and middle truncation then keeps both the head and the *operative tail* — the checks at the end of a pipeline, not just its preamble:
 
 ```
-› $ python3 -c " ↵ import json ↵ p='~/.pi/agent/… -p -t pog-th | grep -E "cache|fable" | tail -4   257 ch
+› $ python3 -c " ↵ import json ↵ p='~/.pi/agent/… -p -t pog-th | grep -E "cache|fable" | tail -4  0.3k ch
 ```
 
 ### Reading the end of the line
@@ -51,7 +51,7 @@ The discriminating part of a row usually lives at the **tail** — the filename 
 ```
 ›  read ~/projects/pine-of-glass/…/pi-traceline/README.md:1-300         3.8k ch
 ›  read ~/projects/pine-of-glass/…/pi-traceline/index.ts:1-200         18.5k ch
-›  $ cd ~/projects/pine-of-glass && rm -f docs/img/…-native.png            0 ch
+›  $ cd ~/projects/pine-of-glass && rm -f docs/img/…-native.png         0.0k ch
 ```
 
 ## Install

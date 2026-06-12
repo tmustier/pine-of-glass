@@ -48,10 +48,11 @@ beforeEach(() => {
 });
 
 test("row grammar units", () => {
-  // Family number grammar: raw integers below 1000, one-decimal k above.
-  assert.equal(formatCharCount(0), "0");
-  assert.equal(formatCharCount(49), "49");
-  assert.equal(formatCharCount(412), "412");
+  // Family number grammar (design language §4): one unit everywhere — fixed
+  // one-decimal k so suffixes compare down the column; raw integers never appear.
+  assert.equal(formatCharCount(0), "0.0k");
+  assert.equal(formatCharCount(49), "0.0k");
+  assert.equal(formatCharCount(412), "0.4k");
   assert.equal(formatCharCount(1437), "1.4k");
   assert.equal(formatCharCount(10_000), "10.0k");
   assert.equal(lineRange({ offset: 1, limit: 20 }), ":1-20");

@@ -139,7 +139,7 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   const line = traceline.oneLine(comp as never, 80);
   const visible = traceline.stripAnsi(line);
   assert.ok(visible.includes("read"), `one-line render lost the invocation: ${JSON.stringify(visible)}`);
-  assert.ok(/\b11 ch$/.test(visible.trimEnd()), `result-size suffix missing: ${JSON.stringify(visible)}`);
+  assert.ok(/\b0\.0k ch$/.test(visible.trimEnd()), `result-size suffix missing: ${JSON.stringify(visible)}`);
 
   // Error path drives the red status colour.
   comp.updateResult({ content: [{ type: "text", text: "boom" }], isError: true }, false);

@@ -2,13 +2,13 @@
 [Context Estimator] summary → compact → expanded
   <expand-key>: cycle view · model openai-codex/gpt-5.5 · OpenAI-Codex heuristic
 
-  ▸ Runtime system prompt      ~0.1k tokens (201 ch ÷ 4)
+  ▸ Runtime system prompt      ~0.1k tokens (0.2k ch ÷ 4)
 
-  ▸ Global AGENTS.md           ~0.0k tokens (64 ch ÷ 4)
+  ▸ Global AGENTS.md           ~0.0k tokens (0.1k ch ÷ 4)
 
-  ▸ ~/projects/demo/AGENTS.md  ~0.0k tokens (52 ch ÷ 4)
+  ▸ ~/projects/demo/AGENTS.md  ~0.0k tokens (0.1k ch ÷ 4)
 
-  ▸ Skill frontmatter (3)      ~0.2k tokens (743 ch ÷ 4)
+  ▸ Skill frontmatter (3)      ~0.2k tokens (0.7k ch ÷ 4)
     alpha-skill                ~0.1k  Handles A & B cases with a long description so it sorts first…
     beta-skill                 ~0.0k  It's the medium one.
     gamma                      ~0.0k  Tiny.

@@ -43,7 +43,7 @@ test("session savings aggregate only over priced calls", () => {
 
 test("formatting primitives", () => {
   assert.equal(formatTokensK(940_100), "940.1k");
-  assert.equal(formatTokensK(312), "312");
+  assert.equal(formatTokensK(312), "0.3k"); // one unit everywhere — design language §4
   assert.equal(formatUsd(0.523), "$0.52");
   assert.equal(formatUsd(0.0523), "$0.052");
   assert.equal(formatDuration(41_000), "41s");
@@ -294,7 +294,7 @@ test("ledger view: rows, totals, and the savings line", () => {
   ];
   const lines = renderLedger(records, { providerLabel: "anthropic", window: CONTRACT_5M, modelLabel: "anthropic/claude-opus-4-8" });
   assert.match(lines[0]!, /Cachemire — cache & loop ledger\s+anthropic · 5m TTL · anthropic\/claude-opus-4-8/);
-  assert.match(lines[2]!, /^\s+1\s+—\s+12\.1k\s+0\s+138\.2k\s+400\s+\$0\.55\s+○ cold start$/);
+  assert.match(lines[2]!, /^\s+1\s+—\s+12\.1k\s+0\.0k\s+138\.2k\s+0\.4k\s+\$0\.55\s+○ cold start$/);
   assert.match(lines[3]!, /14s.*150\.3k.*● hit$/);
   assert.match(lines[4]!, /totals: 2 calls · input 13\.3k · read 150\.3k · wrote 140\.0k · out 1\.5k · \$0\.59/);
   assert.match(lines[5]!, /caching saved ~\$2\.37 vs uncached \$2\.96 \(−80%\) · API-priced; notional on subscription/);
