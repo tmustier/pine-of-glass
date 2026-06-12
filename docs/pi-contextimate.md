@@ -2,7 +2,7 @@
 
 ## User-facing goal
 
-`pi-contextimate` shows a startup `[Context Estimator]` panel that explains what is filling the model context window, broken down into the pieces a human can act on:
+`pi-contextimate` shows a startup `[Contextimate]` panel that explains what is filling the model context window, broken down into the pieces a human can act on:
 
 - system prompt / harness instructions
 - AGENTS.md context files
@@ -10,7 +10,7 @@
 - active tool definitions
 - active-branch session material: tool outputs, visible messages/tool calls, and residual other/reasoning
 
-The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. In Pi's startup resource list, `[Context Estimator]` is inserted after the native startup resource sections, leaving Pi's default `[Context]`, `[Skills]`, `[Prompts]`, and `[Extensions]` order untouched. `Ctrl+O` cycles `summary → compact → expanded` through Pi's native expand/collapse path. `Ctrl+T` belongs to Pi's thinking-block visibility toggle; because that path rebuilds the chat transcript, the estimator keeps a zero-line watchdog mounted to reinsert the startup block if a rebuild drops it.
+The output is an inspector, not a billing ledger. The section rows should be close enough to explain why a session is large and which component is responsible. In Pi's startup resource list, `[Contextimate]` is inserted after the native startup resource sections, leaving Pi's default `[Context]`, `[Skills]`, `[Prompts]`, and `[Extensions]` order untouched. `Ctrl+O` cycles `summary → compact → expanded` through Pi's native expand/collapse path. `Ctrl+T` belongs to Pi's thinking-block visibility toggle; because that path rebuilds the chat transcript, the estimator keeps a zero-line watchdog mounted to reinsert the startup block if a rebuild drops it.
 
 - **Summary** — one row per category (system prompt, context files, skill frontmatter, tools, session) with its token estimate. The skills row is labelled `Skill frontmatter` because it counts only the always-loaded skill index (name + description + location per skill), not the skill bodies, which are read on demand.
 - **Compact** — a scan view: one aligned line per skill and per tool (name · estimated tokens · short description), sorted by estimated tokens. The counting method/provenance is shown once on each category header, not repeated per row. Loaded-but-inactive tools appear as dim rows with `-` for tokens and `(inactive)` at the start of the description.
@@ -123,10 +123,9 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 
 - Pick denominators from the active model/provider, so `/model` or Ctrl+P changes estimates immediately.
 - Keep built-in provider defaults in one auditable table in `extensions/pi-contextimate/index.ts` (`BUILT_IN_HEURISTIC_RULES`).
-- Keep the header lightweight; show accounting provenance on each row instead of a global accounting line.
+- Methodology appears once, in the panel header's dim hint line (`counts ch ÷ 2.6 (Claude 4.7+ heuristic)`, plus `session ÷ …` when it deviates) — see `docs/design-language.md` §5. Summary/compact data rows carry only the raw size (`(10.0k ch)`).
 - Unknown providers fall back to `chars / 4`.
-- Text rows show their denominator inline using the family number grammar, e.g. `~3k tokens (10.0k ch ÷ 4)`.
-- The aggregate `Tools` row shows the provider-shaped numerator and estimator inline, e.g. `~5k tokens (47.9k ch · OpenAI formula · schema text ÷ 6.6)` or `~14k tokens (48.2k ch ÷ 2.6 · Anthropic tool payload)`.
+- Expanded mode is the audit view: its section headers keep the full per-section method inline, e.g. `47.9k ch · OpenAI formula · schema text ÷ 6.6` or `48.2k ch ÷ 2.6 · Anthropic tool payload`.
 - Individual tool detail rows use that tool's own provider-shaped/minified payload size (or OpenAI formula subtotal) rather than repeating the aggregate payload character count.
 - For OpenAI-style local formula rows, the minified payload character count is a size cue only; it is **not** divided by 6.6. The formula uses fixed constants plus name/description/property text fragments estimated with `chars/6.6`.
 - Compact/expanded modes add method lines under `Tools`, including the formula/provenance for OpenAI-style local estimates, so the UI does not depend on clickable terminal links for calculation backup.
@@ -134,8 +133,8 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 - Tool numerator character counts must use minified provider-shaped JSON, not pretty JSON.
 - Tool sections must never use pretty-printed/debug JSON length as the count source.
 - Keep expanded mode readable and structural: show per-skill/per-tool estimate rows, sources, parameter keys, and short guidance summaries; do not dump the full system prompt or full tool schemas by default.
-- Show Pi's current context usage separately as `Total request` after a response exists.
-- Render token counts in `k` units, with one decimal below `1k` and whole-`k` values at/above `1k` (`~0.1k tokens`, `~0.9k tokens`, `~6k tokens`, `~11k tokens`), not exact-looking whole-token values. Align token columns on the integer unit digit (for example `~11k`, ` ~2k`, ` ~0.9k`) so materiality scans cleanly. Character counts may remain compact (`1.6k chars`) because they are just a size cue.
+- Show Pi's current context usage separately as `Total request` after a response exists, with shares of the context window on the total rows (`<1% ctx`, `32% ctx`) and one stacked accent/dim bar under it (`design-language.md` §5 “Proportion”).
+- Render token counts in the family fixed-k number grammar from `_lib/fmt.ts` (`~0.1k tokens`, `~0.9k tokens`, `~6.2k tokens`, `~11.4k tokens` — one decimal everywhere, `design-language.md` §4), not exact-looking whole-token values. Align token columns on the integer unit digit (for example `~11.4k`, ` ~2.0k`, ` ~0.9k`) so materiality scans cleanly. Character counts use the same grammar with a ` ch` unit.
 - Future exact mode: optionally call provider token-count endpoints using the actual outgoing payload, then subtract baselines to isolate sections. This should be opt-in or cached because it adds network/API work to startup.
 
 ## Practical OpenAI-style tool heuristic

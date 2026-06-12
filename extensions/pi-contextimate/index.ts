@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
+import { GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -164,29 +165,23 @@ const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instru
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
-const ORANGE = "\x1b[38;2;245;151;52m";
-const RESET = "\x1b[0m";
 const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
 
-function orange(text: string): string {
-  return `${ORANGE}${text}${RESET}`;
+// The family accent (design language §3): theme-derived, used sparingly — the panel
+// brand, token figures, total rows, and the carried part of the context bar.
+function accent(theme: Theme | undefined, text: string): string {
+  return ink(theme, "accent", text);
 }
 
 type TokenLabelLayout = { unitWidth: number; fieldWidth: number };
 
-function compactTokenNumber(value: number): string {
-  const rounded = Math.max(0, Math.round(value));
-  if (rounded < 1000) return `${(rounded / 1000).toFixed(1)}k`;
-  return `${Math.round(rounded / 1000)}k`;
-}
-
 function tokenIntegerWidth(tokens: number): number {
-  return compactTokenNumber(tokens).split(/[.k]/, 1)[0]?.length ?? 0;
+  return compactCount(tokens).split(".", 1)[0]?.length ?? 0;
 }
 
 function estimatedTokenLabel(tokens: number, layout: TokenLabelLayout = tokenLabelLayout([tokens])): string {
   const leftPad = " ".repeat(Math.max(0, layout.unitWidth - tokenIntegerWidth(tokens)));
-  return `${leftPad}~${compactTokenNumber(tokens)}`;
+  return `${leftPad}~${compactCount(tokens)}`;
 }
 
 function estimatedTokenField(tokens: number, layout: TokenLabelLayout): string {
@@ -195,14 +190,14 @@ function estimatedTokenField(tokens: number, layout: TokenLabelLayout): string {
 
 function exactTokenLabel(tokens: number, layout: TokenLabelLayout = tokenLabelLayout([tokens])): string {
   const leftPad = " ".repeat(Math.max(0, layout.unitWidth - tokenIntegerWidth(tokens)) + 1);
-  return `${leftPad}${compactTokenNumber(tokens)}`;
+  return `${leftPad}${compactCount(tokens)}`;
 }
 
 function tokenLabelLayout(tokens: number[]): TokenLabelLayout {
   const unitWidth = Math.max(0, ...tokens.map(tokenIntegerWidth));
   const rawLabels = tokens.map((token) => {
     const leftPad = " ".repeat(Math.max(0, unitWidth - tokenIntegerWidth(token)));
-    return `${leftPad}~${compactTokenNumber(token)}`;
+    return `${leftPad}~${compactCount(token)}`;
   });
   return { unitWidth, fieldWidth: Math.max(0, ...rawLabels.map((label) => label.length)) };
 }
@@ -235,12 +230,7 @@ function countDetail(chars: number, detail?: string): string {
 }
 
 function inlineCount(chars: number, denominator: number): string {
-  return `~${compactTokenNumber(estimateCharsAsTokens(chars, denominator))} tokens ${countDetail(chars, ratioDetail(denominator))}`;
-}
-
-function formatHeuristicLabel(label: string): string {
-  const trimmed = label.trim();
-  return /\bheuristic$/i.test(trimmed) ? trimmed : `heuristic ${trimmed}`;
+  return `~${compactCount(estimateCharsAsTokens(chars, denominator))} tokens ${countDetail(chars, ratioDetail(denominator))}`;
 }
 
 function compactPath(filePath: string): string {
@@ -396,7 +386,7 @@ function runtimeAdditionsAttribution(additions: RuntimeAdditions, denominator: n
   const parts: string[] = [];
   if (additions.snippetCount > 0) parts.push(`${additions.snippetCount} tool snippet${additions.snippetCount === 1 ? "" : "s"}`);
   if (additions.guidelineCount > 0) parts.push(`${additions.guidelineCount} guideline${additions.guidelineCount === 1 ? "" : "s"}`);
-  return `of which tool/extension instructions: ~${compactTokenNumber(tokens)} tokens (${parts.join(", ")}) · already counted in this row`;
+  return `of which tool/extension instructions: ~${compactCount(tokens)} tokens (${parts.join(", ")}) · already counted in this row`;
 }
 
 function buildSkillsSection(systemPrompt: string, denominator: number): { section?: PrefixSection; skills: SkillSummary[] } {
@@ -1195,24 +1185,27 @@ function nextMode(mode: ViewMode): ViewMode {
   return mode === "summary" ? "compact" : mode === "compact" ? "expanded" : "summary";
 }
 
-function renderModePips(mode: ViewMode, theme: Theme): string {
-  const modes: ViewMode[] = ["summary", "compact", "expanded"];
-  return modes
-    .map((candidate) => candidate === mode ? orange(theme.bold(candidate)) : theme.fg("dim", candidate))
-    .join(theme.fg("dim", " → "));
-}
-
 function padLabel(label: string, width = 42): string {
   return label.length >= width ? `${label} ` : label.padEnd(width, " ");
 }
 
+// Methodology is stated here, once, in the dim hint line (design language §5) — data
+// rows carry only raw sizes. When the session denominator deviates from the text one,
+// say so here; the expanded view stays the per-section audit trail.
+function methodologyHint(heuristic: ResolvedHeuristic): string {
+  const sessionPart = heuristic.sessionDenominator !== heuristic.textDenominator
+    ? `${SEP}session ${ratioDetail(heuristic.sessionDenominator)}`
+    : "";
+  return `counts ch ${ratioDetail(heuristic.textDenominator)}${sessionPart} (${heuristic.label})`;
+}
+
 function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): string[] {
   const ctrlO = keyText("app.tools.expand") || "Ctrl+O";
-  return [
-    "",
-    `${orange(theme.bold("[Context Estimator]"))} ${renderModePips(mode, theme)}`,
-    `  ${theme.fg("dim", `${ctrlO}: cycle view · model ${modelLabel(snapshot.model)} · ${formatHeuristicLabel(snapshot.heuristic.label)}`)}`,
-  ];
+  return panelHeader(theme, "Contextimate", {
+    modes: ["summary", "compact", "expanded"],
+    active: mode,
+    hint: `${ctrlO}: cycle view${SEP}model ${modelLabel(snapshot.model)}${SEP}${methodologyHint(snapshot.heuristic)}`,
+  });
 }
 
 // One renderer for every label/tokens/detail row — section rows, session rows, and
@@ -1222,25 +1215,22 @@ type MetricRow = {
   tokens: number;
   /** pi-reported numbers render without the ~ estimate marker. */
   exact?: boolean;
-  /** total rows: orange + bold. */
+  /** total rows: accent + bold. */
   emphasis?: boolean;
-  /** dim suffix, parens included, e.g. "(1.2k ch ÷ 2.6)" or "(residual)". */
+  /** dim suffix, parens included, e.g. "(1.2k ch)" or "(residual)". */
   detail?: string;
+  /** summary section rows open with the family ▸ glyph (design language §1). */
+  section?: boolean;
 };
 
 function renderMetricRow(row: MetricRow, theme: Theme, layout?: TokenLabelLayout): string {
   const tokenText = `${row.exact ? exactTokenLabel(row.tokens, layout) : estimatedTokenLabel(row.tokens, layout)} tokens`;
   if (row.emphasis) {
-    return `  ${orange(theme.bold(`${padLabel(row.label)}${tokenText}`))}${row.detail ? ` ${theme.fg("dim", row.detail)}` : ""}`;
+    return `  ${accent(theme, theme.bold(`${padLabel(row.label)}${tokenText}`))}${row.detail ? ` ${theme.fg("dim", row.detail)}` : ""}`;
   }
-  return `  ${theme.fg("muted", padLabel(row.label))}${theme.fg("dim", `${tokenText}${row.detail ? ` ${row.detail}` : ""}`)}`;
-}
-
-function sectionDetailText(section: PrefixSection, fallbackDenominator: number): string {
-  return countDetail(
-    sectionChars(section),
-    section.detail ?? ratioDetail(section.denominator ?? fallbackDenominator),
-  );
+  const lead = row.section ? `${accent(theme, GLYPH.section)} ` : "";
+  const labelWidth = row.section ? 40 : 42; // glyph + space keep the token column aligned
+  return `  ${lead}${theme.fg("muted", padLabel(row.label, labelWidth))}${theme.fg("dim", `${tokenText}${row.detail ? ` ${row.detail}` : ""}`)}`;
 }
 
 function joinLeftRight(left: string, right: string, width: number, gap = 2): string {
@@ -1266,7 +1256,7 @@ function renderExpandedSectionHeader(section: PrefixSection, snapshot: PrefixSna
   const tokens = sectionTokens(section);
   const chars = sectionChars(section);
   const method = section.detail ?? ratioDetail(section.denominator ?? snapshot.heuristic.textDenominator);
-  const left = `  ${theme.bold(section.title)}  ${orange(`${estimatedTokenLabel(tokens)} tokens`)}`;
+  const left = `  ${theme.bold(section.title)}  ${accent(theme, `${estimatedTokenLabel(tokens)} tokens`)}`;
   const right = theme.fg("dim", `${compactCount(chars)} ch ${method}`);
   return joinLeftRight(left, right, Math.max(40, width));
 }
@@ -1310,7 +1300,7 @@ function renderExpandedToolHeader(tool: ToolExpanded, tokenLayout: TokenLabelLay
   const sourceWidth = Math.max(12, maxWidth - indent.length - gap - tokenLayout.fieldWidth);
   const label = middleTruncatePath(expandedToolLabel(tool), sourceWidth);
   const used = indent.length + stripAnsi(label).length + tokenLayout.fieldWidth;
-  return `${indent}${theme.fg("text", label)}${" ".repeat(Math.max(gap, maxWidth - used))}${orange(token)}`;
+  return `${indent}${theme.fg("text", label)}${" ".repeat(Math.max(gap, maxWidth - used))}${accent(theme, token)}`;
 }
 
 function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpanded[] }, theme: Theme, width: number): string[] {
@@ -1363,26 +1353,67 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
   };
 }
 
-function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, layout?: TokenLabelLayout): string[] {
+// --- proportion (design language §5): "of what" — shares of the context window --------
+
+/** Integer percent of the context window; `<1%` rather than a dishonest `0%`. */
+function ctxShareLabel(tokens: number, usage: ContextUsage | undefined): string | undefined {
+  if (!usage || usage.tokens === null || usage.contextWindow <= 0) return undefined;
+  const percent = (tokens / usage.contextWindow) * 100;
+  if (!Number.isFinite(percent) || percent < 0) return undefined;
+  const rounded = Math.round(percent);
+  return rounded === 0 && tokens > 0 ? "<1% ctx" : `${rounded}% ctx`;
+}
+
+// The window is a budget label, not a measurement: 200k, not 200.0k.
+function contextWindowLabel(tokens: number): string {
+  return compactCount(tokens).replace(/\.0(k|M)$/, "$1");
+}
+
+function harnessDetail(snapshot: PrefixSnapshot): string {
+  const share = ctxShareLabel(totalTokens(snapshot), snapshot.contextUsage);
+  return countDetail(totalChars(snapshot), share ? `· ${share}` : undefined);
+}
+
+// One stacked bar under Total request: the carried part (harness + session) in accent,
+// free window dim — the half-second "how full am I?" answer.
+function renderContextBar(snapshot: PrefixSnapshot, estimate: SessionEstimate, theme: Theme, width: number): string[] {
+  const usage = snapshot.contextUsage;
+  if (!usage || usage.tokens === null || usage.contextWindow <= 0) return [];
+  const free = Math.max(0, usage.contextWindow - usage.tokens);
+  const legend =
+    `harness ~${compactCount(totalTokens(snapshot))}${SEP}session ~${compactCount(estimate.totalTokens)}${SEP}free ${compactCount(free)}`;
+  const room = Math.max(0, width - 4 - legend.length - 2);
+  const sameLine = room >= 12;
+  const barWidth = Math.min(28, Math.max(12, sameLine ? room : width - 4));
+  const carried = Math.min(1, Math.max(0, usage.tokens / usage.contextWindow));
+  const filled = Math.min(barWidth, Math.max(usage.tokens > 0 ? 1 : 0, Math.round(carried * barWidth)));
+  const bar = `${accent(theme, "█".repeat(filled))}${theme.fg("dim", "▒".repeat(barWidth - filled))}`;
+  return sameLine
+    ? [`  ${bar}  ${theme.fg("dim", legend)}`]
+    : [`  ${bar}`, `  ${theme.fg("dim", legend)}`];
+}
+
+function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number, layout?: TokenLabelLayout): string[] {
   const estimate = buildSessionEstimate(snapshot);
   if (!snapshot.session || !estimate) return [];
-  const ratio = ratioDetail(estimate.denominator);
+  const sessionShare = ctxShareLabel(estimate.totalTokens, snapshot.contextUsage);
+  const provenance = estimate.totalSource === "pi" ? "Pi current - harness" : "heuristic fallback";
   const rows = [
     "",
-    renderMetricRow({ label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(snapshot.session.toolOutputChars, ratio) }, theme, layout),
-    renderMetricRow({ label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars, ratio) }, theme, layout),
+    renderMetricRow({ label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(snapshot.session.toolOutputChars) }, theme, layout),
+    renderMetricRow({ label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars) }, theme, layout),
     renderMetricRow({ label: "Other / reasoning", tokens: estimate.otherTokens, detail: "(residual)" }, theme, layout),
     renderMetricRow({
       label: "Total session",
       tokens: estimate.totalTokens,
       emphasis: true,
-      detail: estimate.totalSource === "pi" ? "(Pi current - harness)" : "(heuristic fallback)",
+      detail: sessionShare ? `(${sessionShare} · ${provenance})` : `(${provenance})`,
     }, theme, layout),
   ];
   const usage = snapshot.contextUsage;
   if (usage && usage.tokens !== null) {
     const percent = formatPercent(usage.percent);
-    const window = usage.contextWindow > 0 ? compactTokenNumber(usage.contextWindow) : undefined;
+    const window = usage.contextWindow > 0 ? contextWindowLabel(usage.contextWindow) : undefined;
     rows.push(renderMetricRow({
       label: "Total request",
       tokens: usage.tokens,
@@ -1390,6 +1421,7 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, layout?: Toke
       emphasis: true,
       detail: percent && window ? `(${percent} / ${window} ctx)` : "(Pi usage)",
     }, theme, layout));
+    rows.push(...renderContextBar(snapshot, estimate, theme, width));
   }
   return rows;
 }
@@ -1407,7 +1439,7 @@ function summaryTokenWidth(snapshot: PrefixSnapshot): TokenLabelLayout {
   return tokenLabelLayout(values);
 }
 
-function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
+function renderSummary(snapshot: PrefixSnapshot, theme: Theme, width = 80): string[] {
   const lines = renderHeader(snapshot, "summary", theme);
   const layout = summaryTokenWidth(snapshot);
   lines.push("");
@@ -1415,12 +1447,13 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme): string[] {
     lines.push(renderMetricRow({
       label: section.title,
       tokens: sectionTokens(section),
-      detail: sectionDetailText(section, snapshot.heuristic.textDenominator),
+      detail: countDetail(sectionChars(section)),
+      section: true,
     }, theme, layout));
   }
   lines.push(
-    renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: countDetail(totalChars(snapshot)) }, theme, layout),
-    ...renderSessionRows(snapshot, theme, layout),
+    renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: harnessDetail(snapshot) }, theme, layout),
+    ...renderSessionRows(snapshot, theme, width, layout),
   );
   return lines;
 }
@@ -1471,14 +1504,14 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number, layout?: C
     if (row.inactive) {
       return theme.fg("dim", `    ${name}  ${token}${desc ? `  ${desc}` : ""}`);
     }
-    return `    ${theme.fg("text", name)}  ${orange(token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
+    return `    ${theme.fg("text", name)}  ${accent(theme, token)}${desc ? `  ${theme.fg("dim", desc)}` : ""}`;
   });
 }
 
 function renderCompactTotalRow(snapshot: PrefixSnapshot, theme: Theme, layout: CompactLayout): string {
   const label = compactLabel("Total harness", layout.labelWidth + 2);
   const token = `${estimatedTokenLabel(totalTokens(snapshot), layout.tokenLayout)} tokens`;
-  return `  ${orange(theme.bold(`${label}  ${token}`))} ${theme.fg("dim", countDetail(totalChars(snapshot)))}`;
+  return `  ${accent(theme, theme.bold(`${label}  ${token}`))} ${theme.fg("dim", harnessDetail(snapshot))}`;
 }
 
 function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
@@ -1486,14 +1519,14 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   const layout = compactLayout(snapshot);
   for (const section of snapshot.sections) {
     const title = compactLabel(section.title, layout.labelWidth);
-    const counts = `${estimatedTokenLabel(sectionTokens(section), layout.tokenLayout)} tokens ${sectionDetailText(section, snapshot.heuristic.textDenominator)}`;
-    lines.push("", `  ${orange("▸")} ${theme.bold(title)}  ${theme.fg("dim", counts)}`);
+    const counts = `${estimatedTokenLabel(sectionTokens(section), layout.tokenLayout)} tokens ${countDetail(sectionChars(section))}`;
+    lines.push("", `  ${accent(theme, GLYPH.section)} ${theme.bold(title)}  ${theme.fg("dim", counts)}`);
     if (section.compactRows && section.compactRows.length > 0) {
       lines.push(...renderScanRows(section.compactRows, theme, width, layout));
     }
   }
   const sessionTokenWidth = summaryTokenWidth(snapshot);
-  lines.push("", renderCompactTotalRow(snapshot, theme, layout), ...renderSessionRows(snapshot, theme, sessionTokenWidth));
+  lines.push("", renderCompactTotalRow(snapshot, theme, layout), ...renderSessionRows(snapshot, theme, width, sessionTokenWidth));
   return lines;
 }
 
@@ -1501,8 +1534,8 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): 
   const lines = renderHeader(snapshot, "expanded", theme);
   const layout = summaryTokenWidth(snapshot);
   lines.push(
-    renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: countDetail(totalChars(snapshot)) }, theme, layout),
-    ...renderSessionRows(snapshot, theme, layout),
+    renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: harnessDetail(snapshot) }, theme, layout),
+    ...renderSessionRows(snapshot, theme, width, layout),
   );
 
   for (const section of snapshot.sections) {
@@ -1601,7 +1634,7 @@ class StartupContextComponent implements Component {
 
       const theme = this.getTheme();
       const body = this.mode === "summary"
-        ? renderSummary(snapshot, theme)
+        ? renderSummary(snapshot, theme, width)
         : this.mode === "compact"
           ? renderCompact(snapshot, theme, width)
           : renderExpanded(snapshot, theme, width);
@@ -1617,7 +1650,7 @@ class StartupContextComponent implements Component {
       this.cachedWidth = width;
       this.cachedLines = wrapLines([
         "",
-        `${ORANGE}[Context Estimator]${RESET} unavailable while Pi finishes resuming this session`,
+        `${accent(undefined, "[Contextimate]")} unavailable while Pi finishes resuming this session`,
       ], Math.max(20, width));
       return this.cachedLines;
     }
@@ -1762,7 +1795,6 @@ export const internals = {
   buildSessionBreakdown,
   buildSessionEstimate,
   // token label layout
-  compactTokenNumber,
   tokenLabelLayout,
   estimatedTokenLabel,
   estimatedTokenField,
@@ -1771,6 +1803,11 @@ export const internals = {
   countDetail,
   ratioDetail,
   renderMetricRow,
+  // proportion (design language §5)
+  ctxShareLabel,
+  contextWindowLabel,
+  renderContextBar,
+  methodologyHint,
   // runtime-addition attribution (issue #9)
   detectRuntimeAdditions,
   runtimeAdditionsAttribution,
@@ -1870,7 +1907,7 @@ export default function piContextimate(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("contextimate", {
-    description: "Show or switch the startup [Context Estimator] view (summary, compact, expanded)",
+    description: "Show or switch the startup [Contextimate] view (summary, compact, expanded)",
     handler: async (args, ctx) => {
       if (!ctx.hasUI) return;
       const requested = args.trim().toLowerCase() as ViewMode | "";
@@ -1879,7 +1916,7 @@ export default function piContextimate(pi: ExtensionAPI) {
         : nextMode(g.__piContextimateMode ?? g.__piContextimateBlock?.getMode() ?? DEFAULT_MODE);
       setMode(mode);
       if (g.__piContextimateBlock) scheduleInstall(g.__piContextimateBlock);
-      ctx.ui.notify(`[Context Estimator] view: ${mode}`, "info");
+      ctx.ui.notify(`[Contextimate] view: ${mode}`, "info");
     },
   });
 }
