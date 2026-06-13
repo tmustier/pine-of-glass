@@ -1,13 +1,14 @@
 
-[Context Estimator] summary → compact → expanded
-  <expand-key>: cycle view · model openai-codex/gpt-5.5 · OpenAI-Codex heuristic
-  Total harness                              ~0.4k tokens (2.3k ch)
+[Contextimate] summary → compact → expanded
+  <expand-key>: cycle view · model openai-codex/gpt-5.5 · counts ch ÷ 4 · tools: OpenAI formula (OpenAI-Codex heuristic)
+  Total harness                              ~0.4k tokens (2.3k ch · <1% ctx)
 
-  Tool outputs                              ~13k tokens (52.3k ch ÷ 4)
-  Messages                                   ~2k tokens (8.1k ch ÷ 4)
-  Other / reasoning                         ~49k tokens (residual)
-  Total session                             ~64k tokens (Pi current - harness)
-  Total request                              64k tokens (32.2% / 200k ctx)
+  Tool outputs                              ~13.1k tokens (52.3k ch)
+  Messages                                   ~2.0k tokens (8.1k ch)
+  Other / reasoning                         ~48.8k tokens (residual)
+  Total session                             ~63.9k tokens (~32% ctx · Pi current - harness)
+  Total request                              64.3k tokens (32.2% / 200k ctx)
+  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.4k · session ~63.9k · free 135.7k
 
   Runtime system prompt  ~0.1k tokens                                                    0.2k ch ÷ 4
     assembled at runtime: pi base prompt + tool/extension instructions · preview only

@@ -3,12 +3,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
-import { GLYPH, SCALE, SEP, ink, sizeTone, SIZE_THRESHOLDS } from "../../extensions/_lib/style.ts";
+import { GLYPH, SCALE, SEP, ink, panelHeader, panelPips, sizeTone, SIZE_THRESHOLDS } from "../../extensions/_lib/style.ts";
 
 // A recording theme: proves ink() routes through Theme.fg with the right role.
 const recordingTheme = {
   fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
-  bold: (text: string) => text,
+  bold: (text: string) => `<b>${text}</b>`,
   bg: (_color: string, text: string) => text,
 } as unknown as Theme;
 
@@ -63,4 +63,24 @@ test("sizeTone: dim below warning, warning at 10k ch, error at 50k ch", () => {
 test("sizeTone honours overridden thresholds", () => {
   assert.equal(sizeTone(500, { warning: 100, error: 1_000 }), "warning");
   assert.equal(sizeTone(2_000, { warning: 100, error: 1_000 }), "error");
+});
+
+test("panel header: bold accent brand, mode pips, one dim hint line (design language §5)", () => {
+  const lines = panelHeader(recordingTheme, "Contextimate", {
+    modes: ["summary", "compact", "expanded"],
+    active: "compact",
+    hint: "ctrl+o: cycle view",
+  });
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], "", "one blank line before the panel (group spacing)");
+  assert.ok(lines[1]!.startsWith("<accent><b>[Contextimate]</b></accent> "), lines[1]);
+  assert.ok(lines[1]!.includes("<accent><b>compact</b></accent>"), "active pip is accent-bold");
+  assert.ok(lines[1]!.includes("<dim>summary</dim>") && lines[1]!.includes("<dim>expanded</dim>"), "inactive pips dim");
+  assert.ok(lines[1]!.includes("<dim> → </dim>"), "pip separator dim");
+  assert.equal(lines[2], "  <dim>ctrl+o: cycle view</dim>");
+});
+
+test("panel header without pips or hint, and without a theme", () => {
+  assert.deepEqual(panelHeader(undefined, "Cachemire"), ["", "[Cachemire]"]);
+  assert.equal(panelPips(undefined, ["a", "b"], "a"), "a\x1b[90m → \x1b[0m\x1b[90mb\x1b[0m");
 });

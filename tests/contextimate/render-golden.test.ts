@@ -38,9 +38,11 @@ function rendered(lines: string[]): string {
   return normalizeKeyHints(stripAnsi(lines.join("\n")));
 }
 
-test("summary view goldens", () => {
-  expectGolden("contextimate-summary-anthropic.txt", rendered(renderSummary(fixtureSnapshot(anthropicModel), plainTheme)));
-  expectGolden("contextimate-summary-codex.txt", rendered(renderSummary(fixtureSnapshot(codexModel), plainTheme)));
+test("summary view goldens at 80 and 120 columns", () => {
+  const snapshot = fixtureSnapshot(anthropicModel);
+  expectGolden("contextimate-summary-anthropic-80.txt", rendered(renderSummary(snapshot, plainTheme, 80)));
+  expectGolden("contextimate-summary-anthropic-120.txt", rendered(renderSummary(snapshot, plainTheme, 120)));
+  expectGolden("contextimate-summary-codex-100.txt", rendered(renderSummary(fixtureSnapshot(codexModel), plainTheme, 100)));
 });
 
 test("compact view goldens at 80 and 120 columns", () => {

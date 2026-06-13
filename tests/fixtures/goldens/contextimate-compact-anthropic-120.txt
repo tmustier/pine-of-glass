@@ -1,28 +1,29 @@
 
-[Context Estimator] summary → compact → expanded
-  <expand-key>: cycle view · model anthropic/claude-opus-4-8 · Claude 4.7+ heuristic
+[Contextimate] summary → compact → expanded
+  <expand-key>: cycle view · model anthropic/claude-opus-4-8 · counts ch ÷ 2.6 (Claude 4.7+ heuristic)
 
-  ▸ Runtime system prompt      ~0.1k tokens (0.2k ch ÷ 2.6)
+  ▸ Runtime system prompt      ~0.1k tokens (0.2k ch)
 
-  ▸ Global AGENTS.md           ~0.0k tokens (0.1k ch ÷ 2.6)
+  ▸ Global AGENTS.md           ~0.0k tokens (0.1k ch)
 
-  ▸ ~/projects/demo/AGENTS.md  ~0.0k tokens (0.1k ch ÷ 2.6)
+  ▸ ~/projects/demo/AGENTS.md  ~0.0k tokens (0.1k ch)
 
-  ▸ Skill frontmatter (3)      ~0.3k tokens (0.7k ch ÷ 2.6)
+  ▸ Skill frontmatter (3)      ~0.3k tokens (0.7k ch)
     alpha-skill                ~0.1k  Handles A & B cases with a long description so it sorts first in token order for…
     beta-skill                 ~0.1k  It's the medium one.
     gamma                      ~0.1k  Tiny.
 
-  ▸ Tools (3/4 active)         ~0.5k tokens (1.2k ch ÷ 2.6 · Anthropic tool payload)
+  ▸ Tools (3/4 active)         ~0.5k tokens (1.2k ch)
     search                     ~0.2k  Search the web with one or more queries.
     read                       ~0.1k  Read the contents of a file.
     bash                       ~0.1k  Execute a bash command in the current working directory.
     write                       -     (inactive) Write content to a file.
 
-  Total harness                ~0.9k tokens (2.2k ch)
+  Total harness                ~0.9k tokens (2.2k ch · <1% ctx)
 
-  Tool outputs                              ~20k tokens (52.3k ch ÷ 2.6)
-  Messages                                   ~3k tokens (8.1k ch ÷ 2.6)
-  Other / reasoning                         ~40k tokens (residual)
-  Total session                             ~63k tokens (Pi current - harness)
-  Total request                              64k tokens (32.2% / 200k ctx)
+  Tool outputs                              ~20.1k tokens (52.3k ch)
+  Messages                                   ~3.1k tokens (8.1k ch)
+  Other / reasoning                         ~40.2k tokens (residual)
+  Total session                             ~63.5k tokens (~32% ctx · Pi current - harness)
+  Total request                              64.3k tokens (32.2% / 200k ctx)
+  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.9k · session ~63.5k · free 135.7k

@@ -1,13 +1,14 @@
 
-[Context Estimator] summary → compact → expanded
-  <expand-key>: cycle view · model anthropic/claude-opus-4-8 · Claude 4.7+ heuristic
-  Total harness                              ~0.9k tokens (2.2k ch)
+[Contextimate] summary → compact → expanded
+  <expand-key>: cycle view · model anthropic/claude-opus-4-8 · counts ch ÷ 2.6 (Claude 4.7+ heuristic)
+  Total harness                              ~0.9k tokens (2.2k ch · <1% ctx)
 
-  Tool outputs                              ~20k tokens (52.3k ch ÷ 2.6)
-  Messages                                   ~3k tokens (8.1k ch ÷ 2.6)
-  Other / reasoning                         ~40k tokens (residual)
-  Total session                             ~63k tokens (Pi current - harness)
-  Total request                              64k tokens (32.2% / 200k ctx)
+  Tool outputs                              ~20.1k tokens (52.3k ch)
+  Messages                                   ~3.1k tokens (8.1k ch)
+  Other / reasoning                         ~40.2k tokens (residual)
+  Total session                             ~63.5k tokens (~32% ctx · Pi current - harness)
+  Total request                              64.3k tokens (32.2% / 200k ctx)
+  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.9k · session ~63.5k · free 135.7k
 
   Runtime system prompt  ~0.1k tokens                                                                      0.2k ch ÷ 2.6
     assembled at runtime: pi base prompt + tool/extension instructions · preview only

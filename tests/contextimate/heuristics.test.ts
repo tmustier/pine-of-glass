@@ -95,7 +95,7 @@ test("profiles apply via defaults.profile and rule.profile", () => {
 
 test("unknown provider keeps a defined label (regression: renderHeader crash)", () => {
   // applyHeuristicPatch used to let `label: undefined` clobber the fallback label,
-  // crashing formatHeuristicLabel for providers with no built-in rule.
+  // crashing methodologyHint for providers with no built-in rule.
   const h = resolveHeuristic(model("ollama", "llama-4", "llama-local-api"), {});
   assert.equal(h.label, "fallback chars/4");
   const profiled = resolveHeuristic(anthropicModel, {

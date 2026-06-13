@@ -87,6 +87,40 @@ export function ink(theme: Theme | undefined, tone: Tone, text: string): string 
   return open ? `${open}${text}${RESET}` : text;
 }
 
+// --- panel headers (design language §5) -------------------------------------------------
+
+/** Mode pips for a panel header: active mode accent-bold, others dim, `→` dim. */
+export function panelPips(theme: Theme | undefined, modes: readonly string[], active: string): string {
+  return modes
+    .map((mode) => (mode === active ? ink(theme, "accent", bold(theme, mode)) : ink(theme, "dim", mode)))
+    .join(ink(theme, "dim", " → "));
+}
+
+/**
+ * The family panel-header form (design language §5): `[Name]` in bold accent, optional
+ * mode pips, then one dim hint line carrying keybinding, scope, and the panel's
+ * methodology — stated here once, never on data rows.
+ */
+export function panelHeader(
+  theme: Theme | undefined,
+  name: string,
+  options: { modes?: readonly string[]; active?: string; hint?: string } = {},
+): string[] {
+  const brand = ink(theme, "accent", bold(theme, `[${name}]`));
+  const pips = options.modes && options.active ? ` ${panelPips(theme, options.modes, options.active)}` : "";
+  const lines = ["", `${brand}${pips}`];
+  if (options.hint) lines.push(`  ${ink(theme, "dim", options.hint)}`);
+  return lines;
+}
+
+function bold(theme: Theme | undefined, text: string): string {
+  try {
+    return theme?.bold ? theme.bold(text) : text;
+  } catch {
+    return text;
+  }
+}
+
 // --- layout helpers (design language §5) -----------------------------------------------
 
 export const ELLIPSIS = "\u2026"; // …

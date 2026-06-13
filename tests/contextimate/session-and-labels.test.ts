@@ -7,7 +7,7 @@ import { internals } from "../../extensions/pi-contextimate/index.ts";
 import type { PrefixSnapshot } from "../../extensions/pi-contextimate/index.ts";
 import { fakePi, fixtureSystemPrompt, anthropicModel, stripAnsi } from "../helpers.ts";
 
-const { buildSnapshot, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, compactTokenNumber } = internals;
+const { buildSnapshot, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, ctxShareLabel, contextWindowLabel, methodologyHint } = internals;
 
 function snapshotWith(session: PrefixSnapshot["session"], usage: PrefixSnapshot["contextUsage"]): PrefixSnapshot {
   const snapshot = buildSnapshot(
@@ -66,15 +66,52 @@ test("token labels align to one shared column width across magnitudes", () => {
   }
 });
 
-test("compact token numbers: sub-1k keeps a decimal, 1k+ rounds to whole k", () => {
-  assert.equal(compactTokenNumber(0), "0.0k");
-  assert.equal(compactTokenNumber(950), "0.9k"); // float 0.95 rounds down via toFixed
-  assert.equal(compactTokenNumber(999), "1.0k");
-  assert.equal(compactTokenNumber(1000), "1k");
-  assert.equal(compactTokenNumber(1499), "1k");
-  assert.equal(compactTokenNumber(1500), "2k");
-  assert.equal(compactTokenNumber(64321), "64k");
-  assert.equal(compactTokenNumber(-5), "0.0k");
+test("token labels speak the family fixed-k grammar (design language §4)", () => {
+  // The private integer-k formatter is gone: labels delegate to the shared compactCount,
+  // so 1k+ values keep one decimal and columns compare uniformly.
+  assert.equal(estimatedTokenLabel(0), "~0.0k");
+  assert.equal(estimatedTokenLabel(950), "~0.9k"); // float 0.95 rounds down via toFixed
+  assert.equal(estimatedTokenLabel(1499), "~1.5k");
+  assert.equal(estimatedTokenLabel(64321), "~64.3k");
+  assert.equal(exactTokenLabel(64321), " 64.3k");
+});
+
+test("context-window shares: integer percent, <1% over a dishonest 0%, budget label", () => {
+  const usage = { tokens: 64321, contextWindow: 200000, percent: 32.2 };
+  assert.equal(ctxShareLabel(64321, usage), "32% ctx");
+  assert.equal(ctxShareLabel(900, usage), "<1% ctx");
+  assert.equal(ctxShareLabel(0, usage), "0% ctx");
+  assert.equal(ctxShareLabel(900, undefined), undefined);
+  assert.equal(ctxShareLabel(900, { tokens: null, contextWindow: 200000, percent: null }), undefined);
+  // The window is a budget label, not a measurement: 200k, not 200.0k.
+  assert.equal(contextWindowLabel(200000), "200k");
+  assert.equal(contextWindowLabel(128500), "128.5k");
+  assert.equal(contextWindowLabel(1000000), "1M");
+});
+
+test("methodology states session/tool methods only when they deviate from the text ratio", () => {
+  const heuristic = (patch: Record<string, unknown>) => ({
+    source: "test", toolNumerator: "anthropic", ...patch,
+  }) as Parameters<typeof methodologyHint>[0];
+  // Everything counted at the text ratio: one clause, no qualifiers.
+  assert.equal(
+    methodologyHint(heuristic({ label: "Claude 4.7+ heuristic", textDenominator: 2.6, sessionDenominator: 2.6, toolDenominator: 2.6 })),
+    "counts ch ÷ 2.6 (Claude 4.7+ heuristic)",
+  );
+  // Session and tool denominators each disclose their own deviation.
+  assert.equal(
+    methodologyHint(heuristic({ label: "Claude 4.5/4.6 heuristic", textDenominator: 3.8, sessionDenominator: 3.5, toolDenominator: 3.3 })),
+    "counts ch ÷ 3.8 · session ÷ 3.5 · tools ÷ 3.3 (Claude 4.5/4.6 heuristic)",
+  );
+  assert.equal(
+    methodologyHint(heuristic({ label: "OpenAI Responses heuristic", textDenominator: 4, sessionDenominator: 4, toolDenominator: 5.5 })),
+    "counts ch ÷ 4 · tools ÷ 5.5 (OpenAI Responses heuristic)",
+  );
+  // Formula-counted tools are not a ch ratio at all — the hint must not pretend they are.
+  assert.equal(
+    methodologyHint(heuristic({ label: "OpenAI-Codex heuristic", textDenominator: 4, sessionDenominator: 4, toolDenominator: 5.5, toolNumerator: "openai-cookbook" })),
+    "counts ch ÷ 4 · tools: OpenAI formula (OpenAI-Codex heuristic)",
+  );
 });
 
 test("snapshot signature changes exactly when inputs that affect rendering change", () => {

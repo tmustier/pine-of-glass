@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Layer 4: startup smoke (docs/testing.md). Launches the *installed* pi in tmux with this
 // repo's extensions loaded from a clean fixture cwd, then asserts on captured panes:
-//   1. the [Context Estimator] block renders at startup (no model call needed),
+//   1. the [Contextimate] block renders at startup (no model call needed),
 //   2. /contextimate compact and expanded actually switch the rendered mode line,
 //   3. /reload leaves exactly one estimator block,
 //   4. traceline announces itself (extension loaded without crashing the TUI).
@@ -86,6 +86,19 @@ for (const path of [fixtureDir, repoRoot]) {
 writeFileSync(join(fixtureHome, ".pi", "agent", "trust.json"), JSON.stringify(trusted, null, 2));
 writeFileSync(join(fixtureDir, "AGENTS.md"), "# Smoke fixture\nMinimal project context for the startup smoke test.\n");
 mkdirSync(join(fixtureDir, ".pi"), { recursive: true });
+
+// Fixture-controlled compact marker: a project skill whose *name* renders as a compact
+// scan row (`zz-smoke-probe  ~0.1k …`) but appears in no summary row — a deterministic
+// mode tell that does not depend on the running pi having inactive tools.
+mkdirSync(join(fixtureDir, ".pi", "skills", "zz-smoke-probe"), { recursive: true });
+writeFileSync(
+  join(fixtureDir, ".pi", "skills", "zz-smoke-probe", "SKILL.md"),
+  "---\nname: zz-smoke-probe\ndescription: Deterministic compact-mode marker for the pine-of-glass startup smoke.\n---\n# zz-smoke-probe\nFixture-only skill; the smoke test greps its scan row to detect compact mode.\n",
+);
+
+// Compact scan rows render `name  ~N.Nk …` — the name+token shape distinguishes the
+// contextimate scan view from pi's own resource listing, which also names the skill.
+const compactScanRow = (text) => /zz-smoke-probe\s+~[\d.]+k/.test(text);
 writeFileSync(
   join(fixtureDir, ".pi", "settings.json"),
   JSON.stringify(
@@ -114,12 +127,13 @@ try {
 
   // 1. Estimator block renders at startup, in summary mode by default. First render can
   // be slow: the fresh HOME means a cold jiti cache for both TS extensions.
-  pane = waitFor("startup render", (text) => text.includes("[Context Estimator]"), 60000);
-  check("estimator block present at startup", pane.includes("[Context Estimator]"));
-  // The header always shows the full cycle legend; mode-specific markers are the
-  // reliable tell. Summary mode renders neither the compact ▸ section glyph nor the
-  // expanded tools-tree note.
-  check("summary mode is the startup default", !/▸ |readable view/.test(pane));
+  pane = waitFor("startup render", (text) => text.includes("[Contextimate]"), 60000);
+  check("estimator block present at startup", pane.includes("[Contextimate]"));
+  // The header always shows the full cycle legend and the ▸ section glyph appears in
+  // every mode now; mode-specific markers are the reliable tell. Summary renders
+  // neither compact's scan rows (the fixture skill's name+token row would show) nor
+  // the expanded tools-tree note.
+  check("summary mode is the startup default", !compactScanRow(pane) && !/readable view/.test(pane));
   check("harness total row rendered", pane.includes("Total harness"));
   check("no extension error surfaced", !/Error loading extension|extension error/i.test(pane));
 
@@ -131,8 +145,8 @@ try {
 
   // 2. Mode switching via the slash command actually changes the rendered block.
   run(["tmux", "send-keys", "-t", session, "/contextimate compact", "Enter"]);
-  pane = waitFor("compact mode", (text) => /▸ Runtime system prompt/.test(text));
-  check("compact mode renders the scan view", /▸ Runtime system prompt/.test(pane));
+  pane = waitFor("compact mode", compactScanRow);
+  check("compact mode renders the scan view", compactScanRow(pane));
 
   run(["tmux", "send-keys", "-t", session, "/contextimate expanded", "Enter"]);
   pane = waitFor("expanded mode", (text) => /readable view/.test(text));
@@ -144,10 +158,10 @@ try {
   run(["tmux", "send-keys", "-t", session, "/contextimate summary", "Enter"]);
   sleep(1000);
   run(["tmux", "send-keys", "-t", session, "/reload", "Enter"]);
-  waitFor("post-reload render", (text) => text.includes("[Context Estimator]"), 60000);
+  waitFor("post-reload render", (text) => text.includes("[Contextimate]"), 60000);
   sleep(2000); // settle: reload re-renders the startup listing
   pane = capture({ visibleOnly: true });
-  const blocks = (pane.match(/\[Context Estimator\]/g) ?? []).length;
+  const blocks = (pane.match(/\[Contextimate\]/g) ?? []).length;
   check("exactly one estimator block after /reload", blocks === 1, `found ${blocks}`);
 
   // 4. Cachemire chat lines persist across pi's chat rebuild (Ctrl+T toggles reasoning

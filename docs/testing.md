@@ -166,7 +166,7 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 `pi` in tmux in a fixture cwd, then assert on captured panes (no model call required —
 the estimator renders at startup):
 
-- `[Context Estimator]` block present after startup; `/contextimate compact` and
+- `[Contextimate]` block present after startup; `/contextimate compact` and
   `expanded` change the rendered mode line; `/reload` keeps exactly one block.
 - Exits non-zero on assertion failure so it can gate publishes; not run in CI (needs a
   TTY + installed pi). A "live turn" variant (real model, one bash call, assert a trace
