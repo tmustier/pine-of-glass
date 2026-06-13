@@ -123,7 +123,7 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 
 - Pick denominators from the active model/provider, so `/model` or Ctrl+P changes estimates immediately.
 - Keep built-in provider defaults in one auditable table in `extensions/pi-contextimate/index.ts` (`BUILT_IN_HEURISTIC_RULES`).
-- Methodology appears once, in the panel header's dim hint line (`counts ch ÷ 2.6 (Claude 4.7+ heuristic)`, plus `session ÷ …` when it deviates) — see `docs/design-language.md` §5. Summary/compact data rows carry only the raw size (`(10.0k ch)`).
+- Methodology appears once, in the panel header's dim hint line (`counts ch ÷ 2.6 (Claude 4.7+ heuristic)`, plus `session ÷ …` and `tools ÷ …` / `tools: OpenAI formula` when those methods deviate from the text ratio) — see `docs/design-language.md` §5. Summary/compact data rows carry only the raw size (`(10.0k ch)`).
 - Unknown providers fall back to `chars / 4`.
 - Expanded mode is the audit view: its section headers keep the full per-section method inline, e.g. `47.9k ch · OpenAI formula · schema text ÷ 6.6` or `48.2k ch ÷ 2.6 · Anthropic tool payload`.
 - Individual tool detail rows use that tool's own provider-shaped/minified payload size (or OpenAI formula subtotal) rather than repeating the aggregate payload character count.
@@ -133,7 +133,7 @@ Root cause: tool schemas are converted into a provider-specific internal functio
 - Tool numerator character counts must use minified provider-shaped JSON, not pretty JSON.
 - Tool sections must never use pretty-printed/debug JSON length as the count source.
 - Keep expanded mode readable and structural: show per-skill/per-tool estimate rows, sources, parameter keys, and short guidance summaries; do not dump the full system prompt or full tool schemas by default.
-- Show Pi's current context usage separately as `Total request` after a response exists, with shares of the context window on the total rows (`<1% ctx`, `32% ctx`) and one stacked accent/dim bar under it (`design-language.md` §5 “Proportion”).
+- Show Pi's current context usage separately as `Total request` after a response exists, with shares of the context window on the total rows and one stacked accent/dim bar under it (`design-language.md` §5 “Proportion”). Estimate-derived shares carry the `~` marker (`~32% ctx`, `<1% ctx`); only `Total request` is pi-exact (`32.2% / 200k ctx`).
 - Render token counts in the family fixed-k number grammar from `_lib/fmt.ts` (`~0.1k tokens`, `~0.9k tokens`, `~6.2k tokens`, `~11.4k tokens` — one decimal everywhere, `design-language.md` §4), not exact-looking whole-token values. Align token columns on the integer unit digit (for example `~11.4k`, ` ~2.0k`, ` ~0.9k`) so materiality scans cleanly. Character counts use the same grammar with a ` ch` unit.
 - Future exact mode: optionally call provider token-count endpoints using the actual outgoing payload, then subtract baselines to isolate sections. This should be opt-in or cached because it adds network/API work to startup.
 

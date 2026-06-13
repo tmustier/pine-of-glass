@@ -6,7 +6,7 @@
   Tool outputs                              ~20.1k tokens (52.3k ch)
   Messages                                   ~3.1k tokens (8.1k ch)
   Other / reasoning                         ~40.2k tokens (residual)
-  Total session                             ~63.5k tokens (32% ctx · Pi current - harness)
+  Total session                             ~63.5k tokens (~32% ctx · Pi current - harness)
   Total request                              64.3k tokens (32.2% / 200k ctx)
   █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.9k · session ~63.5k · free 135.7k
 

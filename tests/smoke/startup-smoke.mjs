@@ -86,6 +86,19 @@ for (const path of [fixtureDir, repoRoot]) {
 writeFileSync(join(fixtureHome, ".pi", "agent", "trust.json"), JSON.stringify(trusted, null, 2));
 writeFileSync(join(fixtureDir, "AGENTS.md"), "# Smoke fixture\nMinimal project context for the startup smoke test.\n");
 mkdirSync(join(fixtureDir, ".pi"), { recursive: true });
+
+// Fixture-controlled compact marker: a project skill whose *name* renders as a compact
+// scan row (`zz-smoke-probe  ~0.1k …`) but appears in no summary row — a deterministic
+// mode tell that does not depend on the running pi having inactive tools.
+mkdirSync(join(fixtureDir, ".pi", "skills", "zz-smoke-probe"), { recursive: true });
+writeFileSync(
+  join(fixtureDir, ".pi", "skills", "zz-smoke-probe", "SKILL.md"),
+  "---\nname: zz-smoke-probe\ndescription: Deterministic compact-mode marker for the pine-of-glass startup smoke.\n---\n# zz-smoke-probe\nFixture-only skill; the smoke test greps its scan row to detect compact mode.\n",
+);
+
+// Compact scan rows render `name  ~N.Nk …` — the name+token shape distinguishes the
+// contextimate scan view from pi's own resource listing, which also names the skill.
+const compactScanRow = (text) => /zz-smoke-probe\s+~[\d.]+k/.test(text);
 writeFileSync(
   join(fixtureDir, ".pi", "settings.json"),
   JSON.stringify(
@@ -118,9 +131,9 @@ try {
   check("estimator block present at startup", pane.includes("[Contextimate]"));
   // The header always shows the full cycle legend and the ▸ section glyph appears in
   // every mode now; mode-specific markers are the reliable tell. Summary renders
-  // neither compact's per-tool scan rows (the smoke fixture has inactive tools, so
-  // "(inactive)" rows would show) nor the expanded tools-tree note.
-  check("summary mode is the startup default", !/\(inactive\)|readable view/.test(pane));
+  // neither compact's scan rows (the fixture skill's name+token row would show) nor
+  // the expanded tools-tree note.
+  check("summary mode is the startup default", !compactScanRow(pane) && !/readable view/.test(pane));
   check("harness total row rendered", pane.includes("Total harness"));
   check("no extension error surfaced", !/Error loading extension|extension error/i.test(pane));
 
@@ -132,8 +145,8 @@ try {
 
   // 2. Mode switching via the slash command actually changes the rendered block.
   run(["tmux", "send-keys", "-t", session, "/contextimate compact", "Enter"]);
-  pane = waitFor("compact mode", (text) => /\(inactive\)/.test(text));
-  check("compact mode renders the scan view", /\(inactive\)/.test(pane));
+  pane = waitFor("compact mode", compactScanRow);
+  check("compact mode renders the scan view", compactScanRow(pane));
 
   run(["tmux", "send-keys", "-t", session, "/contextimate expanded", "Enter"]);
   pane = waitFor("expanded mode", (text) => /readable view/.test(text));

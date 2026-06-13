@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
-import { GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
+import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -533,7 +533,7 @@ function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | 
     ...base,
     ...normalized,
     // An absent label in a patch must not clobber the base label: unknown providers
-    // otherwise reach renderHeader with label undefined and crash formatHeuristicLabel.
+    // otherwise reach renderHeader with label undefined and crash methodologyHint.
     label: normalized.label ?? base.label,
     source,
     textDenominator: cleanDenominator(normalized.textDenominator, base.textDenominator),
@@ -1186,17 +1186,26 @@ function nextMode(mode: ViewMode): ViewMode {
 }
 
 function padLabel(label: string, width = 42): string {
-  return label.length >= width ? `${label} ` : label.padEnd(width, " ");
+  // Overlong labels truncate rather than overflow: the token column is a column, and a
+  // single 40-char title must not shift it (the … keeps the loss visible).
+  const fitted = label.length >= width ? `${label.slice(0, Math.max(0, width - 2))}${ELLIPSIS}` : label;
+  return fitted.padEnd(width, " ");
 }
 
 // Methodology is stated here, once, in the dim hint line (design language §5) — data
-// rows carry only raw sizes. When the session denominator deviates from the text one,
-// say so here; the expanded view stays the per-section audit trail.
+// rows carry only raw sizes. When the session or tool method deviates from the text
+// ratio, say so here (tool tokens may come from the OpenAI formula or a different
+// denominator); the expanded view stays the per-section audit trail.
 function methodologyHint(heuristic: ResolvedHeuristic): string {
   const sessionPart = heuristic.sessionDenominator !== heuristic.textDenominator
     ? `${SEP}session ${ratioDetail(heuristic.sessionDenominator)}`
     : "";
-  return `counts ch ${ratioDetail(heuristic.textDenominator)}${sessionPart} (${heuristic.label})`;
+  const toolsPart = heuristic.toolNumerator === "openai-cookbook"
+    ? `${SEP}tools: OpenAI formula`
+    : heuristic.toolDenominator !== heuristic.textDenominator
+      ? `${SEP}tools ${ratioDetail(heuristic.toolDenominator)}`
+      : "";
+  return `counts ch ${ratioDetail(heuristic.textDenominator)}${sessionPart}${toolsPart} (${heuristic.label})`;
 }
 
 function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): string[] {
@@ -1355,13 +1364,18 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
 
 // --- proportion (design language §5): "of what" — shares of the context window --------
 
-/** Integer percent of the context window; `<1%` rather than a dishonest `0%`. */
-function ctxShareLabel(tokens: number, usage: ContextUsage | undefined): string | undefined {
+/**
+ * Integer percent of the context window; `<1%` rather than a dishonest `0%`. Shares
+ * derived from estimated token counts carry the ~ marker — a wrong harness estimate
+ * must not masquerade as an exact share (only Total request is pi-exact).
+ */
+function ctxShareLabel(tokens: number, usage: ContextUsage | undefined, options: { estimate?: boolean } = {}): string | undefined {
   if (!usage || usage.tokens === null || usage.contextWindow <= 0) return undefined;
   const percent = (tokens / usage.contextWindow) * 100;
   if (!Number.isFinite(percent) || percent < 0) return undefined;
   const rounded = Math.round(percent);
-  return rounded === 0 && tokens > 0 ? "<1% ctx" : `${rounded}% ctx`;
+  if (rounded === 0 && tokens > 0) return "<1% ctx";
+  return `${options.estimate ? "~" : ""}${rounded}% ctx`;
 }
 
 // The window is a budget label, not a measurement: 200k, not 200.0k.
@@ -1370,7 +1384,7 @@ function contextWindowLabel(tokens: number): string {
 }
 
 function harnessDetail(snapshot: PrefixSnapshot): string {
-  const share = ctxShareLabel(totalTokens(snapshot), snapshot.contextUsage);
+  const share = ctxShareLabel(totalTokens(snapshot), snapshot.contextUsage, { estimate: true });
   return countDetail(totalChars(snapshot), share ? `· ${share}` : undefined);
 }
 
@@ -1396,7 +1410,7 @@ function renderContextBar(snapshot: PrefixSnapshot, estimate: SessionEstimate, t
 function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number, layout?: TokenLabelLayout): string[] {
   const estimate = buildSessionEstimate(snapshot);
   if (!snapshot.session || !estimate) return [];
-  const sessionShare = ctxShareLabel(estimate.totalTokens, snapshot.contextUsage);
+  const sessionShare = ctxShareLabel(estimate.totalTokens, snapshot.contextUsage, { estimate: true });
   const provenance = estimate.totalSource === "pi" ? "Pi current - harness" : "heuristic fallback";
   const rows = [
     "",

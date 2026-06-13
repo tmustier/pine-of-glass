@@ -89,17 +89,28 @@ test("context-window shares: integer percent, <1% over a dishonest 0%, budget la
   assert.equal(contextWindowLabel(1000000), "1M");
 });
 
-test("methodology states the session denominator only when it deviates", () => {
+test("methodology states session/tool methods only when they deviate from the text ratio", () => {
   const heuristic = (patch: Record<string, unknown>) => ({
-    source: "test", toolDenominator: 4, toolNumerator: "anthropic", ...patch,
+    source: "test", toolNumerator: "anthropic", ...patch,
   }) as Parameters<typeof methodologyHint>[0];
+  // Everything counted at the text ratio: one clause, no qualifiers.
   assert.equal(
-    methodologyHint(heuristic({ label: "Claude 4.7+ heuristic", textDenominator: 2.6, sessionDenominator: 2.6 })),
+    methodologyHint(heuristic({ label: "Claude 4.7+ heuristic", textDenominator: 2.6, sessionDenominator: 2.6, toolDenominator: 2.6 })),
     "counts ch ÷ 2.6 (Claude 4.7+ heuristic)",
   );
+  // Session and tool denominators each disclose their own deviation.
   assert.equal(
-    methodologyHint(heuristic({ label: "Claude 4.5/4.6 heuristic", textDenominator: 3.8, sessionDenominator: 3.5 })),
-    "counts ch ÷ 3.8 · session ÷ 3.5 (Claude 4.5/4.6 heuristic)",
+    methodologyHint(heuristic({ label: "Claude 4.5/4.6 heuristic", textDenominator: 3.8, sessionDenominator: 3.5, toolDenominator: 3.3 })),
+    "counts ch ÷ 3.8 · session ÷ 3.5 · tools ÷ 3.3 (Claude 4.5/4.6 heuristic)",
+  );
+  assert.equal(
+    methodologyHint(heuristic({ label: "OpenAI Responses heuristic", textDenominator: 4, sessionDenominator: 4, toolDenominator: 5.5 })),
+    "counts ch ÷ 4 · tools ÷ 5.5 (OpenAI Responses heuristic)",
+  );
+  // Formula-counted tools are not a ch ratio at all — the hint must not pretend they are.
+  assert.equal(
+    methodologyHint(heuristic({ label: "OpenAI-Codex heuristic", textDenominator: 4, sessionDenominator: 4, toolDenominator: 5.5, toolNumerator: "openai-cookbook" })),
+    "counts ch ÷ 4 · tools: OpenAI formula (OpenAI-Codex heuristic)",
   );
 });
 
