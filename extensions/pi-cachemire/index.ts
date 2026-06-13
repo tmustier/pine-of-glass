@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { createHash } from "node:crypto";
@@ -7,6 +7,7 @@ import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
+import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
 
 /**
  * pi-cachemire — explains the cache and loop economics of a pi session.
@@ -226,13 +227,9 @@ const UNKNOWN_TTL_WARM_MS = 10 * 60 * 1000; // soft "likely cold" horizon for im
 const HIT_RATIO = 0.8;
 const MISS_RATIO = 0.2;
 
-// --- ANSI (family style: raw SGR like pi-traceline) ------------------------------------
-
-const RESET = "\x1b[0m";
-const GREEN = "\x1b[32m";
-const YELLOW = "\x1b[33m";
-const MUTED_GREY = "\x1b[38;2;128;128;128m";
-const GLYPH = "\u25cd"; // ◍
+// Glyphs and ink come from the family style (_lib/style.ts, design language §§1–3):
+// ◍ opens every loop-economics line, ○ ● ◑ ◌ are the status scale, and all colour
+// is theme-derived through ink() with raw-ANSI fallbacks before a Theme handle exists.
 
 // --- fingerprinting --------------------------------------------------------------------
 
@@ -556,14 +553,10 @@ export function sessionSavings(records: CallRecord[]): { actual: number; uncache
 }
 
 // --- formatting ------------------------------------------------------------------------
-// formatUsd / formatDuration live in _lib/fmt.ts (family number grammar); re-exported
-// here because the test suite reaches them through this module's internals surface.
+// All number formatting lives in _lib/fmt.ts (family number grammar); re-exported here
+// because the test suite reaches it through this module's internals surface.
 
-export { formatDuration, formatUsd } from "../_lib/fmt.ts";
-
-export function formatTokensK(value: number): string {
-  return compactCount(value);
-}
+export { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 
 // --- cache clock (pure state → text; tones applied by the widget layer) -----------------
 
@@ -594,14 +587,14 @@ export interface ClockInput {
 function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number, qualifier = ""): string {
   if (!cachedTokens) return "";
   const bill = rewriteUsd !== undefined ? ` (~${formatUsd(rewriteUsd)})` : "";
-  return ` \u00b7 next send ${verb} ~${formatTokensK(cachedTokens)}${qualifier}${bill}`;
+  return ` \u00b7 next send ${verb} ~${compactCount(cachedTokens)}${qualifier}${bill}`;
 }
 
 export function cacheClock(input: ClockInput): ClockState {
   if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
   if (input.modelSwitched) {
     const scale = input.cachedTokens && input.oldModelId
-      ? ` (~${formatTokensK(input.cachedTokens)} ${input.oldModelId} tokens)`
+      ? ` (~${compactCount(input.cachedTokens)} ${input.oldModelId} tokens)`
       : "";
     return { phase: "cold", text: `cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt${scale}` };
   }
@@ -661,12 +654,12 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
   const parts = [
     `turn: ${run.calls} ${run.calls === 1 ? "call" : "calls"}`,
     formatDuration(endedAt - run.startedAt),
-    `read ${formatTokensK(run.cacheRead)} (${cachedPct >= 99.95 ? "100" : cachedPct.toFixed(1)}% cached)`,
-    `wrote ${formatTokensK(run.cacheWrite)}`,
-    `out ${formatTokensK(run.output)}`,
+    `read ${compactCount(run.cacheRead)} (${cachedPct >= 99.95 ? "100" : cachedPct.toFixed(1)}% cached)`,
+    `wrote ${compactCount(run.cacheWrite)}`,
+    `out ${compactCount(run.output)}`,
   ];
   if (run.costUsd > 0) parts.push(formatUsd(run.costUsd));
-  return parts.join(" \u00b7 ");
+  return parts.join(SEP);
 }
 
 // Tense grammar: in-flight predictions are progressive with ~estimates ("breaking ·
@@ -674,7 +667,7 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
 // 77.7k of 80.1k prompt (97%)").
 export function renderBreakingLine(prediction: BreakPrediction): string {
   const size = prediction.expectedRewriteTokens
-    ? ` \u00b7 re-writing ~${formatTokensK(prediction.expectedRewriteTokens)}${prediction.expectedUsd !== undefined ? ` (~${formatUsd(prediction.expectedUsd)})` : ""}`
+    ? ` \u00b7 re-writing ~${compactCount(prediction.expectedRewriteTokens)}${prediction.expectedUsd !== undefined ? ` (~${formatUsd(prediction.expectedUsd)})` : ""}`
     : prediction.cause.kind === "compaction"
       ? " \u00b7 re-writing the new prefix"
       : prediction.cause.kind === "thinking"
@@ -696,9 +689,9 @@ export function renderMissLine(record: CallRecord): string {
   const prompt = promptTokens(record.usage);
   const pct = prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}% of prompt)` : "";
   const what = record.classification.kind === "partial"
-    ? `cache partial \u00b7 read ${formatTokensK(record.usage.cacheRead)} of ${formatTokensK(record.expectedRead)} expected` +
-      ` \u00b7 re-wrote ${formatTokensK(record.rewroteTokens)}${pct}`
-    : `cache broke \u00b7 re-wrote ${formatTokensK(record.rewroteTokens)} of ${formatTokensK(prompt)} prompt` +
+    ? `cache partial \u00b7 read ${compactCount(record.usage.cacheRead)} of ${compactCount(record.expectedRead)} expected` +
+      ` \u00b7 re-wrote ${compactCount(record.rewroteTokens)}${pct}`
+    : `cache broke \u00b7 re-wrote ${compactCount(record.rewroteTokens)} of ${compactCount(prompt)} prompt` +
       `${prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}%)` : ""}` +
       `${record.costUsd !== undefined ? ` \u00b7 ${formatUsd(record.costUsd)}` : ""}`;
   return `${what} \u00b7 cause: ${record.classification.cause?.detail ?? "unknown"}`;
@@ -707,26 +700,30 @@ export function renderMissLine(record: CallRecord): string {
 // A predicted break that resolved into a hit — good news, and a small lesson about
 // shared-prefix warmth (another session with the same harness prefix kept it alive).
 export function renderHeldLine(record: CallRecord): string {
-  return `cache held \u00b7 read ${formatTokensK(record.usage.cacheRead)} of ${formatTokensK(record.expectedRead)} expected` +
+  return `cache held \u00b7 read ${compactCount(record.usage.cacheRead)} of ${compactCount(record.expectedRead)} expected` +
     " \u00b7 prefix stayed warm";
 }
 
+// The family status scale (design language §1): ○ cold · ● hit · ◑ partial · ◌ miss.
 const EVENT_GLYPHS: Record<CallClassification["kind"], string> = {
-  cold: "\u25cb", // ○
-  hit: "\u25cf", // ●
-  partial: "\u25d1", // ◑
-  miss: "\u25cc", // ◌
+  cold: SCALE.cold,
+  hit: SCALE.hit,
+  partial: SCALE.partial,
+  miss: SCALE.miss,
 };
 
 export function renderLedger(
   records: CallRecord[],
-  options: { providerLabel?: string; window?: CacheWindow; modelLabel?: string } = {},
+  options: { providerLabel?: string; window?: CacheWindow; modelLabel?: string; theme?: Theme } = {},
 ): string[] {
-  const profile: string[] = [];
+  // The family panel-header form (design language §5): [Cachemire] brand line, with the
+  // descriptive title and provider profile demoted to the dim hint. The appended chat
+  // line carries its own spacer, so panelHeader's leading blank is dropped.
+  const profile: string[] = ["cache & loop ledger"];
   if (options.providerLabel) profile.push(options.providerLabel);
   profile.push(windowLabel(options.window ?? UNKNOWN_WINDOW));
   if (options.modelLabel) profile.push(options.modelLabel);
-  const lines: string[] = [`Cachemire \u2014 cache & loop ledger   ${profile.join(" \u00b7 ")}`];
+  const lines: string[] = panelHeader(options.theme, "Cachemire", { hint: profile.join(SEP) }).slice(1);
   if (records.length === 0) {
     lines.push("  no model calls yet");
     return lines;
@@ -744,8 +741,8 @@ export function renderLedger(
         : `${record.classification.kind} \u2014 ${record.classification.cause?.detail ?? "unknown"}`;
     lines.push(
       `  ${col(String(record.index), 4)} ${col(record.gapMs !== undefined ? formatDuration(record.gapMs) : "\u2014", 7)}` +
-      ` ${col(formatTokensK(usage.input), 8)} ${col(formatTokensK(usage.cacheRead), 8)}` +
-      ` ${col(formatTokensK(usage.cacheWrite), 8)} ${col(formatTokensK(usage.output), 7)}` +
+      ` ${col(compactCount(usage.input), 8)} ${col(compactCount(usage.cacheRead), 8)}` +
+      ` ${col(compactCount(usage.cacheWrite), 8)} ${col(compactCount(usage.output), 7)}` +
       ` ${col(record.costUsd !== undefined ? formatUsd(record.costUsd) : "\u2014", 7)}` +
       `  ${EVENT_GLYPHS[record.classification.kind]} ${eventText}${record.restored ? " (restored)" : ""}`,
     );
@@ -762,8 +759,8 @@ export function renderLedger(
     { calls: 0, input: 0, read: 0, wrote: 0, out: 0, cost: 0 },
   );
   lines.push(
-    `  totals: ${totals.calls} calls \u00b7 input ${formatTokensK(totals.input)} \u00b7 read ${formatTokensK(totals.read)}` +
-    ` \u00b7 wrote ${formatTokensK(totals.wrote)} \u00b7 out ${formatTokensK(totals.out)} \u00b7 ${formatUsd(totals.cost)}`,
+    `  totals: ${totals.calls} calls \u00b7 input ${compactCount(totals.input)} \u00b7 read ${compactCount(totals.read)}` +
+    ` \u00b7 wrote ${compactCount(totals.wrote)} \u00b7 out ${compactCount(totals.out)} \u00b7 ${formatUsd(totals.cost)}`,
   );
   const savings = sessionSavings(records);
   if (savings && savings.saved > 0.001) {
@@ -932,6 +929,8 @@ interface CachemireState {
   /** In-flight break notice placed at request time; resolved in place when usage arrives. */
   pendingNotice?: Text;
   run?: RunAggregate;
+  /** Theme handle (captured at session_start) — all chat/widget ink flows through ink(). */
+  theme?: Theme;
   ui?: {
     setWidget: (key: string, content: string[] | undefined) => void;
     notify: (message: string, level?: "info" | "warning" | "error") => void;
@@ -964,16 +963,22 @@ function state(): CachemireState {
   return g.__piCachemire;
 }
 
-function toneFor(phase: ClockState["phase"]): string {
+function toneFor(phase: ClockState["phase"]): Tone {
   switch (phase) {
     case "fresh":
     case "warm-unknown":
-      return GREEN;
+      return "success";
     case "closing":
-      return YELLOW;
+      return "warning";
     default: // cold, stale, cold-unknown, idle
-      return MUTED_GREY;
+      return "dim";
   }
+}
+
+// One-line loop-economics facts (design language §§1, 6): ◍ opens the line; the status
+// tone is theme-derived. These are transient signals, so the tone covers the whole line.
+function econLine(tone: Tone, text: string): string {
+  return ink(state().theme, tone, `${GLYPH.econ} ${text}`);
 }
 
 function updateWidget(now = Date.now()): void {
@@ -990,7 +995,7 @@ function updateWidget(now = Date.now()): void {
     oldModelId: s.lastCallModelId,
     thinkingChanged: s.thinkingChanged,
   });
-  const text = clock.phase === "idle" ? "" : `${toneFor(clock.phase)}${GLYPH} ${clock.text}${RESET}`;
+  const text = clock.phase === "idle" ? "" : econLine(toneFor(clock.phase), clock.text);
   if (text === s.lastWidgetText) return;
   s.lastWidgetText = text;
   s.ui.setWidget("pi-cachemire", text === "" ? undefined : [text]);
@@ -1106,6 +1111,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     }
     if (!ctx.hasUI) return;
     s.ui = ctx.ui as unknown as CachemireState["ui"];
+    s.theme = (ctx.ui as { theme?: Theme }).theme;
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
       s.tui = tui as CachemireState["tui"];
     });
@@ -1157,7 +1163,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         (prediction.expectedUsd ?? 0) >= s.config.missWarnUsd
       );
       if (material) {
-        const text = `${YELLOW}${GLYPH} ${renderBreakingLine(prediction)}${RESET}`;
+        const text = econLine("warning", renderBreakingLine(prediction));
         if (s.pendingNotice) s.pendingNotice.setText(text); // provider retry: reuse the line
         else s.pendingNotice = appendChatLine(text);
       }
@@ -1295,25 +1301,25 @@ export default function piCachemire(pi: ExtensionAPI): void {
       // Resolve the in-flight notice with actuals — yellow when the break happened, green
       // when the prediction was wrong and the prefix held (shared-prefix warmth).
       resolveNotice(broke
-        ? `${YELLOW}${GLYPH} ${renderMissLine(record)}${RESET}`
-        : `${GREEN}${GLYPH} ${renderHeldLine(record)}${RESET}`);
+        ? econLine("warning", renderMissLine(record))
+        : econLine("success", renderHeldLine(record)));
     } else if (
       s.config.missWarnings && broke &&
       ((record.costUsd ?? 0) >= s.config.missWarnUsd || record.rewroteTokens >= s.config.missWarnTokens)
     ) {
       // Unpredicted break (e.g. provider-side eviction): append at resolution time.
-      appendChatLine(`${YELLOW}${GLYPH} ${renderMissLine(record)}${RESET}`);
+      appendChatLine(econLine("warning", renderMissLine(record)));
     }
     updateWidget(now);
   });
 
   pi.on("agent_end", async () => {
     // A notice whose call never produced usage (abort/error) must not dangle as "breaking".
-    resolveNotice(`${MUTED_GREY}${GLYPH} cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown${RESET}`);
+    resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
     const run = s.run;
     s.run = undefined;
     if (!run || !s.config.turnSummary || run.calls < s.config.turnSummaryMinCalls) return;
-    appendChatLine(`${MUTED_GREY}${GLYPH} ${renderRunSummary(run, Date.now())}${RESET}`);
+    appendChatLine(econLine("dim", renderRunSummary(run, Date.now())));
   });
 
   pi.registerCommand("cache", {
@@ -1324,8 +1330,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
         providerLabel: s.providerLabel,
         window: s.window,
         modelLabel: s.modelLabel,
+        theme: s.theme,
       });
-      appendChatLine(`${MUTED_GREY}${GLYPH} ${lines[0]}${RESET}\n${lines.slice(1).join("\n")}`);
+      appendChatLine(lines.join("\n"));
     },
   });
 }
@@ -1352,7 +1359,7 @@ export const internals = {
   uncachedCostUsd,
   rewriteCostUsd,
   sessionSavings,
-  formatTokensK,
+  compactCount,
   formatUsd,
   formatDuration,
   childAnchorKey,
