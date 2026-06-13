@@ -162,13 +162,19 @@ bar if you want the old ≥2-calls behaviour):
 and `/cache` for the full per-call table:
 
 ```
-◍ Cachemire — cache & loop ledger   anthropic · 5m TTL · anthropic/claude-opus-4-8
-   call     gap    input     read    wrote     out    cost  event
-      1       —    12.1k     0.0k   138.2k    0.4k   $0.55  ○ cold start
-      2     14s     1.2k   150.3k     1.8k    1.1k   $0.04  ● hit
-   totals: 2 calls · input 13.3k · read 150.3k · wrote 140.0k · out 1.5k · $0.59
-   caching saved ~$0.65 vs uncached $0.91 (−71%) · API-priced; notional on subscription
+[Cachemire]
+  cache & loop ledger · anthropic · 5m TTL · anthropic/claude-opus-4-8
+  call     gap    input     read    wrote     out    cost  event
+     1       —    12.1k     0.0k   138.2k    0.4k   $0.55  ○ cold start
+     2     14s     1.2k   150.3k     1.8k    1.1k  $0.040  ● hit
+  totals: 2 calls · input 13.3k · read 150.3k · wrote 140.0k · out 1.5k · $0.59
+  caching saved ~$0.65 vs uncached $0.91 (−71%) · API-priced; notional on subscription
 ```
+
+The ledger opens with the family panel header (`docs/design-language.md` §5): `[Cachemire]`
+in the theme accent, with the descriptive title and provider profile on the dim hint line.
+Clock and notice tones are theme-derived through the shared `ink()` helper, and the `◍` /
+`○ ● ◑ ◌` glyphs come from the family vocabulary in `extensions/_lib/style.ts`.
 
 The savings line compares actual spend against the counterfactual where every token was
 billed at base input rates — the honest answer to "is caching working?".

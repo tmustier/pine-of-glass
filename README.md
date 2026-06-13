@@ -29,7 +29,10 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
 ```
 
 Extensions share code through [`extensions/_lib`](./extensions/_lib) (number grammar,
-ANSI helpers, chat-container detection, config convention). pi resolves extension-relative
+family style — glyphs, theme-derived ink, panel headers — ANSI helpers, chat-container
+detection, config convention). The visual grammar all three speak is specified in
+[`docs/design-language.md`](./docs/design-language.md); when a renderer and that document
+disagree, one of them is wrong. pi resolves extension-relative
 imports against the symlink path, so local installs must link the extension *directories*
 plus `_lib` — `npm run link-extensions` does exactly that. `_lib` has no `index.ts`, so
 pi's extension discovery skips it.
@@ -43,7 +46,6 @@ The contract suite pins every structural assumption about pi internals, so after
 *Note: A nice side benefit of 1. is that tools like `traceline` can help agents running interactive pi subagents in tmux to monitor them without risking context bloat from tool outputs.*
 
 **Status:** There are several things left to do in 1., including
-- maturing [`cachemire`](./extensions/pi-cachemire) (currently WIP/PoC: implemented and live-tested, but local/unpublished while the UX settles — see issue #6),
-- UI improvements for `traceline` (filepath/multi-read UI, tool result size)
+- maturing [`cachemire`](./extensions/pi-cachemire) (implemented, live-tested, and conformant with the family design language, but local/unpublished while the UX settles — see issue #6),
 - making `contextimate` more useful beyond upfront context (for example, are my MCP servers and skills efficient when loaded?)
 - and other refinements tracked in issues.

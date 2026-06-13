@@ -5,9 +5,12 @@ One visual grammar for the extension family — `pi-contextimate`, `pi-traceline
 is its implementation. When a renderer and this document disagree, one of them is wrong —
 fix whichever it is, deliberately.
 
-**Status: agreed 2026-06-12.** Decisions marked `[D]` were proposed-by-default and
-confirmed; the former open questions are resolved in §11. Changes to this language are
-fine — but they are design decisions, made here first, then implemented.
+**Status: agreed 2026-06-12; implemented 2026-06-12** across the shared-library pass
+(#18), the traceline pass (#19, #20), the contextimate pass (#21), and the cachemire
+pass (#22). Decisions marked `[D]` were proposed-by-default and confirmed; the former
+open questions are resolved in §11. Changes to this language are fine — but they are
+design decisions, made here first, then implemented. §9's per-extension lists are the
+as-built conformance record.
 
 ## Why
 
@@ -178,7 +181,7 @@ ledger) share one header form:
 - `[D]` Panels brand with the **extension name** (`[Contextimate]`, `[Cachemire]`), not
   descriptive titles (`[Context Estimator]`, `Cachemire — cache & loop ledger`). One
   naming system; the descriptive part can live in the dim hint line. This renames a
-  documented surface (README, tests) — flagged for explicit approval. `[Q]`
+  documented surface (README, tests) — approved and applied (§11.1).
 
 ### Proportion
 
@@ -259,8 +262,8 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
    across modes.
 4. Proportion: percent-of-window on the two total rows + one stacked bar under
    `Total request`; optional per-row share of harness in summary. `[D]`
-5. Header becomes `[Contextimate]` + pips (pending the `[Q]` naming call); the pips
-   pattern moves to `style.ts` for reuse.
+5. Header becomes `[Contextimate]` + pips (naming resolved, §11.1); the pips pattern
+   moves to `style.ts` for reuse.
 6. Hardcoded `ORANGE` constant deleted; brand/figure/total highlights move to
    `ink(theme, "accent", …)` — the orange was an arbitrary pick and is not retained.
 
@@ -283,13 +286,13 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
 6. `›`, `↵`, middle-truncation, tildify: unchanged in behaviour; implementation moves
    to `_lib` so the family shares it.
 
-### pi-cachemire (WIP — apply before first publish)
+### pi-cachemire (applied before first publish, #22)
 
 1. Delete `formatTokensK`; use fixed-k `compactCount` (ledger `out 400` becomes
    `out 0.4k`). `formatUsd`/`formatDuration` move to `_lib/fmt.ts` (call sites
    unchanged).
 2. `/cache` ledger adopts the panel-header grammar (`[Cachemire]` + dim profile/hint
-   line, pending `[Q]`).
+   line; naming resolved, §11.1).
 3. Status glyphs `○ ● ◑ ◌` and `◍` move to `style.SCALE`/`style.GLYPH` — promoted to
    family vocabulary, behaviour unchanged.
 4. Clock/notice tones (green/yellow/grey) become theme-derived via `ink()`.

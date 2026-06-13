@@ -159,6 +159,11 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
   renderer fallback) at width 80 — this pins the row grammar without touching Pi's
   renderer (comps are synthetic stand-ins satisfying the duck type, which the contract
   suite separately proves matches real Pi).
+- Cachemire gets one combined golden (`tests/cachemire/goldens.test.ts` →
+  `cachemire-lines.txt`): the `/cache` ledger panel over a cold/hit/partial/miss
+  session plus every one-line `◍` surface — clock states, break notices, resolutions,
+  and the turn summary — pinning wording, glyphs, and fact order (colour excluded as
+  everywhere).
 
 ## Layer 4 — startup smoke (tmux, local-only)
 
