@@ -89,7 +89,7 @@ assigned a level on purpose.
 | L2 | secondary identity | directories, descriptions, field types | `muted` |
 | L3 | apparatus | methodology, plumbing (`&&`, `2>/dev/null`), markers, units, causes | `dim` |
 
-Status/severity tones (glyphs and quantity suffixes only, never body prose):
+Status/severity tones (glyphs, quantity suffixes, and native tool metadata like read `:line-range` spans; never body prose):
 
 | tone | meaning | theme source |
 |---|---|---|
@@ -99,7 +99,7 @@ Status/severity tones (glyphs and quantity suffixes only, never body prose):
 | running | in flight | none faithful — `style.ts` fallback (ANSI blue) `[D]` |
 
 The test of a good ink assignment: squint. Only L0 and any non-dim severity tones
-should survive the squint. If a slab of tool rows survives at the same brightness as
+should survive the squint. If a wall of tool rows survives at the same brightness as
 assistant prose, the hierarchy is wrong (this is today's traceline complaint).
 
 ## 3. Colour sourcing
@@ -112,8 +112,9 @@ assistant prose, the hierarchy is wrong (this is today's traceline complaint).
   sparingly: panel brands (`[Contextimate]`), highlighted token figures, total rows,
   the filled part of proportion bars. Recognizability comes from the glyph and layout
   grammar, which survives any theme.
-- Backgrounds are always **borrowed live from pi** (traceline's
-  `contentBox.bgFn` / `toolSuccessBg` pattern), never synthesized.
+- Family renderers do not synthesize backgrounds. Traceline's old tool-background
+  experiment, when explicitly enabled, **borrows live from pi** (`contentBox.bgFn` /
+  `toolSuccessBg`) rather than inventing colours; by default trace rows are unbanded.
 - Components that render before a `Theme` handle exists may use `style.ts` raw
   fallbacks; everything rendered after `session_start` has `ctx.ui.theme` and must use it.
 
@@ -162,8 +163,9 @@ Hard rules:
 - **Blank lines:** one before a group; none within it; a row sits tight under the
   collapsed `Thinking…` line that motivated it (traceline's couplet rule, family-wide).
 - **Tildify** home paths; **middle-truncate** protecting the tail; dim the directory,
-  brighten the basename. (Traceline's rules, promoted to family rules; contextimate's
-  expanded tool paths already comply approximately.)
+  brighten the basename, and keep read `:line-range` spans warning-coloured so scoped
+  file reads remain visible. (Traceline's rules, promoted to family rules;
+  contextimate's expanded tool paths already comply approximately.)
 
 ### Panel headers
 
@@ -277,16 +279,17 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
 3. **Repeated-preamble dimming:** when a row's leading segment (`cd X &&`, identical
    pipeline head) repeats the previous row's, render that head at L3-dim (or elide to a
    dim `⋯ &&`). Kills the wall-of-`cd` (issue #14).
-4. Body ink one step down: verb (L0) + operative tail/basename (L1) bright; mid-line
-   arguments L1→L2 where separable; plumbing stays L3. Tool slabs must fail the squint
-   test against prose.
+4. Body ink one step down: verb (L0) + operative tail/basename (L1) bright; read
+   `:line-range` spans keep Pi's warning/yellow metadata treatment; mid-line arguments
+   L1→L2 where separable; plumbing stays L3. Trace rows are unbanded by default; the
+   old native-background slab path stays available behind `toolBackgrounds`.
 5. Fold paginated reads of one file into one row (`read …/index.ts:1-200,201-400 · 2
    calls · 37.0k ch`) and fix doubled `Thinking…` lines — issue #14's scope, executed
    under this language.
 6. `›`, `↵`, middle-truncation, tildify: unchanged in behaviour; implementation moves
    to `_lib` so the family shares it.
 
-### pi-cachemire (applied before first publish, #22)
+### pi-cachemire (applied for first package ship, #22)
 
 1. Delete `formatTokensK`; use fixed-k `compactCount` (ledger `out 400` becomes
    `out 0.4k`). `formatUsd`/`formatDuration` move to `_lib/fmt.ts` (call sites
@@ -329,6 +332,6 @@ All resolved with Thomas, 2026-06-12:
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).
 2. Traceline pass (sections 6 + conformance 1–4; issue #14 items 3/5 can ride along).
 3. Contextimate pass (number grammar + methodology placement + proportion).
-4. Cachemire pass (cheap once 1. exists; before it ships in the npm package).
+4. Cachemire pass (cheap once 1. exists; completed for the `0.4.0` package ship).
 
 One PR per pass; goldens regenerated within the pass that moves them.

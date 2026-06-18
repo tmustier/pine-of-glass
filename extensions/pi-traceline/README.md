@@ -52,9 +52,9 @@ range — while a shared prefix dominates. Three folds keep the trace skimmable:
   › read ~/projects/pine-of-gl…index.ts:1-200,201-400,401-600 3 calls · 51.1k ch
 ```
 
-### The tool surface
+### Tool backgrounds
 
-Each trace line sits on Pi's own status-tinted tool background — the same shaded surface the expanded block uses (`toolPendingBg` / `toolSuccessBg` / `toolErrorBg` from your active theme, borrowed live from the row itself, so themes and light/dark handling come for free). Collapsed and expanded views read as the *same object at different zoom*, trace rows stop dissolving into surrounding prose, and consecutive calls tile into one shaded slab per tool group. The band retints when a result lands (pending → success/error), and tools that render their own framing get no band — exactly matching native. 
+Trace lines are unbanded by default: status stays in the bullet and result-size suffix, while the body keeps the calmer edit-tool look. The previous full-width native background path is still available behind a flag if we want it back: set `PI_TRACELINE_TOOL_BACKGROUNDS=1` or add `{ "toolBackgrounds": true }` to `~/.pi/agent/pi-traceline.json` / `<cwd>/.pi/pi-traceline.json`, then reload Pi. When enabled, the band is still borrowed from Pi's own tool background (`toolPendingBg` / `toolSuccessBg` / `toolErrorBg`) rather than synthesized.
 
 ### Multiline commands stay one line
 
@@ -69,7 +69,7 @@ Bash commands keep their real newlines — heredocs, inline `python3 -c` scripts
 The discriminating part of a row usually lives at the **tail** — the filename + `:line-range` for a path, or the operative end of a command — while the head is boilerplate (long `~/projects/...` prefixes, `cd ... &&` preambles). So instead of a trailing ellipsis that deletes the signal, `pi-traceline`:
 
 - **tildifies** home directories (`/Users/you/...` -> `~/...`) to reclaim width before truncating (OSC 8 hyperlink URLs are left intact, so click targets keep working);
-- **middle-truncates** with a dimmed `…`, protecting the tail so the basename and `:range` survive, snapping the cut to a nearby `/` or space;
+- **middle-truncates** with a dimmed `…`, protecting the tail so the basename and warning-coloured `:range` survive, snapping the cut to a nearby `/` or space;
 - **dims the directory** on plain file reads so the basename — *which* file — stands out.
 
 ```

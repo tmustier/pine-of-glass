@@ -146,7 +146,7 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   assert.equal(traceline.toolStatus(comp), "error");
 });
 
-test("real ToolExecutionComponent: bash multiline render + tool-surface seams traceline borrows", () => {
+test("real ToolExecutionComponent: bash multiline render + opt-in tool-surface seams", () => {
   pi.initTheme(undefined, false);
   const comp = new pi.ToolExecutionComponent(
     "bash",
@@ -169,19 +169,24 @@ test("real ToolExecutionComponent: bash multiline render + tool-surface seams tr
   const flat = traceline.stripAnsi(traceline.oneLine(comp as never, 200));
   assert.ok(flat.includes("echo done"), `flattened bash row lost its tail: ${flat}`);
 
-  // The shaded surface: contentBox.bgFn is the status-synced theme background, and its
-  // output shape (open + text + bg-only close) is what shadeRow's \u0000 split parses.
+  // Tool backgrounds are deliberately off by default: the optional path still depends
+  // on Pi's live contentBox.bgFn surface, but normal trace rows stay unbanded.
   const box = (comp as unknown as { contentBox?: { bgFn?: (text: string) => string } }).contentBox;
-  assert.ok(box && typeof box.bgFn === "function", "contentBox.bgFn gone — traceline rows lose the tool surface");
+  assert.ok(box && typeof box.bgFn === "function", "contentBox.bgFn gone — traceline cannot opt back into the tool surface");
   const [open = "", close = ""] = box.bgFn("\u0000").split("\u0000");
   assert.ok(/^\x1b\[48;/.test(open), `theme.bg open is no longer a bg SGR prefix: ${JSON.stringify(open)}`);
   assert.equal(close, "\x1b[49m", "theme.bg no longer closes with bg-only reset — shadeRow re-assertion breaks");
+  assert.equal(traceline.toolBackgroundsEnabled(), false, "traceline should render unbanded rows by default");
+  assert.equal(traceline.oneLine(comp as never, 80).startsWith(open), false, "default row should not open on the tool background");
+
   // Anything other than "self" composes through the bg-painted contentBox; rowBackground
-  // only opts out on "self", so the invariant to pin is bash not being self-framed.
+  // only opts out on "self", so the opt-in invariant to pin is bash not being self-framed.
   const shell = (comp as unknown as { getRenderShell?: () => string }).getRenderShell?.();
-  assert.ok(typeof shell === "string" && shell !== "self", `bash render shell became self-framed (${shell}) — rows lose the shade`);
+  assert.ok(typeof shell === "string" && shell !== "self", `bash render shell became self-framed (${shell}) — rows lose the opt-in shade`);
+  traceline.configureToolBackgrounds({ toolBackgrounds: true });
   const shaded = traceline.oneLine(comp as never, 80);
-  assert.ok(shaded.startsWith(open), "real row did not open on the theme tool background");
+  assert.ok(shaded.startsWith(open), "opt-in row did not open on the theme tool background");
+  traceline.configureToolBackgrounds({ toolBackgrounds: false });
 });
 
 test("real AssistantMessageComponent satisfies traceline's assistant duck type", () => {

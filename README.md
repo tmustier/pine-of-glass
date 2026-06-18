@@ -3,13 +3,13 @@
 Small observability and context management tools for [Pi](https://github.com/earendil-works/pi) in the terminal.
 1. [`contextimate`](./extensions/pi-contextimate) breaks down what is filling your context window: sysprompt, AGENTS.md, Skill frontmatter, Tool schemas, and session material. Toggle with ctrl+o on start and /reload.
 2. [`traceline`](./extensions/pi-traceline) collapses tool calls to one trace line each, so you can see the full arc of what Pi did (path taken, context read, bloated tool results). Toggle with ctrl+t (expands/collapses both thinking blocks and tools so you can see everything your agent did since your last message).
-3. [`cachemire`](./extensions/pi-cachemire) (**WIP / proof-of-concept**) explains cache behaviour and agent-loop economics: a cache TTL clock above the editor, predicted-then-resolved cache-break notices, a per-turn ledger, and `/cache` forensics. Local-only and excluded from the npm package while the UX settles.
+3. [`cachemire`](./extensions/pi-cachemire) (**experimental**) explains cache behaviour and agent-loop economics: a cache TTL clock above the editor, predicted-then-resolved cache-break notices, a per-turn ledger, and `/cache` forensics. Included in the package as of `0.4.0`; wording, thresholds, and states may still evolve.
 
 See each extension's own `README.md` for details, and `docs/` for deeper reference.
 
 ## Installation
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
-- From npm (installs both `contextimate` and `traceline`): `pi install npm:pine-of-glass`
+- From npm (installs `contextimate`, `traceline`, and experimental `cachemire`): `pi install npm:pine-of-glass`
 
 ## Screenshots
 ### [Contextimate](./extensions/pi-contextimate)
@@ -46,6 +46,6 @@ The contract suite pins every structural assumption about pi internals, so after
 *Note: A nice side benefit of 1. is that tools like `traceline` can help agents running interactive pi subagents in tmux to monitor them without risking context bloat from tool outputs.*
 
 **Status:** There are several things left to do in 1., including
-- maturing [`cachemire`](./extensions/pi-cachemire) (implemented, live-tested, and conformant with the family design language, but local/unpublished while the UX settles — see issue #6),
+- maturing [`cachemire`](./extensions/pi-cachemire) (implemented, live-tested, conformant with the family design language, and now shipped as experimental while the UX settles — see issue #6),
 - making `contextimate` more useful beyond upfront context (for example, are my MCP servers and skills efficient when loaded?)
 - and other refinements tracked in issues.

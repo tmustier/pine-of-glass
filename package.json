@@ -1,6 +1,6 @@
 {
   "name": "pine-of-glass",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Observability extensions for the Pi coding agent",
   "license": "MIT",
   "type": "module",
@@ -26,7 +26,8 @@
   "pi": {
     "extensions": [
       "./extensions/pi-contextimate",
-      "./extensions/pi-traceline"
+      "./extensions/pi-traceline",
+      "./extensions/pi-cachemire"
     ]
   },
   "peerDependencies": {
@@ -46,7 +47,9 @@
     "extensions/_lib",
     "extensions/pi-contextimate",
     "extensions/pi-traceline",
+    "extensions/pi-cachemire",
     "docs",
+    "CHANGELOG.md",
     "scripts/contextimate",
     "LICENSE"
   ],

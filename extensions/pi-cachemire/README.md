@@ -1,8 +1,8 @@
 # pi-cachemire
 
-> **Status: WIP / proof-of-concept.** Local-only and unpublished while the UX settles
-> — wording, thresholds, and states may change without notice, and it is excluded from
-> the npm package. Track [#6](https://github.com/tmustier/pine-of-glass/issues/6).
+> **Status: experimental.** Included in the `pine-of-glass` package as of `0.4.0`,
+> but the UX is still settling — wording, thresholds, and states may change without
+> notice. Track [#6](https://github.com/tmustier/pine-of-glass/issues/6).
 
 Explains the cache and agent-loop economics of a pi session. pi's footer *counts*
 (input/output/cache read/write/cost); cachemire *explains* — when the cache will go cold,

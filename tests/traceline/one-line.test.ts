@@ -14,6 +14,8 @@ const {
   formatCharCount,
   charSuffix,
   configureSizeThresholds,
+  configureToolBackgrounds,
+  toolBackgroundsEnabled,
   lineRange,
   tildify,
   toolStatus,
@@ -57,6 +59,7 @@ beforeEach(() => {
   g.__tracelineChat = undefined;
   g.__tracelineGetTheme = undefined;
   configureSizeThresholds(undefined);
+  configureToolBackgrounds({ toolBackgrounds: false });
 });
 
 test("row grammar units", () => {
@@ -99,9 +102,10 @@ test("one-line read row: emphasized path, range kept, suffix right-aligned", () 
   assert.ok(visibleWidth(line) <= 80);
   assert.ok(visible.startsWith("  › read ~/projects/demo/file.ts:1-40"), visible);
   assert.ok(visible.endsWith("1.4k ch"), visible);
-  // Emphasis dims the directory separately from the basename: the raw line must restyle
-  // the directory span, not just pass the native text through.
+  // Emphasis dims the directory separately from the basename, while the range keeps
+  // Pi's prominent warning/yellow treatment: the raw line must restyle both spans.
   assert.ok(line.includes(`${DIM}~/projects/demo/\x1b[0m`), "directory must be dimmed");
+  assert.ok(line.includes("\x1b[33m:1-40\x1b[0m"), "line range must stay warning/yellow");
 });
 
 test("result-size suffix severity: dim while healthy, warning ≥10k ch, error ≥50k ch", () => {
@@ -131,6 +135,7 @@ test("ink derives from the theme when one is active", () => {
   const line = oneLine(toolComp(), 80);
   assert.ok(line.includes("\x1b[38;5;245m~/projects/demo/"), `directory must use theme dim: ${JSON.stringify(line)}`);
   assert.ok(line.includes("\x1b[38;5;41m"), "status ink must use the theme success role");
+  assert.ok(line.includes("\x1b[38;5;220m:1-40"), "line range must use the theme warning role");
   assert.ok(line.includes("\x1b[38;5;245m1.4k ch"), "healthy suffix must use theme dim");
   assert.ok(!line.includes(DIM), "no raw fallback grey may leak while a theme is active");
 });
@@ -207,15 +212,46 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   assert.equal(stripAnsi(flattenInvocationLines(["$ cat <<'EOF'", "  body", "EOF"])!), "$ cat <<'EOF' \u21b5 body \u21b5 EOF");
 });
 
-test("rows sit on the native tool surface: full-width band, reset-proof, self-shell exempt", () => {
+test("tool background flag accepts config and env, with unbanded rows as the default", () => {
+  const previous = process.env.PI_TRACELINE_TOOL_BACKGROUNDS;
+  try {
+    delete process.env.PI_TRACELINE_TOOL_BACKGROUNDS;
+    configureToolBackgrounds(undefined);
+    assert.equal(toolBackgroundsEnabled(), false);
+
+    process.env.PI_TRACELINE_TOOL_BACKGROUNDS = "1";
+    configureToolBackgrounds(undefined);
+    assert.equal(toolBackgroundsEnabled(), true);
+
+    process.env.PI_TRACELINE_TOOL_BACKGROUNDS = "off";
+    configureToolBackgrounds(undefined);
+    assert.equal(toolBackgroundsEnabled(), false);
+
+    process.env.PI_TRACELINE_TOOL_BACKGROUNDS = "1";
+    configureToolBackgrounds({ toolBackgrounds: false });
+    assert.equal(toolBackgroundsEnabled(), false, "explicit config keeps tests and project overrides deterministic");
+  } finally {
+    if (previous === undefined) delete process.env.PI_TRACELINE_TOOL_BACKGROUNDS;
+    else process.env.PI_TRACELINE_TOOL_BACKGROUNDS = previous;
+    configureToolBackgrounds({ toolBackgrounds: false });
+  }
+});
+
+test("tool backgrounds are off by default; opt-in keeps the native full-width band", () => {
   const BG_OPEN = "\x1b[48;2;30;30;40m";
   const bgFn = (text: string) => `${BG_OPEN}${text}\x1b[49m`; // theme.bg shape
   const comp = toolComp({ contentBox: { bgFn }, getRenderShell: () => "box" });
 
+  assert.equal(toolBackgroundsEnabled(), false, "unbanded trace rows are the default");
+  assert.equal(rowBackground(comp), undefined);
+  assert.equal(oneLine(comp, 80).includes(BG_OPEN), false, "default trace row should not paint a background");
+
+  configureToolBackgrounds({ toolBackgrounds: true });
+  assert.equal(toolBackgroundsEnabled(), true);
   const line = oneLine(comp, 80);
-  assert.ok(line.startsWith(BG_OPEN), "row must open on the tool background");
-  assert.ok(line.endsWith("\x1b[49m"), "row must close only the background");
-  assert.equal(visibleWidth(line), 80, "band must span the full width");
+  assert.ok(line.startsWith(BG_OPEN), "opt-in row must open on the tool background");
+  assert.ok(line.endsWith("\x1b[49m"), "opt-in row must close only the background");
+  assert.equal(visibleWidth(line), 80, "opt-in band must span the full width");
   for (const segment of line.split("\x1b[0m").slice(1)) {
     assert.ok(segment.startsWith(BG_OPEN), `background must be re-asserted after every reset: ${JSON.stringify(segment)}`);
   }

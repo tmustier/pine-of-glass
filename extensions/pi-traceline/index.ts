@@ -35,11 +35,10 @@ import {
  *
  * One-line rendering reuses pi's native tool call renderer, so visual defaults
  * (bold command name, accent paths/backticks, warning line ranges, etc.) drift with pi.
- * Each row sits on pi's own status-tinted tool background (the same shaded surface the
- * expanded block uses, borrowed live from the row's contentBox), so collapsed and
- * expanded read as the same object at different zoom — and consecutive rows tile into
- * one shaded slab per tool group. Multiline bash commands are flattened into the one
- * trace line with a dim ↵ marking each original break, so heredocs and inline scripts
+ * Rows are intentionally unbanded by default (the edit-tool look): status stays in the
+ * bullet and severity suffixes, while the old pi-background borrowing path remains
+ * behind a config flag for easy rollback. Multiline bash commands are flattened into
+ * the one trace line with a dim ↵ marking each original break, so heredocs and inline scripts
  * keep their operative tail instead of collapsing to `$ python3 -c "`.
  * The ink follows the family hierarchy (docs/design-language.md): shell plumbing (`&&`,
  * `|`, `2>/dev/null`, heredoc markers) is dimmed so command segments pop, and the
@@ -106,7 +105,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.len
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 12;
+const TRACELINE_PATCH_VERSION = 13;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 1;
 
@@ -425,7 +424,13 @@ function formatCharCount(value: number): string {
 // (~/.pi/agent/pi-traceline.json / <cwd>/.pi/pi-traceline.json).
 let sizeThresholds: SizeThresholds = SIZE_THRESHOLDS;
 
-function configureSizeThresholds(config: { sizeWarningChars?: unknown; sizeErrorChars?: unknown } | undefined): void {
+type TracelineConfig = {
+  sizeWarningChars?: unknown;
+  sizeErrorChars?: unknown;
+  toolBackgrounds?: unknown;
+};
+
+function configureSizeThresholds(config: TracelineConfig | undefined): void {
   const warning =
     typeof config?.sizeWarningChars === "number" && config.sizeWarningChars > 0
       ? Math.floor(config.sizeWarningChars)
@@ -435,6 +440,26 @@ function configureSizeThresholds(config: { sizeWarningChars?: unknown; sizeError
       ? Math.floor(config.sizeErrorChars)
       : SIZE_THRESHOLDS.error;
   sizeThresholds = { warning, error: Math.max(error, warning) };
+}
+
+let paintToolBackgrounds = false;
+
+function parseBooleanFlag(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "on", "yes"].includes(normalized)) return true;
+  if (["0", "false", "off", "no"].includes(normalized)) return false;
+  return undefined;
+}
+
+function configureToolBackgrounds(config: TracelineConfig | undefined): void {
+  const configured = parseBooleanFlag(config?.toolBackgrounds);
+  paintToolBackgrounds = configured ?? parseBooleanFlag(process.env.PI_TRACELINE_TOOL_BACKGROUNDS) ?? false;
+}
+
+function toolBackgroundsEnabled(): boolean {
+  return paintToolBackgrounds;
 }
 
 function charSuffix(chars: number | undefined): string {
@@ -643,8 +668,9 @@ function fallbackInvocationLine(comp: any): string {
   return body.replace(/\s+/g, " ").trim() || verb;
 }
 
-// Emphasis for plain file reads: dim the directory so the basename (which file) and the
-// :line-range (how much of it) stand out. Applied only when the native row is a bare
+// Emphasis for plain file reads: dim the directory so the basename (which file) stands
+// out, and keep the :line-range in pi's warning/yellow treatment so scoped reads pop.
+// Applied only when the native row is a bare
 // `read <path>[:range]`; rows with a secondary label (resource / [skill]) keep native.
 function pathEmphasisLine(comp: any, nativeColored: string): string | undefined {
   if (toolLabel(comp?.toolName) !== "read") return undefined;
@@ -654,18 +680,19 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
   const lastSlash = tildePath.lastIndexOf("/");
   if (lastSlash < 0) return undefined;
   if (!stripAnsi(nativeColored).trim().startsWith(`read ${tildePath}`)) return undefined;
+  const theme = currentTheme();
   const dir = tildePath.slice(0, lastSlash + 1);
   const base = tildePath.slice(lastSlash + 1);
   const range = lineRange(comp?.args);
-  return `${ink(currentTheme(), statusTone(comp), `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${dim(range)}`;
+  return `${ink(theme, statusTone(comp), `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${ink(theme, "warning", range)}`;
 }
 
-// The shaded tool surface, borrowed live from the row itself. pi keeps contentBox.bgFn
-// status-synced (toolPendingBg / toolSuccessBg / toolErrorBg from the active theme), so
-// the collapsed row inherits the exact background the expanded block would have — theme,
-// light/dark, and colour-mode handling all come for free, and the band retints when the
-// result lands. Self-framing tools have no native shade, so they get none here either.
+// Optional shaded tool surface, borrowed live from the row itself. This used to be the
+// default, but the unbanded edit-tool look is calmer and avoids inconsistent highlighting
+// for self-framing tools. Keep the path behind `toolBackgrounds` / `PI_TRACELINE_TOOL_BACKGROUNDS`
+// so it is one config flip away if we want the old full-width native bands back.
 function rowBackground(comp: any): ((text: string) => string) | undefined {
+  if (!toolBackgroundsEnabled()) return undefined;
   try {
     if (typeof comp?.getRenderShell === "function" && comp.getRenderShell() === "self") return undefined;
     const bgFn = comp?.contentBox?.bgFn;
@@ -675,8 +702,9 @@ function rowBackground(comp: any): ((text: string) => string) | undefined {
   }
 }
 
-// Full-width band: pad to width, then re-assert the background after every full SGR
-// reset (traceline's own ink uses \x1b[0m liberally) so the surface never punches holes.
+// Full-width band for the opt-in native tool surface: pad to width, then re-assert the
+// background after every full SGR reset (traceline's own ink uses \x1b[0m liberally) so
+// the surface never punches holes.
 function shadeRow(line: string, width: number, bgFn: (text: string) => string): string {
   const [open = "", close = ""] = bgFn("\u0000").split("\u0000");
   if (!open) return line;
@@ -818,7 +846,7 @@ function foldedReadLine(rows: any[], width: number): string {
     .map((row) => lineRange(row?.args).slice(1))
     .filter(Boolean)
     .join(",");
-  const body = `${ink(theme, tone, `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${dim(ranges ? `:${ranges}` : "")}`;
+  const body = `${ink(theme, tone, `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
   let total: number | undefined;
   for (const row of rows) {
     const chars = resultTextCharCount(row);
@@ -1044,6 +1072,8 @@ export const internals = {
   formatCharCount,
   charSuffix,
   configureSizeThresholds,
+  configureToolBackgrounds,
+  toolBackgroundsEnabled,
   lineRange,
   toolStatus,
   fallbackInvocationLine,
@@ -1110,14 +1140,14 @@ export default function piTraceline(pi: ExtensionAPI) {
         return undefined;
       }
     };
-    configureSizeThresholds(
-      Object.assign(
-        {},
-        ...configPaths("pi-traceline", process.cwd()).map(
-          (path) => readJsonConfig<Record<string, unknown>>(path) ?? {},
-        ),
+    const config = Object.assign(
+      {},
+      ...configPaths("pi-traceline", process.cwd()).map(
+        (path) => readJsonConfig<Record<string, unknown>>(path) ?? {},
       ),
     );
+    configureSizeThresholds(config);
+    configureToolBackgrounds(config);
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
       const t = tui as any;
       g.__tracelineTui = t;

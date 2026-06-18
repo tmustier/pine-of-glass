@@ -151,6 +151,7 @@ test("consecutive reads of one file fold into a single row with combined ranges 
   const visible = stripAnsi(first[1]!);
   assert.ok(visible.includes("read ~/projects/demo/big-file.ts:1-200,201-400,401-600"), visible);
   assert.ok(visible.endsWith("3 calls · 37.0k ch"), `call count and combined size ride the suffix: ${visible}`);
+  assert.ok(first[1]!.includes("\x1b[33m:1-200,201-400,401-600\x1b[0m"), "folded read ranges stay warning/yellow");
   assert.ok(first[1]!.includes("\x1b[33m37.0k ch"), "combined size keeps severity tinting (≥10k warning)");
 
   assert.deepEqual(renderTraceRow(r2, 120), [], "later pages render nothing");
