@@ -217,8 +217,13 @@ test("adjacent thinking blocks double the collapsed label natively; traceline co
   // If this drops to 1, pi fixed it upstream — retire dedupeThinkingLabels.
   assert.equal(labelCount(native), 2, "adjacent thinking blocks no longer double the label — dedupe may be retirable");
 
-  const deduped = traceline.dedupeThinkingLabels(component, native);
-  assert.equal(labelCount(deduped), 1, "dedupe must coalesce the doubled labels");
+  const deduped = traceline.dedupeThinkingLabels(component, native, 80);
+  assert.equal(labelCount(deduped), 0, "dedupe should replace native placeholders with trace previews");
+  assert.equal(
+    deduped.filter((line) => traceline.stripAnsi(line).trim() === "Thinking: first reasoning segment").length,
+    1,
+    "dedupe must coalesce the doubled labels into one first-line preview",
+  );
 
   // pi marks the message's first and last lines with OSC 133 zone marks; the dedupe must
   // never lose control sequences from dropped lines.

@@ -29,11 +29,12 @@ thinking blocks within a single assistant message; **0** consecutive thinking-on
 messages — so the doubling is intra-message block adjacency (models emitting multiple
 reasoning segments per response), not message boundaries.
 
-Two collapsed labels carry no more information than one; the duplication is purely an
-artifact of per-block rendering. Possible upstream direction: coalesce a *run* of
-adjacent thinking blocks into one collapsed label. (A downstream workaround would mean
-extending this repo's patching from tool rows to assistant rows — heavier than the
-upstream fix.)
+Two native collapsed labels carry no more information than one; the duplication is
+purely an artifact of per-block rendering. Possible upstream direction: coalesce a
+*run* of adjacent thinking blocks into one collapsed label. `pi-traceline` now works
+around this downstream by patching assistant rows and replacing the placeholder with a
+`Thinking: <first reasoning line> ... (N lines)` preview, but the upstream rendering
+seam remains.
 
 ## 2. Anthropic tool search (`defer_loading`) not wired through pi-ai
 

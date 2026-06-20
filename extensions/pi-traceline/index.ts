@@ -1,5 +1,13 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, isKeyRepeat, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  isKeyRelease,
+  isKeyRepeat,
+  Markdown,
+  matchesKey,
+  truncateToWidth,
+  visibleWidth,
+  type MarkdownTheme,
+} from "@earendil-works/pi-tui";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -56,8 +64,8 @@ import {
  * whose `cd <dir> && ` preamble repeats the previous bash row's renders it as a dim `⋯`,
  * giving the width back to the part of the command that differs; consecutive reads paging
  * through one file collapse into a single `read path:1-200,201-400 · 2 calls` row; and an
- * assistant message whose adjacent thinking blocks would print two collapsed `Thinking...`
- * labels gets them coalesced into one.
+ * assistant message whose adjacent thinking blocks would print repeated collapsed thinking
+ * labels gets one `Thinking: <first reasoning line>` preview.
  *
  * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
  * between consecutive tools. One-shot click mode toggles a clicked row only, without
@@ -107,7 +115,7 @@ const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
 const TRACELINE_PATCH_VERSION = 13;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
-const TRACELINE_ASSISTANT_PATCH_VERSION = 1;
+const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
 // The live Theme handle is captured at session_start; before that (and in unit tests
@@ -887,7 +895,7 @@ function componentLocation(comp: any): { sibs: any[]; index: number } | undefine
 }
 
 // A reasoning-only turn while thinking is hidden: pi collapses it to a single dim
-// "Thinking..." line. The tool row that follows is that thought's action, so the two
+// thinking-label line. The tool row that follows is that thought's action, so the two
 // should read as one thought→action couplet rather than separate paragraphs.
 function isCollapsedThinkingRow(c: any): boolean {
   if (!isAssistantRow(c) || c.hideThinkingBlock !== true) return false;
@@ -903,7 +911,7 @@ function isCollapsedThinkingRow(c: any): boolean {
 
 // One blank line before a tool *group*, none within it: walk back past invisible
 // connector turns; tight if the nearest visible sibling is another collapsed tool row
-// or the collapsed "Thinking..." line that motivated this call.
+// or the collapsed thinking-label line that motivated this call.
 function leadingBlank(comp: any): boolean {
   const found = componentLocation(comp);
   if (!found || found.index <= 0) return true;
@@ -931,35 +939,122 @@ function renderTraceRow(comp: any, width: number): string[] {
   return leadingBlank(comp) ? ["", line] : [line];
 }
 
-// --- doubled Thinking… labels (issue #14, pi-native rendering) --------------------------
+// --- collapsed thinking previews (issue #14, pi-native rendering) ----------------------
 
-// pi renders the collapsed thinking label once per thinking *block*, not per message, so
-// a message with adjacent thinking blocks prints consecutive identical `Thinking...`
-// lines that carry no more information than one. Coalesce them at render time. Dropped
-// lines can carry OSC 133 zone marks (pi marks the message's first and last line), so
-// any control sequences on dropped lines are transplanted onto the last kept line.
+// pi renders the collapsed thinking label once per thinking *block*, not per message. In
+// native hidden-reasoning mode those labels are identical `Thinking...` rows, so
+// traceline uses the same assistant-row seam to make the collapsed row informative:
+// `Thinking: <first non-empty reasoning line>`. Adjacent label runs still coalesce into
+// one line, and any OSC 133 zone marks on dropped lines (pi marks the message's first and
+// last line) are transplanted onto the last kept line.
 function oscSequences(line: string): string {
   return (line.match(OSC_SEQUENCE) ?? []).join("");
 }
 
-function dedupeThinkingLabels(comp: any, lines: string[]): string[] {
-  const label =
-    typeof comp?.hiddenThinkingLabel === "string" && comp.hiddenThinkingLabel.length > 0
-      ? comp.hiddenThinkingLabel
-      : "Thinking...";
+function nativeHiddenThinkingLabel(comp: any): string {
+  return typeof comp?.hiddenThinkingLabel === "string" && comp.hiddenThinkingLabel.length > 0
+    ? comp.hiddenThinkingLabel
+    : "Thinking...";
+}
+
+const plainMarkdownTheme: MarkdownTheme = {
+  heading: (text) => text,
+  link: (text) => text,
+  linkUrl: (text) => text,
+  code: (text) => text,
+  codeBlock: (text) => text,
+  codeBlockBorder: (text) => text,
+  quote: (text) => text,
+  quoteBorder: (text) => text,
+  hr: (text) => text,
+  listBullet: (text) => text,
+  bold: (text) => text,
+  italic: (text) => text,
+  strikethrough: (text) => text,
+  underline: (text) => text,
+};
+
+type ThinkingPreview = {
+  line: string;
+  lineCount: number;
+};
+
+function sanitizeThinkingLine(rawLine: string): string {
+  return stripAnsi(rawLine)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function markdownToPlainInline(markdown: string): string {
+  try {
+    const rendered = new Markdown(markdown, 0, 0, plainMarkdownTheme).render(ONE_LINE_CAPTURE_WIDTH);
+    const first = rendered.find((line) => stripAnsi(line).trim().length > 0);
+    if (first) return stripAnsi(first).replace(/\s+/g, " ").trim();
+  } catch {
+    /* fall through to the raw sanitized line */
+  }
+  return sanitizeThinkingLine(markdown);
+}
+
+function thinkingPreviewForTrace(text: string): ThinkingPreview | undefined {
+  const lines = text.split(/\r?\n/).map(sanitizeThinkingLine).filter(Boolean);
+  const first = lines[0];
+  if (!first) return undefined;
+  const plain = markdownToPlainInline(first);
+  return plain ? { line: plain, lineCount: lines.length } : undefined;
+}
+
+function formatThinkingPreview(preview: ThinkingPreview): string {
+  const suffix = preview.lineCount > 1 ? ` ... (${preview.lineCount} lines)` : "";
+  return `${preview.line}${suffix}`;
+}
+
+function thinkingPreviewLines(comp: any): string[] {
+  const content = comp?.lastMessage?.content;
+  if (!Array.isArray(content)) return [];
+  const previews: string[] = [];
+  for (const block of content) {
+    if (block?.type !== "thinking" || typeof block.thinking !== "string") continue;
+    const preview = thinkingPreviewForTrace(block.thinking);
+    if (preview) previews.push(formatThinkingPreview(preview));
+  }
+  return previews;
+}
+
+function replaceVisibleThinkingLabel(line: string, displayLabel: string, width?: number): string {
+  const visible = stripAnsi(line);
+  const leading = visible.match(/^\s*/)?.[0].length ?? 0;
+  const trailing = visible.match(/\s*$/)?.[0].length ?? 0;
+  const start = rawIndexAtVisibleIndex(line, leading);
+  const end = rawIndexBeforeVisibleIndex(line, visible.length - trailing);
+  // Native collapsed labels are often padded out to the row width. Keep control/style
+  // suffixes, but drop that old visible padding before fitting the longer preview.
+  const suffix = width && width > 0 ? line.slice(end).replace(/[ \t]+$/g, "") : line.slice(end);
+  const replaced = `${line.slice(0, start)}${displayLabel}${suffix}`;
+  return width && width > 0 ? truncateToWidth(replaced, Math.max(1, width), ELLIPSIS) : replaced;
+}
+
+function dedupeThinkingLabels(comp: any, lines: string[], width?: number): string[] {
+  const label = nativeHiddenThinkingLabel(comp);
+  const previews = thinkingPreviewLines(comp);
   const out: string[] = [];
+  let previewIndex = 0;
   let lastLabelAt = -1; // index in `out` of the last kept label, with only blanks after it
   let salvaged = "";
   for (const line of lines) {
     const visible = stripAnsi(line).trim();
     if (visible === label) {
+      const preview = previews[Math.min(previewIndex, Math.max(0, previews.length - 1))];
+      previewIndex++;
+      const renderedLine = preview ? replaceVisibleThinkingLabel(line, `Thinking: ${preview}`, width) : line;
       if (lastLabelAt >= 0) {
         while (out.length > lastLabelAt + 1) salvaged += oscSequences(out.pop()!);
-        salvaged += oscSequences(line);
+        salvaged += oscSequences(renderedLine);
         continue;
       }
       lastLabelAt = out.length;
-      out.push(line);
+      out.push(renderedLine);
       continue;
     }
     if (visible.length > 0) lastLabelAt = -1;
@@ -978,7 +1073,7 @@ function patchAssistantRowPrototype(proto: any): void {
     const lines = original.call(this, width);
     try {
       if (this.hideThinkingBlock === true && Array.isArray(lines)) {
-        return dedupeThinkingLabels(this, lines);
+        return dedupeThinkingLabels(this, lines, width);
       }
     } catch {
       /* never let pi-traceline break a render */
@@ -1080,12 +1175,13 @@ export const internals = {
   oneLine,
   leadingBlank,
   renderTraceRow,
-  // repetition folding + thinking-label dedupe (issue #14)
+  // repetition folding + thinking-label preview/dedupe (issue #14)
   cdPreambleDir,
   repeatsPreviousCdPreamble,
   elideCdPreamble,
   readRun,
   foldedReadLine,
+  thinkingPreviewLines,
   dedupeThinkingLabels,
   patchAssistantRowPrototype,
   // mouse / click state machine

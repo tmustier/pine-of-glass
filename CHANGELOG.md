@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 — 2026-06-20
+
+- In `pi-traceline`, replace collapsed `Thinking...` placeholders with `Thinking: <first reasoning line>` previews.
+- Render thinking previews through Markdown and strip formatting to plain text while preserving genuine literal punctuation.
+- Add hidden reasoning line counts such as `... (2 lines)` and keep adjacent thinking labels coalesced.
+
 ## 0.4.0 — 2026-06-18
 
 - Ship experimental `pi-cachemire` in the package alongside `pi-contextimate` and `pi-traceline`.

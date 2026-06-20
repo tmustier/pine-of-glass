@@ -216,14 +216,20 @@ test("runs break on anything visible between the reads — and on a different fi
   assert.ok(!visible.includes("calls"), visible);
 });
 
-test("doubled Thinking... labels coalesce; distinct paragraphs and prose survive", () => {
-  const comp = { hiddenThinkingLabel: "Thinking..." };
+test("collapsed Thinking labels show the first reasoning line and coalesce adjacent runs", () => {
+  const comp = {
+    hiddenThinkingLabel: "Thinking...",
+    lastMessage: { content: [{ type: "thinking", thinking: "\n  **first reasoning line**\nsecond reasoning line" }] },
+  };
+  const noPreview = { hiddenThinkingLabel: "Thinking..." };
   const L = "\x1b[3mThinking...\x1b[23m";
+  const P = "\x1b[3mThinking: first reasoning line ... (2 lines)\x1b[23m";
 
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L]), ["", L]);
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L, "", L]), ["", L]);
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", "prose", "", L]), ["", L, "", "prose", "", L]);
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L, "", "prose"]), ["", L, "", "prose"]);
+  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L]), ["", P]);
+  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L, "", L]), ["", P]);
+  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", "prose", "", L]), ["", P, "", "prose", "", P]);
+  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L, "", "prose"]), ["", P, "", "prose"]);
+  assert.deepEqual(dedupeThinkingLabels(noPreview, ["", L, "", L]), ["", L], "missing traces fall back to Pi's native label");
   assert.deepEqual(dedupeThinkingLabels(comp, ["just prose"]), ["just prose"]);
 
   // OSC sequences on dropped lines (pi's zone marks live on the message's last line)
@@ -232,8 +238,23 @@ test("doubled Thinking... labels coalesce; distinct paragraphs and prose survive
   const out = dedupeThinkingLabels(comp, ["", L, "", marked]);
   assert.equal(out.length, 2);
   assert.ok(out[1]!.startsWith("\x1b]133;C\x07"), `zone mark must survive the dedupe: ${JSON.stringify(out)}`);
+  assert.equal(stripAnsi(out[1]!).trim(), "Thinking: first reasoning line ... (2 lines)");
 
   // A custom hiddenThinkingLabel is respected.
   const custom = { hiddenThinkingLabel: "Pondering…" };
   assert.deepEqual(dedupeThinkingLabels(custom, ["Pondering…", "", "Pondering…"]), ["Pondering…"]);
+
+  const literalStar = dedupeThinkingLabels(
+    { hiddenThinkingLabel: "Thinking...", lastMessage: { content: [{ type: "thinking", thinking: "2 * 3 = 6" }] } },
+    [L],
+  )[0]!;
+  assert.equal(stripAnsi(literalStar).trim(), "Thinking: 2 * 3 = 6", "markdown rendering must preserve genuine stars");
+
+  const long = dedupeThinkingLabels(
+    { hiddenThinkingLabel: "Thinking...", lastMessage: { content: [{ type: "thinking", thinking: "a very long reasoning preview" }] } },
+    [L],
+    18,
+  )[0]!;
+  assert.ok(stripAnsi(long).length <= 18, `preview must respect row width: ${stripAnsi(long)}`);
+  assert.ok(stripAnsi(long).startsWith("Thinking:"), stripAnsi(long));
 });

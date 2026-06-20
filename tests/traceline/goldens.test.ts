@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import { expectGolden } from "../helpers.ts";
 
-const { renderTraceRow, stripAnsi, isToolRow } = internals;
+const { renderTraceRow, stripAnsi, isToolRow, dedupeThinkingLabels } = internals;
 
 const g = globalThis as Record<string, unknown>;
 
@@ -49,11 +49,12 @@ function prose(text: string) {
   };
 }
 
-function thinking() {
+function thinking(text: string) {
   return {
     setHideThinkingBlock: () => {},
     hideThinkingBlock: true,
-    lastMessage: { content: [{ type: "thinking", thinking: "..." }] },
+    hiddenThinkingLabel: "Thinking...",
+    lastMessage: { content: [{ type: "thinking", thinking: text }] },
     __thinking: true,
   };
 }
@@ -68,7 +69,7 @@ test("one-line trace goldens at 80 and 120 columns", () => {
   const children = [
     prose("Let me look at the failing suite."),
     bash(`cd ${repo} && npm test 2>/dev/null | tail -5`, { chars: 1_437 }),
-    thinking(),
+    thinking("Checking the typecheck before the next command.\nThe previous test output was noisy."),
     bash(`cd ${repo} && npm run typecheck`, { chars: 14_200 }),
     read(`${repo}/extensions/pi-cachemire/index.ts`, 1, 200, 18_400),
     read(`${repo}/extensions/pi-cachemire/index.ts`, 201, 200, 18_400),
@@ -91,7 +92,8 @@ test("one-line trace goldens at 80 and 120 columns", () => {
         for (const line of renderTraceRow(child, width)) lines.push(stripAnsi(line));
         continue;
       }
-      const marker = (child as { __prose?: string; __thinking?: boolean }).__prose ?? "Thinking...";
+      const meta = child as { __prose?: string; __thinking?: boolean };
+      const marker = meta.__prose ?? stripAnsi(dedupeThinkingLabels(child, ["Thinking..."], width)[0] ?? "Thinking...");
       lines.push("", marker);
     }
     return `${lines.join("\n")}\n`;

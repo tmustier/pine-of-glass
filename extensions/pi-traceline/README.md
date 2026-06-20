@@ -26,7 +26,7 @@ When tool rows are collapsed, each one renders as a single line:
 - **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error.
 - **Selective expansion** - arm a one-shot click and then click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
 
-Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults, and traceline's own ink is **theme-derived** (the family `ink()` helper — see `docs/design-language.md`), so it follows your active theme. On top of that sits an **ink hierarchy**: shell plumbing in bash rows (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) is dimmed so the command segments carry the brightness, and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight, and a tool row sits tight under the collapsed `Thinking...` line that motivated it, so each thought→action couplet reads as one unit.
+Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults, and traceline's own ink is **theme-derived** (the family `ink()` helper — see `docs/design-language.md`), so it follows your active theme. On top of that sits an **ink hierarchy**: shell plumbing in bash rows (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) is dimmed so the command segments carry the brightness, and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight, and a tool row sits tight under the collapsed `Thinking: <first reasoning line> ... (N lines)` preview that motivated it, so each thought→action couplet reads as one unit.
 
 ### Repetition folds instead of re-printing (issue #14)
 
@@ -42,9 +42,10 @@ range — while a shared prefix dominates. Three folds keep the trace skimmable:
   fold into one row with the combined ranges, call count, and total size. Anything
   visible between the reads breaks the fold, and clicking the folded row open restores
   the individual rows.
-- **Doubled `Thinking...` lines** — pi renders the collapsed label once per thinking
-  *block*, so a message with adjacent reasoning segments prints two identical labels;
-  traceline coalesces them into one.
+- **Collapsed thinking previews** — pi renders the collapsed label once per thinking
+  *block*; traceline replaces the placeholder with `Thinking: <first reasoning line>`
+  (rendered through Markdown, then stripped to plain text) plus `... (N lines)` when
+  more trace lines are hidden, and coalesces adjacent label runs into one.
 
 ```
   › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5      1.4k ch
@@ -119,7 +120,7 @@ The collapse state is read from a live assistant row (falling back to `~/.pi/age
 
 ## How it works
 
-- On `session_start` it captures the real TUI and wraps `requestRender`, then patches the shared tool-row component prototype's `render` the moment a tool row exists (and the assistant-row prototype, for the doubled-`Thinking...` coalesce). The patches are versioned and idempotent across reloads and session resumes.
+- On `session_start` it captures the real TUI and wraps `requestRender`, then patches the shared tool-row component prototype's `render` the moment a tool row exists (and the assistant-row prototype, for collapsed-thinking previews/coalescing). The patches are versioned and idempotent across reloads and session resumes.
 - It also wraps the captured TUI render path to build a row-to-tool hit map. One-shot click mode briefly enables SGR mouse reporting and consumes SGR click events through Pi's public raw-input hook, then disables mouse reporting again so terminal scrolling works normally.
 - While reasoning is shown, `render` defers to Pi's original implementation unchanged. While reasoning is hidden, it emits the single trace line unless that individual row has been clicked open.
 - Any failure inside the one-line path falls back to Pi's original `render`, so the extension can never break a frame.
