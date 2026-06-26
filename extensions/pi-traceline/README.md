@@ -16,13 +16,15 @@ When tool rows are collapsed, each one renders as a single line:
 › [skill] tmux:1-20                                      0.9k ch
 › subagent list                                          1.1k ch
 › subagent delegate                                      0.1k ch
-› write /tmp/pi-extension-test-...-elephant.txt          0.1k ch
+› edit ~/projects/demo/index.ts                   +3 -1 · 0.1k ch
+› write /tmp/pi-extension-test-...-elephant.txt   +5 -0 · 0.0k ch
 › $ rm /tmp/pi-extension-test-...-elephant.txt ...       0.0k ch
 ```
 
 - **The arc of the turn** - every tool call in order, one line each, so you see the path Pi took.
 - **What context Pi got** - which files it read and how much of them (`read ... :1-20`), which skills it invoked (`[skill] ...`), which subagents ran.
 - **Which outputs were massive** - a right-aligned result-size suffix per row (`1.4k ch`, in the family number grammar shared with `pi-contextimate` and `pi-cachemire`). The suffix is **severity-tinted**: dim while healthy, warning-coloured at ≥10k ch, error-coloured at ≥50k ch — so an over-large tool output (often a sign of a tool or guidance issue) jumps out of the column. Thresholds are overridable via the family config convention (`~/.pi/agent/pi-traceline.json` or `<cwd>/.pi/pi-traceline.json`: `{ "sizeWarningChars": 10000, "sizeErrorChars": 50000 }`).
+- **How much a file mutation changed** - diff-backed `edit` and live-snapshotted `write` rows include `+N -M` before the size suffix (`edit … +3 -1 · 0.1k ch`, `write … +5 -0 · 0.0k ch`). `write` stats come from a pre-execution snapshot, so historical/restored rows that were not seen live may still show only the size suffix.
 - **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error.
 - **Selective expansion** - arm a one-shot click and then click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
 

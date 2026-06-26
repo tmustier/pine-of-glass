@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 — 2026-06-26
+
+- In `pi-traceline`, show diff stats (`+N -M`) in collapsed rows for diff-backed `edit` calls.
+- Add live pre-execution snapshots for `write` calls so collapsed rows show added/removed line counts for new files and rewrites.
+- Document and test the file-mutation suffix grammar.
+
 ## 0.4.1 — 2026-06-20
 
 - In `pi-traceline`, replace collapsed `Thinking...` placeholders with `Thinking: <first reasoning line>` previews.

@@ -10,7 +10,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer, isAssistantRow, isToolRow } from "../_lib/chat.ts";
@@ -58,6 +58,8 @@ import {
  * so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
  * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
  * balloons past the size thresholds, so "what flooded the context" pops out of the column.
+ * File-mutation rows with a real diff also reserve `+N -M` in that suffix, so the
+ * collapsed trace shows how much the model changed without expanding the row.
  * All ink is theme-derived (style.ts ink()), with raw-ANSI fallbacks before a theme exists.
  *
  * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
@@ -113,7 +115,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.len
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 13;
+const TRACELINE_PATCH_VERSION = 14;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -402,6 +404,11 @@ function toolLabel(name: unknown): string {
 
 type ToolStatus = "success" | "running" | "error";
 
+type DiffStats = {
+  added: number;
+  removed: number;
+};
+
 function toolStatus(comp: any): ToolStatus {
   if (comp?.result?.isError) return "error";
   if (comp?.result && comp?.isPartial !== true) return "success";
@@ -487,6 +494,167 @@ function resultTextCharCount(comp: any): number | undefined {
 
 function resultCharSuffix(comp: any): string {
   return charSuffix(resultTextCharCount(comp));
+}
+
+const LCS_CELL_LIMIT = 200_000;
+
+type WriteInput = {
+  path: string;
+  content: string;
+  cwd: string;
+};
+
+type WriteSnapshot = WriteInput & {
+  stats: DiffStats | undefined;
+};
+
+function splitDiffLines(text: string): string[] {
+  if (!text) return [];
+  const lines = normalizeLineEndings(text).split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function boundedLcsLength(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  if (a.length * b.length > LCS_CELL_LIMIT) return 0;
+
+  let previous = new Array<number>(b.length + 1).fill(0);
+  let current = new Array<number>(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = a[i - 1] === b[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, current[j - 1]!);
+    }
+    [previous, current] = [current, previous];
+    current.fill(0);
+  }
+  return previous[b.length]!;
+}
+
+function diffStatsFromContents(oldContent: string, newContent: string): DiffStats | undefined {
+  if (normalizeLineEndings(oldContent) === normalizeLineEndings(newContent)) return undefined;
+
+  const oldLines = splitDiffLines(oldContent);
+  const newLines = splitDiffLines(newContent);
+  let start = 0;
+  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) start++;
+
+  let oldEnd = oldLines.length;
+  let newEnd = newLines.length;
+  while (oldEnd > start && newEnd > start && oldLines[oldEnd - 1] === newLines[newEnd - 1]) {
+    oldEnd--;
+    newEnd--;
+  }
+
+  const oldMiddle = oldLines.slice(start, oldEnd);
+  const newMiddle = newLines.slice(start, newEnd);
+  const unchangedMiddle = boundedLcsLength(oldMiddle, newMiddle);
+  const stats = {
+    added: Math.max(0, newMiddle.length - unchangedMiddle),
+    removed: Math.max(0, oldMiddle.length - unchangedMiddle),
+  };
+  return stats.added > 0 || stats.removed > 0 ? stats : undefined;
+}
+
+function writeInput(comp: any): WriteInput | undefined {
+  if (toolLabel(comp?.toolName) !== "write") return undefined;
+  const path = comp?.args?.path ?? comp?.args?.file_path;
+  const content = comp?.args?.content;
+  if (typeof path !== "string" || typeof content !== "string") return undefined;
+  const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : process.cwd();
+  return { path, content, cwd };
+}
+
+function readWriteOldContent(input: WriteInput): string {
+  try {
+    return readFileSync(resolve(input.cwd, input.path), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function writeSnapshot(comp: any): WriteSnapshot | undefined {
+  const snapshot = comp?.__tracelineWriteSnapshot;
+  if (!snapshot || typeof snapshot !== "object") return undefined;
+  return snapshot as WriteSnapshot;
+}
+
+function sameWriteInput(a: WriteInput | undefined, b: WriteInput | undefined): boolean {
+  return !!a && !!b && a.path === b.path && a.cwd === b.cwd && a.content === b.content;
+}
+
+function captureWriteSnapshot(comp: any): void {
+  const input = writeInput(comp);
+  if (!input) return;
+  const previous = writeSnapshot(comp);
+  if (sameWriteInput(previous, input)) return;
+  const oldContent = readWriteOldContent(input);
+  comp.__tracelineWriteSnapshot = { ...input, stats: diffStatsFromContents(oldContent, input.content) } satisfies WriteSnapshot;
+}
+
+function writeDiffStats(comp: any): DiffStats | undefined {
+  const input = writeInput(comp);
+  const snapshot = writeSnapshot(comp);
+  if (!sameWriteInput(snapshot, input)) return undefined;
+  return snapshot?.stats;
+}
+
+function diffTextFromComp(comp: any): string | undefined {
+  const details = comp?.result?.details;
+  if (typeof details?.diff === "string") return details.diff;
+  if (typeof details?.patch === "string") return details.patch;
+
+  // Pi's edit renderer computes a diff preview before the tool has settled. The preview
+  // lives on the call renderer component, so collapsed rows can show `+N -M` while the
+  // mutation is still pending, then switch to the result-backed diff once available.
+  const preview = comp?.callRendererComponent?.preview;
+  if (preview && typeof preview === "object" && !("error" in preview) && typeof preview.diff === "string") {
+    return preview.diff;
+  }
+  return undefined;
+}
+
+function diffStatsFromText(diff: string | undefined): DiffStats | undefined {
+  if (!diff) return undefined;
+  let added = 0;
+  let removed = 0;
+  for (const rawLine of diff.split(/\r?\n/)) {
+    const line = stripAnsi(rawLine);
+    if (line.startsWith("+++") || line.startsWith("---")) continue; // unified-patch file headers
+    if (line.startsWith("+")) added++;
+    else if (line.startsWith("-")) removed++;
+  }
+  return added > 0 || removed > 0 ? { added, removed } : undefined;
+}
+
+function mutationDiffStats(comp: any): DiffStats | undefined {
+  return diffStatsFromText(diffTextFromComp(comp)) ?? writeDiffStats(comp);
+}
+
+function diffCount(text: string, value: number, tone: Tone, theme: Theme | undefined): string {
+  return ink(theme, value === 0 ? "dim" : tone, text);
+}
+
+function formatMutationDiffStats(stats: DiffStats, theme = currentTheme()): string {
+  return `${diffCount(`+${stats.added}`, stats.added, "success", theme)} ${diffCount(
+    `-${stats.removed}`,
+    stats.removed,
+    "error",
+    theme,
+  )}`;
+}
+
+function toolFactSuffix(comp: any): string {
+  const theme = currentTheme();
+  const diff = mutationDiffStats(comp);
+  const diffSuffix = diff ? formatMutationDiffStats(diff, theme) : "";
+  const chars = resultCharSuffix(comp);
+  if (diffSuffix && chars) return `${diffSuffix}${dim(SEP)}${chars}`;
+  return diffSuffix || chars;
 }
 
 // tildify / middleTruncate / rightAlignSuffix live in _lib/style.ts — traceline's rules,
@@ -721,6 +889,13 @@ function shadeRow(line: string, width: number, bgFn: (text: string) => string): 
 }
 
 function oneLine(comp: any, width: number): string {
+  if (toolLabel(comp?.toolName) === "write" && !comp?.result) {
+    try {
+      captureWriteSnapshot(comp);
+    } catch {
+      /* keep one-line rendering best-effort */
+    }
+  }
   const lineWidth = Math.max(1, width);
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
   const native = nativeInvocationLine(comp);
@@ -734,7 +909,7 @@ function oneLine(comp: any, width: number): string {
     if (repeatsPreviousCdPreamble(comp)) invocation = elideCdPreamble(invocation);
     invocation = dimShellPlumbing(invocation);
   }
-  const fitted = rightAlignSuffix(invocation, resultCharSuffix(comp), available, currentTheme());
+  const fitted = rightAlignSuffix(invocation, toolFactSuffix(comp), available, currentTheme());
   const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(comp);
   return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
@@ -1090,8 +1265,41 @@ function currentPatchInstalled(): boolean {
   return g.__tracelinePatched === true && g.__tracelinePatchVersion === TRACELINE_PATCH_VERSION;
 }
 
+function patchWriteSnapshotHooks(proto: any): void {
+  if (!proto || proto.__tracelineWriteSnapshotPatchVersion === TRACELINE_PATCH_VERSION) return;
+
+  const originalSetArgsComplete = proto.__tracelineOriginalSetArgsComplete ?? proto.setArgsComplete;
+  if (typeof originalSetArgsComplete === "function") {
+    proto.__tracelineOriginalSetArgsComplete = originalSetArgsComplete;
+    proto.setArgsComplete = function (...args: any[]) {
+      try {
+        captureWriteSnapshot(this);
+      } catch {
+        /* never let write diff snapshots break tool execution */
+      }
+      return originalSetArgsComplete.apply(this, args);
+    };
+  }
+
+  const originalMarkExecutionStarted = proto.__tracelineOriginalMarkExecutionStarted ?? proto.markExecutionStarted;
+  if (typeof originalMarkExecutionStarted === "function") {
+    proto.__tracelineOriginalMarkExecutionStarted = originalMarkExecutionStarted;
+    proto.markExecutionStarted = function (...args: any[]) {
+      try {
+        captureWriteSnapshot(this);
+      } catch {
+        /* never let write diff snapshots break tool execution */
+      }
+      return originalMarkExecutionStarted.apply(this, args);
+    };
+  }
+
+  proto.__tracelineWriteSnapshotPatchVersion = TRACELINE_PATCH_VERSION;
+}
+
 function patchToolRowPrototype(proto: any): void {
   if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
+  patchWriteSnapshotHooks(proto);
   const original = proto.__tracelineOriginalRender ?? proto.render;
   proto.__tracelineOriginalRender = original;
   proto.render = function (width: number) {
@@ -1166,6 +1374,13 @@ export const internals = {
   // row grammar
   formatCharCount,
   charSuffix,
+  diffStatsFromText,
+  diffStatsFromContents,
+  captureWriteSnapshot,
+  writeDiffStats,
+  mutationDiffStats,
+  formatMutationDiffStats,
+  toolFactSuffix,
   configureSizeThresholds,
   configureToolBackgrounds,
   toolBackgroundsEnabled,

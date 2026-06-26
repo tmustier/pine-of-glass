@@ -3,7 +3,9 @@
 // duck type; the contract suite proves the duck type matches the real installed pi.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { homedir } from "node:os";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
@@ -13,6 +15,12 @@ const {
   rightAlignSuffix,
   formatCharCount,
   charSuffix,
+  diffStatsFromText,
+  diffStatsFromContents,
+  captureWriteSnapshot,
+  writeDiffStats,
+  mutationDiffStats,
+  toolFactSuffix,
   configureSizeThresholds,
   configureToolBackgrounds,
   toolBackgroundsEnabled,
@@ -106,6 +114,93 @@ test("one-line read row: emphasized path, range kept, suffix right-aligned", () 
   // Pi's prominent warning/yellow treatment: the raw line must restyle both spans.
   assert.ok(line.includes(`${DIM}~/projects/demo/\x1b[0m`), "directory must be dimmed");
   assert.ok(line.includes("\x1b[33m:1-40\x1b[0m"), "line range must stay warning/yellow");
+});
+
+test("mutation diff stats ride the right suffix for edit rows", () => {
+  const diff = [
+    " 10 context before",
+    "+11 added one",
+    "+12 added two",
+    "-13 removed one",
+    " 14 context after",
+  ].join("\n");
+  const comp = toolComp({
+    toolName: "edit",
+    args: { path: `${homedir()}/projects/demo/file.ts` },
+    result: { content: [{ type: "text", text: "Successfully replaced 1 block." }], isError: false, details: { diff } },
+    callRendererComponent: { render: () => ["edit ~/projects/demo/file.ts"] },
+  });
+
+  assert.deepEqual(diffStatsFromText("--- a/file\n+++ b/file\n+1 real add\n-2 real remove"), { added: 1, removed: 1 });
+  assert.deepEqual(mutationDiffStats(comp), { added: 2, removed: 1 });
+  assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1 · 0.0k ch");
+
+  const visible = stripAnsi(oneLine(comp, 90));
+  assert.ok(visible.includes("edit ~/projects/demo/file.ts"), visible);
+  assert.ok(visible.endsWith("+2 -1 · 0.0k ch"), visible);
+});
+
+test("edit preview diff stats show before a result exists", () => {
+  const comp = toolComp({
+    toolName: "edit",
+    args: { path: `${homedir()}/projects/demo/file.ts` },
+    result: undefined,
+    isPartial: true,
+    callRendererComponent: {
+      preview: { diff: "+1 pending add\n-2 pending remove", firstChangedLine: 1 },
+      render: () => ["edit ~/projects/demo/file.ts"],
+    },
+  });
+
+  const visible = stripAnsi(oneLine(comp, 80));
+  assert.ok(visible.endsWith("+1 -1"), visible);
+});
+
+test("write rows use a pre-execution snapshot for +N -M stats", () => {
+  const dir = mkdtempSync(join(tmpdir(), "traceline-write-"));
+  try {
+    const path = join(dir, "fixture.txt");
+    writeFileSync(path, "one\ntwo\nthree\n", "utf8");
+    const comp = toolComp({
+      toolName: "write",
+      args: { path, content: "one\nTWO\nthree\nfour\n" },
+      cwd: dir,
+      result: { content: [{ type: "text", text: "Successfully wrote bytes." }], isError: false },
+      callRendererComponent: { render: () => [`write ${path}`] },
+    });
+
+    assert.deepEqual(diffStatsFromContents("one\ntwo\n", "one\ntwo\nthree\n"), { added: 1, removed: 0 });
+    captureWriteSnapshot(comp);
+    assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 1 });
+    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1 · 0.0k ch");
+
+    const visible = stripAnsi(oneLine(comp, 100));
+    assert.ok(visible.includes("write"), visible);
+    assert.ok(visible.endsWith("+2 -1 · 0.0k ch"), visible);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("new write rows count all written lines as additions", () => {
+  const dir = mkdtempSync(join(tmpdir(), "traceline-write-new-"));
+  try {
+    const path = join(dir, "new.txt");
+    const comp = toolComp({
+      toolName: "write",
+      args: { path, content: "alpha\nbeta\n" },
+      cwd: dir,
+      result: undefined,
+      isPartial: true,
+      callRendererComponent: { render: () => [`write ${path}`] },
+    });
+
+    captureWriteSnapshot(comp);
+    assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 0 });
+    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -0");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("result-size suffix severity: dim while healthy, warning ≥10k ch, error ≥50k ch", () => {
