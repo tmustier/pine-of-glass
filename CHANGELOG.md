@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Bold is the trace row's white (design language §12.11): basenames and bash head
+  command words in `pi-traceline` now render as the L0 discriminators §2 always
+  assigned them — bold `text`, the same treatment as the verb — instead of the
+  terminal default, which read identically to assistant prose. Plain prose-weight
+  white no longer appears inside a trace row.
+
 ## 0.5.4 — 2026-07-02
 
 - One supporting grey across `pi-traceline` rows (design language §12.9): the muted

@@ -123,9 +123,10 @@ test("one-line read row: rail + emphasized path, range kept, suffix right-aligne
   assert.ok(visible.startsWith("  ▏ › read ~/projects/demo/file.ts:1-40"), visible);
   assert.ok(line.startsWith(`  ${DIM}▏\x1b[0m `), "the rail must be dim block chrome, one gutter in");
   assert.ok(visible.endsWith("1.4k ch"), visible);
-  // Emphasis dims the directory separately from the basename, while the range keeps
-  // Pi's prominent warning/yellow treatment: the raw line must restyle both spans.
+  // Emphasis dims the directory separately from the basename — which renders L0-bold
+  // (§12.11), never prose-plain — while the range keeps Pi's warning treatment.
   assert.ok(line.includes(`${DIM}~/projects/demo/\x1b[0m`), "directory must be dimmed");
+  assert.ok(line.includes("\x1b[1mfile.ts\x1b[22m"), "basename must be bold, not prose-plain");
   assert.ok(line.includes("\x1b[33m:1-40\x1b[0m"), "line range must stay warning/yellow");
 });
 
@@ -262,7 +263,7 @@ test("fallback rendering when a tool has no native call renderer", () => {
   assert.ok(visible.includes('mcp {"foo":"bar"}'), visible);
 });
 
-test("bash rows: timeout stripped, $ anchors bold, head command bright, rest one dim grey", () => {
+test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest one dim grey", () => {
   const comp = toolComp({
     toolName: "bash",
     args: { command: "pwd && git remote -v" },
@@ -281,12 +282,12 @@ test("bash rows: timeout stripped, $ anchors bold, head command bright, rest one
   assert.ok(line.includes(`${DIM}2>/dev/null\x1b[0m`), "2>/dev/null must be dimmed");
   assert.ok(line.includes(`${DIM}|\x1b[0m`), "pipe must be dimmed");
 
-  // With a theme (design language §2/§12.9): one supporting grey — the head command
-  // word alone stays at content ink, the bash row's basename; arguments and plumbing
-  // all sit at L3-dim. No muted level anywhere in a trace row.
+  // With a theme (design language §2/§12.9/§12.11): one supporting grey — the head
+  // command word alone renders L0-bold, the bash row's basename; arguments and
+  // plumbing all sit at L3-dim. No muted level anywhere in a trace row.
   g.__tracelineGetTheme = () => themed();
   const body = inkBashBody("pwd && git remote -v 2>/dev/null");
-  assert.ok(body.startsWith("pwd"), `head command must stay content ink: ${JSON.stringify(body)}`);
+  assert.ok(body.startsWith(`${T.text}\x1b[1mpwd\x1b[22m`), `head command must be bold text: ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim}&&`), `plumbing must be dim: ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim} git remote -v`), `later chunks must be dim: ${JSON.stringify(body)}`);
   assert.ok(!body.includes(T.muted), `no muted ink in a bash body: ${JSON.stringify(body)}`);
@@ -294,13 +295,13 @@ test("bash rows: timeout stripped, $ anchors bold, head command bright, rest one
   // Env assignments are not the command: the head scans past them.
   const env = inkBashBody("FOO=1 npm test");
   assert.ok(env.includes(`${T.dim}FOO=1 \x1b[39m`), `assignments dim: ${JSON.stringify(env)}`);
-  assert.ok(env.includes("\x1b[39mnpm"), `head after assignments stays bright: ${JSON.stringify(env)}`);
+  assert.ok(env.includes(`${T.text}\x1b[1mnpm\x1b[22m`), `head after assignments is bold text: ${JSON.stringify(env)}`);
   assert.ok(env.includes(`${T.dim} test`), `arguments dim: ${JSON.stringify(env)}`);
 
   // After a ⋯ && elision the head of the surviving command stays bright.
   const elided = inkBashBody("\u22ef && npm run typecheck");
   assert.ok(stripAnsi(elided).startsWith("\u22ef && npm"), stripAnsi(elided));
-  assert.ok(elided.includes("npm") && !elided.includes(`${T.dim}npm`), `head after ⋯ must stay bright: ${JSON.stringify(elided)}`);
+  assert.ok(elided.includes(`${T.text}\x1b[1mnpm\x1b[22m`), `head after ⋯ must be bold text: ${JSON.stringify(elided)}`);
   assert.ok(elided.includes(`${T.dim} run typecheck`), `tail arguments dim: ${JSON.stringify(elided)}`);
   g.__tracelineGetTheme = undefined;
 

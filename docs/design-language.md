@@ -89,8 +89,8 @@ assigned a level on purpose.
 
 | level | role | carries | theme source |
 |---|---|---|---|
-| L0 | discriminator | verb/tool name, basename, totals, panel brand | `text` + bold; panel brands/totals `accent` |
-| L1 | content | operative values, the bash head command | `text` |
+| L0 | discriminator | verb/tool name, basename, bash head command, totals, panel brand | `text` + bold; panel brands/totals `accent` |
+| L1 | content | operative values | `text` |
 | L2 | secondary identity | descriptions, field types | `muted` |
 | L3 | apparatus | methodology, directories, bash argument text, plumbing (`&&`, `2>/dev/null`), markers, units, causes | `dim` |
 
@@ -298,9 +298,9 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
    dim `⋯ &&`). Kills the wall-of-`cd` (issue #14).
 4. Body ink one step down (as amended in §12): verbs neutral bold L0 with status in
    the `›` bullet (error rows alone tint the verb); bash bodies at the one L3-dim
-   supporting grey with the head command word bright (§12.9); path rows
-   (read/edit/write) dim the directory,
-   keep the basename L1, and keep read `:line-range` spans warning-coloured. Every
+   supporting grey with the head command word L0-bold (§12.9/§12.11); path rows
+   (read/edit/write) dim the directory, render the basename L0-bold, and keep read
+   `:line-range` spans warning-coloured. Every
    trace row opens with the dim `▏` rail so a run of rows reads as one block. Trace
    rows are unbanded by default; the old native-background slab path stays available
    behind `toolBackgrounds`.
@@ -408,7 +408,8 @@ hierarchy.
 9. **One supporting grey.** The L2-muted trace-row body level dissolves (supersedes
    §12.2's body level). Bash rows speak the exact grammar of path rows: the bold `$`
    anchors at L0; the head command word — the first non-assignment token, scanning
-   past a `⋯ &&` elision — stays at content ink the way a basename does, so `$ rm`,
+   past a `⋯ &&` elision — stays bright the way a basename does (both promoted to
+   L0-bold by §12.11), so `$ rm`,
    `$ npm`, `$ python3` scan like `read file.ts`; and everything else — arguments,
    connectors, redirects, marks — sits at the one L3-dim supporting grey shared with
    directories, plumbing, size suffixes, and the rail. Fallback rows (tools without a
@@ -418,6 +419,17 @@ hierarchy.
     ellipsis, so a cut inside a styled span no longer leaves the tail at the terminal
     default (§12.2's "accepted quirk", fixed family-wide — required once bash bodies
     dropped to dim, where a default-ink tail would glare).
+
+Fourth follow-up, same date (basenames read in the same white as assistant prose):
+§2 always placed basenames at L0 — `text` + bold — but the implementation left them
+at the terminal default, identical to message text in most themes, so the brightest
+ink in a trace row was prose ink.
+
+11. **Bold is the trace row's white.** Basenames and bash head commands render as the
+    L0 discriminators they are: bold `text`, the same treatment as the verb. Plain
+    prose-weight white never appears inside a trace row, so a trace block reads as
+    dim apparatus + bold discriminators + status accents — and can never share ink
+    with a message line.
 
 ## Suggested implementation order
 

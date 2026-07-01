@@ -121,7 +121,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 17;
+const TRACELINE_PATCH_VERSION = 18;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -437,6 +437,14 @@ function verbTone(comp: any): Tone {
 
 function verbInk(comp: any, verb: string): string {
   return ink(currentTheme(), verbTone(comp), `${BOLD}${verb}${BOLD_OFF}`);
+}
+
+// Bold is the trace row's white (design language §12.11): basenames and bash head
+// commands render as the L0 discriminators §2 always assigned them — bold `text`, the
+// same treatment as the verb — so plain prose-weight white never appears inside a
+// trace row and a trace block can never share ink with a message line.
+function discriminatorInk(text: string): string {
+  return ink(currentTheme(), "text", `${BOLD}${text}${BOLD_OFF}`);
 }
 
 // Every trace row indents one gutter, then opens with the dim ▏ rail (design language
@@ -793,8 +801,8 @@ function stripTimeoutSuffix(text: string): string {
 
 // --- bash rows: plain-text rebuild + family ink (design language §2/§12.9) -------------
 // Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, the head
-// command word stays at content ink the way a basename does (`$ rm`, `$ npm`,
-// `$ python3` scan like `read file.ts`), and everything else — arguments, connectors,
+// command word renders L0-bold the way a basename does (`$ rm`, `$ npm`, `$ python3`
+// scan like `read file.ts`; §12.11), and everything else — arguments, connectors,
 // redirects, heredoc markers, and the ↵/⋯ flatten/elision marks — sits at the one
 // L3-dim supporting grey shared with directories, plumbing, and size suffixes.
 // Pi's native bash styling is deliberately dropped: the invocation *text* still comes
@@ -820,8 +828,8 @@ function bashInvocationText(comp: any): string | undefined {
 // Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
-// The head command word of a chunk: the first non-assignment token stays at content
-// ink — the bash row's basename — while the rest of the chunk dims (§12.9).
+// The head command word of a chunk: the first non-assignment token renders L0-bold —
+// the bash row's basename (§12.9/§12.11) — while the rest of the chunk dims.
 function inkBashChunk(chunk: string, headPending: boolean): { text: string; headFound: boolean } {
   if (!headPending) return { text: dim(chunk), headFound: false };
   const words = /\S+/g;
@@ -830,7 +838,7 @@ function inkBashChunk(chunk: string, headPending: boolean): { text: string; head
     if (ENV_ASSIGNMENT.test(match[0])) continue;
     const before = chunk.slice(0, match.index);
     const after = chunk.slice(match.index + match[0].length);
-    return { text: `${before ? dim(before) : ""}${match[0]}${after ? dim(after) : ""}`, headFound: true };
+    return { text: `${before ? dim(before) : ""}${discriminatorInk(match[0])}${after ? dim(after) : ""}`, headFound: true };
   }
   return { text: dim(chunk), headFound: false };
 }
@@ -960,7 +968,7 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
   const dir = tildePath.slice(0, lastSlash + 1);
   const base = tildePath.slice(lastSlash + 1);
   const range = verb === "read" ? lineRange(comp?.args) : "";
-  return `${verbInk(comp, verb)} ${dim(dir)}${base}${ink(theme, "warning", range)}`;
+  return `${verbInk(comp, verb)} ${dim(dir)}${discriminatorInk(base)}${ink(theme, "warning", range)}`;
 }
 
 // Optional shaded tool surface, borrowed live from the row itself. This used to be the
@@ -1132,7 +1140,7 @@ function foldedReadLine(rows: any[], width: number): string {
     .map((row) => lineRange(row?.args).slice(1))
     .filter(Boolean)
     .join(",");
-  const body = `${verbInk(last, "read")} ${dim(dir)}${base}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
+  const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
   let total: number | undefined;
   for (const row of rows) {
     const chars = resultTextCharCount(row);
