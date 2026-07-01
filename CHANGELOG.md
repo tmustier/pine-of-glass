@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2 — 2026-07-01
 
 - Fix the `pi-cachemire` cache clock after aborted sends: a request that ends without
   billed usage (fast abort or error) no longer keeps the TTL anchor it claimed at send
