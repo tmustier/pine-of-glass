@@ -11,6 +11,7 @@ const {
   cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
   windowForProvider, windowLabel, windowExpiry, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
+  settleDanglingSend,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -99,6 +100,28 @@ test("cache clock phases", () => {
   // Effort lives outside OpenAI's prompt prefix: a band window makes no claim.
   const bandThinking = cacheClock({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true });
   assert.equal(bandThinking.text, "cache likely warm \u00b7 3m since last call");
+});
+
+test("aborted sends roll the TTL anchor back to the last billed request", () => {
+  // before_provider_request optimistically re-anchors the clock at the in-flight request;
+  // usage confirms it (message_end consumes the pending pair). A send that ends with no
+  // usage — fast abort or error — proves nothing about the cache, so the anchor must
+  // return to the last provider-confirmed refresh instead of counting a fictitious TTL.
+  assert.deepEqual(
+    settleDanglingSend({ pendingRequestAt: 100_000, prevCallRequestAt: 40_000, lastRequestAt: 100_000 }),
+    { changed: true, lastRequestAt: 40_000 },
+  );
+  // First-ever send aborted: no cache was ever confirmed — the anchor clears and the
+  // clock hides (cacheClock without lastRequestAt is the idle phase).
+  const firstAbort = settleDanglingSend({ pendingRequestAt: 100_000, prevCallRequestAt: undefined, lastRequestAt: 100_000 });
+  assert.deepEqual(firstAbort, { changed: true, lastRequestAt: undefined });
+  assert.equal(cacheClock({ now: 200_000, lastRequestAt: firstAbort.lastRequestAt, window: CONTRACT_5M }).phase, "idle");
+  // Consumed pending (usage arrived, or the turn aborted during a tool run): no rollback —
+  // the anchor of the last billed call stands.
+  assert.deepEqual(
+    settleDanglingSend({ pendingRequestAt: undefined, prevCallRequestAt: 40_000, lastRequestAt: 40_000 }),
+    { changed: false, lastRequestAt: 40_000 },
+  );
 });
 
 test("openai band: warm → fading → hard-cap cold", () => {

@@ -45,6 +45,14 @@ Anthropic reads/refreshes/writes cache entries while processing the request inpu
 TTL while it streams. The clock ticking during generation is correct — after a 4m
 thinking block on a 5m TTL, the prefix really does have ~1m left.
 
+**Aborted sends don't move the clock.** The anchor a request claims at send time is
+confirmed by its usage — Anthropic delivers prompt-side usage in `message_start`, so
+even a mid-stream abort confirms it. A send that ends with *no* usage (a fast abort, or
+an error) proves nothing about the cache, so the anchor rolls back to the last billed
+request — on a first-send abort the clock simply hides, since no cache entry was ever
+confirmed. If the aborted send did refresh the prefix after all, the next call resolves
+green (`cache held`), the same correction path as any wrong prediction.
+
 **Cold vs likely cold.** `cold` is contract-backed: an observed `cache_control` TTL
 passed (or, for a freshly restored anthropic session, the TTL inferred by the same rule
 pi-ai itself uses — `PI_CACHE_RETENTION=long` → 1h, else 5m — until the first live

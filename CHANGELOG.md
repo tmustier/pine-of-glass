@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Fix the `pi-cachemire` cache clock after aborted sends: a request that ends without
+  billed usage (fast abort or error) no longer keeps the TTL anchor it claimed at send
+  time — the countdown rolls back to the last billed request instead of counting a
+  fresh TTL from a request that may never have touched the cache (a first-send abort
+  hides the clock outright). Mid-stream aborts keep their anchor: Anthropic's
+  `message_start` usage confirms them.
+
 ## 0.5.1 — 2026-07-01
 
 - End every `pi-contextimate` view with one blank spacer line so the panel no longer

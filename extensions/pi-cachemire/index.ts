@@ -646,6 +646,27 @@ export function cacheClock(input: ClockInput): ClockState {
   return { phase: "warm-unknown", text: `cache likely warm \u00b7 ${formatDuration(since)} since last call` };
 }
 
+// --- aborted sends ----------------------------------------------------------------------
+
+/** Settle the clock anchor for a send that ended without billed usage (abort or error).
+ * before_provider_request moves the anchor to the in-flight request optimistically —
+ * right for every send whose usage arrives, including mid-stream aborts (Anthropic
+ * delivers prompt-side usage in message_start, which survives an abort). What lands here
+ * is the remainder: fast aborts and errors where usage never arrived, so nothing proves
+ * the provider processed — and so refreshed or wrote — the prefix (on a first send there
+ * may be no entry at all). The anchor rolls back to the last billed request, the only
+ * provider-confirmed refresh; a first-send abort clears it outright (the clock hides).
+ * If the aborted send did touch the cache after all, the next call resolves green
+ * ("cache held") — the same correction path as any wrong prediction. */
+export function settleDanglingSend(state: {
+  pendingRequestAt?: number;
+  prevCallRequestAt?: number;
+  lastRequestAt?: number;
+}): { changed: boolean; lastRequestAt?: number } {
+  if (state.pendingRequestAt === undefined) return { changed: false, lastRequestAt: state.lastRequestAt };
+  return { changed: true, lastRequestAt: state.prevCallRequestAt };
+}
+
 // --- ledger lines ----------------------------------------------------------------------
 
 export function renderRunSummary(run: RunAggregate, endedAt: number): string {
@@ -1274,6 +1295,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.compacted = false;
     s.prevFingerprint = s.pendingFingerprint ?? s.prevFingerprint;
     s.prevCallRequestAt = requestAt;
+    // Usage arrived: the anchor this request claimed at send time is provider-confirmed.
+    // Consume the pending pair — whatever is still pending at agent_end never got usage.
+    s.pendingFingerprint = undefined;
+    s.pendingRequestAt = undefined;
     s.expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
     s.cachedTokens = s.expectedRead;
     // Fresh usage re-baselines the currency: counts are now denominated in this model.
@@ -1316,6 +1341,16 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("agent_end", async () => {
     // A notice whose call never produced usage (abort/error) must not dangle as "breaking".
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
+    // Same honesty for the clock: a send that never produced usage must not keep the TTL
+    // anchor it optimistically claimed at request start — a fast abort can cancel before
+    // the provider ever touched the cache, and the countdown would then be fiction.
+    const settled = settleDanglingSend(s);
+    if (settled.changed) {
+      s.lastRequestAt = settled.lastRequestAt;
+      s.pendingRequestAt = undefined;
+      s.pendingFingerprint = undefined;
+      updateWidget();
+    }
     const run = s.run;
     s.run = undefined;
     if (!run || !s.config.turnSummary || run.calls < s.config.turnSummaryMinCalls) return;
@@ -1356,6 +1391,7 @@ export const internals = {
   diffFingerprints,
   matchPriorEntry,
   classifyCall,
+  settleDanglingSend,
   uncachedCostUsd,
   rewriteCostUsd,
   sessionSavings,
