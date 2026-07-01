@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-07-01
 
 - Differentiate `pi-traceline` trace rows from assistant prose (design language §12):
   every trace row opens with a dim `▏` rail so consecutive tool calls fuse into one
