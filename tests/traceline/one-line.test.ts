@@ -120,8 +120,8 @@ test("one-line read row: rail + emphasized path, range kept, suffix right-aligne
   const line = oneLine(toolComp(), 80);
   const visible = stripAnsi(line);
   assert.ok(visibleWidth(line) <= 80);
-  assert.ok(visible.startsWith("▏ › read ~/projects/demo/file.ts:1-40"), visible);
-  assert.ok(line.startsWith(`${DIM}▏\x1b[0m `), "the rail must be dim block chrome");
+  assert.ok(visible.startsWith("  ▏ › read ~/projects/demo/file.ts:1-40"), visible);
+  assert.ok(line.startsWith(`  ${DIM}▏\x1b[0m `), "the rail must be dim block chrome, one gutter in");
   assert.ok(visible.endsWith("1.4k ch"), visible);
   // Emphasis dims the directory separately from the basename, while the range keeps
   // Pi's prominent warning/yellow treatment: the raw line must restyle both spans.
@@ -314,7 +314,7 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   });
   const line = oneLine(comp, 160);
   const visible = stripAnsi(line);
-  assert.ok(visible.startsWith('▏ › $ python3 -c "'), visible);
+  assert.ok(visible.startsWith('  ▏ › $ python3 -c "'), visible);
   assert.ok(visible.includes("capture-pane"), `operative tail must survive: ${visible}`);
   assert.ok(visible.includes("\u21b5"), `original line breaks must be marked: ${visible}`);
   assert.ok(line.includes(`${DIM}\u21b5\x1b[0m`), "break marks must be dimmed");

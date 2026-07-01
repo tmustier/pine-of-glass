@@ -114,13 +114,14 @@ const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
 const TOOL_RAIL = GLYPH.rail;
 const TOOL_BULLET = GLYPH.tool;
+const TOOL_INDENT = "  "; // trace blocks nest one gutter under the prose margin (§12.8)
 const TOOL_AFTER_BULLET = " ";
-// ▏ + space + › + space — same four columns the old two-space gutter occupied.
-const TOOL_PREFIX_VISIBLE_WIDTH = 2 + 1 + TOOL_AFTER_BULLET.length;
+// indent + ▏ + space + › + space — six visible columns; prose owns the margin.
+const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 15;
+const TRACELINE_PATCH_VERSION = 16;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -438,10 +439,11 @@ function verbInk(comp: any, verb: string): string {
   return ink(currentTheme(), verbTone(comp), `${BOLD}${verb}${BOLD_OFF}`);
 }
 
-// Every trace row opens with the dim ▏ rail (design language §1/§5/§12): consecutive
+// Every trace row indents one gutter, then opens with the dim ▏ rail (design language
+// §1/§5/§12): the block nests under the narrative line that motivated it, consecutive
 // rows fuse into one visible block, and the blank spacer before a group ends the rail.
 function toolPrefix(tone: Tone): string {
-  return `${dim(TOOL_RAIL)} ${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
+  return `${TOOL_INDENT}${dim(TOOL_RAIL)} ${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
 }
 
 function hiddenToolPrefix(comp: any): string {

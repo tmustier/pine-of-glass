@@ -76,8 +76,9 @@ newline), `·` (U+00B7, the only inline fact separator).
 Rules:
 - One glyph per line, gutter position, never inline mid-sentence.
 - The rail is the one sanctioned pairing: it is block chrome, not a line kind — always
-  L3-dim, always column 0, never a status carrier — and a railed line still carries
-  exactly one kind-glyph (`▏ › body`).
+  L3-dim, always the first visible mark of an indented trace block (column 2, §5),
+  never a status carrier — and a railed line still carries exactly one kind-glyph
+  (`  ▏ › body`).
 - New line kinds reuse an existing glyph if the kind matches; a new glyph is a design
   decision recorded here, not an ad-hoc choice.
 
@@ -163,8 +164,11 @@ Hard rules:
 ## 5. Layout grammar
 
 - **Gutter:** 2 spaces, then the glyph, then 1 space, then the body. Tool trace rows
-  replace the two spaces with `▏` + space — the dim rail — so consecutive rows fuse
-  into one visible block; the blank spacer before a group ends the rail (§12).
+  nest one gutter deeper: 2 spaces, the dim `▏` rail, a space, then the standard
+  glyph gutter (`  ▏ › body`, six visible columns) — prose owns the margin and the
+  tool block indents beneath the narrative line that motivated it; consecutive rows
+  fuse into one visible block, and the blank spacer before a group ends the rail
+  (§12.3, §12.8).
 - **Quantities right.** Per-row magnitudes are a right-aligned dim suffix with a ≥2-space
   gap (traceline's `… 1.4k ch` pattern) or a column-aligned field (contextimate rows,
   cachemire `/cache` table). Never woven mid-sentence when the line is a row in a list.
@@ -359,7 +363,7 @@ rows into a block.
    "operative segment" bright was considered and rejected: a pipeline tail is as often
    a filter (`| tail -5`) as it is the point, so the whole body sits uniformly at L2
    and middle truncation continues to protect the tail.
-3. **The `▏` rail.** Every trace row opens with a dim `▏` in column 0 (§1, §5), fusing
+3. **The `▏` rail.** Every trace row opens with a dim `▏` (§1, §5), fusing
    consecutive rows into one visible block — the block identity the retired background
    bands were reaching for, at one character of width and zero synthesized colour.
 4. **Path emphasis widens.** The dim-directory / bright-basename treatment, previously
@@ -383,6 +387,16 @@ From the same review, contextimate:
 7. **Tool param columns align block-wide.** Field name/type/required columns in the
    expanded tools view align across the whole block, not per tool, so the section
    reads as one table instead of a stack of differently ragged mini-tables.
+
+Follow-up review, same date (the rail sat flush against the terminal margin, reading
+as a page border rather than a thread line):
+
+8. **The trace block nests.** Trace rows indent one 2-space gutter before the rail
+   (`  ▏ › body`, six visible columns). The margin belongs to narrative — prose and
+   `Thinking…` lines — and tool machinery nests geometrically beneath it, turning the
+   rail from a left border of the page into a bracket around the group. Indentation is
+   a stronger structural cue than ink; the two columns of width are cheap because the
+   size suffix stays right-aligned and middle truncation protects the tail.
 
 ## Suggested implementation order
 
