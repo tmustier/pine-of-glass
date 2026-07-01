@@ -6,7 +6,7 @@ Let me look at the failing suite.
 Thinking: Checking the typecheck before the next command. ... (2 lines)
   ▏ › $ ⋯ && npm run typecheck                                          14.2k ch
   ▏ › read ~/projects/pine-of-g…ndex.ts:1-200,201-400,401-600 3 calls · 51.1k ch
-  ▏ › $ ⋯ && rm -f /tmp/pog-scratch.txt
+  ▏ › $ ⋯ && rm -f /tmp/pog-scratch.txt                                  0.0k ch
 
 The typecheck output looks wrong — checking the runner script.
 

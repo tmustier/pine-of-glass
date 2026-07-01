@@ -27,6 +27,8 @@ const {
   lineRange,
   tildify,
   toolStatus,
+  blockSizeColumnLive,
+  boringPrefix,
   leadingBlank,
   stripAnsi,
   isToolRow,
@@ -249,6 +251,75 @@ test("ink derives from the theme when one is active", () => {
   assert.ok(line.includes(`${T.warning}:1-40`), "line range must use the theme warning role");
   assert.ok(line.includes(`${T.dim}1.4k ch`), "healthy suffix must use theme dim");
   assert.ok(!line.includes(DIM), "no raw fallback grey may leak while a theme is active");
+});
+
+test("size column is block-scoped: one row over the floor lights every cell (§12.15)", () => {
+  const tiny = (over: SyntheticComp = {}) =>
+    toolComp({ result: { content: [{ type: "text", text: "ok" }], isError: false }, ...over });
+  const big = toolComp();
+
+  // Isolated all-tiny block: no size suffixes at all — the right edge stays clean.
+  const a = tiny();
+  const b = tiny();
+  g.__tracelineChat = { children: [a, b] };
+  assert.equal(stripAnsi(toolFactSuffix(a)), "");
+  assert.equal(stripAnsi(toolFactSuffix(b)), "");
+
+  // Mixed block: the 1.4k row lights the column; tiny neighbours render their cells.
+  const c = tiny();
+  const d = tiny();
+  g.__tracelineChat = { children: [c, big, d] };
+  assert.equal(blockSizeColumnLive(c), true);
+  assert.equal(stripAnsi(toolFactSuffix(c)), "0.0k ch");
+  assert.equal(stripAnsi(toolFactSuffix(d)), "0.0k ch");
+
+  // Visible prose breaks the block: across it, a tiny row stays clean.
+  const e = tiny();
+  const prose = {
+    setHideThinkingBlock: () => {},
+    hideThinkingBlock: false,
+    lastMessage: { content: [{ type: "text", text: "done reading" }] },
+  };
+  g.__tracelineChat = { children: [big, prose, e] };
+  assert.equal(stripAnsi(toolFactSuffix(e)), "");
+  g.__tracelineChat = undefined;
+});
+
+test("path emphasis dims the boring prefix: block-common directory or cwd, tail bold (§12.16)", () => {
+  const home = homedir();
+  const edit = (path: string, cwd?: string) =>
+    toolComp({
+      toolName: "edit",
+      args: { path },
+      cwd,
+      callRendererComponent: { render: () => [`edit ${tildify(path)}`] },
+    });
+
+  // Divergence under a shared src/: the common prefix dims, divergent dirs go bold.
+  const p1 = edit(`${home}/projects/site/src/pages/product.astro`);
+  const p2 = edit(`${home}/projects/site/src/data/site.ts`);
+  const p3 = edit(`${home}/projects/site/src/components/Cta.astro`);
+  g.__tracelineChat = { children: [p1, p2, p3] };
+  assert.equal(boringPrefix(p1, tildify(String(p1.args && (p1.args as any).path))), "~/projects/site/src/");
+  const line = oneLine(p1, 100);
+  assert.ok(line.includes(`${DIM}~/projects/site/src/\x1b[0m`), `common prefix dims: ${JSON.stringify(line)}`);
+  assert.ok(line.includes("\x1b[1mpages/product.astro\x1b[22m"), `divergent tail bold: ${JSON.stringify(line)}`);
+
+  // cwd is boring by default: with a trivial common prefix, the cwd prefix still dims
+  // while the out-of-cwd neighbour falls back to basename-only emphasis.
+  const inRepo = edit(`${home}/projects/site/src/lib/util.ts`, `${home}/projects/site`);
+  const inTmp = edit("/tmp/scratch-note.md", `${home}/projects/site`);
+  g.__tracelineChat = { children: [inRepo, inTmp] };
+  assert.equal(boringPrefix(inRepo, tildify(String((inRepo.args as any).path))), "~/projects/site/");
+  assert.equal(boringPrefix(inTmp, "/tmp/scratch-note.md"), "/tmp/");
+  const repoLine = oneLine(inRepo, 100);
+  assert.ok(repoLine.includes(`${DIM}~/projects/site/\x1b[0m`), `cwd prefix dims: ${JSON.stringify(repoLine)}`);
+  assert.ok(repoLine.includes("\x1b[1msrc/lib/util.ts\x1b[22m"), `sub-cwd tail bold: ${JSON.stringify(repoLine)}`);
+
+  // A lone row (no block siblings) keeps the classic basename-only emphasis.
+  g.__tracelineChat = undefined;
+  const lone = edit(`${home}/projects/site/src/pages/product.astro`);
+  assert.equal(boringPrefix(lone, "~/projects/site/src/pages/product.astro"), "~/projects/site/src/pages/");
 });
 
 test("status lives in the bullet: red error, blue running, green success; verbs neutral", () => {

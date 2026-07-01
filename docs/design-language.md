@@ -300,10 +300,12 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
    the `›` bullet (error rows tint the full discriminator set — verb, bash head,
    basename — per §12.14); bash bodies at the one L3-dim supporting grey with the
    head command word L0-bold (§12.9/§12.11); path rows (read/edit/write) dim the
-   directory, render the basename L0-bold, and keep read `:line-range` spans
+   block-scoped boring prefix — common block directory or cwd — render the divergent
+   tail L0-bold (§12.16), and keep read `:line-range` spans
    warning-coloured; native rows for other tools demote unstyled spans to dim
-   (§12.12); the char suffix appears only at ≥100 ch and diff stats drop their zero
-   side (§12.13). Every
+   (§12.12); the char suffix appears when the block's size column is live — any row
+   ≥100 ch lights every cell in the block, an all-tiny block shows none (§12.13/
+   §12.15) — and diff stats drop their zero side (§12.13). Every
    trace row opens with the dim `▏` rail so a run of rows reads as one block. Trace
    rows are unbanded by default; the old native-background slab path stays available
    behind `toolBackgrounds`.
@@ -458,6 +460,35 @@ invariants and the pixels, closed together.
     whole discriminator set — verb, bash head command, basename — in error ink,
     still bold. Status stays confined to marker + discriminators; supporting text
     stays dim; healthy rows are untouched.
+
+Sixth follow-up, same date (diff-only rows crashed into the size column): dropping
+tiny sizes made mixed blocks ragged — a `+3` row ended flush at the right edge while
+its neighbours ended in `…k ch`, so nothing lined up vertically and the column
+stopped being scannable.
+
+15. **Columns are block-scoped.** The fact floor of §12.13 applies per visual block,
+    not per row: within one contiguous trace block (the rail-fused run — connectors
+    and collapsed thinking lines fuse, visible prose breaks), if any completed row
+    clears the floor the size column is *live* and every completed row shows its
+    cell, dim `0.0k ch` included — inside a live column a blank is a misalignment,
+    not a calm. A block with no row above the floor (a `mkdir`/`rm` cleanup run)
+    still shows nothing. Vertical alignment is scannability; the floor only trims
+    noise where no column exists to break.
+
+Seventh follow-up, same date (successive edits shared a long path prefix and the
+dim-directory rule buried the divergence): in a block of edits under one `src/`, the
+discriminating segments (`pages/`, `data/`, `components/`) sat inside the dimmed
+directory while only basenames stayed bright — the eye had to re-read the grey to
+tell rows apart.
+
+16. **Dim the boring prefix, not the directory.** Path emphasis is block-scoped like
+    the columns of §12.15: the dim zone of a path row is its longest *boring prefix*
+    — the block's common directory prefix (when at least two segments deep) or the
+    row's cwd prefix, whichever is longer — and everything past it, divergent
+    directories included, is the discriminator and renders bold. A lone path row's
+    common prefix is its whole directory, so single calls keep the basename-only
+    emphasis, as do blocks that never diverge (the same file re-edited). cwd counts
+    as boring by default: it is session-ambient context, not information.
 
 ## Suggested implementation order
 

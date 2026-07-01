@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Block-scoped scannability for `pi-traceline` (design language §12.15–§12.16):
+
+- The result-size fact floor is now block-scoped: if any row in a contiguous trace
+  block clears 100 ch, every completed row in the block shows its size cell (dim
+  `0.0k ch` included) so the right-edge column stays vertically aligned; an all-tiny
+  cleanup block still shows nothing. Fixes the ragged edge where diff-only rows
+  crashed into the `…k ch` column.
+- Path emphasis dims the *boring prefix*, not the whole directory: the block's
+  common directory prefix (≥2 segments) or the row's cwd prefix, whichever is
+  longer. Divergent tails — directories included — render bold, so successive edits
+  under one `src/` read as `pages/…` vs `components/…` at a glance. Lone rows and
+  never-diverging blocks keep the classic basename-only emphasis.
+
 ## 0.5.6 — 2026-07-02
 
 Full-sweep traceline polish (design language §12.12–§12.14):

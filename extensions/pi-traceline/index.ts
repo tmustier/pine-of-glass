@@ -63,8 +63,9 @@ import {
  * dim the directory so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
  * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
  * balloons past the size thresholds, so "what flooded the context" pops out of the column.
- * Results under 100 ch render no char suffix at all (§12.13): a fact suffix must carry
- * a fact. File-mutation rows with a real diff also reserve `+N -M` in that suffix
+ * Results under 100 ch render no char suffix (§12.13) unless a neighbouring row in the
+ * same block clears the floor — the column is block-scoped (§12.15), so a live column
+ * shows every cell and stays vertically aligned, while an all-tiny block stays clean. File-mutation rows with a real diff also reserve `+N -M` in that suffix
  * (zero sides dropped: `+2 -0` → `+2`), so the collapsed trace shows how much the
  * model changed without expanding the row.
  * All ink is theme-derived (style.ts ink()), with raw-ANSI fallbacks before a theme exists.
@@ -124,7 +125,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 19;
+const TRACELINE_PATCH_VERSION = 20;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -511,10 +512,14 @@ function toolBackgroundsEnabled(): boolean {
 
 // A fact suffix must carry a fact (design language §12.13): results smaller than one
 // line of text render no char suffix — the bullet already says the call completed.
+// The floor is block-scoped (§12.15): when the surrounding block's size column is
+// live, even a below-floor cell renders — a blank inside a live column is a
+// misalignment, not a calm.
 const CHAR_SUFFIX_FLOOR = 100;
 
-function charSuffix(chars: number | undefined): string {
-  if (chars === undefined || chars < CHAR_SUFFIX_FLOOR) return "";
+function charSuffix(chars: number | undefined, columnLive = false): string {
+  if (chars === undefined) return "";
+  if (chars < CHAR_SUFFIX_FLOOR && !columnLive) return "";
   return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
 }
 
@@ -529,7 +534,39 @@ function resultTextCharCount(comp: any): number | undefined {
 }
 
 function resultCharSuffix(comp: any): string {
-  return charSuffix(resultTextCharCount(comp));
+  return charSuffix(resultTextCharCount(comp), blockSizeColumnLive(comp));
+}
+
+// The row's contiguous visual block — the rail-fused run. Boundaries mirror the
+// rail's: tool rows fuse across empty connectors and collapsed thinking lines;
+// visible prose (or any other row) breaks the block. Both §12.15 (block-scoped
+// columns) and §12.16 (boring-prefix path emphasis) scope their facts to this run.
+function blockToolRows(comp: any): any[] {
+  const found = componentLocation(comp);
+  if (!found) return [comp];
+  const breaksBlock = (c: any) => !isToolRow(c) && !isEmptyConnector(c) && !isCollapsedThinkingRow(c);
+  let start = found.index;
+  for (let j = found.index - 1; j >= 0; j--) {
+    if (breaksBlock(found.sibs[j])) break;
+    start = j;
+  }
+  const rows: any[] = [];
+  for (let j = start; j < found.sibs.length; j++) {
+    const c = found.sibs[j];
+    if (breaksBlock(c)) break;
+    if (isToolRow(c)) rows.push(c);
+  }
+  return rows.length ? rows : [comp];
+}
+
+// Columns are block-scoped (design language §12.15): the size column lights up for a
+// whole contiguous trace block when any of its completed rows clears the fact floor.
+// An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
+function blockSizeColumnLive(comp: any): boolean {
+  return blockToolRows(comp).some((c) => {
+    const chars = resultTextCharCount(c);
+    return chars !== undefined && chars >= CHAR_SUFFIX_FLOOR;
+  });
 }
 
 const LCS_CELL_LIMIT = 200_000;
@@ -1003,6 +1040,52 @@ function inkedFallbackLine(comp: any): string {
 // [skill] labels, inline diff hints) keep pi's own rendering.
 const PATH_VERBS = new Set(["read", "edit", "write"]);
 
+function toolPathArg(c: any): string | undefined {
+  if (!PATH_VERBS.has(toolLabel(c?.toolName))) return undefined;
+  const path = c?.args?.path ?? c?.args?.file_path;
+  return typeof path === "string" && path.length > 0 ? tildify(path) : undefined;
+}
+
+// Shared leading directory segments across a set of tildified paths ("~" is a
+// segment; the absolute-root "" is not). For a single path this is its whole
+// directory — which is what keeps lone rows at basename-only emphasis.
+function commonDirSegments(paths: string[]): string[] {
+  const split = paths.map((p) => p.slice(0, p.lastIndexOf("/") + 1).split("/").slice(0, -1));
+  let common = split[0] ?? [];
+  for (const segs of split.slice(1)) {
+    let i = 0;
+    while (i < common.length && i < segs.length && common[i] === segs[i]) i++;
+    common = common.slice(0, i);
+  }
+  return common;
+}
+
+// Dim the boring prefix, not the directory (design language §12.16): the dim zone is
+// the longest of the block's common directory prefix (when at least two meaningful
+// segments deep — a shared bare `/` or `~/` carries no information) and the row's
+// cwd prefix (session-ambient context is boring by default). Everything past it —
+// divergent directories included — is the discriminator. Falls back to the whole
+// directory, i.e. the classic basename-only emphasis.
+function boringPrefix(comp: any, tildePath: string): string {
+  const dir = tildePath.slice(0, tildePath.lastIndexOf("/") + 1);
+  const candidates: string[] = [];
+  const blockPaths = blockToolRows(comp)
+    .map(toolPathArg)
+    .filter((p): p is string => p !== undefined);
+  const common = commonDirSegments(blockPaths.length ? blockPaths : [tildePath]);
+  if (common.filter((s) => s !== "").length >= 2) {
+    const prefix = `${common.join("/")}/`;
+    if (tildePath.startsWith(prefix)) candidates.push(prefix);
+  }
+  const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : undefined;
+  if (cwd) {
+    const cwdPrefix = `${tildify(cwd).replace(/\/+$/, "")}/`;
+    if (tildePath.startsWith(cwdPrefix)) candidates.push(cwdPrefix);
+  }
+  const boring = candidates.sort((a, b) => b.length - a.length)[0];
+  return boring !== undefined && boring.length <= dir.length ? boring : dir;
+}
+
 function pathEmphasisLine(comp: any, nativeColored: string): string | undefined {
   const verb = toolLabel(comp?.toolName);
   if (!PATH_VERBS.has(verb)) return undefined;
@@ -1018,10 +1101,10 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
       : visible === `${verb} ${tildePath}` || visible === `${verb} ${path}`;
   if (!matches) return undefined;
   const theme = currentTheme();
-  const dir = tildePath.slice(0, lastSlash + 1);
-  const base = tildePath.slice(lastSlash + 1);
+  const boring = boringPrefix(comp, tildePath);
+  const tail = tildePath.slice(boring.length);
   const range = verb === "read" ? lineRange(comp?.args) : "";
-  return `${verbInk(comp, verb)} ${dim(dir)}${discriminatorInk(comp, base)}${ink(theme, "warning", range)}`;
+  return `${verbInk(comp, verb)} ${dim(boring)}${discriminatorInk(comp, tail)}${ink(theme, "warning", range)}`;
 }
 
 // Optional shaded tool surface, borrowed live from the row itself. This used to be the
@@ -1187,8 +1270,8 @@ function foldedReadLine(rows: any[], width: number): string {
   const tone = statusTone(last);
   const path = tildify(String(rows[0]?.args?.path ?? ""));
   const lastSlash = path.lastIndexOf("/");
-  const dir = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : "";
-  const base = lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
+  const dir = lastSlash >= 0 ? boringPrefix(last, path) : "";
+  const base = path.slice(dir.length);
   const ranges = rows
     .map((row) => lineRange(row?.args).slice(1))
     .filter(Boolean)
@@ -1202,7 +1285,8 @@ function foldedReadLine(rows: any[], width: number): string {
   // Call count rides the right-aligned suffix (fact order: what · how many · how big),
   // so middle truncation protects the discriminating basename+ranges tail of the body.
   const calls = `${rows.length} calls`;
-  const suffix = total === undefined ? dim(calls) : `${dim(`${calls}${SEP}`)}${charSuffix(total)}`;
+  const sizeCell = charSuffix(total, blockSizeColumnLive(last));
+  const suffix = total === undefined || !sizeCell ? dim(calls) : `${dim(`${calls}${SEP}`)}${sizeCell}`;
   const fitted = rightAlignSuffix(body, suffix, available, theme);
   const row = truncateToWidth(`${toolPrefix(tone)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(last);
@@ -1553,6 +1637,9 @@ export const internals = {
   toolBackgroundsEnabled,
   lineRange,
   toolStatus,
+  blockSizeColumnLive,
+  blockToolRows,
+  boringPrefix,
   fallbackInvocationLine,
   oneLine,
   leadingBlank,
