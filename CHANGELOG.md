@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 — 2026-07-01
+
+- Fix `pi-traceline` / shared chat-container discovery for Pi 0.80's TUI layout, where loaded resources now render in a sibling `loadedResourcesContainer` before `chatContainer`.
+- Update the Pi-internals contract test to pin the new fresh-session fallback seam.
+
 ## 0.4.2 — 2026-06-26
 
 - In `pi-traceline`, show diff stats (`+N -M`) in collapsed rows for diff-backed `edit` calls.
