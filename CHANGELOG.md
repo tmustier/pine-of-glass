@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.7 — 2026-07-02
 
 Block-scoped scannability for `pi-traceline` (design language §12.15–§12.16):
 
