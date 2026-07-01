@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.6 — 2026-07-02
 
 Full-sweep traceline polish (design language §12.12–§12.14):
 
