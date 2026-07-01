@@ -32,7 +32,7 @@ const {
   isToolRow,
   isAssistantRow,
   stripTimeoutSuffix,
-  dimShellPlumbing,
+  inkBashBody,
   flattenInvocationLines,
   rowBackground,
   shadeRow,
@@ -47,6 +47,18 @@ const g = globalThis as Record<string, unknown>;
 
 // Without a theme handle, all family ink falls back to basic raw ANSI (style.ts):
 const DIM = "\x1b[90m";
+
+// A theme whose palette is distinguishable from every raw-ANSI fallback: 256-colour
+// codes per role (real escape sequences, so width math stays honest).
+const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };
+const T = Object.fromEntries(Object.entries(THEME_CODES).map(([role, n]) => [role, `\x1b[38;5;${n}m`])) as Record<string, string>;
+function themed() {
+  return {
+    fg: (color: string, text: string) => `\x1b[38;5;${THEME_CODES[color] ?? 250}m${text}\x1b[39m`,
+    bold: (text: string) => text,
+    bg: (_color: string, text: string) => text,
+  };
+}
 
 type SyntheticComp = Record<string, unknown>;
 
@@ -104,11 +116,12 @@ test("suffix fitting: right-aligned, never overlapping, suffix wins when starved
   }
 });
 
-test("one-line read row: emphasized path, range kept, suffix right-aligned", () => {
+test("one-line read row: rail + emphasized path, range kept, suffix right-aligned", () => {
   const line = oneLine(toolComp(), 80);
   const visible = stripAnsi(line);
   assert.ok(visibleWidth(line) <= 80);
-  assert.ok(visible.startsWith("  › read ~/projects/demo/file.ts:1-40"), visible);
+  assert.ok(visible.startsWith("▏ › read ~/projects/demo/file.ts:1-40"), visible);
+  assert.ok(line.startsWith(`${DIM}▏\x1b[0m `), "the rail must be dim block chrome");
   assert.ok(visible.endsWith("1.4k ch"), visible);
   // Emphasis dims the directory separately from the basename, while the range keeps
   // Pi's prominent warning/yellow treatment: the raw line must restyle both spans.
@@ -219,29 +232,28 @@ test("result-size suffix severity: dim while healthy, warning ≥10k ch, error �
 });
 
 test("ink derives from the theme when one is active", () => {
-  // A theme whose palette is distinguishable from every raw-ANSI fallback: 256-colour
-  // codes per role (real escape sequences, so width math stays honest).
-  const codes: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };
-  g.__tracelineGetTheme = () => ({
-    fg: (color: string, text: string) => `\x1b[38;5;${codes[color] ?? 250}m${text}\x1b[39m`,
-    bold: (text: string) => text,
-    bg: (_color: string, text: string) => text,
-  });
+  g.__tracelineGetTheme = () => themed();
   const line = oneLine(toolComp(), 80);
-  assert.ok(line.includes("\x1b[38;5;245m~/projects/demo/"), `directory must use theme dim: ${JSON.stringify(line)}`);
-  assert.ok(line.includes("\x1b[38;5;41m"), "status ink must use the theme success role");
-  assert.ok(line.includes("\x1b[38;5;220m:1-40"), "line range must use the theme warning role");
-  assert.ok(line.includes("\x1b[38;5;245m1.4k ch"), "healthy suffix must use theme dim");
+  assert.ok(line.includes(`${T.dim}~/projects/demo/`), `directory must use theme dim: ${JSON.stringify(line)}`);
+  assert.ok(line.includes(`${T.success}›`), "bullet ink must use the theme success role");
+  assert.ok(line.includes(`${T.text}\x1b[1mread\x1b[22m`), "verb must use the neutral theme text role");
+  assert.ok(line.includes(`${T.warning}:1-40`), "line range must use the theme warning role");
+  assert.ok(line.includes(`${T.dim}1.4k ch`), "healthy suffix must use theme dim");
   assert.ok(!line.includes(DIM), "no raw fallback grey may leak while a theme is active");
 });
 
-test("error status colours the bullet red; running is blue; success green", () => {
+test("status lives in the bullet: red error, blue running, green success; verbs neutral", () => {
   const success = oneLine(toolComp(), 80);
   const error = oneLine(toolComp({ result: { content: [], isError: true } }), 80);
   const running = oneLine(toolComp({ result: undefined, isPartial: true }), 80);
   assert.ok(success.includes("\x1b[32m›"), "success bullet green");
   assert.ok(error.includes("\x1b[31m›"), "error bullet red");
   assert.ok(running.includes("\x1b[34m›"), "running bullet blue");
+
+  // Verbs are neutral bold (design language §2/§12); only a failed call tints its verb.
+  assert.ok(success.includes("\x1b[1mread\x1b[22m"), "healthy verb must be neutral bold");
+  assert.ok(!success.includes("\x1b[32m\x1b[1mread"), "healthy verb must not be success-tinted");
+  assert.ok(error.includes("\x1b[31m\x1b[1mread\x1b[22m"), "failed verb keeps the error tint");
 });
 
 test("fallback rendering when a tool has no native call renderer", () => {
@@ -250,7 +262,7 @@ test("fallback rendering when a tool has no native call renderer", () => {
   assert.ok(visible.includes('mcp {"foo":"bar"}'), visible);
 });
 
-test("bash rows: timeout boilerplate stripped, shell plumbing dimmed, segments bright", () => {
+test("bash rows: timeout stripped, $ anchors bold, body muted, plumbing dimmed", () => {
   const comp = toolComp({
     toolName: "bash",
     args: { command: "pwd && git remote -v" },
@@ -261,15 +273,27 @@ test("bash rows: timeout boilerplate stripped, shell plumbing dimmed, segments b
   const line = oneLine(comp, 120);
   const visible = stripAnsi(line);
   assert.ok(!visible.includes("timeout"), `timeout boilerplate must be stripped: ${visible}`);
-  // Plumbing is dimmed; the command segments around it keep full brightness.
+  assert.ok(visible.includes("$ pwd && git remote -v 2>/dev/null | head -5"), visible);
+  assert.ok(line.includes("\x1b[1m$\x1b[22m"), "the $ prompt anchors the row in neutral bold");
+  // Raw fallback (no theme): muted and dim share one grey, but the plumbing must still
+  // be individually wrapped so a themed terminal can separate the levels.
   assert.ok(line.includes(`${DIM}&&\x1b[0m`), "&& must be dimmed");
   assert.ok(line.includes(`${DIM}2>/dev/null\x1b[0m`), "2>/dev/null must be dimmed");
   assert.ok(line.includes(`${DIM}|\x1b[0m`), "pipe must be dimmed");
 
-  // Unit edges: heredoc markers dim; quoted near-misses and SGR params stay untouched.
-  assert.ok(dimShellPlumbing("cat <<'EOF'").includes(`${DIM}<<'EOF'\x1b[0m`));
-  assert.equal(dimShellPlumbing("echo 'a&&b'"), "echo 'a&&b'", "unspaced operators are left alone");
-  assert.equal(stripTimeoutSuffix("$ ls (timeout 10s)"), "$ ls\x1b[0m");
+  // With a theme: command chunks sit at L2-muted, plumbing at L3-dim (design language
+  // §2/§12) — the wall of commands reads one step quieter than assistant prose.
+  g.__tracelineGetTheme = () => themed();
+  const body = inkBashBody("pwd && git remote -v 2>/dev/null");
+  assert.ok(body.includes(`${T.muted}pwd`), `command chunks must be muted: ${JSON.stringify(body)}`);
+  assert.ok(body.includes(`${T.dim}&&`), `plumbing must be dim: ${JSON.stringify(body)}`);
+  g.__tracelineGetTheme = undefined;
+
+  // Unit edges: heredoc markers dim; quoted near-misses stay one muted chunk.
+  assert.ok(inkBashBody("cat <<'EOF'").includes(`${DIM}<<'EOF'\x1b[0m`));
+  assert.equal(stripAnsi(inkBashBody("echo 'a&&b'")), "echo 'a&&b'", "unspaced operators are left alone");
+  assert.ok(!inkBashBody("echo 'a&&b'").includes(`${DIM}&&`), "a quoted && must not be split out");
+  assert.equal(stripTimeoutSuffix("$ ls (timeout 10s)"), "$ ls");
   assert.equal(stripTimeoutSuffix("$ ls"), "$ ls");
 });
 
@@ -290,7 +314,7 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   });
   const line = oneLine(comp, 160);
   const visible = stripAnsi(line);
-  assert.ok(visible.startsWith('  › $ python3 -c "'), visible);
+  assert.ok(visible.startsWith('▏ › $ python3 -c "'), visible);
   assert.ok(visible.includes("capture-pane"), `operative tail must survive: ${visible}`);
   assert.ok(visible.includes("\u21b5"), `original line breaks must be marked: ${visible}`);
   assert.ok(line.includes(`${DIM}\u21b5\x1b[0m`), "break marks must be dimmed");
@@ -301,10 +325,11 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   assert.ok(narrow.includes("python3"), narrow);
   assert.ok(narrow.includes("tail -4"), narrow);
 
-  // Unit edges: blank-only lines drop out; a single line flattens to itself, unmarked.
+  // Unit edges: blank-only lines drop out; a single line flattens to itself, unmarked;
+  // the joined line stays plain — inkBashBody dims the marks later.
   assert.equal(flattenInvocationLines(["", "   "]), undefined);
-  assert.equal(stripAnsi(flattenInvocationLines(["$ ls -la"])!), "$ ls -la");
-  assert.equal(stripAnsi(flattenInvocationLines(["$ cat <<'EOF'", "  body", "EOF"])!), "$ cat <<'EOF' \u21b5 body \u21b5 EOF");
+  assert.equal(flattenInvocationLines(["$ ls -la"]), "$ ls -la");
+  assert.equal(flattenInvocationLines(["$ cat <<'EOF'", "  body", "EOF"]), "$ cat <<'EOF' \u21b5 body \u21b5 EOF");
 });
 
 test("tool background flag accepts config and env, with unbanded rows as the default", () => {

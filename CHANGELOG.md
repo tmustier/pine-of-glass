@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Differentiate `pi-traceline` trace rows from assistant prose (design language §12):
+  every trace row opens with a dim `▏` rail so consecutive tool calls fuse into one
+  visible block, verbs render neutral bold with status confined to the `›` bullet
+  (only failed calls tint the verb red), and bash command bodies drop one ink level to
+  muted with shell plumbing and `↵`/`⋯` marks a step dimmer, anchored by the bold `$`.
+- Extend the dim-directory / bright-basename path emphasis from `read` rows to plain
+  `edit` and `write` rows.
+- Rebuild bash trace rows from the rendered plain text (dropping pi's native bash
+  syntax styling in one-line mode) so the family ink hierarchy applies uniformly.
+
 ## 0.4.3 — 2026-07-01
 
 - Fix `pi-traceline` / shared chat-container discovery for Pi 0.80's TUI layout, where loaded resources now render in a sibling `loadedResourcesContainer` before `chatContainer`.

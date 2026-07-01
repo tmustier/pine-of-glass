@@ -5,7 +5,7 @@ One visual grammar for the extension family — `pi-contextimate`, `pi-traceline
 is its implementation. When a renderer and this document disagree, one of them is wrong —
 fix whichever it is, deliberately.
 
-**Status: agreed 2026-06-12; implemented 2026-06-12** across the shared-library pass
+**Status: agreed 2026-06-12; implemented 2026-06-12; amended 2026-07-01 (§12)** across the shared-library pass
 (#18), the traceline pass (#19, #20), the contextimate pass (#21), and the cachemire
 pass (#22). Decisions marked `[D]` were proposed-by-default and confirmed; the former
 open questions are resolved in §11. Changes to this language are fine — but they are
@@ -59,6 +59,7 @@ stays neutral.
 | `›` | a tool action (one trace row) | traceline |
 | `◍` | a loop-economics fact (clock, notice, ledger line) | cachemire |
 | `▸` | an expandable/summarizable section header | contextimate (all modes) |
+| `▏` | tool-block rail: the dim left edge of a run of trace rows | traceline |
 
 Status scale — family-shared vocabulary (today cachemire-only):
 
@@ -74,6 +75,9 @@ newline), `·` (U+00B7, the only inline fact separator).
 
 Rules:
 - One glyph per line, gutter position, never inline mid-sentence.
+- The rail is the one sanctioned pairing: it is block chrome, not a line kind — always
+  L3-dim, always column 0, never a status carrier — and a railed line still carries
+  exactly one kind-glyph (`▏ › body`).
 - New line kinds reuse an existing glyph if the kind matches; a new glyph is a design
   decision recorded here, not an ad-hoc choice.
 
@@ -98,9 +102,16 @@ Status/severity tones (glyphs, quantity suffixes, and native tool metadata like 
 | error | failed / broken / huge | `error` |
 | running | in flight | none faithful — `style.ts` fallback (ANSI blue) `[D]` |
 
+Status never tints body text: a verb is L0 neutral bold, and the `›` bullet alone
+carries success/running. The single exception is a *failed* call, which may tint its
+verb error — an error is a real anomaly, not ambient status. (Amended 2026-07-01, §12;
+traceline previously tinted every verb with its status tone, which made healthy columns
+green and defeated the squint test below.)
+
 The test of a good ink assignment: squint. Only L0 and any non-dim severity tones
 should survive the squint. If a wall of tool rows survives at the same brightness as
-assistant prose, the hierarchy is wrong (this is today's traceline complaint).
+assistant prose, the hierarchy is wrong (the 2026-06 traceline complaint, resolved by
+the §12 amendments: verbs neutral-bold, bash bodies L2, the `▏` rail).
 
 ## 3. Colour sourcing
 
@@ -151,7 +162,9 @@ Hard rules:
 
 ## 5. Layout grammar
 
-- **Gutter:** 2 spaces, then the glyph, then 1 space, then the body.
+- **Gutter:** 2 spaces, then the glyph, then 1 space, then the body. Tool trace rows
+  replace the two spaces with `▏` + space — the dim rail — so consecutive rows fuse
+  into one visible block; the blank spacer before a group ends the rail (§12).
 - **Quantities right.** Per-row magnitudes are a right-aligned dim suffix with a ≥2-space
   gap (traceline's `… 1.4k ch` pattern) or a column-aligned field (contextimate rows,
   cachemire `/cache` table). Never woven mid-sentence when the line is a row in a list.
@@ -279,10 +292,13 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
 3. **Repeated-preamble dimming:** when a row's leading segment (`cd X &&`, identical
    pipeline head) repeats the previous row's, render that head at L3-dim (or elide to a
    dim `⋯ &&`). Kills the wall-of-`cd` (issue #14).
-4. Body ink one step down: verb (L0) + operative tail/basename (L1) bright; read
-   `:line-range` spans keep Pi's warning/yellow metadata treatment; mid-line arguments
-   L1→L2 where separable; plumbing stays L3. Trace rows are unbanded by default; the
-   old native-background slab path stays available behind `toolBackgrounds`.
+4. Body ink one step down (as amended in §12): verbs neutral bold L0 with status in
+   the `›` bullet (error rows alone tint the verb); bash bodies L2-muted with plumbing
+   and flatten/elision marks L3-dim; path rows (read/edit/write) dim the directory,
+   keep the basename L1, and keep read `:line-range` spans warning-coloured. Every
+   trace row opens with the dim `▏` rail so a run of rows reads as one block. Trace
+   rows are unbanded by default; the old native-background slab path stays available
+   behind `toolBackgrounds`.
 5. Fold paginated reads of one file into one row (`read …/index.ts:1-200,201-400 · 2
    calls · 37.0k ch`) and fix doubled `Thinking…` lines — issue #14's scope, executed
    under this language.
@@ -326,6 +342,30 @@ All resolved with Thomas, 2026-06-12:
    `accent` would collide with brand/total highlights, `warning` overloads "fading").
 4. **Family accent** → theme-`accent`-derived; the orange was arbitrary and is dropped (§3).
 5. **Number grammar** → fixed k-units everywhere; no raw-integer counts (§4).
+
+## 12. Amendments — 2026-07-01
+
+Agreed with Thomas (the "traceline feels messy and unstructured" review): trace rows
+and assistant prose competed at the same brightness, and nothing grouped a run of tool
+rows into a block.
+
+1. **Verbs are neutral.** Trace-row verbs render L0 neutral bold; the `›` bullet alone
+   carries success/running. Only an error row may tint its verb (§2). Healthy columns
+   stop being green.
+2. **Bash bodies sit at L2.** The command text renders muted, with plumbing and the
+   flatten/elision marks (`↵`, `⋯`) dim; the bold `$` anchors the column at L0. Pi's
+   native bash syntax styling is dropped in one-line mode — the invocation *text*
+   still comes from pi's renderer, the ink is the family's. Keeping a single
+   "operative segment" bright was considered and rejected: a pipeline tail is as often
+   a filter (`| tail -5`) as it is the point, so the whole body sits uniformly at L2
+   and middle truncation continues to protect the tail.
+3. **The `▏` rail.** Every trace row opens with a dim `▏` in column 0 (§1, §5), fusing
+   consecutive rows into one visible block — the block identity the retired background
+   bands were reaching for, at one character of width and zero synthesized colour.
+4. **Path emphasis widens.** The dim-directory / bright-basename treatment, previously
+   read-only, now applies to plain `edit` and `write` rows too, so the mutation column
+   reads like the read column. Rows whose native line carries extra decoration keep
+   pi's own rendering.
 
 ## Suggested implementation order
 

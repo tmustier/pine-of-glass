@@ -1,14 +1,14 @@
 
 Let me look at the failing suite.
 
-  › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5      1.4k ch
+▏ › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5      1.4k ch
 
 Thinking: Checking the typecheck before the next command. ... (2 lines)
-  › $ ⋯ && npm run typecheck                                            14.2k ch
-  › read ~/projects/pine-of-gl…index.ts:1-200,201-400,401-600 3 calls · 51.1k ch
-  › $ ⋯ && rm -f /tmp/pog-scratch.txt                                    0.0k ch
+▏ › $ ⋯ && npm run typecheck                                            14.2k ch
+▏ › read ~/projects/pine-of-gl…index.ts:1-200,201-400,401-600 3 calls · 51.1k ch
+▏ › $ ⋯ && rm -f /tmp/pog-scratch.txt                                    0.0k ch
 
 The typecheck output looks wrong — checking the runner script.
 
-  › $ python3 -c ' ↵ import json ↵ print(json.dumps(cfg)) ↵ ' | tail -2 56.3k ch
-  › $ git status --short
+▏ › $ python3 -c ' ↵ import json ↵ print(json.dumps(cfg)) ↵ ' | tail -2 56.3k ch
+▏ › $ git status --short

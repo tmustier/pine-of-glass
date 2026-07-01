@@ -16,6 +16,7 @@ test("family glyphs and separator are the documented characters", () => {
   assert.equal(GLYPH.tool, "›");
   assert.equal(GLYPH.econ, "◍");
   assert.equal(GLYPH.section, "▸");
+  assert.equal(GLYPH.rail, "▏");
   assert.deepEqual([SCALE.cold, SCALE.hit, SCALE.partial, SCALE.miss], ["○", "●", "◑", "◌"]);
   assert.equal(SEP, " · ");
 });

@@ -41,21 +41,25 @@ import {
  *   native   = reasoning shown  + pi's native tool rows, unchanged by this extension
  *   one-line = reasoning hidden + each tool row collapsed to one invocation trace line
  *
- * One-line rendering reuses pi's native tool call renderer, so visual defaults
- * (bold command name, accent paths/backticks, warning line ranges, etc.) drift with pi.
- * Rows are intentionally unbanded by default (the edit-tool look): status stays in the
- * bullet and severity suffixes, while the old pi-background borrowing path remains
- * behind a config flag for easy rollback. Multiline bash commands are flattened into
- * the one trace line with a dim ↵ marking each original break, so heredocs and inline scripts
- * keep their operative tail instead of collapsing to `$ python3 -c "`.
- * The ink follows the family hierarchy (docs/design-language.md): shell plumbing (`&&`,
- * `|`, `2>/dev/null`, heredoc markers) is dimmed so command segments pop, and the
- * boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
+ * One-line rendering reuses pi's native tool call renderer for most tools, so visual
+ * defaults (accent paths/backticks, warning line ranges, custom renderers) drift with pi;
+ * bash rows re-ink their body from the rendered *text* instead, so the wall of commands
+ * stays quiet. Rows are intentionally unbanded by default (the edit-tool look): status
+ * stays in the bullet and severity suffixes, while the old pi-background borrowing path
+ * remains behind a config flag for easy rollback. Multiline bash commands are flattened
+ * into the one trace line with a dim ↵ marking each original break, so heredocs and
+ * inline scripts keep their operative tail instead of collapsing to `$ python3 -c "`.
+ * The ink follows the family hierarchy (docs/design-language.md, amended §12): every
+ * trace row opens with a dim `▏` rail so a run of tool rows fuses into one visible
+ * block against assistant prose; verbs are neutral bold with status in the › bullet
+ * (only error rows tint the verb); bash bodies sit one step down at L2-muted with shell
+ * plumbing (`&&`, `|`, `2>/dev/null`, heredoc markers) at L3-dim; and the boilerplate
+ * `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
  * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
  * a dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
  * operative end of a command — because that is where the discriminating information lives;
- * the cut snaps to a nearby `/` or space. Plain file reads additionally dim the directory
- * so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
+ * the cut snaps to a nearby `/` or space. Plain file reads, edits, and writes additionally
+ * dim the directory so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
  * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
  * balloons past the size thresholds, so "what flooded the context" pops out of the column.
  * File-mutation rows with a real diff also reserve `+N -M` in that suffix, so the
@@ -108,14 +112,15 @@ const g = globalThis as TracelineGlobal;
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
-const TOOL_GUTTER = "  ";
+const TOOL_RAIL = GLYPH.rail;
 const TOOL_BULLET = GLYPH.tool;
 const TOOL_AFTER_BULLET = " ";
-const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_GUTTER.length + 1 + TOOL_AFTER_BULLET.length;
+// ▏ + space + › + space — same four columns the old two-space gutter occupied.
+const TOOL_PREFIX_VISIBLE_WIDTH = 2 + 1 + TOOL_AFTER_BULLET.length;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 14;
+const TRACELINE_PATCH_VERSION = 15;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -422,8 +427,21 @@ function statusTone(comp: any): Tone {
   return "running";
 }
 
+// Verb ink (design language §2/§12): identity is neutral bold — status lives in the ›
+// bullet — so a healthy column of read/edit/$ verbs stays calm while assistant prose
+// owns full brightness. Only a real anomaly (a failed call) tints its verb.
+function verbTone(comp: any): Tone {
+  return toolStatus(comp) === "error" ? "error" : "text";
+}
+
+function verbInk(comp: any, verb: string): string {
+  return ink(currentTheme(), verbTone(comp), `${BOLD}${verb}${BOLD_OFF}`);
+}
+
+// Every trace row opens with the dim ▏ rail (design language §1/§5/§12): consecutive
+// rows fuse into one visible block, and the blank spacer before a group ends the rail.
 function toolPrefix(tone: Tone): string {
-  return `${TOOL_GUTTER}${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
+  return `${dim(TOOL_RAIL)} ${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
 }
 
 function hiddenToolPrefix(comp: any): string {
@@ -687,14 +705,15 @@ function firstVisibleLine(lines: string[]): string | undefined {
 
 // Bash commands keep their real newlines (heredocs, inline python, chained pipelines),
 // so first-line-only collapses them to an uninformative prefix like `$ python3 -c "`
-// (issue #10). Flatten every visible line into the one trace line, with a dim ↵ where
-// each break was — middle truncation then keeps the head *and* the operative tail.
+// (issue #10). Flatten every visible line into the one trace line, with a ↵ where each
+// break was — middle truncation then keeps the head *and* the operative tail. The marks
+// stay plain here; inkBashBody dims them with the rest of the shell apparatus.
 function flattenInvocationLines(lines: string[]): string | undefined {
   const visible = lines
     .filter((line) => stripAnsi(line).trim().length > 0)
     .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
   if (visible.length === 0) return undefined;
-  return visible.join(` ${dim(LINE_BREAK_MARK)} `);
+  return visible.join(` ${LINE_BREAK_MARK} `);
 }
 
 function filterSgrParams(
@@ -764,32 +783,70 @@ function stripTrailingExpandHint(line: string): string {
 
 // Native bash rows append " (timeout Ns)". It is near-constant boilerplate — the same
 // dim parenthetical on every row — so in one-line mode it only spends width and adds
-// noise; the full invocation (timeout included) is one Ctrl+T / click away.
-function stripTimeoutSuffix(line: string): string {
-  const visible = stripAnsi(line);
-  const hint = visible.match(/ \(timeout [^)]*\)\s*$/i)?.[0];
-  if (!hint) return line;
-  const rawStart = rawIndexAtVisibleIndex(line, visible.length - hint.length);
-  return `${line.slice(0, rawStart)}${RESET}`;
+// noise; the full invocation (timeout included) is one Ctrl+T / click away. Bash rows
+// are rebuilt from plain text (see bashInvocationText), so this works on plain text.
+function stripTimeoutSuffix(text: string): string {
+  return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
 }
 
-// Ink hierarchy for command rows: dim the shell plumbing (connectors, null redirects,
-// heredoc markers) so the command segments carry the brightness. Matches only
-// space-delimited operator tokens, which keeps it out of SGR params and most quoted
-// strings; a dimmed operator inside a quoted string would be a cosmetic-only miss.
-const SHELL_PLUMBING =
-  / (&&|\|\||\||;|2>&1|[&12]?>>?\s?\/dev\/null|<<-?\s?'?[A-Za-z_][A-Za-z0-9_]*'?)(?= |$)/g;
+// --- bash rows: plain-text rebuild + family ink (design language §2/§12) ---------------
+// Bash rows are the bulk of a trace wall, so their body ink carries the differentiation
+// between assistant prose and tool rows: the whole command sits one step down at
+// L2-muted, shell apparatus (connectors, null redirects, heredoc markers, and the ↵/⋯
+// flatten/elision marks) at L3-dim, with the bold `$` anchoring the column at L0.
+// Pi's native bash styling is deliberately dropped: the invocation *text* still comes
+// from pi's renderer, the ink is the family's. The apparatus pattern matches only
+// space-delimited operator tokens, which keeps it out of most quoted strings; a dimmed
+// operator inside a quoted string would be a cosmetic-only miss.
+const BASH_APPARATUS =
+  / (&&|\|\||\||;|2>&1|[&12]?>>?\s?\/dev\/null|<<-?\s?'?[A-Za-z_][A-Za-z0-9_]*'?|\u21b5)(?= |$)/;
 
-function dimShellPlumbing(line: string): string {
-  return line.replace(SHELL_PLUMBING, (_m, op: string) => ` ${dim(op)}`);
+// The rendered bash invocation as plain text: every visible line flattened into one,
+// leading bullet and timeout boilerplate dropped. All later transforms (tildify, cd
+// elision) stay in plain text; inkBashRow applies the family ink last.
+function bashInvocationText(comp: any): string | undefined {
+  const call = comp?.callRendererComponent;
+  if (!call || typeof call.render !== "function") return undefined;
+  const rendered = withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH));
+  const lines = Array.isArray(rendered) ? rendered : [];
+  const flattened = flattenInvocationLines(lines.map((line: unknown) => stripAnsi(String(line))));
+  if (!flattened) return undefined;
+  return stripTimeoutSuffix(flattened.replace(/^•\s*/, ""));
+}
+
+// Alternating chunk/operator split (String.split keeps the capture group): command
+// chunks render muted, operators and marks dim. Chunks are wrapped individually so a
+// dimmed operator can never leak its close into the next chunk's ink. When middle
+// truncation later cuts inside a chunk, the tail after the ellipsis renders at the
+// terminal default until the next chunk opens — an accepted quirk that leaves the
+// operative tail slightly brighter, never quieter.
+function inkBashBody(body: string): string {
+  const theme = currentTheme();
+  let rest = body;
+  let out = "";
+  if (rest.startsWith(`${PREAMBLE_MARK} `)) {
+    out += dim(PREAMBLE_MARK);
+    // Keep the following space in rest: the `&&` the elision always leaves behind then
+    // splits as space-delimited apparatus and dims like any other operator.
+    rest = rest.slice(PREAMBLE_MARK.length);
+  }
+  const parts = rest.split(BASH_APPARATUS);
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!;
+    if (part.length === 0) continue;
+    out += i % 2 === 1 ? ` ${dim(part)}` : ink(theme, "muted", part);
+  }
+  return out;
+}
+
+function inkBashRow(comp: any, text: string): string {
+  if (!text.startsWith("$ ")) return ink(currentTheme(), "muted", text);
+  return `${verbInk(comp, "$")} ${inkBashBody(text.slice(2))}`;
 }
 
 function commandPrefixLength(comp: any, line: string): number {
   const visible = stripAnsi(line).trimStart();
   const name = toolLabel(comp?.toolName);
-  if (name === "bash" && visible.startsWith("$ ")) {
-    return 1; // colour only the shell prompt; the command itself is argument text
-  }
   if (visible.startsWith(name)) return name.length;
   return visible.match(/^\S+/)?.[0].length ?? 0;
 }
@@ -809,24 +866,20 @@ function colourCommandPrefix(comp: any, line: string): string {
   const rawEnd = rawIndexBeforeVisibleIndex(trimmed, prefixLen);
   const prefix = stripSgrForegrounds(trimmed.slice(0, rawEnd));
   const rest = trimmed.slice(rawEnd);
-  return `${ink(currentTheme(), statusTone(comp), `${BOLD}${prefix}${BOLD_OFF}`)}${rest}`;
+  return `${ink(currentTheme(), verbTone(comp), `${BOLD}${prefix}${BOLD_OFF}`)}${rest}`;
 }
 
-// Prefer pi's own renderCall output for one-line mode. This borrows the native visual
-// grammar (paths/backticks, warning line ranges, custom-tool renderers) and only
-// suppresses result/output lines by taking the first visible call line. The invocation
-// prefix itself is recoloured by execution status for scanability.
+// Prefer pi's own renderCall output for one-line mode (non-bash tools). This borrows
+// the native visual grammar (paths/backticks, warning line ranges, custom-tool
+// renderers) and only suppresses result/output lines by taking the first visible call
+// line. The verb is re-inked neutral bold (error rows error) per the family hierarchy.
 function nativeInvocationLine(comp: any): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
   const rendered = withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH));
   const lines = Array.isArray(rendered) ? rendered : [];
-  // Bash: every rendered line is invocation (the command's own newlines), so flatten.
-  // Other tools keep first-line-only — that is what suppresses their preview/body lines.
-  const line = toolLabel(comp?.toolName) === "bash" ? flattenInvocationLines(lines) : firstVisibleLine(lines);
-  return line
-    ? colourCommandPrefix(comp, stripSgrBackgrounds(stripTimeoutSuffix(stripTrailingExpandHint(line))))
-    : undefined;
+  const line = firstVisibleLine(lines);
+  return line ? colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))) : undefined;
 }
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
@@ -844,23 +897,42 @@ function fallbackInvocationLine(comp: any): string {
   return body.replace(/\s+/g, " ").trim() || verb;
 }
 
-// Emphasis for plain file reads: dim the directory so the basename (which file) stands
-// out, and keep the :line-range in pi's warning/yellow treatment so scoped reads pop.
-// Applied only when the native row is a bare
-// `read <path>[:range]`; rows with a secondary label (resource / [skill]) keep native.
+function inkedFallbackLine(comp: any): string {
+  const body = tildify(fallbackInvocationLine(comp));
+  const verb = toolLabel(comp?.toolName);
+  if (body === verb) return verbInk(comp, verb);
+  if (body.startsWith(`${verb} `)) {
+    return `${verbInk(comp, verb)} ${ink(currentTheme(), "muted", body.slice(verb.length + 1))}`;
+  }
+  return ink(currentTheme(), "muted", body);
+}
+
+// Emphasis for plain file reads, edits, and writes (design language §12): dim the
+// directory so the basename (which file) stands out, and keep the read :line-range in
+// pi's warning/yellow treatment so scoped reads pop. Applied only when the native row
+// is a bare `<verb> <path>[:range]`; rows with extra native decoration (resource /
+// [skill] labels, inline diff hints) keep pi's own rendering.
+const PATH_VERBS = new Set(["read", "edit", "write"]);
+
 function pathEmphasisLine(comp: any, nativeColored: string): string | undefined {
-  if (toolLabel(comp?.toolName) !== "read") return undefined;
-  const path = comp?.args?.path;
+  const verb = toolLabel(comp?.toolName);
+  if (!PATH_VERBS.has(verb)) return undefined;
+  const path = comp?.args?.path ?? comp?.args?.file_path;
   if (typeof path !== "string" || path.length === 0) return undefined;
   const tildePath = tildify(path);
   const lastSlash = tildePath.lastIndexOf("/");
   if (lastSlash < 0) return undefined;
-  if (!stripAnsi(nativeColored).trim().startsWith(`read ${tildePath}`)) return undefined;
+  const visible = stripAnsi(nativeColored).trim();
+  const matches =
+    verb === "read"
+      ? visible.startsWith(`${verb} ${tildePath}`) || visible.startsWith(`${verb} ${path}`)
+      : visible === `${verb} ${tildePath}` || visible === `${verb} ${path}`;
+  if (!matches) return undefined;
   const theme = currentTheme();
   const dir = tildePath.slice(0, lastSlash + 1);
   const base = tildePath.slice(lastSlash + 1);
-  const range = lineRange(comp?.args);
-  return `${ink(theme, statusTone(comp), `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${ink(theme, "warning", range)}`;
+  const range = verb === "read" ? lineRange(comp?.args) : "";
+  return `${verbInk(comp, verb)} ${dim(dir)}${base}${ink(theme, "warning", range)}`;
 }
 
 // Optional shaded tool surface, borrowed live from the row itself. This used to be the
@@ -888,6 +960,21 @@ function shadeRow(line: string, width: number, bgFn: (text: string) => string): 
   return `${open}${padded.split(RESET).join(`${RESET}${open}`)}${close}`;
 }
 
+// The invocation body with family ink applied: bash rows rebuild from plain text, path
+// rows get the dim-directory emphasis, everything else keeps pi's native line with a
+// re-inked verb; tools without a renderer fall back to a plain verb+args line.
+function invocationInk(comp: any): string {
+  if (toolLabel(comp?.toolName) === "bash") {
+    const plain = bashInvocationText(comp);
+    if (plain === undefined) return inkedFallbackLine(comp);
+    const tilded = tildify(plain);
+    return inkBashRow(comp, repeatsPreviousCdPreamble(comp) ? elideCdPreamble(tilded) : tilded);
+  }
+  const native = nativeInvocationLine(comp);
+  const base = (native && pathEmphasisLine(comp, native)) ?? native;
+  return base ? tildify(base) : inkedFallbackLine(comp);
+}
+
 function oneLine(comp: any, width: number): string {
   if (toolLabel(comp?.toolName) === "write" && !comp?.result) {
     try {
@@ -898,18 +985,7 @@ function oneLine(comp: any, width: number): string {
   }
   const lineWidth = Math.max(1, width);
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
-  const native = nativeInvocationLine(comp);
-  const base =
-    (native && pathEmphasisLine(comp, native)) ??
-    native ??
-    ink(currentTheme(), statusTone(comp), fallbackInvocationLine(comp));
-  const tilded = tildify(base);
-  let invocation = tilded;
-  if (toolLabel(comp?.toolName) === "bash") {
-    if (repeatsPreviousCdPreamble(comp)) invocation = elideCdPreamble(invocation);
-    invocation = dimShellPlumbing(invocation);
-  }
-  const fitted = rightAlignSuffix(invocation, toolFactSuffix(comp), available, currentTheme());
+  const fitted = rightAlignSuffix(invocationInk(comp), toolFactSuffix(comp), available, currentTheme());
   const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(comp);
   return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
@@ -954,19 +1030,18 @@ function repeatsPreviousCdPreamble(comp: any): boolean {
   return cdPreambleDir(previousBashRow(comp)) === dir;
 }
 
+// Operates on the plain-text invocation (see bashInvocationText); inkBashBody later
+// dims the ⋯ with the rest of the shell apparatus.
 function elideCdPreamble(line: string): string {
-  const visible = stripAnsi(line);
-  if (!visible.startsWith("$ ")) return line;
+  if (!line.startsWith("$ ")) return line;
   // Find the separator with the same quote-aware parse used to detect the repeat: a
   // plain indexOf(" && ") would cut inside a quoted directory (`cd "/tmp/a && b" && …`)
   // and corrupt the command. The match tail is `\s*&&\s`, so its last `&&` *is* the
   // separator, after any quoted segment.
-  const preamble = CD_PREAMBLE.exec(visible.slice(2));
+  const preamble = CD_PREAMBLE.exec(line.slice(2));
   if (!preamble) return line;
   const ampIndex = 2 + preamble[0].lastIndexOf("&&");
-  const head = line.slice(0, rawIndexAtVisibleIndex(line, 2)); // `$ ` with its styling
-  const rest = line.slice(rawIndexAtVisibleIndex(line, ampIndex)); // from `&& …`
-  return `${head}${dim(PREAMBLE_MARK)} ${rest}`;
+  return `$ ${PREAMBLE_MARK} ${line.slice(ampIndex)}`;
 }
 
 // Consecutive reads paging through one file (read → truncation notice → read with offset)
@@ -1029,7 +1104,7 @@ function foldedReadLine(rows: any[], width: number): string {
     .map((row) => lineRange(row?.args).slice(1))
     .filter(Boolean)
     .join(",");
-  const body = `${ink(theme, tone, `${BOLD}read${BOLD_OFF}`)} ${dim(dir)}${base}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
+  const body = `${verbInk(last, "read")} ${dim(dir)}${base}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
   let total: number | undefined;
   for (const row of rows) {
     const chars = resultTextCharCount(row);
@@ -1367,7 +1442,9 @@ export const internals = {
   rightAlignSuffix,
   tildify,
   stripTimeoutSuffix,
-  dimShellPlumbing,
+  bashInvocationText,
+  inkBashBody,
+  inkBashRow,
   flattenInvocationLines,
   rowBackground,
   shadeRow,

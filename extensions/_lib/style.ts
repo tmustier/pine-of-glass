@@ -16,6 +16,8 @@ export const GLYPH = {
   econ: "\u25cd", // ◍
   /** an expandable/summarizable section header — contextimate */
   section: "\u25b8", // ▸
+  /** tool-block rail — the dim left edge that fuses a run of trace rows into one block */
+  rail: "\u258f", // ▏
 } as const;
 
 /** Status scale — family-shared vocabulary (design language §1). */

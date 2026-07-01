@@ -11,24 +11,25 @@ It is built for the "I let Pi run for a couple of minutes and came back" moment.
 When tool rows are collapsed, each one renders as a single line:
 
 ```
-› read resource .pi/agent/AGENTS.md:1-20                 1.4k ch
-› [skill] google-workspace-stack:1-20                    1.0k ch
-› [skill] tmux:1-20                                      0.9k ch
-› subagent list                                          1.1k ch
-› subagent delegate                                      0.1k ch
-› edit ~/projects/demo/index.ts                   +3 -1 · 0.1k ch
-› write /tmp/pi-extension-test-...-elephant.txt   +5 -0 · 0.0k ch
-› $ rm /tmp/pi-extension-test-...-elephant.txt ...       0.0k ch
+▏ › read resource .pi/agent/AGENTS.md:1-20                 1.4k ch
+▏ › [skill] google-workspace-stack:1-20                    1.0k ch
+▏ › [skill] tmux:1-20                                      0.9k ch
+▏ › subagent list                                          1.1k ch
+▏ › subagent delegate                                      0.1k ch
+▏ › edit ~/projects/demo/index.ts                   +3 -1 · 0.1k ch
+▏ › write /tmp/pi-extension-test-...-elephant.txt   +5 -0 · 0.0k ch
+▏ › $ rm /tmp/pi-extension-test-...-elephant.txt ...       0.0k ch
 ```
 
 - **The arc of the turn** - every tool call in order, one line each, so you see the path Pi took.
 - **What context Pi got** - which files it read and how much of them (`read ... :1-20`), which skills it invoked (`[skill] ...`), which subagents ran.
 - **Which outputs were massive** - a right-aligned result-size suffix per row (`1.4k ch`, in the family number grammar shared with `pi-contextimate` and `pi-cachemire`). The suffix is **severity-tinted**: dim while healthy, warning-coloured at ≥10k ch, error-coloured at ≥50k ch — so an over-large tool output (often a sign of a tool or guidance issue) jumps out of the column. Thresholds are overridable via the family config convention (`~/.pi/agent/pi-traceline.json` or `<cwd>/.pi/pi-traceline.json`: `{ "sizeWarningChars": 10000, "sizeErrorChars": 50000 }`).
 - **How much a file mutation changed** - diff-backed `edit` and live-snapshotted `write` rows include `+N -M` before the size suffix (`edit … +3 -1 · 0.1k ch`, `write … +5 -0 · 0.0k ch`). `write` stats come from a pre-execution snapshot, so historical/restored rows that were not seen live may still show only the size suffix.
-- **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error.
+- **A status colour** on each row's bullet (`›`): green = success, blue = running, red = error. The verb itself stays neutral bold — only a *failed* call tints its verb red — so a healthy trace column reads calm and errors actually pop.
+- **A dim `▏` rail** in column 0 of every trace row, so a run of tool calls fuses into one visible block against assistant prose — block identity from one character of layout, not from painted backgrounds.
 - **Selective expansion** - arm a one-shot click and then click a tool row to expand or collapse only that row, without flipping every tool result in the turn.
 
-Rendering reuses Pi's own tool-call renderer, so the visual grammar (bold command name, accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults, and traceline's own ink is **theme-derived** (the family `ink()` helper — see `docs/design-language.md`), so it follows your active theme. On top of that sits an **ink hierarchy**: shell plumbing in bash rows (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) is dimmed so the command segments carry the brightness, and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight, and a tool row sits tight under the collapsed `Thinking: <first reasoning line> ... (N lines)` preview that motivated it, so each thought→action couplet reads as one unit.
+Rendering reuses Pi's own tool-call renderer for most tools, so the visual grammar (accented paths/backticks, warning line ranges, custom-tool renderers) tracks Pi's defaults, and traceline's own ink is **theme-derived** (the family `ink()` helper — see `docs/design-language.md`, amended §12), so it follows your active theme. On top of that sits an **ink hierarchy** that keeps tool rows one step quieter than assistant prose: verbs render neutral bold with status confined to the bullet; bash command bodies sit at the muted level with shell plumbing (`&&`, `|`, `;`, `2>/dev/null`, heredoc markers) a step dimmer still, anchored by the bold `$`; and the boilerplate `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T or click away. One blank line precedes a group of tool calls; consecutive tool calls stay tight (their `▏` rails fusing into one block), and a tool row sits tight under the collapsed `Thinking: <first reasoning line> ... (N lines)` preview that motivated it, so each thought→action couplet reads as one unit.
 
 ### Repetition folds instead of re-printing (issue #14)
 
@@ -50,9 +51,9 @@ range — while a shared prefix dominates. Three folds keep the trace skimmable:
   more trace lines are hidden, and coalesces adjacent label runs into one.
 
 ```
-  › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5      1.4k ch
-  › $ ⋯ && npm run typecheck                                            14.2k ch
-  › read ~/projects/pine-of-gl…index.ts:1-200,201-400,401-600 3 calls · 51.1k ch
+▏ › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5      1.4k ch
+▏ › $ ⋯ && npm run typecheck                                            14.2k ch
+▏ › read ~/projects/pine-of-gl…index.ts:1-200,201-400,401-600 3 calls · 51.1k ch
 ```
 
 ### Tool backgrounds
@@ -64,7 +65,7 @@ Trace lines are unbanded by default: status stays in the bullet and result-size 
 Bash commands keep their real newlines — heredocs, inline `python3 -c` scripts, chained `tmux` pipelines. Taking only the first rendered line collapsed them to an uninformative prefix like `$ python3 -c "` (issue #10). Instead, the whole command is flattened into the one trace line with a dim `↵` marking each original break, and middle truncation then keeps both the head and the *operative tail* — the checks at the end of a pipeline, not just its preamble:
 
 ```
-› $ python3 -c " ↵ import json ↵ p='~/.pi/agent/… -p -t pog-th | grep -E "cache|fable" | tail -4  0.3k ch
+▏ › $ python3 -c " ↵ import json ↵ p='~/.pi/agent/… -p -t pog-th | grep -E "cache|fable" | tail -4  0.3k ch
 ```
 
 ### Reading the end of the line
@@ -73,12 +74,12 @@ The discriminating part of a row usually lives at the **tail** — the filename 
 
 - **tildifies** home directories (`/Users/you/...` -> `~/...`) to reclaim width before truncating (OSC 8 hyperlink URLs are left intact, so click targets keep working);
 - **middle-truncates** with a dimmed `…`, protecting the tail so the basename and warning-coloured `:range` survive, snapping the cut to a nearby `/` or space;
-- **dims the directory** on plain file reads so the basename — *which* file — stands out.
+- **dims the directory** on plain file reads, edits, and writes so the basename — *which* file — stands out.
 
 ```
-›  read ~/projects/pine-of-glass/…/pi-traceline/README.md:1-300         3.8k ch
-›  read ~/projects/pine-of-glass/…/pi-traceline/index.ts:1-200         18.5k ch
-›  $ cd ~/projects/pine-of-glass && rm -f docs/img/…-native.png         0.0k ch
+▏ › read ~/projects/pine-of-glass/…/pi-traceline/README.md:1-300        3.8k ch
+▏ › read ~/projects/pine-of-glass/…/pi-traceline/index.ts:1-200        18.5k ch
+▏ › $ cd ~/projects/pine-of-glass && rm -f docs/img/…-native.png        0.0k ch
 ```
 
 ## Install
