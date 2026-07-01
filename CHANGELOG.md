@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.5 — 2026-07-02
 
 - Bold is the trace row's white (design language §12.11): basenames and bash head
   command words in `pi-traceline` now render as the L0 discriminators §2 always
