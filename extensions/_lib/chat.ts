@@ -58,11 +58,49 @@ function isResourceRow(component: unknown): boolean {
   }
 }
 
+/** A container whose direct children are pi's startup resource sections. */
+function findResourceContainer(node: unknown): ContainerLike | undefined {
+  return findContainerBy(node, (children) => children.some((c) => isResourceRow(c)));
+}
+
+/**
+ * In pi 0.80.x, loaded resources moved out of chatContainer into a sibling
+ * loadedResourcesContainer that is rendered immediately before chatContainer. Use that
+ * ordering as the fresh-session fallback when there are no assistant/tool rows yet.
+ */
+function findChatContainerAfterResourceContainer(node: unknown, seen = new Set<unknown>()): ContainerLike | undefined {
+  if (!node || typeof node !== "object" || seen.has(node)) return undefined;
+  seen.add(node);
+
+  const children = (node as { children?: unknown[] }).children;
+  if (!Array.isArray(children)) return undefined;
+
+  for (let i = 0; i < children.length - 1; i++) {
+    const child = children[i];
+    const next = children[i + 1];
+    if (child && typeof child === "object" && next && typeof next === "object") {
+      const childChildren = (child as { children?: unknown[] }).children;
+      const nextChildren = (next as { children?: unknown[] }).children;
+      if (Array.isArray(childChildren) && Array.isArray(nextChildren) && childChildren.some((c) => isResourceRow(c))) {
+        return next as ContainerLike;
+      }
+    }
+  }
+
+  for (const child of children) {
+    const found = findChatContainerAfterResourceContainer(child, seen);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /** pi's chat container: the one whose direct children include the chat rows — or, in a
- * fresh session with no rows yet, the startup resource listing. */
+ * fresh session with no rows yet, the empty sibling immediately after the startup
+ * resource listing (pi 0.80+) / the former resource-list host (older pi). */
 export function findChatContainer(node: unknown): ContainerLike | undefined {
   return (
     findContainerBy(node, (children) => children.some((c) => isToolRow(c) || isAssistantRow(c))) ??
-    findContainerBy(node, (children) => children.some((c) => isResourceRow(c)))
+    findChatContainerAfterResourceContainer(node) ??
+    findResourceContainer(node)
   );
 }

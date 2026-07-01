@@ -261,12 +261,20 @@ test("chat-rebuild surface cachemire's line persistence depends on", () => {
   const container = new piTui.Container();
   assert.equal(typeof container.clear, "function", "Container.clear gone — clear hook cannot install");
 
-  // Pre-rows chat detection: the startup resource listing must still be rendered into
-  // chatContainer as sections (the seam both contextimate and _lib findChatContainer's
-  // fresh-session fallback anchor on), and its [Section] headers must keep their names.
+  // Pre-rows chat detection: pi now renders the startup resource listing into a
+  // loadedResourcesContainer sibling immediately before chatContainer. _lib/findChatContainer
+  // uses that sibling ordering as the fresh-session fallback anchor; the section headers
+  // must keep their names for resource-container detection.
+  assert.ok(source.includes("this.ui.addChild(this.loadedResourcesContainer);"), "loadedResourcesContainer no longer in root layout");
+  assert.ok(source.includes("this.ui.addChild(this.chatContainer);"), "chatContainer no longer in root layout");
   assert.ok(
-    /addLoadedSection[\s\S]{0,400}this\.chatContainer\.addChild\(section\)/.test(source),
-    "startup resource sections no longer added to chatContainer — pre-rows chat detection dies",
+    source.indexOf("this.ui.addChild(this.loadedResourcesContainer);") <
+      source.indexOf("this.ui.addChild(this.chatContainer);"),
+    "loadedResourcesContainer no longer sits before chatContainer — fresh-session detection needs rework",
+  );
+  assert.ok(
+    /addLoadedSection[\s\S]{0,400}this\.loadedResourcesContainer\.addChild\(section\)/.test(source),
+    "startup resource sections no longer added to loadedResourcesContainer — pre-rows detection dies",
   );
   for (const name of ["Skills", "Prompts", "Extensions", "Themes"]) {
     assert.ok(source.includes(`"${name}"`), `startup section [${name}] renamed — RESOURCE_HEADER_RE drifts`);
