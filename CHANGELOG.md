@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.3 — 2026-07-01
 
 - Nest `pi-traceline` trace blocks one 2-space gutter under the prose margin
   (design language §12.8): rows now render `  ▏ › body`, so the rail reads as a
