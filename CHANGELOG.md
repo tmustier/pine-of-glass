@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.4 — 2026-07-02
 
 - One supporting grey across `pi-traceline` rows (design language §12.9): the muted
   bash-body level dissolved. Bash rows now speak the path-row grammar — bold `$`
