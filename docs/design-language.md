@@ -297,10 +297,13 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
    pipeline head) repeats the previous row's, render that head at L3-dim (or elide to a
    dim `⋯ &&`). Kills the wall-of-`cd` (issue #14).
 4. Body ink one step down (as amended in §12): verbs neutral bold L0 with status in
-   the `›` bullet (error rows alone tint the verb); bash bodies at the one L3-dim
-   supporting grey with the head command word L0-bold (§12.9/§12.11); path rows
-   (read/edit/write) dim the directory, render the basename L0-bold, and keep read
-   `:line-range` spans warning-coloured. Every
+   the `›` bullet (error rows tint the full discriminator set — verb, bash head,
+   basename — per §12.14); bash bodies at the one L3-dim supporting grey with the
+   head command word L0-bold (§12.9/§12.11); path rows (read/edit/write) dim the
+   directory, render the basename L0-bold, and keep read `:line-range` spans
+   warning-coloured; native rows for other tools demote unstyled spans to dim
+   (§12.12); the char suffix appears only at ≥100 ch and diff stats drop their zero
+   side (§12.13). Every
    trace row opens with the dim `▏` rail so a run of rows reads as one block. Trace
    rows are unbanded by default; the old native-background slab path stays available
    behind `toolBackgrounds`.
@@ -430,6 +433,31 @@ ink in a trace row was prose ink.
     prose-weight white never appears inside a trace row, so a trace block reads as
     dim apparatus + bold discriminators + status accents — and can never share ink
     with a message line.
+
+Fifth follow-up, 2026-07-02 (full-sweep polish review): four gaps between the stated
+invariants and the pixels, closed together.
+
+12. **No plain ink in native rows.** Non-bash/path tool rows reuse pi's native
+    invocation line, and only the verb was re-inked — every span the native renderer
+    left unstyled rendered at the terminal default, the exact basename problem of
+    §12.11 alive on `grep`/`web_search`/`fetch_content`/`mcp` rows. Unstyled spans in
+    a native invocation line now demote to L3-dim; spans pi deliberately coloured
+    (patterns, ranges, backticks) and bold-only spans survive untouched. §12.11's
+    invariant now holds for every tool, not just the hand-rebuilt rows.
+
+13. **A fact suffix must carry a fact.** Results under 100 ch — a `mkdir`, an `rm`,
+    a one-word echo — rendered a literal `0.0k ch`: a fact suffix with no fact. The
+    char suffix is omitted below 100 ch; it reappears the moment output is worth
+    counting, and the severity tints (§6) are unaffected. Likewise diff stats drop
+    their zero side: `+2 -0` → `+2`, `+0 -3` → `-3` — the dimmed zero was a
+    half-measure, and every new-file write wore a guaranteed-noise `-0`.
+
+14. **Errors tint the discriminators.** On a failed row only the bullet and verb
+    tinted error — for bash the verb is a single `$`, one red glyph in a dim wall,
+    with the head command still confidently bold-white. Failed rows now tint the
+    whole discriminator set — verb, bash head command, basename — in error ink,
+    still bold. Status stays confined to marker + discriminators; supporting text
+    stays dim; healthy rows are untouched.
 
 ## Suggested implementation order
 

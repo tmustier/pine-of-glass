@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Full-sweep traceline polish (design language §12.12–§12.14):
+
+- No plain ink in native rows: `grep`/`web_search`/`fetch_content`/`mcp` rows demote
+  every span the native renderer left unstyled to the one dim supporting grey; pi's
+  deliberate accents (patterns, ranges, backticks) and bold spans survive. §12.11's
+  "no prose ink in a trace row" invariant now holds for every tool.
+- A fact suffix must carry a fact: results under 100 ch render no `…k ch` suffix
+  (goodbye `0.0k ch` on every `mkdir`), and diff stats drop their zero side
+  (`+2 -0` → `+2`, `+0 -3` → `-3`).
+- Errors tint the discriminators: failed rows render verb, bash head command, and
+  basename in bold error ink — a failure is more than one red glyph in a dim wall.
+  Healthy rows are untouched.
+
 ## 0.5.5 — 2026-07-02
 
 - Bold is the trace row's white (design language §12.11): basenames and bash head

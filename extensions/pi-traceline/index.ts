@@ -52,8 +52,9 @@ import {
  * The ink follows the family hierarchy (docs/design-language.md, amended §12): every
  * trace row opens with a dim `▏` rail so a run of tool rows fuses into one visible
  * block against assistant prose; verbs are neutral bold with status in the › bullet
- * (only error rows tint the verb); bash bodies sit one step down at L2-muted with shell
- * plumbing (`&&`, `|`, `2>/dev/null`, heredoc markers) at L3-dim; and the boilerplate
+ * (failed rows tint the discriminators — verb, bash head, basename — error, §12.14);
+ * bash bodies sit at the one L3-dim supporting grey with the head command word L0-bold,
+ * and native rows for other tools demote unstyled spans to dim (§12.12); the boilerplate
  * `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
  * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
  * a dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
@@ -62,8 +63,10 @@ import {
  * dim the directory so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
  * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
  * balloons past the size thresholds, so "what flooded the context" pops out of the column.
- * File-mutation rows with a real diff also reserve `+N -M` in that suffix, so the
- * collapsed trace shows how much the model changed without expanding the row.
+ * Results under 100 ch render no char suffix at all (§12.13): a fact suffix must carry
+ * a fact. File-mutation rows with a real diff also reserve `+N -M` in that suffix
+ * (zero sides dropped: `+2 -0` → `+2`), so the collapsed trace shows how much the
+ * model changed without expanding the row.
  * All ink is theme-derived (style.ts ink()), with raw-ANSI fallbacks before a theme exists.
  *
  * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
@@ -121,7 +124,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 18;
+const TRACELINE_PATCH_VERSION = 19;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -439,12 +442,13 @@ function verbInk(comp: any, verb: string): string {
   return ink(currentTheme(), verbTone(comp), `${BOLD}${verb}${BOLD_OFF}`);
 }
 
-// Bold is the trace row's white (design language §12.11): basenames and bash head
-// commands render as the L0 discriminators §2 always assigned them — bold `text`, the
-// same treatment as the verb — so plain prose-weight white never appears inside a
-// trace row and a trace block can never share ink with a message line.
-function discriminatorInk(text: string): string {
-  return ink(currentTheme(), "text", `${BOLD}${text}${BOLD_OFF}`);
+// Bold is the trace row's white (design language §12.11) and errors tint the
+// discriminators (§12.14): basenames and bash head commands take exactly the verb's
+// treatment — bold `text` on healthy rows, bold `error` on failed rows — so plain
+// prose-weight white never appears inside a trace row and a failed call is more than
+// one red glyph in a dim wall.
+function discriminatorInk(comp: any, text: string): string {
+  return verbInk(comp, text);
 }
 
 // Every trace row indents one gutter, then opens with the dim ▏ rail (design language
@@ -505,8 +509,12 @@ function toolBackgroundsEnabled(): boolean {
   return paintToolBackgrounds;
 }
 
+// A fact suffix must carry a fact (design language §12.13): results smaller than one
+// line of text render no char suffix — the bullet already says the call completed.
+const CHAR_SUFFIX_FLOOR = 100;
+
 function charSuffix(chars: number | undefined): string {
-  if (chars === undefined) return "";
+  if (chars === undefined || chars < CHAR_SUFFIX_FLOOR) return "";
   return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
 }
 
@@ -663,17 +671,13 @@ function mutationDiffStats(comp: any): DiffStats | undefined {
   return diffStatsFromText(diffTextFromComp(comp)) ?? writeDiffStats(comp);
 }
 
-function diffCount(text: string, value: number, tone: Tone, theme: Theme | undefined): string {
-  return ink(theme, value === 0 ? "dim" : tone, text);
-}
-
+// Zero sides are dropped (design language §12.13): `+2 -0` → `+2` — the dimmed zero
+// was a half-measure, and every new-file write wore a guaranteed-noise `-0`.
 function formatMutationDiffStats(stats: DiffStats, theme = currentTheme()): string {
-  return `${diffCount(`+${stats.added}`, stats.added, "success", theme)} ${diffCount(
-    `-${stats.removed}`,
-    stats.removed,
-    "error",
-    theme,
-  )}`;
+  const parts: string[] = [];
+  if (stats.added > 0) parts.push(ink(theme, "success", `+${stats.added}`));
+  if (stats.removed > 0) parts.push(ink(theme, "error", `-${stats.removed}`));
+  return parts.join(" ");
 }
 
 function toolFactSuffix(comp: any): string {
@@ -774,6 +778,50 @@ function stripSgrForegrounds(text: string): string {
 
 // ansiEndIndex / rawIndexAtVisibleIndex / rawIndexBeforeVisibleIndex live in _lib/ansi.ts.
 
+// No plain ink in native rows (design language §12.12): every span a native renderer
+// leaves unstyled would render at the terminal default — prose ink inside a trace row,
+// the §12.11 problem alive on grep/web_search/fetch/mcp rows. Demote such spans to
+// L3-dim; spans with a deliberate foreground, and bold/faint-only spans (§12.11's
+// white), pass through untouched. OSC sequences (hyperlinks, zone marks) are copied
+// verbatim and never counted as text.
+const SGR_OR_OSC = /\x1b\[([0-9;]*)m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
+function dimUnstyledSpans(line: string): string {
+  let out = "";
+  let last = 0;
+  let fg = false;
+  let weight = false;
+  const emit = (text: string) => {
+    if (!text) return;
+    out += fg || weight || !/\S/.test(text) ? text : dim(text);
+  };
+  SGR_OR_OSC.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SGR_OR_OSC.exec(line))) {
+    emit(line.slice(last, match.index));
+    out += match[0];
+    last = match.index + match[0].length;
+    const rawParams = match[1];
+    if (rawParams === undefined) continue; // OSC: no SGR state change
+    const params = rawParams === "" ? ["0"] : rawParams.split(";");
+    for (let i = 0; i < params.length; i++) {
+      const n = Number(params[i]);
+      if (n === 0) {
+        fg = false;
+        weight = false;
+      } else if (n === 1 || n === 2) weight = true;
+      else if (n === 22) weight = false;
+      else if (n === 39) fg = false;
+      else if (n === 38) {
+        fg = true;
+        i += Number(params[i + 1]) === 2 ? 4 : 2; // 38;2;r;g;b / 38;5;n
+      } else if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97)) fg = true;
+    }
+  }
+  emit(line.slice(last));
+  return out;
+}
+
 function trimLeadingVisibleWhitespace(line: string): string {
   const visible = stripAnsi(line);
   const leading = visible.match(/^\s*/)?.[0].length ?? 0;
@@ -830,7 +878,7 @@ const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 // The head command word of a chunk: the first non-assignment token renders L0-bold —
 // the bash row's basename (§12.9/§12.11) — while the rest of the chunk dims.
-function inkBashChunk(chunk: string, headPending: boolean): { text: string; headFound: boolean } {
+function inkBashChunk(comp: any, chunk: string, headPending: boolean): { text: string; headFound: boolean } {
   if (!headPending) return { text: dim(chunk), headFound: false };
   const words = /\S+/g;
   let match: RegExpExecArray | null;
@@ -838,7 +886,7 @@ function inkBashChunk(chunk: string, headPending: boolean): { text: string; head
     if (ENV_ASSIGNMENT.test(match[0])) continue;
     const before = chunk.slice(0, match.index);
     const after = chunk.slice(match.index + match[0].length);
-    return { text: `${before ? dim(before) : ""}${discriminatorInk(match[0])}${after ? dim(after) : ""}`, headFound: true };
+    return { text: `${before ? dim(before) : ""}${discriminatorInk(comp, match[0])}${after ? dim(after) : ""}`, headFound: true };
   }
   return { text: dim(chunk), headFound: false };
 }
@@ -849,7 +897,7 @@ function inkBashChunk(chunk: string, headPending: boolean): { text: string; head
 // never leak its close into the next chunk's ink; middleTruncate replays the active
 // ink after a cut (§12.10), so a mid-chunk cut can no longer strand the tail at the
 // terminal default.
-function inkBashBody(body: string): string {
+function inkBashBody(body: string, comp?: any): string {
   let rest = body;
   let out = "";
   if (rest.startsWith(`${PREAMBLE_MARK} `)) {
@@ -866,7 +914,7 @@ function inkBashBody(body: string): string {
     if (i % 2 === 1) {
       out += ` ${dim(part)}`;
     } else {
-      const chunk = inkBashChunk(part, !headFound);
+      const chunk = inkBashChunk(comp, part, !headFound);
       out += chunk.text;
       headFound ||= chunk.headFound;
     }
@@ -876,7 +924,7 @@ function inkBashBody(body: string): string {
 
 function inkBashRow(comp: any, text: string): string {
   if (!text.startsWith("$ ")) return dim(text);
-  return `${verbInk(comp, "$")} ${inkBashBody(text.slice(2))}`;
+  return `${verbInk(comp, "$")} ${inkBashBody(text.slice(2), comp)}`;
 }
 
 function commandPrefixLength(comp: any, line: string): number {
@@ -914,7 +962,12 @@ function nativeInvocationLine(comp: any): string | undefined {
   const rendered = withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH));
   const lines = Array.isArray(rendered) ? rendered : [];
   const line = firstVisibleLine(lines);
-  return line ? colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))) : undefined;
+  // Demote *after* the verb re-ink: colourCommandPrefix strips foregrounds from the
+  // prefix region, so a dim span opened before the verb would lose its opener and
+  // strand the rest of the line back at the terminal default.
+  return line
+    ? dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))))
+    : undefined;
 }
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
@@ -968,7 +1021,7 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
   const dir = tildePath.slice(0, lastSlash + 1);
   const base = tildePath.slice(lastSlash + 1);
   const range = verb === "read" ? lineRange(comp?.args) : "";
-  return `${verbInk(comp, verb)} ${dim(dir)}${discriminatorInk(base)}${ink(theme, "warning", range)}`;
+  return `${verbInk(comp, verb)} ${dim(dir)}${discriminatorInk(comp, base)}${ink(theme, "warning", range)}`;
 }
 
 // Optional shaded tool surface, borrowed live from the row itself. This used to be the
@@ -1140,7 +1193,7 @@ function foldedReadLine(rows: any[], width: number): string {
     .map((row) => lineRange(row?.args).slice(1))
     .filter(Boolean)
     .join(",");
-  const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
+  const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
   let total: number | undefined;
   for (const row of rows) {
     const chars = resultTextCharCount(row);
@@ -1472,6 +1525,7 @@ export const internals = {
   stripAnsi,
   stripSgrBackgrounds,
   stripSgrForegrounds,
+  dimUnstyledSpans,
   rawIndexAtVisibleIndex,
   rawIndexBeforeVisibleIndex,
   middleTruncate,

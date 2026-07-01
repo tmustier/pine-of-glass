@@ -33,6 +33,7 @@ const {
   isAssistantRow,
   stripTimeoutSuffix,
   inkBashBody,
+  dimUnstyledSpans,
   flattenInvocationLines,
   rowBackground,
   shadeRow,
@@ -147,11 +148,12 @@ test("mutation diff stats ride the right suffix for edit rows", () => {
 
   assert.deepEqual(diffStatsFromText("--- a/file\n+++ b/file\n+1 real add\n-2 real remove"), { added: 1, removed: 1 });
   assert.deepEqual(mutationDiffStats(comp), { added: 2, removed: 1 });
-  assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1 · 0.0k ch");
+  // Result is under the 100 ch fact floor (§12.13): the diff stats stand alone.
+  assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1");
 
   const visible = stripAnsi(oneLine(comp, 90));
   assert.ok(visible.includes("edit ~/projects/demo/file.ts"), visible);
-  assert.ok(visible.endsWith("+2 -1 · 0.0k ch"), visible);
+  assert.ok(visible.endsWith("+2 -1"), visible);
 });
 
 test("edit preview diff stats show before a result exists", () => {
@@ -186,11 +188,11 @@ test("write rows use a pre-execution snapshot for +N -M stats", () => {
     assert.deepEqual(diffStatsFromContents("one\ntwo\n", "one\ntwo\nthree\n"), { added: 1, removed: 0 });
     captureWriteSnapshot(comp);
     assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 1 });
-    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1 · 0.0k ch");
+    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1");
 
     const visible = stripAnsi(oneLine(comp, 100));
     assert.ok(visible.includes("write"), visible);
-    assert.ok(visible.endsWith("+2 -1 · 0.0k ch"), visible);
+    assert.ok(visible.endsWith("+2 -1"), visible);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -211,7 +213,8 @@ test("new write rows count all written lines as additions", () => {
 
     captureWriteSnapshot(comp);
     assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 0 });
-    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -0");
+    // Zero sides drop (§12.13): a new-file write never wears a `-0`.
+    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -223,6 +226,11 @@ test("result-size suffix severity: dim while healthy, warning ≥10k ch, error �
   assert.ok(charSuffix(50_000).startsWith("\x1b[31m"), "≥50k ch must tint error");
   assert.equal(charSuffix(undefined), "");
   assert.equal(stripAnsi(charSuffix(50_000)), "50.0k ch");
+
+  // A fact suffix must carry a fact (§12.13): below 100 ch there is no suffix at all.
+  assert.equal(charSuffix(0), "");
+  assert.equal(charSuffix(99), "");
+  assert.equal(stripAnsi(charSuffix(100)), "0.1k ch");
 
   // Thresholds follow the family config convention (~/.pi/agent/pi-traceline.json).
   configureSizeThresholds({ sizeWarningChars: 100, sizeErrorChars: 1_000 });
@@ -255,6 +263,59 @@ test("status lives in the bullet: red error, blue running, green success; verbs 
   assert.ok(success.includes("\x1b[1mread\x1b[22m"), "healthy verb must be neutral bold");
   assert.ok(!success.includes("\x1b[32m\x1b[1mread"), "healthy verb must not be success-tinted");
   assert.ok(error.includes("\x1b[31m\x1b[1mread\x1b[22m"), "failed verb keeps the error tint");
+});
+
+test("errors tint the discriminators: basename and bash head go error-bold on failed rows (§12.14)", () => {
+  const g = globalThis as any;
+  g.__tracelineGetTheme = () => themed();
+  try {
+    const failedRead = oneLine(toolComp({ result: { content: [], isError: true } }), 80);
+    assert.ok(failedRead.includes(`${T.error}\x1b[1mread\x1b[22m`), `failed verb error-bold: ${JSON.stringify(failedRead)}`);
+    assert.ok(failedRead.includes(`${T.error}\x1b[1mfile.ts\x1b[22m`), `failed basename error-bold: ${JSON.stringify(failedRead)}`);
+
+    const failedBash = oneLine(
+      toolComp({
+        toolName: "bash",
+        args: { command: "npm test" },
+        result: { content: [{ type: "text", text: "boom" }], isError: true },
+        callRendererComponent: { render: () => ["$ npm test"] },
+      }),
+      80,
+    );
+    assert.ok(failedBash.includes(`${T.error}\x1b[1m$\x1b[22m`), `failed $ error-bold: ${JSON.stringify(failedBash)}`);
+    assert.ok(failedBash.includes(`${T.error}\x1b[1mnpm\x1b[22m`), `failed head error-bold: ${JSON.stringify(failedBash)}`);
+    assert.ok(failedBash.includes(`${T.dim} test`), `failed args stay dim: ${JSON.stringify(failedBash)}`);
+
+    // Healthy rows untouched: discriminators stay neutral text-bold.
+    const healthy = oneLine(toolComp(), 80);
+    assert.ok(healthy.includes(`${T.text}\x1b[1mfile.ts\x1b[22m`), `healthy basename text-bold: ${JSON.stringify(healthy)}`);
+  } finally {
+    g.__tracelineGetTheme = undefined;
+  }
+});
+
+test("no plain ink in native rows: unstyled spans demote to dim, accents and bold survive (§12.12)", () => {
+  const g = globalThis as any;
+  g.__tracelineGetTheme = () => themed();
+  try {
+    const comp = toolComp({
+      toolName: "grep",
+      args: { pattern: "TOOL" },
+      callRendererComponent: { render: () => ["grep \x1b[36mTOOL\x1b[0m in extensions/ \x1b[1mnow\x1b[22m"] },
+    });
+    const line = oneLine(comp, 100);
+    assert.ok(line.includes("\x1b[36mTOOL\x1b[0m"), `deliberate accents survive: ${JSON.stringify(line)}`);
+    assert.ok(line.includes(`${T.dim} in extensions/ \x1b[39m`), `unstyled spans demote to dim: ${JSON.stringify(line)}`);
+    assert.ok(line.includes("\x1b[1mnow\x1b[22m") && !line.includes(`${T.dim}now`), `bold-only spans survive: ${JSON.stringify(line)}`);
+
+    // Unit edges: OSC sequences pass through untouched and are never counted as text.
+    const osc = "\x1b]8;;https://x.test\x1b\\\x1b[35mlink\x1b[0m\x1b]8;;\x1b\\ tail";
+    const out = dimUnstyledSpans(osc);
+    assert.ok(out.includes("\x1b]8;;https://x.test\x1b\\"), `OSC preserved: ${JSON.stringify(out)}`);
+    assert.ok(out.includes(`${T.dim} tail`) || out.includes(`${T.dim}tail`), `trailing plain text dims: ${JSON.stringify(out)}`);
+  } finally {
+    g.__tracelineGetTheme = undefined;
+  }
 });
 
 test("fallback rendering when a tool has no native call renderer", () => {

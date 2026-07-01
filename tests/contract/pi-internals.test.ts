@@ -133,13 +133,14 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   const descriptor = Object.getOwnPropertyDescriptor(proto, "render");
   assert.ok(descriptor && (descriptor.writable ?? false), "prototype render not writable — traceline patch cannot install");
 
-  comp.updateResult({ content: [{ type: "text", text: "hello world" }], isError: false }, false);
+  // ≥100 ch so the result-size suffix appears (traceline omits it below the fact floor).
+  comp.updateResult({ content: [{ type: "text", text: "hello world ".repeat(20) }], isError: false }, false);
   assert.equal(traceline.toolStatus(comp), "success", "result/isPartial fields drifted — status colours break");
 
   const line = traceline.oneLine(comp as never, 80);
   const visible = traceline.stripAnsi(line);
   assert.ok(visible.includes("read"), `one-line render lost the invocation: ${JSON.stringify(visible)}`);
-  assert.ok(/\b0\.0k ch$/.test(visible.trimEnd()), `result-size suffix missing: ${JSON.stringify(visible)}`);
+  assert.ok(/\b0\.2k ch$/.test(visible.trimEnd()), `result-size suffix missing: ${JSON.stringify(visible)}`);
 
   // Error path drives the red status colour.
   comp.updateResult({ content: [{ type: "text", text: "boom" }], isError: true }, false);
