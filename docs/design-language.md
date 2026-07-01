@@ -90,9 +90,9 @@ assigned a level on purpose.
 | level | role | carries | theme source |
 |---|---|---|---|
 | L0 | discriminator | verb/tool name, basename, totals, panel brand | `text` + bold; panel brands/totals `accent` |
-| L1 | content | operative arguments, values | `text` |
-| L2 | secondary identity | directories, descriptions, field types | `muted` |
-| L3 | apparatus | methodology, plumbing (`&&`, `2>/dev/null`), markers, units, causes | `dim` |
+| L1 | content | operative values, the bash head command | `text` |
+| L2 | secondary identity | descriptions, field types | `muted` |
+| L3 | apparatus | methodology, directories, bash argument text, plumbing (`&&`, `2>/dev/null`), markers, units, causes | `dim` |
 
 Status/severity tones (glyphs, quantity suffixes, and native tool metadata like read `:line-range` spans; never body prose):
 
@@ -112,7 +112,7 @@ green and defeated the squint test below.)
 The test of a good ink assignment: squint. Only L0 and any non-dim severity tones
 should survive the squint. If a wall of tool rows survives at the same brightness as
 assistant prose, the hierarchy is wrong (the 2026-06 traceline complaint, resolved by
-the §12 amendments: verbs neutral-bold, bash bodies L2, the `▏` rail).
+the §12 amendments: verbs neutral-bold, quiet bash bodies, the `▏` rail).
 
 ## 3. Colour sourcing
 
@@ -297,8 +297,9 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
    pipeline head) repeats the previous row's, render that head at L3-dim (or elide to a
    dim `⋯ &&`). Kills the wall-of-`cd` (issue #14).
 4. Body ink one step down (as amended in §12): verbs neutral bold L0 with status in
-   the `›` bullet (error rows alone tint the verb); bash bodies L2-muted with plumbing
-   and flatten/elision marks L3-dim; path rows (read/edit/write) dim the directory,
+   the `›` bullet (error rows alone tint the verb); bash bodies at the one L3-dim
+   supporting grey with the head command word bright (§12.9); path rows
+   (read/edit/write) dim the directory,
    keep the basename L1, and keep read `:line-range` spans warning-coloured. Every
    trace row opens with the dim `▏` rail so a run of rows reads as one block. Trace
    rows are unbanded by default; the old native-background slab path stays available
@@ -362,7 +363,8 @@ rows into a block.
    still comes from pi's renderer, the ink is the family's. Keeping a single
    "operative segment" bright was considered and rejected: a pipeline tail is as often
    a filter (`| tail -5`) as it is the point, so the whole body sits uniformly at L2
-   and middle truncation continues to protect the tail.
+   and middle truncation continues to protect the tail. (Body level superseded by
+   §12.9; the rejection of a bright operative *tail* stands.)
 3. **The `▏` rail.** Every trace row opens with a dim `▏` (§1, §5), fusing
    consecutive rows into one visible block — the block identity the retired background
    bands were reaching for, at one character of width and zero synthesized colour.
@@ -397,6 +399,25 @@ as a page border rather than a thread line):
    rail from a left border of the page into a bracket around the group. Indentation is
    a stronger structural cue than ink; the two columns of width are cheap because the
    size suffix stays right-aligned and middle truncation protects the tail.
+
+Third follow-up, same date (the "slightly different greys" review): bash rows used a
+muted body sitting *between* the dim of path-row directories and the bright of
+basenames — two supporting greys close enough to read as inconsistency rather than
+hierarchy.
+
+9. **One supporting grey.** The L2-muted trace-row body level dissolves (supersedes
+   §12.2's body level). Bash rows speak the exact grammar of path rows: the bold `$`
+   anchors at L0; the head command word — the first non-assignment token, scanning
+   past a `⋯ &&` elision — stays at content ink the way a basename does, so `$ rm`,
+   `$ npm`, `$ python3` scan like `read file.ts`; and everything else — arguments,
+   connectors, redirects, marks — sits at the one L3-dim supporting grey shared with
+   directories, plumbing, size suffixes, and the rail. Fallback rows (tools without a
+   renderer) dim their argument text the same way. Same role, same ink, on every row;
+   the head-vs-rest step is a real one, not a two-adjacent-greys subtlety.
+10. **Ink survives the cut.** `middleTruncate` replays the active SGR state after the
+    ellipsis, so a cut inside a styled span no longer leaves the tail at the terminal
+    default (§12.2's "accepted quirk", fixed family-wide — required once bash bodies
+    dropped to dim, where a default-ink tail would glare).
 
 ## Suggested implementation order
 

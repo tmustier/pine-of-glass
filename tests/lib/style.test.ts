@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
-import { GLYPH, SCALE, SEP, ink, panelHeader, panelPips, sizeTone, SIZE_THRESHOLDS } from "../../extensions/_lib/style.ts";
+import { GLYPH, SCALE, SEP, ink, middleTruncate, panelHeader, panelPips, sizeTone, SIZE_THRESHOLDS } from "../../extensions/_lib/style.ts";
 
 // A recording theme: proves ink() routes through Theme.fg with the right role.
 const recordingTheme = {
@@ -50,6 +50,20 @@ test("ink never styles empty text and never lets a broken theme break a render",
   assert.equal(ink(recordingTheme, "dim", ""), "");
   const broken = { fg: () => { throw new Error("boom"); } } as unknown as Theme;
   assert.equal(ink(broken, "error", "x"), "\x1b[31mx\x1b[0m");
+});
+
+test("middleTruncate replays active ink across the cut (design language §12.10)", () => {
+  // The dim span opens before the cut and closes after it: the tail's opening SGR
+  // lives in the removed middle and must be replayed after the ellipsis.
+  const line = `head \x1b[38;5;245m${"a".repeat(120)}\x1b[39m`;
+  const out = middleTruncate(line, 40);
+  const cut = out.indexOf("…");
+  assert.ok(cut >= 0, out);
+  assert.ok(out.slice(cut).includes("\x1b[38;5;245m"), `tail ink must be replayed: ${JSON.stringify(out)}`);
+  // A full reset before the cut clears the replay: nothing stale leaks into the tail.
+  const reset = middleTruncate(`\x1b[1mB\x1b[0m${"b".repeat(120)}`, 40);
+  const resetCut = reset.indexOf("…");
+  assert.ok(!reset.slice(resetCut).includes("\x1b[1m"), `no stale bold after a reset: ${JSON.stringify(reset)}`);
 });
 
 test("sizeTone: dim below warning, warning at 10k ch, error at 50k ch", () => {

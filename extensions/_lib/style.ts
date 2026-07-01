@@ -157,6 +157,40 @@ function isVisibleBoundary(ch: string): boolean {
 // or space boundary, and the ellipsis is dimmed so it reads as a UI marker rather than as
 // part of the path/command. Falls back to tail truncation only when the width is too
 // small to keep both ends.
+// Ink continuity across the cut (design language §12.10): the tail's opening SGR may
+// sit in the removed middle, which would leave the tail at the terminal default until
+// the next styled span opened. Replay the *net* SGR state active at the cut point —
+// one sequence per attribute, offs and full resets clearing their slots — so the tail
+// keeps its ink without echoing the whole styling history.
+function activeSgrAt(line: string, rawIndex: number): string {
+  const state = new Map<string, string>();
+  const sgr = /\x1b\[([0-9;]*)m/g;
+  let match: RegExpExecArray | null;
+  while ((match = sgr.exec(line)) && match.index < rawIndex) {
+    const params = match[1] ?? "";
+    if (params === "" || params === "0") {
+      state.clear();
+      continue;
+    }
+    const key =
+      params.startsWith("38") || params === "39" || /^(3[0-7]|9[0-7])$/.test(params)
+        ? "fg"
+        : params.startsWith("48") || params === "49" || /^(4[0-7]|10[0-7])$/.test(params)
+          ? "bg"
+          : params === "1" || params === "2" || params === "22"
+            ? "weight"
+            : params === "3" || params === "23"
+              ? "italic"
+              : params === "4" || params === "24"
+                ? "underline"
+                : params; // unknown/compound: replay verbatim, keyed by itself
+    const off = params === "39" || params === "49" || params === "22" || params === "23" || params === "24";
+    if (off) state.delete(key);
+    else state.set(key, match[0]);
+  }
+  return [...state.values()].join("");
+}
+
 export function middleTruncate(line: string, width: number, theme?: Theme): string {
   const maxWidth = Math.max(1, width);
   if (visibleWidth(line) <= maxWidth) return line;
@@ -180,7 +214,8 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   if (tailStart < 0) tailStart = visLen - maxTail; // no boundary in range: keep the end
 
   const dimEllipsis = ink(theme, "dim", ELLIPSIS);
-  const tailRaw = line.slice(rawIndexAtVisibleIndex(line, tailStart));
+  const tailRawStart = rawIndexAtVisibleIndex(line, tailStart);
+  const tailRaw = `${activeSgrAt(line, tailRawStart)}${line.slice(tailRawStart)}`;
 
   let headEnd = budget - (visLen - tailStart);
   if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;

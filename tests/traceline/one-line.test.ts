@@ -262,7 +262,7 @@ test("fallback rendering when a tool has no native call renderer", () => {
   assert.ok(visible.includes('mcp {"foo":"bar"}'), visible);
 });
 
-test("bash rows: timeout stripped, $ anchors bold, body muted, plumbing dimmed", () => {
+test("bash rows: timeout stripped, $ anchors bold, head command bright, rest one dim grey", () => {
   const comp = toolComp({
     toolName: "bash",
     args: { command: "pwd && git remote -v" },
@@ -275,21 +275,36 @@ test("bash rows: timeout stripped, $ anchors bold, body muted, plumbing dimmed",
   assert.ok(!visible.includes("timeout"), `timeout boilerplate must be stripped: ${visible}`);
   assert.ok(visible.includes("$ pwd && git remote -v 2>/dev/null | head -5"), visible);
   assert.ok(line.includes("\x1b[1m$\x1b[22m"), "the $ prompt anchors the row in neutral bold");
-  // Raw fallback (no theme): muted and dim share one grey, but the plumbing must still
-  // be individually wrapped so a themed terminal can separate the levels.
+  // Raw fallback (no theme): everything shares one grey, but pieces are individually
+  // wrapped so a themed terminal keeps the levels honest.
   assert.ok(line.includes(`${DIM}&&\x1b[0m`), "&& must be dimmed");
   assert.ok(line.includes(`${DIM}2>/dev/null\x1b[0m`), "2>/dev/null must be dimmed");
   assert.ok(line.includes(`${DIM}|\x1b[0m`), "pipe must be dimmed");
 
-  // With a theme: command chunks sit at L2-muted, plumbing at L3-dim (design language
-  // §2/§12) — the wall of commands reads one step quieter than assistant prose.
+  // With a theme (design language §2/§12.9): one supporting grey — the head command
+  // word alone stays at content ink, the bash row's basename; arguments and plumbing
+  // all sit at L3-dim. No muted level anywhere in a trace row.
   g.__tracelineGetTheme = () => themed();
   const body = inkBashBody("pwd && git remote -v 2>/dev/null");
-  assert.ok(body.includes(`${T.muted}pwd`), `command chunks must be muted: ${JSON.stringify(body)}`);
+  assert.ok(body.startsWith("pwd"), `head command must stay content ink: ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim}&&`), `plumbing must be dim: ${JSON.stringify(body)}`);
+  assert.ok(body.includes(`${T.dim} git remote -v`), `later chunks must be dim: ${JSON.stringify(body)}`);
+  assert.ok(!body.includes(T.muted), `no muted ink in a bash body: ${JSON.stringify(body)}`);
+
+  // Env assignments are not the command: the head scans past them.
+  const env = inkBashBody("FOO=1 npm test");
+  assert.ok(env.includes(`${T.dim}FOO=1 \x1b[39m`), `assignments dim: ${JSON.stringify(env)}`);
+  assert.ok(env.includes("\x1b[39mnpm"), `head after assignments stays bright: ${JSON.stringify(env)}`);
+  assert.ok(env.includes(`${T.dim} test`), `arguments dim: ${JSON.stringify(env)}`);
+
+  // After a ⋯ && elision the head of the surviving command stays bright.
+  const elided = inkBashBody("\u22ef && npm run typecheck");
+  assert.ok(stripAnsi(elided).startsWith("\u22ef && npm"), stripAnsi(elided));
+  assert.ok(elided.includes("npm") && !elided.includes(`${T.dim}npm`), `head after ⋯ must stay bright: ${JSON.stringify(elided)}`);
+  assert.ok(elided.includes(`${T.dim} run typecheck`), `tail arguments dim: ${JSON.stringify(elided)}`);
   g.__tracelineGetTheme = undefined;
 
-  // Unit edges: heredoc markers dim; quoted near-misses stay one muted chunk.
+  // Unit edges: heredoc markers dim; quoted near-misses stay one chunk.
   assert.ok(inkBashBody("cat <<'EOF'").includes(`${DIM}<<'EOF'\x1b[0m`));
   assert.equal(stripAnsi(inkBashBody("echo 'a&&b'")), "echo 'a&&b'", "unspaced operators are left alone");
   assert.ok(!inkBashBody("echo 'a&&b'").includes(`${DIM}&&`), "a quoted && must not be split out");

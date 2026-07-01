@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- One supporting grey across `pi-traceline` rows (design language §12.9): the muted
+  bash-body level dissolved. Bash rows now speak the path-row grammar — bold `$`
+  anchor, the head command word bright like a basename (`$ rm`, `$ npm` scan like
+  `read file.ts`, skipping env assignments and `⋯ &&` elisions), and everything else
+  (arguments, connectors, redirects, fallback argument text) at the same dim grey as
+  directories, plumbing, size suffixes, and the rail.
+- `middleTruncate` now replays the net active SGR state after the ellipsis (design
+  language §12.10), so a cut inside a styled span no longer strands the tail at the
+  terminal default — the old "accepted quirk", fixed family-wide.
+
 ## 0.5.3 — 2026-07-01
 
 - Nest `pi-traceline` trace blocks one 2-space gutter under the prose margin

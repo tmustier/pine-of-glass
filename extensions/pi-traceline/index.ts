@@ -121,7 +121,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 16;
+const TRACELINE_PATCH_VERSION = 17;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -791,11 +791,12 @@ function stripTimeoutSuffix(text: string): string {
   return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
 }
 
-// --- bash rows: plain-text rebuild + family ink (design language §2/§12) ---------------
-// Bash rows are the bulk of a trace wall, so their body ink carries the differentiation
-// between assistant prose and tool rows: the whole command sits one step down at
-// L2-muted, shell apparatus (connectors, null redirects, heredoc markers, and the ↵/⋯
-// flatten/elision marks) at L3-dim, with the bold `$` anchoring the column at L0.
+// --- bash rows: plain-text rebuild + family ink (design language §2/§12.9) -------------
+// Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, the head
+// command word stays at content ink the way a basename does (`$ rm`, `$ npm`,
+// `$ python3` scan like `read file.ts`), and everything else — arguments, connectors,
+// redirects, heredoc markers, and the ↵/⋯ flatten/elision marks — sits at the one
+// L3-dim supporting grey shared with directories, plumbing, and size suffixes.
 // Pi's native bash styling is deliberately dropped: the invocation *text* still comes
 // from pi's renderer, the ink is the family's. The apparatus pattern matches only
 // space-delimited operator tokens, which keeps it out of most quoted strings; a dimmed
@@ -816,14 +817,31 @@ function bashInvocationText(comp: any): string | undefined {
   return stripTimeoutSuffix(flattened.replace(/^•\s*/, ""));
 }
 
-// Alternating chunk/operator split (String.split keeps the capture group): command
-// chunks render muted, operators and marks dim. Chunks are wrapped individually so a
-// dimmed operator can never leak its close into the next chunk's ink. When middle
-// truncation later cuts inside a chunk, the tail after the ellipsis renders at the
-// terminal default until the next chunk opens — an accepted quirk that leaves the
-// operative tail slightly brighter, never quieter.
+// Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+// The head command word of a chunk: the first non-assignment token stays at content
+// ink — the bash row's basename — while the rest of the chunk dims (§12.9).
+function inkBashChunk(chunk: string, headPending: boolean): { text: string; headFound: boolean } {
+  if (!headPending) return { text: dim(chunk), headFound: false };
+  const words = /\S+/g;
+  let match: RegExpExecArray | null;
+  while ((match = words.exec(chunk))) {
+    if (ENV_ASSIGNMENT.test(match[0])) continue;
+    const before = chunk.slice(0, match.index);
+    const after = chunk.slice(match.index + match[0].length);
+    return { text: `${before ? dim(before) : ""}${match[0]}${after ? dim(after) : ""}`, headFound: true };
+  }
+  return { text: dim(chunk), headFound: false };
+}
+
+// Alternating chunk/operator split (String.split keeps the capture group): operators,
+// marks, and argument text all dim; only the head command word of the first command
+// chunk keeps content ink. Chunks are wrapped individually so a dimmed operator can
+// never leak its close into the next chunk's ink; middleTruncate replays the active
+// ink after a cut (§12.10), so a mid-chunk cut can no longer strand the tail at the
+// terminal default.
 function inkBashBody(body: string): string {
-  const theme = currentTheme();
   let rest = body;
   let out = "";
   if (rest.startsWith(`${PREAMBLE_MARK} `)) {
@@ -833,16 +851,23 @@ function inkBashBody(body: string): string {
     rest = rest.slice(PREAMBLE_MARK.length);
   }
   const parts = rest.split(BASH_APPARATUS);
+  let headFound = false;
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
     if (part.length === 0) continue;
-    out += i % 2 === 1 ? ` ${dim(part)}` : ink(theme, "muted", part);
+    if (i % 2 === 1) {
+      out += ` ${dim(part)}`;
+    } else {
+      const chunk = inkBashChunk(part, !headFound);
+      out += chunk.text;
+      headFound ||= chunk.headFound;
+    }
   }
   return out;
 }
 
 function inkBashRow(comp: any, text: string): string {
-  if (!text.startsWith("$ ")) return ink(currentTheme(), "muted", text);
+  if (!text.startsWith("$ ")) return dim(text);
   return `${verbInk(comp, "$")} ${inkBashBody(text.slice(2))}`;
 }
 
@@ -904,9 +929,10 @@ function inkedFallbackLine(comp: any): string {
   const verb = toolLabel(comp?.toolName);
   if (body === verb) return verbInk(comp, verb);
   if (body.startsWith(`${verb} `)) {
-    return `${verbInk(comp, verb)} ${ink(currentTheme(), "muted", body.slice(verb.length + 1))}`;
+    // Argument text at the one supporting grey (§12.9), matching bash argument ink.
+    return `${verbInk(comp, verb)} ${dim(body.slice(verb.length + 1))}`;
   }
-  return ink(currentTheme(), "muted", body);
+  return dim(body);
 }
 
 // Emphasis for plain file reads, edits, and writes (design language §12): dim the
