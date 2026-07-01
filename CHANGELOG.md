@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 — 2026-07-01
 
 - End every `pi-contextimate` view with one blank spacer line so the panel no longer
   abuts the first user message (design language §12.5).
