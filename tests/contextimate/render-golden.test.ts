@@ -2,6 +2,7 @@
 // keybinding hint normalized; what is pinned is row order, wording, alignment, and
 // truncation — the things that regress as side effects of unrelated edits.
 // Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
+import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
@@ -50,6 +51,21 @@ test("compact view goldens at 80 and 120 columns", () => {
   expectGolden("contextimate-compact-anthropic-80.txt", rendered(renderCompact(snapshot, plainTheme, 80)));
   expectGolden("contextimate-compact-anthropic-120.txt", rendered(renderCompact(snapshot, plainTheme, 120)));
   expectGolden("contextimate-compact-codex-100.txt", rendered(renderCompact(fixtureSnapshot(codexModel), plainTheme, 100)));
+});
+
+// The golden normalizes the trailing newline away, so the panel tail spacer
+// (design language §12.5) is pinned explicitly: exactly one blank line, every mode.
+test("every view ends with exactly one blank spacer line", () => {
+  const snapshot = fixtureSnapshot(anthropicModel);
+  const views = [
+    renderSummary(snapshot, plainTheme, 100),
+    renderCompact(snapshot, plainTheme, 100),
+    renderExpanded(snapshot, plainTheme, 100),
+  ];
+  for (const lines of views) {
+    assert.equal(lines.at(-1), "", "the panel must end with a blank spacer line");
+    assert.notEqual(stripAnsi(lines.at(-2) ?? "").trim(), "", "exactly one spacer, not two");
+  }
 });
 
 test("expanded view goldens at 80 and 120 columns", () => {

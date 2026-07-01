@@ -367,6 +367,23 @@ rows into a block.
    reads like the read column. Rows whose native line carries extra decoration keep
    pi's own rendering.
 
+From the same review, contextimate:
+
+5. **Panels end with one spacer.** A panel's body is followed by a single blank line,
+   so the next chat block (typically the first user message) never abuts the panel.
+   This is §5's "one blank before a group" applied to whatever follows a panel — the
+   panel supplies its own tail because pi does not.
+6. **Expanded tool provenance is short and dim.** An expanded tool entry renders its
+   name L0 bold with provenance beside it at L3-dim, shortened to `scope · path`
+   (tildified; builtins collapse to the single word `builtin`). The origin URL /
+   package ref / `top-level` decorations are dropped from the label: the local
+   defining path already identifies the artifact, and the path *is* the audit trail.
+   Previously the full `scope · source · origin · path` chain rendered at L1 text,
+   which drowned the tool names — the expanded-view half of the squint-test complaint.
+7. **Tool param columns align block-wide.** Field name/type/required columns in the
+   expanded tools view align across the whole block, not per tool, so the section
+   reads as one table instead of a stack of differently ragged mini-tables.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

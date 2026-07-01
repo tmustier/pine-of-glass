@@ -414,12 +414,16 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
   };
 }
 
+// Provenance short form (design language §12.6): the local defining path *is* the
+// audit trail, and the origin URL / package ref / `top-level` decorations duplicate
+// it, so the label is `scope · path` (falling back to the loader source when no path
+// exists) and builtins collapse to one word. Pi keeps the full SourceInfo.
 function sourceInfoLabel(tool: ToolInfo): string {
   const sourceInfo = tool.sourceInfo;
   if (!sourceInfo) return "unknown";
-  const parts = [sourceInfo.scope, sourceInfo.source, sourceInfo.origin].filter(Boolean);
-  if (sourceInfo.path) parts.push(sourceInfo.path);
-  return parts.join(" · ") || "unknown";
+  if (sourceInfo.source === "builtin") return "builtin";
+  const where = sourceInfo.path ?? sourceInfo.source;
+  return [sourceInfo.scope, where].filter(Boolean).join(SEP) || "unknown";
 }
 
 function getParameterKeys(schema: unknown): string[] {
@@ -1279,12 +1283,25 @@ function renderExpandedPreview(lines: string[], theme: Theme, width: number): st
   return lines.map((line) => `    ${theme.fg("dim", singleLine(line, max))}`);
 }
 
-function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number): string[] {
+type FieldColumns = { nameCol: number; typeCol: number; hasRequired: boolean };
+
+const fieldIndent = (depth: number) => 6 + depth * 2;
+
+// Column layout across *all* fields in the tools block (design language §12.7): each
+// tool used to size its own columns, so the section read as a stack of differently
+// ragged mini-tables instead of one aligned table.
+function toolFieldColumns(fields: ToolField[]): FieldColumns {
+  return {
+    nameCol: Math.min(30, Math.max(0, ...fields.map((field) => fieldIndent(field.depth) + field.name.length))),
+    typeCol: Math.min(10, Math.max(0, ...fields.map((field) => field.type.length))),
+    hasRequired: fields.some((field) => field.required),
+  };
+}
+
+function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number, columns?: FieldColumns): string[] {
   if (fields.length === 0) return [`      ${theme.fg("dim", "(no parameters)")}`];
-  const indentFor = (depth: number) => 6 + depth * 2;
-  const nameCol = Math.min(30, Math.max(...fields.map((field) => indentFor(field.depth) + field.name.length)));
-  const typeCol = Math.min(10, Math.max(...fields.map((field) => field.type.length)));
-  const hasRequired = fields.some((field) => field.required);
+  const { nameCol, typeCol, hasRequired } = columns ?? toolFieldColumns(fields);
+  const indentFor = fieldIndent;
   return fields.map((field) => {
     const rawName = `${" ".repeat(indentFor(field.depth))}${field.name}`;
     const namePart = rawName.length > nameCol ? `${rawName.slice(0, nameCol - 1)}…` : rawName.padEnd(nameCol, " ");
@@ -1297,24 +1314,30 @@ function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number): 
   });
 }
 
-function expandedToolLabel(tool: ToolExpanded): string {
-  return tildeAll([tool.name, tool.source].filter(Boolean).join(" · "));
-}
-
+// Tool entry header (design language §12.6): the name is the L0 anchor — bold — with
+// the shortened provenance beside it at L3-dim, so a column of tools scans by name
+// while the audit trail stays present without competing. Tokens keep the accent,
+// right-aligned. When width runs out the provenance gives way before the name does.
 function renderExpandedToolHeader(tool: ToolExpanded, tokenLayout: TokenLabelLayout, theme: Theme, width: number): string {
   const maxWidth = Math.max(40, width);
   const indent = "    ";
   const gap = 2;
   const token = estimatedTokenField(tool.tokens, tokenLayout);
-  const sourceWidth = Math.max(12, maxWidth - indent.length - gap - tokenLayout.fieldWidth);
-  const label = middleTruncatePath(expandedToolLabel(tool), sourceWidth);
-  const used = indent.length + stripAnsi(label).length + tokenLayout.fieldWidth;
-  return `${indent}${theme.fg("text", label)}${" ".repeat(Math.max(gap, maxWidth - used))}${accent(theme, token)}`;
+  const labelWidth = Math.max(12, maxWidth - indent.length - gap - tokenLayout.fieldWidth);
+  const name = tool.name.length > labelWidth ? middleTruncatePath(tool.name, labelWidth) : tool.name;
+  const sourceRoom = labelWidth - name.length - SEP.length;
+  const source = tool.source && sourceRoom >= 8 ? middleTruncatePath(tildeAll(tool.source), sourceRoom) : "";
+  const plainLabel = source ? `${name}${SEP}${source}` : name;
+  const used = indent.length + plainLabel.length + tokenLayout.fieldWidth;
+  const styled = `${theme.fg("text", theme.bold(name))}${source ? theme.fg("dim", `${SEP}${source}`) : ""}`;
+  return `${indent}${styled}${" ".repeat(Math.max(gap, maxWidth - used))}${accent(theme, token)}`;
 }
 
 function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpanded[] }, theme: Theme, width: number): string[] {
   const out: string[] = [];
   const tokenLayout = tokenLabelLayout(content.tools.map((tool) => tool.tokens));
+  const allFields = content.tools.flatMap((tool) => tool.fields);
+  const columns = allFields.length > 0 ? toolFieldColumns(allFields) : undefined;
   for (const note of content.notes) {
     for (const line of wrapPlainText(note, Math.max(24, width - 4), 4)) out.push(`    ${theme.fg("dim", line)}`);
   }
@@ -1326,7 +1349,7 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
         out.push(`      ${theme.fg("dim", line)}`);
       }
     }
-    out.push(...renderToolFieldRows(tool.fields, theme, width));
+    out.push(...renderToolFieldRows(tool.fields, theme, width, columns));
   }
   return out;
 }
@@ -1469,6 +1492,7 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme, width = 80): stri
     renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: harnessDetail(snapshot) }, theme, layout),
     ...renderSessionRows(snapshot, theme, width, layout),
   );
+  lines.push(""); // panel tail spacer (design language §12.5)
   return lines;
 }
 
@@ -1541,6 +1565,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   }
   const sessionTokenWidth = summaryTokenWidth(snapshot);
   lines.push("", renderCompactTotalRow(snapshot, theme, layout), ...renderSessionRows(snapshot, theme, width, sessionTokenWidth));
+  lines.push(""); // panel tail spacer (design language §12.5)
   return lines;
 }
 
@@ -1572,6 +1597,7 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): 
     }
   }
 
+  lines.push(""); // panel tail spacer (design language §12.5)
   return lines;
 }
 

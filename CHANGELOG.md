@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- End every `pi-contextimate` view with one blank spacer line so the panel no longer
+  abuts the first user message (design language §12.5).
+- Make the expanded tools view readable (design language §12.6–12.7): tool names render
+  bold with a short dim `scope · path` provenance (builtins collapse to `builtin`;
+  origin URL / package-ref / `top-level` decorations dropped), and parameter columns
+  align across the whole tools block instead of per tool.
+
 ## 0.5.0 — 2026-07-01
 
 - Differentiate `pi-traceline` trace rows from assistant prose (design language §12):
