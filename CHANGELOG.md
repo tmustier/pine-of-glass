@@ -22,9 +22,11 @@ language §12.20/§12.21/§12.22):
   plus-only `+18` and a minus-only `-1` land under each other instead of both
   right-aligning into the `·`, and every `+`, `-`, and separator keeps one x down
   the block.
-- The README screenshot story now also ships: a `git add && git commit && git push`
-  row demonstrating record facts (§12.19), chain heads, and the new diff-stat
-  columns in one frame.
+- The README screenshot story now also ships and verifies: a
+  `git add && git commit && git push` row demonstrating record facts (§12.19) and
+  chain heads, plus a multiline `node -e` row demonstrating the `↵` flatten with
+  middle truncation — one frame now covers folded reads, size tints, dim pipes,
+  the failed row, the diff-stat table, records, and the right margin.
 
 ## 0.5.11 — 2026-07-02
 
