@@ -29,6 +29,7 @@ const {
   toolStatus,
   blockSizeColumnLive,
   boringPrefix,
+  cwdRelativePath,
   leadingBlank,
   stripAnsi,
   isToolRow,
@@ -358,21 +359,58 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   assert.ok(line.includes(`${DIM}~/projects/site/src/\x1b[0m`), `common prefix dims: ${JSON.stringify(line)}`);
   assert.ok(line.includes("\x1b[1mpages/product.astro\x1b[22m"), `divergent tail bold: ${JSON.stringify(line)}`);
 
-  // cwd is boring by default: with a trivial common prefix, the cwd prefix still dims
-  // while the out-of-cwd neighbour falls back to basename-only emphasis.
+  // cwd is boring by default — and collapses to ./ (§12.18): the in-repo path renders
+  // cwd-relative behind a dim ./ while the out-of-cwd neighbour keeps its absolute form.
   const inRepo = edit(`${home}/projects/site/src/lib/util.ts`, `${home}/projects/site`);
   const inTmp = edit("/tmp/scratch-note.md", `${home}/projects/site`);
   g.__tracelineChat = { children: [inRepo, inTmp] };
-  assert.equal(boringPrefix(inRepo, tildify(String((inRepo.args as any).path))), "~/projects/site/");
+  assert.equal(cwdRelativePath(inRepo, String((inRepo.args as any).path)), "./src/lib/util.ts");
+  assert.equal(boringPrefix(inRepo, "./src/lib/util.ts"), "./");
   assert.equal(boringPrefix(inTmp, "/tmp/scratch-note.md"), "/tmp/");
   const repoLine = oneLine(inRepo, 100);
-  assert.ok(repoLine.includes(`${DIM}~/projects/site/\x1b[0m`), `cwd prefix dims: ${JSON.stringify(repoLine)}`);
+  assert.ok(repoLine.includes(`${DIM}./\x1b[0m`), `collapsed cwd dims: ${JSON.stringify(repoLine)}`);
   assert.ok(repoLine.includes("\x1b[1msrc/lib/util.ts\x1b[22m"), `sub-cwd tail bold: ${JSON.stringify(repoLine)}`);
 
   // A lone row (no block siblings) keeps the classic basename-only emphasis.
   g.__tracelineChat = undefined;
   const lone = edit(`${home}/projects/site/src/pages/product.astro`);
   assert.equal(boringPrefix(lone, "~/projects/site/src/pages/product.astro"), "~/projects/site/src/pages/");
+});
+
+test("cwd collapses to ./: two columns of ambient context instead of thirty (§12.18)", () => {
+  const home = homedir();
+  const cwd = `${home}/projects/site`;
+  const read = (path: string) =>
+    toolComp({ args: { path }, cwd, callRendererComponent: { render: () => [`read ${tildify(path)}`] } });
+
+  // Lone in-repo row: dim ./dir/, bold basename — calm, short, unambiguous.
+  g.__tracelineChat = undefined;
+  const lone = read(`${cwd}/src/pages/product.astro`);
+  const line = oneLine(lone, 100);
+  assert.ok(stripAnsi(line).includes("read ./src/pages/product.astro"), JSON.stringify(stripAnsi(line)));
+  assert.ok(line.includes(`${DIM}./src/pages/\x1b[0m`), JSON.stringify(line));
+  assert.ok(line.includes("\x1b[1mproduct.astro\x1b[22m"), JSON.stringify(line));
+
+  // Outside cwd the tildified absolute form survives — the asymmetry is the information.
+  const outside = read(`${home}/reference/notes.md`);
+  assert.ok(stripAnsi(oneLine(outside, 100)).includes("read ~/reference/notes.md"));
+
+  // A block diverging at the repo root brightens whole relative paths past the dim ./.
+  const a = read(`${cwd}/README.md`);
+  const b = read(`${cwd}/src/data/site.ts`);
+  g.__tracelineChat = { children: [a, b] };
+  assert.ok(oneLine(a, 100).includes("\x1b[1mREADME.md\x1b[22m"));
+  assert.ok(oneLine(b, 100).includes("\x1b[1msrc/data/site.ts\x1b[22m"));
+
+  // But ./ counts like ~: a block diverging under one src/ dims ./src/ as shared.
+  const c = read(`${cwd}/src/pages/product.astro`);
+  const d = read(`${cwd}/src/data/site.ts`);
+  g.__tracelineChat = { children: [c, d] };
+  assert.equal(boringPrefix(c, "./src/pages/product.astro"), "./src/");
+  const lineC = oneLine(c, 100);
+  assert.ok(lineC.includes(`${DIM}./src/\x1b[0m`), JSON.stringify(lineC));
+  assert.ok(lineC.includes("\x1b[1mpages/product.astro\x1b[22m"), JSON.stringify(lineC));
+  g.__tracelineChat = undefined;
 });
 
 test("status lives in the bullet: red error, blue running, green success; verbs neutral", () => {

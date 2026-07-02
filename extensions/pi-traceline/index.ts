@@ -125,7 +125,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 21;
+const TRACELINE_PATCH_VERSION = 22;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -1059,7 +1059,18 @@ const PATH_VERBS = new Set(["read", "edit", "write"]);
 function toolPathArg(c: any): string | undefined {
   if (!PATH_VERBS.has(toolLabel(c?.toolName))) return undefined;
   const path = c?.args?.path ?? c?.args?.file_path;
-  return typeof path === "string" && path.length > 0 ? tildify(path) : undefined;
+  return typeof path === "string" && path.length > 0 ? cwdRelativePath(c, path) : undefined;
+}
+
+// cwd collapses to `./` (design language §12.18): a path under the row's cwd renders
+// as the shell's own notation for "here" — two columns instead of thirty. Paths
+// outside cwd keep their tildified absolute form; the asymmetry is the information.
+function cwdRelativePath(comp: any, rawPath: string): string {
+  const tilde = tildify(rawPath);
+  const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : undefined;
+  if (!cwd) return tilde;
+  const cwdPrefix = `${tildify(cwd).replace(/\/+$/, "")}/`;
+  return tilde.startsWith(cwdPrefix) ? `./${tilde.slice(cwdPrefix.length)}` : tilde;
 }
 
 // Shared leading directory segments across a set of tildified paths ("~" is a
@@ -1089,15 +1100,13 @@ function boringPrefix(comp: any, tildePath: string): string {
     .map(toolPathArg)
     .filter((p): p is string => p !== undefined);
   const common = commonDirSegments(blockPaths.length ? blockPaths : [tildePath]);
+  // `./` counts like `~` (§12.18): alone it is a trivial root marker, but `./src/`
+  // is a meaningful shared prefix. Either way it is always boring on its own.
   if (common.filter((s) => s !== "").length >= 2) {
     const prefix = `${common.join("/")}/`;
     if (tildePath.startsWith(prefix)) candidates.push(prefix);
   }
-  const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : undefined;
-  if (cwd) {
-    const cwdPrefix = `${tildify(cwd).replace(/\/+$/, "")}/`;
-    if (tildePath.startsWith(cwdPrefix)) candidates.push(cwdPrefix);
-  }
+  if (tildePath.startsWith("./")) candidates.push("./");
   const boring = candidates.sort((a, b) => b.length - a.length)[0];
   return boring !== undefined && boring.length <= dir.length ? boring : dir;
 }
@@ -1117,8 +1126,9 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
       : visible === `${verb} ${tildePath}` || visible === `${verb} ${path}`;
   if (!matches) return undefined;
   const theme = currentTheme();
-  const boring = boringPrefix(comp, tildePath);
-  const tail = tildePath.slice(boring.length);
+  const shown = cwdRelativePath(comp, path);
+  const boring = boringPrefix(comp, shown);
+  const tail = shown.slice(boring.length);
   const range = verb === "read" ? lineRange(comp?.args) : "";
   return `${verbInk(comp, verb)} ${dim(boring)}${discriminatorInk(comp, tail)}${ink(theme, "warning", range)}`;
 }
@@ -1302,7 +1312,7 @@ function foldedReadLine(rows: any[], width: number): string {
   const theme = currentTheme();
   const last = rows[rows.length - 1];
   const tone = statusTone(last);
-  const path = tildify(String(rows[0]?.args?.path ?? ""));
+  const path = cwdRelativePath(last, String(rows[0]?.args?.path ?? ""));
   const lastSlash = path.lastIndexOf("/");
   const dir = lastSlash >= 0 ? boringPrefix(last, path) : "";
   const base = path.slice(dir.length);
@@ -1668,6 +1678,7 @@ export const internals = {
   blockSuffixReserve,
   blockToolRows,
   boringPrefix,
+  cwdRelativePath,
   fallbackInvocationLine,
   oneLine,
   leadingBlank,

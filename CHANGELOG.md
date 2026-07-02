@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+cwd collapses to `./` in `pi-traceline` path rows (design language §12.18):
+
+- A path under the row's cwd renders as a dim `./` plus the cwd-relative tail — the
+  shell's own notation for "here", two columns instead of thirty. Paths outside cwd
+  keep their tildified absolute form; the asymmetry is itself information.
+- Emphasis follows §12.16 with `./` counting like `~`: alone it is a trivial root
+  marker (yet always boring), while `./src/` is a meaningful shared prefix — blocks
+  diverging under one `src/` dim `./src/`, blocks diverging at the repo root brighten
+  whole relative paths, and lone rows keep basename-only emphasis.
+
 ## 0.5.8 — 2026-07-02
 
 Deterministic truncation columns for `pi-traceline` (design language §12.17):

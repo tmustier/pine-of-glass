@@ -506,6 +506,21 @@ the page, and the eye had no stable seam to skip over.
     wandering ellipsis column is not. Rows that fit their budget simply end early,
     like prose.
 
+Ninth follow-up, same date (the cwd prefix still spent thirty columns saying
+nothing): §12.16 called cwd boring, yet every path row under it re-stated the full
+`~/projects/<repo>/` before reaching the part that mattered, crowding the very
+tails §12.17 was trying to keep aligned.
+
+18. **cwd collapses to `./`.** A path under the row's cwd renders as a dim `./`
+    followed by the cwd-relative tail — the shell's own notation for "here", two
+    columns instead of thirty. Paths outside cwd keep their tildified absolute
+    form; the asymmetry is itself information (in-repo vs out-of-repo). Emphasis
+    then follows §12.16 with `./` counting like `~`: alone it is a trivial root
+    marker (yet always a boring-prefix candidate), while `./src/` is a meaningful
+    shared prefix — so a block diverging under one `src/` dims `./src/` and a block
+    diverging at the repo root brightens whole relative paths. Lone rows keep their
+    basename-only emphasis. The full absolute path stays one Ctrl+T away.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

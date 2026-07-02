@@ -74,6 +74,7 @@ The discriminating part of a row usually lives at the **tail** — the filename 
 
 - **tildifies** home directories (`/Users/you/...` -> `~/...`) to reclaim width before truncating (OSC 8 hyperlink URLs are left intact, so click targets keep working);
 - **middle-truncates** with a dimmed `…` at deterministic, block-scoped columns: every row in a contiguous tool block shares one body budget (the width left after the block's widest fact suffix), the tail is a fixed share of that budget, and truncated rows fill it exactly — so ellipses and tail edges line up down the block instead of wandering with each row's content, and the discriminating tail (basename, `:range`, the operative command end) always survives;
+- **collapses cwd to a dim `./`** on plain file reads, edits, and writes: `~/projects/site/src/pages/product.astro` renders as `./src/pages/product.astro` when the row ran in `~/projects/site` — two columns of ambient context instead of thirty, leaving the room to the tail that matters. Paths outside cwd keep their tildified absolute form, so the asymmetry itself says in-repo vs out-of-repo; the full path stays one Ctrl+T away;
 - **dims the boring prefix** on plain file reads, edits, and writes: the block's common directory prefix (successive calls under one `src/` dim the shared part, and the divergent `pages/…`, `components/…` tails render bold) or the cwd prefix — session-ambient context is boring by default — falling back to the whole directory, so a lone call keeps the classic dim-directory/bold-basename look.
 
 ```
