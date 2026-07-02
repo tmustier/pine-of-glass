@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.13 — 2026-07-02
+
+A head must carry a word character in `pi-traceline` (design language §12.23):
+
+- §12.20's per-command head hunt crowned the closing quote of a flattened
+  `-e`/`-c` script string — `↵ '` rendered a bold white quote. A candidate head
+  with no letters or digits (a lone quote, `[`, `{`) is shell apparatus: it dims,
+  the command renders headless, and the head slot is consumed so a following pipe
+  filter cannot inherit the crown (`↵ ' | tail -2` stays entirely dim, §12.2).
+  Deliberately conservative — under-brightening is the family's bias.
+
 ## 0.5.12 — 2026-07-02
 
 Chain heads, a right margin, and diff-stat columns in `pi-traceline` (design

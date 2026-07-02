@@ -598,6 +598,20 @@ wandered row by row and the diff column stopped being vertically scannable.
     without a diff cell are unaffected; a lone diff row pads to itself and renders
     exactly as before.
 
+Twelfth follow-up, same date (the closing quote wore the crown): in a flattened
+multiline invocation ending `↵ '`, the last "command" is just the closing quote of
+the `-e`/`-c` script string, and §12.20's first-token rule bolded it — punctuation
+crowned as a head.
+
+23. **A head must carry a word character.** §12.20's head hunt already scans past
+    env assignments; it now yields nothing for a command whose first real token has
+    no letters or digits — a lone closing quote, a `[`, a `{` is shell apparatus,
+    and the command renders headless. The apparatus token dims *and consumes the
+    head slot*, so a following pipe filter cannot inherit the crown: `↵ ' | tail -2`
+    stays entirely dim (§12.2's filters rule). The miss is deliberately
+    conservative — `! grep …` renders headless too — because under-brightening is
+    the family's bias (§12.2); a sequencer after the apparatus re-arms as always.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

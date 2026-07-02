@@ -1130,13 +1130,18 @@ function bashInvocationText(comp: any): string | undefined {
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 // The head command word of a chunk: the first non-assignment token renders L0-bold —
-// the bash row's basename (§12.9/§12.11) — while the rest of the chunk dims.
+// the bash row's basename (§12.9/§12.11) — while the rest of the chunk dims. A head
+// must carry a word character (§12.23): a lone closing quote, a `[`, a `{` is shell
+// apparatus, and the command renders headless — the token dims and *consumes* the
+// head slot, so a following pipe filter cannot inherit the crown (`↵ ' | tail -2`
+// stays entirely dim, per §12.2's filters rule).
 function inkBashChunk(comp: any, chunk: string, headPending: boolean): { text: string; headFound: boolean } {
   if (!headPending) return { text: dim(chunk), headFound: false };
   const words = /\S+/g;
   let match: RegExpExecArray | null;
   while ((match = words.exec(chunk))) {
     if (ENV_ASSIGNMENT.test(match[0])) continue;
+    if (!/[A-Za-z0-9]/.test(match[0])) return { text: dim(chunk), headFound: true };
     const before = chunk.slice(0, match.index);
     const after = chunk.slice(match.index + match[0].length);
     return { text: `${before ? dim(before) : ""}${discriminatorInk(comp, match[0])}${after ? dim(after) : ""}`, headFound: true };

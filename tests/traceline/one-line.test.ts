@@ -629,6 +629,17 @@ test("every command head is bold: sequencers and ↵ re-arm, pipes stay filters 
     assert.ok(!heredoc.includes(bold("EOF")), `the terminator is not a command: ${JSON.stringify(heredoc)}`);
     assert.ok(heredoc.includes(bold("echo")), `after the terminator, heads re-arm: ${JSON.stringify(heredoc)}`);
 
+    // A head must carry a word character (§12.23): the closing quote of a flattened
+    // script string is apparatus, not a command — headless, and the slot is consumed
+    // so the pipe filter after it cannot inherit the crown.
+    const closer = inkBashBody("node -e ' \u21b5 const x = 1; \u21b5 ' | tail -2");
+    assert.ok(closer.includes(bold("node")) && closer.includes(bold("const")), JSON.stringify(closer));
+    assert.ok(!closer.includes(bold("'")), `a lone quote is not a head: ${JSON.stringify(closer)}`);
+    assert.ok(!closer.includes(bold("tail")), `the filter must not inherit the crown: ${JSON.stringify(closer)}`);
+    const bracket = inkBashBody("[ -f dist ] && echo ok");
+    assert.ok(!bracket.includes(bold("[")) && !bracket.includes(bold("-f")), JSON.stringify(bracket));
+    assert.ok(bracket.includes(bold("echo")), `a sequencer after apparatus re-arms: ${JSON.stringify(bracket)}`);
+
     // Failed rows tint every head error (§12.14 × §12.20).
     const failed = { toolName: "bash", result: { content: [], isError: true } };
     const red = inkBashBody("pwd && git push", failed);
