@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.9 — 2026-07-02
 
 cwd collapses to `./` in `pi-traceline` path rows (design language §12.18):
 
