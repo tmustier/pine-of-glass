@@ -13,21 +13,20 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 
 ## Screenshots
 ### [Traceline](./extensions/pi-traceline)
-`ctrl+t` to collapse each tool call and thinking summary to a single line then expand it back when you want details.
+`ctrl+t` now collapses each tool call and thinking summary to a single line, and you can expand everything back to see per-item details.
 
 ![Traceline: one tool call per trace line](./docs/img/pi-traceline-collapsed.png)
 
 ### [Contextimate](./extensions/pi-contextimate)
-What is in your context window before you type a word (this is the summary mode). Toggle level of detail with `ctrl+o`.
+Each new session and /reload now lists what's in your context window before you type a word. Toggle level of detail with `ctrl+o`.
 
+Summary mode:
 ![Contextimate summary panel](./docs/img/pi-contextimate-summary.png)
 
 ### [Cachemire](./extensions/pi-cachemire)
-Per-turn ledger lines and the cache clock above the editor.
+You now see cache-related warnings inline and a cache shotclock above the editor. `/cache` gives you a full session review by turn.
 
 ![Cachemire turn ledger and cache clock](./docs/img/pi-cachemire-clock.png)
-
-Full turn recap with `/cache`.
 
 ![Cachemire /cache ledger table](./docs/img/pi-cachemire-ledger.png)
 
