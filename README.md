@@ -2,7 +2,7 @@
 
 Small observability and context management tools for [Pi](https://github.com/earendil-works/pi) in the terminal.
 1. [`contextimate`](./extensions/pi-contextimate) breaks down what is filling your context window: sysprompt, AGENTS.md, Skill frontmatter, Tool schemas, and session material. Toggle with ctrl+o on start and /reload.
-2. [`traceline`](./extensions/pi-traceline) collapses tool calls to one trace line each, so you can see the full arc of what Pi did (path taken, context read, bloated tool results). Toggle with ctrl+t (expands/collapses both thinking blocks and tools so you can see everything your agent did since your last message).
+2. [`traceline`](./extensions/pi-traceline) collapses tool calls to one trace line each, so you can see the full arc of what Pi did (path taken, context read, bloated tool results). Toggle with ctrl+t (expands/collapses both thinking blocks and tools).
 3. [`cachemire`](./extensions/pi-cachemire) (**experimental**) explains cache behaviour and agent-loop economics: a cache TTL clock above the editor, predicted-then-resolved cache-break notices, a per-turn ledger, and `/cache` forensics. Included in the package as of `0.4.0`; wording, thresholds, and states may still evolve.
 
 See each extension's own `README.md` for details, and `docs/` for deeper reference.
@@ -13,19 +13,21 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 
 ## Screenshots
 ### [Traceline](./extensions/pi-traceline)
-The full arc of a working session — reads folded per file, edits carrying their diff facts, one failed build tinted, everything else calm:
+`ctrl+t` to collapse each tool call and thinking summary to a single line then expand it back when you want details.
 
 ![Traceline: one tool call per trace line](./docs/img/pi-traceline-collapsed.png)
 
 ### [Contextimate](./extensions/pi-contextimate)
-What is in your context window before you type a word:
+What is in your context window before you type a word (this is the summary mode). Toggle level of detail with `ctrl+o`.
 
 ![Contextimate summary panel](./docs/img/pi-contextimate-summary.png)
 
 ### [Cachemire](./extensions/pi-cachemire)
-Per-turn ledger lines and the cache clock above the editor, then `/cache` forensics on demand:
+Per-turn ledger lines and the cache clock above the editor.
 
 ![Cachemire turn ledger and cache clock](./docs/img/pi-cachemire-clock.png)
+
+Full turn recap with `/cache`.
 
 ![Cachemire /cache ledger table](./docs/img/pi-cachemire-ledger.png)
 
