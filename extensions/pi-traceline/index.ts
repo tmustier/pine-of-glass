@@ -733,12 +733,41 @@ function mutationDiffStats(comp: any): DiffStats | undefined {
 }
 
 // Zero sides are dropped (design language §12.13): `+2 -0` → `+2` — the dimmed zero
-// was a half-measure, and every new-file write wore a guaranteed-noise `-0`.
-function formatMutationDiffStats(stats: DiffStats, theme = currentTheme()): string {
-  const parts: string[] = [];
-  if (stats.added > 0) parts.push(ink(theme, "success", `+${stats.added}`));
-  if (stats.removed > 0) parts.push(ink(theme, "error", `-${stats.removed}`));
-  return parts.join(" ");
+// was a half-measure, and every new-file write wore a guaranteed-noise `-0`. But the
+// drop is ink-only: within a block the diff cells form two sign-aligned columns
+// (§12.22), and a dropped side holds its column as blank space so every `+` and every
+// `-` shares one x down the block. Without column widths (a lone row), a cell pads to
+// itself and renders exactly as before.
+type DiffColumns = { plus: number; minus: number; size: number };
+
+function blockDiffColumns(comp: any): DiffColumns {
+  let plus = 0;
+  let minus = 0;
+  let size = 0;
+  for (const row of blockToolRows(comp)) {
+    const stats = mutationDiffStats(row);
+    if (stats) {
+      if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
+      if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
+    }
+    size = Math.max(size, visibleWidth(resultCharSuffix(row)));
+  }
+  return { plus, minus, size };
+}
+
+function formatMutationDiffStats(
+  stats: DiffStats,
+  theme = currentTheme(),
+  cols?: Pick<DiffColumns, "plus" | "minus">,
+): string {
+  const plusTok = stats.added > 0 ? `+${stats.added}` : "";
+  const minusTok = stats.removed > 0 ? `-${stats.removed}` : "";
+  const plusW = cols ? cols.plus : plusTok.length;
+  const minusW = cols ? cols.minus : minusTok.length;
+  const cells: string[] = [];
+  if (plusW > 0) cells.push((plusTok ? ink(theme, "success", plusTok) : "") + " ".repeat(plusW - plusTok.length));
+  if (minusW > 0) cells.push((minusTok ? ink(theme, "error", minusTok) : "") + " ".repeat(minusW - minusTok.length));
+  return cells.join(" ");
 }
 
 // --- records of consequence (design language §12.19) -----------------------------------
@@ -898,9 +927,16 @@ function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY): string
   const records = recordSuffix(comp, available);
   if (records) parts.push(records);
   const diff = mutationDiffStats(comp);
-  if (diff) parts.push(formatMutationDiffStats(diff, theme));
   const chars = resultCharSuffix(comp);
-  if (chars) parts.push(chars);
+  if (diff) {
+    // The diff cell pads to the block's sign columns, and the size cell pads left to
+    // the block's widest, so `+`, `-`, and `·` each hold one x down the block (§12.22).
+    const cols = blockDiffColumns(comp);
+    parts.push(formatMutationDiffStats(diff, theme, cols));
+    if (chars) parts.push(" ".repeat(Math.max(0, cols.size - visibleWidth(chars))) + chars);
+  } else if (chars) {
+    parts.push(chars);
+  }
   return parts.join(dim(SEP));
 }
 

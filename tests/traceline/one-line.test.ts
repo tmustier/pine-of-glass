@@ -159,6 +159,45 @@ test("mutation diff stats ride the right suffix for edit rows", () => {
   assert.ok(visible.endsWith("+2 -1"), visible);
 });
 
+test("diff stats are a table: +, -, and · each hold one x down the block (§12.22)", () => {
+  const mut = (toolName: string, path: string, diff: string) =>
+    toolComp({
+      toolName,
+      args: { path: `${homedir()}/projects/demo/${path}` },
+      callRendererComponent: { render: () => [`${toolName} ~/projects/demo/${path}`] },
+      result: { content: [{ type: "text", text: "ok." }], isError: false, details: { diff } },
+    });
+  const both = mut("edit", "src/a.ts", "+x\n".repeat(4) + "-x\n".repeat(9));
+  const minusOnly = mut("edit", "src/b.ts", "-x\n");
+  const plusOnly = mut("write", "src/c.ts", "+x\n".repeat(18));
+  const read = toolComp({
+    toolName: "read",
+    args: { path: `${homedir()}/projects/demo/src/d.ts` },
+    callRendererComponent: { render: () => ["read ~/projects/demo/src/d.ts"] },
+    result: { content: [{ type: "text", text: "y".repeat(14200) }], isError: false },
+  });
+  g.__tracelineChat = { children: [both, minusOnly, plusOnly, read] };
+  try {
+    const [a, b, c, d] = [both, minusOnly, plusOnly, read].map((row) => stripAnsi(oneLine(row, 80)));
+    // A dropped zero side keeps its column as space; the size cell pads to the
+    // block's widest (`14.2k ch`), so `·` holds still too.
+    assert.ok(a!.endsWith("+4  -9 \u00b7  0.0k ch"), a);
+    assert.ok(b!.endsWith("-1 \u00b7  0.0k ch"), b);
+    assert.ok(c!.endsWith("+18    \u00b7  0.0k ch"), c);
+    assert.ok(d!.endsWith("14.2k ch"), d);
+    // Every row ends at the block edge, and the sign/separator columns align.
+    assert.ok([a, b, c, d].every((l) => l!.length === 78), JSON.stringify([a, b, c, d].map((l) => l!.length)));
+    assert.equal(a!.indexOf("+4"), c!.indexOf("+18"), `+ column wanders: ${JSON.stringify([a, c])}`);
+    assert.equal(a!.lastIndexOf("-9"), b!.lastIndexOf("-1"), `- column wanders: ${JSON.stringify([a, b])}`);
+    assert.ok(
+      [a, b, c].every((l) => l!.lastIndexOf("\u00b7") === a!.lastIndexOf("\u00b7")),
+      `· column wanders: ${JSON.stringify([a, b, c])}`,
+    );
+  } finally {
+    g.__tracelineChat = undefined;
+  }
+});
+
 test("edit preview diff stats show before a result exists", () => {
   const comp = toolComp({
     toolName: "edit",

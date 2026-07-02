@@ -125,9 +125,21 @@ export function buildTracelineSession(cwd) {
   result(buildOk, "✓ 14 pages built\n✓ sitemap generated\nbuild complete in 1.31s");
   result(worklog, `Wrote ${cwd}/worklog/2026-07-01-pricing-pass.md`, { details: { diff: diff(18, 0) } });
 
+  // Records of consequence (§12.19): commit + push porcelain becomes verb-first facts.
+  const ship = call("bash", { command: "git add -A && git commit -m 'product: tighten pricing copy, repoint nav links' && git push", timeout: 120 });
   msg({
     role: "assistant",
-    content: [{ type: "text", text: "Done — the pricing section now makes its case once and lands, and both nav links resolve. Build is green." }],
+    content: [{ type: "text", text: "Green — shipping the pass." }, ship],
+  });
+  msg({
+    role: "toolResult", toolCallId: ship.id, toolName: "bash",
+    content: [{ type: "text", text: `[main a4f21c9] product: tighten pricing copy, repoint nav links\n 4 files changed, 25 insertions(+), 14 deletions(-)\nTo github.com:acme/site.git\n   1f0d2a3..a4f21c9  main -> main` }],
+    isError: false,
+  });
+
+  msg({
+    role: "assistant",
+    content: [{ type: "text", text: "Done — the pricing section now makes its case once, both nav links resolve, and the pass is on main." }],
   });
 
   return { id: randomUUID(), entries };

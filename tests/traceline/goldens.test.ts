@@ -40,6 +40,18 @@ function read(path: string, offset: number, limit: number, chars: number) {
   };
 }
 
+function mutation(toolName: string, path: string, diff: string, chars: number) {
+  return {
+    toolName,
+    args: { path },
+    result: { content: [{ type: "text", text: "x".repeat(chars) }], isError: false, details: { diff } },
+    isPartial: false,
+    render: () => [],
+    setExpanded: () => {},
+    callRendererComponent: { render: () => [`${toolName} ${path}`] },
+  };
+}
+
 function prose(text: string) {
   return {
     setHideThinkingBlock: () => {},
@@ -81,6 +93,10 @@ test("one-line trace goldens at 80 and 120 columns", () => {
       chars: 56_300,
       error: true,
     }),
+    prose("The runner mangles the config — patching it and logging the pass."),
+    mutation("edit", `${repo}/scripts/dev/screenshots/rig.mjs`, `${"+x\n".repeat(4)}${"-x\n".repeat(9)}`, 210),
+    mutation("edit", `${repo}/scripts/dev/screenshots/ansi2html.mjs`, "-x\n", 180),
+    mutation("write", `${repo}/worklog/2026-07-02-rig-fix.md`, "+x\n".repeat(18), 120),
     prose("Fixed — committing and shipping the release."),
     bash(`cd ${repo} && git add -A && git -c user.email=6326440+tmustier@users.noreply.github.com commit -m "traceline: records of consequence" && git push`, {
       text: `[main a4f21c9] traceline: records of consequence\n 3 files changed, 210 insertions(+)\nTo https://github.com/tmustier/pine-of-glass.git\n   50cf33f..a4f21c9  main -> main\n`,

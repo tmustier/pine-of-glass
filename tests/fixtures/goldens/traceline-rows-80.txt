@@ -12,6 +12,12 @@ The typecheck output looks wrong — checking the runner script.
 
   ▏ › $ python3 -c ' ↵ import json…nt(json.dumps(cfg)) ↵ ' | tail -2  56.3k ch
 
+The runner mangles the config — patching it and logging the pass.
+
+  ▏ › edit ~/projects/pine-of-…ripts/dev/screenshots/rig.mjs  +4  -9 · 0.2k ch
+  ▏ › edit ~/projects/pine-of-…dev/screenshots/ansi2html.mjs      -1 · 0.2k ch
+  ▏ › write ~/projects/pine-of…worklog/2026-07-02-rig-fix.md  +18    · 0.1k ch
+
 Fixed — committing and shipping the release.
 
   ▏ › $ cd ~/projects/pine-… consequence" && git push    pushed main · 0.2k ch

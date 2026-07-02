@@ -2,7 +2,8 @@
 
 ## 0.5.12 — 2026-07-02
 
-Chain heads and a right margin in `pi-traceline` (design language §12.20/§12.21):
+Chain heads, a right margin, and diff-stat columns in `pi-traceline` (design
+language §12.20/§12.21/§12.22):
 
 - Every command head is bold: `&&`, `||`, space-delimited `;`, and flattened `↵`
   breaks each start a new command whose head word renders bold, so
@@ -15,6 +16,15 @@ Chain heads and a right margin in `pi-traceline` (design language §12.20/§12.2
   two spaces §5 always specified (the implementation had drifted to one). Every
   truncated row in a block still ends flush at one shared cut column; that column
   now just breathes.
+- Diff stats are a table, not a phrase: within a block the `+N`/`-M` cells form
+  two sign-aligned columns — a dropped zero side (still dropped as ink) holds its
+  column as blank space, and the size cell pads left to the block's widest — so a
+  plus-only `+18` and a minus-only `-1` land under each other instead of both
+  right-aligning into the `·`, and every `+`, `-`, and separator keeps one x down
+  the block.
+- The README screenshot story now also ships: a `git add && git commit && git push`
+  row demonstrating record facts (§12.19), chain heads, and the new diff-stat
+  columns in one frame.
 
 ## 0.5.11 — 2026-07-02
 

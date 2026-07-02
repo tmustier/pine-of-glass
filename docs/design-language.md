@@ -581,6 +581,23 @@ stable right margin to scan along.
     cut columns (§12.17) are unchanged in kind — every truncated row in a block
     still ends flush at one column — that column now just breathes.
 
+Eleventh follow-up, same date (a lone `+` drifted into the minus column): diff
+cells joined their sides into one phrase and the whole suffix right-aligned, so a
+plus-only `write … +18` ended flush where its neighbour's `-1` sat — signs
+wandered row by row and the diff column stopped being vertically scannable.
+
+22. **Diff stats are a table, not a phrase.** Within one visual block (§12.15's
+    scope), the `+N`/`-M` cells form two sign-aligned columns: the block's widest
+    added token sets the plus column, its widest removed token sets the minus
+    column, and every diff cell pads to both — so every `+` shares one x and every
+    `-` shares one x down the block. A dropped zero side (§12.13) stays dropped as
+    *ink* but holds its column as *space*: `+18` next to a `-1` row renders
+    `+18   ·` and `    -1 ·`, blank where the absent side would sit. The size cell
+    after the diff pads left to the block's widest size cell, so the `·` separator
+    holds one column too and §12.13/§12.15's rightmost berth is untouched. Rows
+    without a diff cell are unaffected; a lone diff row pads to itself and renders
+    exactly as before.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

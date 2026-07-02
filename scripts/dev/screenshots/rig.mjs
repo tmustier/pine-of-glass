@@ -164,7 +164,7 @@ function tracelineShot() {
   const sessionFile = writeSession(fixture.home, fixture.cwd, buildTracelineSession);
   launchPi({ ...fixture, args: `--session ${JSON.stringify(sessionFile)}`, rows: 60 });
   try {
-    waitFor("transcript", (t) => t.includes("Build is green"), 90000);
+    waitFor("transcript", (t) => t.includes("the pass is on main"), 90000);
     sleep(2500);
     // Restored sessions open with thinking visible; traceline's one-line mode applies
     // while reasoning is hidden (its live default). One Ctrl+T restores that state.
