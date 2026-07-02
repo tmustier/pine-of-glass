@@ -14,13 +14,13 @@ const { renderTraceRow, stripAnsi, isToolRow, dedupeThinkingLabels } = internals
 
 const g = globalThis as Record<string, unknown>;
 
-function bash(command: string, options: { rendered?: string[]; chars?: number; error?: boolean; running?: boolean } = {}) {
+function bash(command: string, options: { rendered?: string[]; chars?: number; text?: string; error?: boolean; running?: boolean } = {}) {
   return {
     toolName: "bash",
     args: { command },
     result: options.running
       ? undefined
-      : { content: [{ type: "text", text: "x".repeat(options.chars ?? 200) }], isError: options.error === true },
+      : { content: [{ type: "text", text: options.text ?? "x".repeat(options.chars ?? 200) }], isError: options.error === true },
     isPartial: options.running === true,
     render: () => [],
     setExpanded: () => {},
@@ -80,6 +80,13 @@ test("one-line trace goldens at 80 and 120 columns", () => {
       rendered: ["$ python3 -c '", "  import json", "  print(json.dumps(cfg))", "  ' | tail -2 (timeout 70s)"],
       chars: 56_300,
       error: true,
+    }),
+    prose("Fixed — committing and shipping the release."),
+    bash(`cd ${repo} && git add -A && git -c user.email=6326440+tmustier@users.noreply.github.com commit -m "traceline: records of consequence" && git push`, {
+      text: `[main a4f21c9] traceline: records of consequence\n 3 files changed, 210 insertions(+)\nTo https://github.com/tmustier/pine-of-glass.git\n   50cf33f..a4f21c9  main -> main\n`,
+    }),
+    bash("gh pr merge 87 --squash --delete-branch", {
+      text: "✓ Squashed and merged pull request tmustier/pine-of-glass#87 (traceline: records)\n✓ Deleted branch git-records\n",
     }),
     bash("git status --short", { running: true }),
   ];

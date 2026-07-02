@@ -125,7 +125,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 22;
+const TRACELINE_PATCH_VERSION = 23;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -575,11 +575,11 @@ function blockSizeColumnLive(comp: any): boolean {
 // widest rendered fact suffix — folded read runs count as their single `N calls · size`
 // cell — plus the one-space gap, so every truncated row in the block cuts at the same
 // columns and its tail ends flush where the suffix column begins.
-function blockSuffixReserve(comp: any): number {
+function blockSuffixReserve(comp: any, available = Number.POSITIVE_INFINITY): number {
   let widest = 0;
   for (const row of blockToolRows(comp)) {
     const run = readRun(row);
-    const suffix = run ? foldedReadSuffix(run.rows) : toolFactSuffix(row);
+    const suffix = run ? foldedReadSuffix(run.rows) : toolFactSuffix(row, available);
     widest = Math.max(widest, visibleWidth(suffix));
   }
   return widest > 0 ? widest + 1 : 0;
@@ -733,13 +733,155 @@ function formatMutationDiffStats(stats: DiffStats, theme = currentTheme()): stri
   return parts.join(" ");
 }
 
-function toolFactSuffix(comp: any): string {
+// --- records of consequence (design language §12.19) -----------------------------------
+
+// Some bash rows change shared state beyond the working tree — a commit, a push, a PR
+// merged or closed, an issue closed, a release or package published. The invocation
+// says only what was *attempted*, and truncation may eat even that; the proof is
+// porcelain in the result, which one-line mode hides. These rows earn verb-first
+// record facts in the suffix — `committed a4f21c9 · pushed main · 0.3k ch` — stated
+// only from what the output reported: the command must name the operation *and* its
+// success porcelain must appear. A failed push after a good commit therefore shows
+// `committed a4f21c9` on a red row — committed, demonstrably not landed. `git tag`
+// earns nothing: its success porcelain is silence.
+type RecordFact = { verb: string; datum: string; at: number };
+
+type RecordRule = { gate: RegExp; parse: (out: string) => RecordFact[] };
+
+function factsFrom(out: string, pattern: RegExp, verb: string, datum: (m: RegExpMatchArray) => string): RecordFact[] {
+  const facts: RecordFact[] = [];
+  for (const m of out.matchAll(pattern)) facts.push({ verb, datum: datum(m), at: m.index ?? 0 });
+  return facts;
+}
+
+function decodedTag(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+// Success porcelain only. Push failures (`! [rejected] main -> main`) have neither a
+// hex range nor a `[new …]` head, so they never match; `Everything up-to-date`
+// contributes nothing. Gates scan the raw command within one shell segment (`[^|;&]*`),
+// so `git -c user.email=… commit` gates like `git commit`; a record phrase quoted
+// inside a commit message can pass a gate, but then finds no porcelain in the output.
+const RECORD_RULES: RecordRule[] = [
+  {
+    // `[main a4f21c9]`, `[main (root-commit) a4f21c9]`, `[detached HEAD a4f21c9]`
+    gate: /\bgit\b[^|;&]*\bcommit\b/,
+    parse: (out) => factsFrom(out, /^\[[^\n\]]*?([0-9a-f]{7,40})\]/gm, "committed", (m) => m[1]!),
+  },
+  {
+    // `   1c75c2a..50cf33f  main -> main`, ` + … (forced update)`, ` * [new tag] …`
+    gate: /\bgit\b[^|;&]*\bpush\b/,
+    parse: (out) =>
+      factsFrom(
+        out,
+        /^\s*(?:\+?\s?[0-9a-f]+\.\.\.?[0-9a-f]+|\* \[new (?:branch|tag)\])\s+\S+\s+->\s+(\S+)/gm,
+        "pushed",
+        (m) => m[1]!,
+      ),
+  },
+  {
+    gate: /\bgh\s+pr\s+merge\b/,
+    parse: (out) =>
+      factsFrom(out, /(?:Merged|Squashed and merged|Rebased and merged) pull request \S*?#(\d+)/g, "merged", (m) => `PR #${m[1]}`),
+  },
+  {
+    gate: /\bgh\s+pr\s+close\b/,
+    parse: (out) => factsFrom(out, /Closed pull request \S*?#(\d+)/g, "closed", (m) => `PR #${m[1]}`),
+  },
+  {
+    gate: /\bgh\s+pr\s+create\b/,
+    parse: (out) => factsFrom(out, /\/pull\/(\d+)\b/g, "opened", (m) => `PR #${m[1]}`),
+  },
+  {
+    gate: /\bgh\s+issue\s+close\b/,
+    parse: (out) => factsFrom(out, /Closed issue \S*?#(\d+)/g, "closed", (m) => `#${m[1]}`),
+  },
+  {
+    gate: /\bgh\s+release\s+create\b/,
+    parse: (out) => factsFrom(out, /\/releases\/tag\/([^\s/]+)/g, "released", (m) => decodedTag(m[1]!)),
+  },
+  {
+    // npm's publish porcelain: `+ pine-of-glass@0.5.10`
+    gate: /\bnpm\s+publish\b/,
+    parse: (out) => factsFrom(out, /^\+ \S+@([^\s@]+)\s*$/gm, "published", (m) => m[1]!),
+  },
+];
+
+function resultText(comp: any): string {
+  const content = comp?.result?.content;
+  if (!Array.isArray(content)) return "";
+  let out = "";
+  for (const block of content) {
+    if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") out += `${block.text}\n`;
+  }
+  return out;
+}
+
+// Facts depend only on the row's own command+result, so they cache against the result
+// object identity (rows re-render every frame; porcelain never changes once settled).
+const recordFactCache = new WeakMap<object, { result: unknown; facts: RecordFact[] }>();
+
+function recordFacts(comp: any): RecordFact[] {
+  if (toolLabel(comp?.toolName) !== "bash") return [];
+  const command = comp?.args?.command;
+  if (typeof command !== "string" || !comp?.result || typeof comp.result !== "object") return [];
+  const cached = recordFactCache.get(comp);
+  if (cached && cached.result === comp.result) return cached.facts;
+  const out = stripAnsi(resultText(comp));
+  const facts: RecordFact[] = [];
+  if (out) {
+    for (const rule of RECORD_RULES) {
+      if (rule.gate.test(command)) facts.push(...rule.parse(out));
+    }
+    facts.sort((a, b) => a.at - b.at);
+  }
+  recordFactCache.set(comp, { result: comp.result, facts });
+  return facts;
+}
+
+// Facts chain in output order; consecutive same-verb facts merge their data
+// (`pushed main, v0.5.9`) and exact duplicates collapse.
+function recordCells(comp: any): string[] {
+  const merged: { verb: string; data: string[] }[] = [];
+  for (const fact of recordFacts(comp)) {
+    const last = merged[merged.length - 1];
+    if (last && last.verb === fact.verb) {
+      if (!last.data.includes(fact.datum)) last.data.push(fact.datum);
+    } else {
+      merged.push({ verb: fact.verb, data: [fact.datum] });
+    }
+  }
+  return merged.map((cell) => `${cell.verb} ${cell.data.join(", ")}`);
+}
+
+// Records may take at most roughly a third of the row (§12.19): overflow drops whole
+// facts oldest first — terminal state wins, a mangled sha is worse than none, and the
+// full output stays one Ctrl+T away.
+const RECORD_SUFFIX_SHARE = 1 / 3;
+
+function recordSuffix(comp: any, available: number): string {
+  const cells = recordCells(comp);
+  if (!cells.length) return "";
+  const cap = Math.floor(available * RECORD_SUFFIX_SHARE);
+  while (cells.length && cells.join(SEP).length > cap) cells.shift();
+  return cells.length ? dim(cells.join(SEP)) : "";
+}
+
+function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY): string {
   const theme = currentTheme();
+  const parts: string[] = [];
+  const records = recordSuffix(comp, available);
+  if (records) parts.push(records);
   const diff = mutationDiffStats(comp);
-  const diffSuffix = diff ? formatMutationDiffStats(diff, theme) : "";
+  if (diff) parts.push(formatMutationDiffStats(diff, theme));
   const chars = resultCharSuffix(comp);
-  if (diffSuffix && chars) return `${diffSuffix}${dim(SEP)}${chars}`;
-  return diffSuffix || chars;
+  if (chars) parts.push(chars);
+  return parts.join(dim(SEP));
 }
 
 // tildify / middleTruncate / rightAlignSuffix live in _lib/style.ts — traceline's rules,
@@ -1185,10 +1327,10 @@ function oneLine(comp: any, width: number): string {
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
   const fitted = rightAlignSuffix(
     invocationInk(comp),
-    toolFactSuffix(comp),
+    toolFactSuffix(comp, available),
     available,
     currentTheme(),
-    blockSuffixReserve(comp),
+    blockSuffixReserve(comp, available),
   );
   const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(comp);
@@ -1324,7 +1466,7 @@ function foldedReadLine(rows: any[], width: number): string {
   // Call count rides the right-aligned suffix (fact order: what · how many · how big),
   // so middle truncation protects the discriminating basename+ranges tail of the body.
   const suffix = foldedReadSuffix(rows);
-  const fitted = rightAlignSuffix(body, suffix, available, theme, blockSuffixReserve(last));
+  const fitted = rightAlignSuffix(body, suffix, available, theme, blockSuffixReserve(last, available));
   const row = truncateToWidth(`${toolPrefix(tone)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(last);
   return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
@@ -1669,6 +1811,9 @@ export const internals = {
   mutationDiffStats,
   formatMutationDiffStats,
   toolFactSuffix,
+  recordFacts,
+  recordCells,
+  recordSuffix,
   configureSizeThresholds,
   configureToolBackgrounds,
   toolBackgroundsEnabled,

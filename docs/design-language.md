@@ -521,6 +521,31 @@ tails §12.17 was trying to keep aligned.
     diverging at the repo root brightens whole relative paths. Lone rows keep their
     basename-only emphasis. The full absolute path stays one Ctrl+T away.
 
+19. **Records of consequence.** Some bash rows change shared state beyond the
+    working tree — a commit, a push, a PR merged or closed, an issue closed, a
+    release or package published. Their invocation text says only what was
+    *attempted*, and truncation may eat even that; the proof lives in the result,
+    which one-line mode hides. So these rows earn **record facts** in the suffix,
+    stated verb-first from the porcelain the tool actually reported — never from
+    the command's arguments: `committed a4f21c9 · pushed main · 0.3k ch`,
+    `merged PR #87 · 0.1k ch`. Rules:
+    - **Output-only honesty.** A fact appears only when the command names the
+      operation *and* its success porcelain appears in the output (`[main
+      a4f21c9]`, `1c75c2a..50cf33f main -> main`, `Merged pull request #87`,
+      `/releases/tag/v0.5.9`, `+ pkg@0.5.10`). A failed push after a good commit
+      shows `committed a4f21c9` on a red row: committed, demonstrably not landed.
+      `git tag` earns nothing — its success porcelain is silence.
+    - **Facts chain in output order** with the family `·` separator;
+      consecutive same-verb facts merge their data (`pushed main, v0.5.9`).
+    - **The size cell keeps the rightmost berth** (§12.13/§12.15): records join
+      *before* it, exactly as diff stats do, so the `ch` column stays aligned
+      down the block.
+    - **Overflow drops whole facts, oldest first** — records may take at most
+      roughly a third of the row; a mangled sha is worse than none, and the full
+      output stays one Ctrl+T away.
+    - Record facts are dim like every fact cell: the right edge stays calm, and
+      presence — not colour — is the signal.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

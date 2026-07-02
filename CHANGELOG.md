@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.10 — 2026-07-02
+
+Records of consequence in `pi-traceline` (design language §12.19):
+
+- Bash rows that change shared state beyond the working tree (git commit/push,
+  `gh pr merge`/`close`/`create`, `gh issue close`, `gh release create`,
+  `npm publish`) add verb-first record facts to the suffix:
+  `committed a4f21c9 · pushed main · 0.3k ch`, `merged PR #87 · 0.1k ch`.
+- Output-only honesty: a fact appears only when the command names the operation
+  *and* its success porcelain appears in the result (`[main a4f21c9]`,
+  `1c75c2a..50cf33f main -> main`, `Merged pull request #87`,
+  `/releases/tag/v0.5.9`, `+ pkg@0.5.10`). A failed push after a good commit shows
+  `committed a4f21c9` on a red row: committed, demonstrably not landed. `git tag`
+  earns nothing; its success porcelain is silence.
+- Facts chain in output order with the family `·` separator; consecutive same-verb
+  facts merge their data (`pushed main, v0.5.9`). Overflow drops whole facts oldest
+  first (records take at most roughly a third of the row); the size cell keeps the
+  rightmost aligned column.
+
 ## 0.5.9 — 2026-07-02
 
 cwd collapses to `./` in `pi-traceline` path rows (design language §12.18):
