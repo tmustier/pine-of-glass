@@ -23,11 +23,11 @@ Each new session and /reload now lists what's in your context window before you 
 Summary mode:
 ![Contextimate summary panel](./docs/img/pi-contextimate-summary.png)
 
-Compact mode — one aligned line per skill and tool:
+Compact mode, one aligned line per skill and tool:
 
 ![Contextimate compact view](./docs/img/pi-contextimate-compact.png)
 
-Expanded mode — per-section sources and a schema field tree for every active tool (excerpt):
+Expanded mode, with per-section sources and a schema field tree for every active tool (excerpt):
 
 ![Contextimate expanded view, excerpt](./docs/img/pi-contextimate-expanded.png)
 
@@ -45,6 +45,6 @@ You now see cache-related warnings inline and a cache shotclock above the editor
 *Note: A nice side benefit of 1. is that tools like `traceline` can help agents running interactive pi subagents in tmux to monitor them without risking context bloat from tool outputs.*
 
 **Status:** There are several things left to do in 1., including
-- maturing [`cachemire`](./extensions/pi-cachemire) (implemented, live-tested, conformant with the family design language, and now shipped as experimental while the UX settles — see issue #6),
+- maturing [`cachemire`](./extensions/pi-cachemire) (implemented, live-tested, conformant with the family design language, and now shipped as experimental while the UX settles; see issue #6),
 - making `contextimate` more useful beyond upfront context (for example, are my MCP servers and skills efficient when loaded?)
 - and other refinements tracked in issues.
