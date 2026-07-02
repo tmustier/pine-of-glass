@@ -37,6 +37,14 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
 
 ## Style
 
+- Vertical alignment is load-bearing, not cosmetic. Deliberate choices across the
+  family: traceline's right-aligned fact/size suffix column and block-scoped
+  truncation columns (design language §12.15/§12.17), contextimate's decimal-point
+  and unit alignment for token counts and its table-like parameter columns,
+  diff stats dropping their zero side, cachemire's ledger columns. When adding or
+  changing a suffix or column, keep related rows sharing one aligned edge; never
+  let a new cell wander the right margin row by row.
+
 - No em dashes (—) in markdown docs. Use commas, colons, semicolons, or parentheses.
   (Quoted UI output is exempt: cachemire's ledger genuinely prints — for absent values.)
 
