@@ -39,6 +39,11 @@ npm test                # unit + golden + pi contract tests (zero deps, node:tes
 npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)
 ```
 
+The README screenshots regenerate with the rig in
+[`scripts/dev/screenshots/`](./scripts/dev/screenshots/) — it replays crafted sessions
+(or runs live turns) inside the real pi TUI in an isolated tmux/HOME and renders the
+pane captures to `docs/img/`. See its README for the recipe and the gotchas.
+
 Extensions share code through [`extensions/_lib`](./extensions/_lib) (number grammar,
 family style — glyphs, theme-derived ink, panel headers — ANSI helpers, chat-container
 detection, config convention). The visual grammar all three speak is specified in
