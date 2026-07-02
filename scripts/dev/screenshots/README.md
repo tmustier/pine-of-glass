@@ -25,7 +25,11 @@ Requirements: `pi` on PATH, `tmux`, Google Chrome (headless), `python3` with PIL
 rig.mjs                 orchestrator: fixture HOME → tmux → pi → capture → PNG
 traceline-session.mjs   builds the story-shaped session JSONL replayed by `pi --session`
 ansi2html.mjs           tmux ANSI capture → styled HTML (truecolor/256, bold, dim,
-                        italic, reverse, proper SGR resets — `freeze` got these wrong)
+                        italic, reverse, proper SGR resets — `freeze` got these wrong).
+                        Vertical rail glyphs (▏ │) are drawn as full-line-height CSS
+                        blocks, not font glyphs: terminals stretch block characters to
+                        fill the cell so rails connect across lines, fonts don't —
+                        without this the rail renders disjointed
 html2png.py             headless Chrome screenshot → shadow-aware autocrop (PIL)
 ```
 

@@ -38,6 +38,19 @@ const DEFAULT_BG = "#15161c";
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// Terminals (Ghostty, iTerm2, kitty) draw block/box-drawing glyphs to fill the whole
+// cell, so vertical rails connect across lines. Fonts only span their em box, which at
+// line-height 1.45 leaves gaps — the rail looks disjointed. Emulate the terminal: draw
+// these glyphs as full-line-height (1lh) CSS blocks in currentColor instead.
+const CELL_GLYPHS = {
+  "\u258f": "linear-gradient(to right,currentColor 0 12.5%,transparent 12.5%)", // ▏ left one-eighth
+  "\u2502": "linear-gradient(to right,transparent 0 calc(50% - .5px),currentColor calc(50% - .5px) calc(50% + .5px),transparent calc(50% + .5px))", // │ light vertical
+};
+const cellGlyphHtml = (bg) =>
+  `<span style="display:inline-block;width:1ch;height:1lh;vertical-align:top;background:${bg}"></span>`;
+const renderGlyphs = (escaped) =>
+  escaped.replace(/[\u258f\u2502]/g, (ch) => cellGlyphHtml(CELL_GLYPHS[ch]));
+
 function render(text) {
   const state = { fg: null, bg: null, bold: false, dim: false, italic: false, underline: false, reverse: false };
   let html = "";
@@ -67,7 +80,7 @@ function render(text) {
       if (cols > 0 && visible + chunk.length > cols) chunk = chunk.slice(0, Math.max(0, cols - visible));
       if (!chunk) return;
       visible += chunk.length;
-      lineHtml += openSpan() + esc(chunk) + "</span>";
+      lineHtml += openSpan() + renderGlyphs(esc(chunk)) + "</span>";
     };
     while ((m = re.exec(rawLine))) {
       emit(rawLine.slice(last, m.index));
