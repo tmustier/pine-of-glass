@@ -112,17 +112,23 @@ export function buildTracelineSession(cwd) {
   const readRange = call("read", { path: `${cwd}/src/components/PricingTable.astro`, offset: 88, limit: 17 });
   const editFix = call("edit", { path: `${cwd}/src/components/PricingTable.astro`, oldText: "…", newText: "…" });
   const buildOk = call("bash", { command: "rm -rf dist && npm run build 2>&1 | tail -3", timeout: 120 });
+  // A real multiline invocation: pi renders it across lines, traceline flattens with ↵
+  // marks (issue #10) and middle truncation keeps the head and the operative tail.
+  const verify = call("bash", {
+    command: `node -e '\nconst h = require("fs").readFileSync("dist/product/index.html", "utf8");\nfor (const p of ["/resources", "/releases"]) console.log(p, h.includes(p) ? "ok" : "missing");\n'`,
+  });
   const worklog = call("write", { path: `${cwd}/worklog/2026-07-01-pricing-pass.md`, content: "…" });
   msg({
     role: "assistant",
     content: [
       { type: "text", text: "That one's mine — my second edit dropped a wrapper but left its closing tag." },
-      readRange, editFix, buildOk, worklog,
+      readRange, editFix, buildOk, verify, worklog,
     ],
   });
   result(readRange, file(17));
   result(editFix, `Successfully replaced 1 block(s) in ${cwd}/src/components/PricingTable.astro.`, { details: { diff: diff(0, 1) } });
   result(buildOk, "✓ 14 pages built\n✓ sitemap generated\nbuild complete in 1.31s");
+  result(verify, "/resources ok\n/releases ok");
   result(worklog, `Wrote ${cwd}/worklog/2026-07-01-pricing-pass.md`, { details: { diff: diff(18, 0) } });
 
   // Records of consequence (§12.19): commit + push porcelain becomes verb-first facts.
