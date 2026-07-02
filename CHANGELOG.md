@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.8 — 2026-07-02
 
 Deterministic truncation columns for `pi-traceline` (design language §12.17):
 
