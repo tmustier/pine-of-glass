@@ -300,11 +300,30 @@ test("reserve holds a body to the shared block budget (§12.17)", () => {
   const out = stripAnsi(rightAlignSuffix(body, "0.2k ch", 80, undefined, 20));
   assert.equal(out.length, 80);
   assert.ok(out.endsWith("0.2k ch"), "suffix stays right-aligned at the edge");
-  // body budget = 80 - max(7+1, 20) = 60; the gap absorbs the difference
+  // body budget = 80 - max(7+2, 20) = 60; the gap absorbs the difference
   assert.equal(out.slice(60, 73), " ".repeat(13), JSON.stringify(out));
   // a suffix-less row under the same reserve cuts at the same column
   const bare = stripAnsi(rightAlignSuffix(body, "", 80, undefined, 20));
   assert.equal(bare.length, 60);
+});
+
+test("the right edge breathes: 2-col inset and a ≥2-space body↔suffix gap (§12.21)", () => {
+  // A truncated row with a suffix: the suffix column ends 2 columns short of the
+  // terminal edge, and the body tail sits ≥2 spaces before the suffix.
+  const comp = toolComp({
+    toolName: "bash",
+    args: { command: "x" },
+    callRendererComponent: { render: () => [`$ grep -rni 'pattern' ${"src/a src/b ".repeat(12)}-l`] },
+    result: { content: [{ type: "text", text: "y".repeat(200) }], isError: false },
+  });
+  const line = stripAnsi(oneLine(comp, 80));
+  assert.equal(line.length, 78, `row must end 2 columns short of the edge: ${JSON.stringify(line)}`);
+  assert.ok(line.endsWith("0.2k ch"), line);
+  assert.ok(line.includes("  0.2k ch"), `≥2-space gap before the suffix: ${JSON.stringify(line)}`);
+  // Direct style-level check: a full body leaves exactly two spaces before its suffix.
+  const flush = stripAnsi(rightAlignSuffix("x".repeat(100), "0.2k ch", 40));
+  assert.equal(flush.length, 40);
+  assert.ok(flush.includes("  0.2k ch") && !flush.includes("   0.2k ch"), JSON.stringify(flush));
 });
 
 test("size column is block-scoped: one row over the floor lights every cell (§12.15)", () => {
@@ -505,14 +524,15 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.ok(line.includes(`${DIM}2>/dev/null\x1b[0m`), "2>/dev/null must be dimmed");
   assert.ok(line.includes(`${DIM}|\x1b[0m`), "pipe must be dimmed");
 
-  // With a theme (design language §2/§12.9/§12.11): one supporting grey — the head
-  // command word alone renders L0-bold, the bash row's basename; arguments and
+  // With a theme (design language §2/§12.9/§12.11/§12.20): one supporting grey — each
+  // command's head word renders L0-bold, the bash row's basename; arguments and
   // plumbing all sit at L3-dim. No muted level anywhere in a trace row.
   g.__tracelineGetTheme = () => themed();
   const body = inkBashBody("pwd && git remote -v 2>/dev/null");
   assert.ok(body.startsWith(`${T.text}\x1b[1mpwd\x1b[22m`), `head command must be bold text: ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim}&&`), `plumbing must be dim: ${JSON.stringify(body)}`);
-  assert.ok(body.includes(`${T.dim} git remote -v`), `later chunks must be dim: ${JSON.stringify(body)}`);
+  assert.ok(body.includes(`${T.text}\x1b[1mgit\x1b[22m`), `&& starts a new command — its head is bold (§12.20): ${JSON.stringify(body)}`);
+  assert.ok(body.includes(`${T.dim} remote -v`), `arguments of later commands stay dim: ${JSON.stringify(body)}`);
   assert.ok(!body.includes(T.muted), `no muted ink in a bash body: ${JSON.stringify(body)}`);
 
   // Env assignments are not the command: the head scans past them.
@@ -534,6 +554,50 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.ok(!inkBashBody("echo 'a&&b'").includes(`${DIM}&&`), "a quoted && must not be split out");
   assert.equal(stripTimeoutSuffix("$ ls (timeout 10s)"), "$ ls");
   assert.equal(stripTimeoutSuffix("$ ls"), "$ ls");
+});
+
+test("every command head is bold: sequencers and ↵ re-arm, pipes stay filters (§12.20)", () => {
+  const g = globalThis as any;
+  g.__tracelineGetTheme = () => themed();
+  try {
+    const bold = (word: string) => `${T.text}\x1b[1m${word}\x1b[22m`;
+
+    // Sequencers start new commands: cd, printf, and git all read as heads.
+    const chain = inkBashBody("cd /tmp/x && printf 'HEAD ' ; git rev-parse HEAD | head -3");
+    for (const head of ["cd", "printf", "git"]) {
+      assert.ok(chain.includes(bold(head)), `${head} must be a bold head: ${JSON.stringify(chain)}`);
+    }
+    assert.ok(chain.includes(`${T.dim} rev-parse HEAD`), `arguments stay dim: ${JSON.stringify(chain)}`);
+    // A pipe continues the command: `head -3` is a filter and stays dim (§12.2).
+    assert.ok(!chain.includes(bold("head")), `pipe tails must not bold: ${JSON.stringify(chain)}`);
+
+    // Flattened line breaks are new commands: each script line's head bolds.
+    const script = inkBashBody("set -euo pipefail \u21b5 mkdir -p /tmp/x \u21b5 npm pack");
+    for (const head of ["set", "mkdir", "npm"]) {
+      assert.ok(script.includes(bold(head)), `${head} must be a bold head: ${JSON.stringify(script)}`);
+    }
+
+    // Env assignments still scan past, per command.
+    const env = inkBashBody("FOO=1 npm test && BAR=2 node x.js");
+    assert.ok(env.includes(bold("npm")) && env.includes(bold("node")), JSON.stringify(env));
+    assert.ok(env.includes(`${T.dim} BAR=2 \x1b[39m`), `assignments dim: ${JSON.stringify(env)}`);
+
+    // Heredoc bodies are inert: no heads between <<TAG and its terminator; the
+    // command after the terminator re-arms.
+    const heredoc = inkBashBody("cat <<'EOF' \u21b5 alpha beta \u21b5 EOF \u21b5 echo done");
+    assert.ok(heredoc.includes(bold("cat")), JSON.stringify(heredoc));
+    assert.ok(!heredoc.includes(bold("alpha")), `heredoc body lines are data, not commands: ${JSON.stringify(heredoc)}`);
+    assert.ok(!heredoc.includes(bold("EOF")), `the terminator is not a command: ${JSON.stringify(heredoc)}`);
+    assert.ok(heredoc.includes(bold("echo")), `after the terminator, heads re-arm: ${JSON.stringify(heredoc)}`);
+
+    // Failed rows tint every head error (§12.14 × §12.20).
+    const failed = { toolName: "bash", result: { content: [], isError: true } };
+    const red = inkBashBody("pwd && git push", failed);
+    assert.ok(red.includes(`${T.error}\x1b[1mpwd\x1b[22m`), JSON.stringify(red));
+    assert.ok(red.includes(`${T.error}\x1b[1mgit\x1b[22m`), JSON.stringify(red));
+  } finally {
+    g.__tracelineGetTheme = undefined;
+  }
 });
 
 test("multiline bash flattens to one line: tail survives, breaks marked, timeout stripped (#10)", () => {
@@ -610,7 +674,7 @@ test("tool backgrounds are off by default; opt-in keeps the native full-width ba
   const line = oneLine(comp, 80);
   assert.ok(line.startsWith(BG_OPEN), "opt-in row must open on the tool background");
   assert.ok(line.endsWith("\x1b[49m"), "opt-in row must close only the background");
-  assert.equal(visibleWidth(line), 80, "opt-in band must span the full width");
+  assert.equal(visibleWidth(line), 78, "opt-in band must span the inset row width (§12.21)");
   for (const segment of line.split("\x1b[0m").slice(1)) {
     assert.ok(segment.startsWith(BG_OPEN), `background must be re-asserted after every reset: ${JSON.stringify(segment)}`);
   }

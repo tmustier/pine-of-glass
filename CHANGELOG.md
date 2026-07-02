@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.12 — 2026-07-02
+
+Chain heads and a right margin in `pi-traceline` (design language §12.20/§12.21):
+
+- Every command head is bold: `&&`, `||`, space-delimited `;`, and flattened `↵`
+  breaks each start a new command whose head word renders bold, so
+  `cd X && printf 'HEAD ' ; git rev-parse HEAD` scans as three commands rather
+  than one `cd` with baggage. Pipes and redirects continue a command (`| head -3`
+  is a filter and stays dim, per §12.2), heredoc bodies are inert between `<<TAG`
+  and its terminator line, and failed rows tint every head error.
+- The right edge is a margin, not a wall: trace rows render into a 2-column right
+  inset mirroring the left gutter, and the body-to-suffix gap floor rises to the
+  two spaces §5 always specified (the implementation had drifted to one). Every
+  truncated row in a block still ends flush at one shared cut column; that column
+  now just breathes.
+
 ## 0.5.11 — 2026-07-02
 
 Record verbs render bold in `pi-traceline` (§12.19 amended):

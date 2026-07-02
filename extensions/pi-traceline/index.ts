@@ -53,8 +53,10 @@ import {
  * trace row opens with a dim `▏` rail so a run of tool rows fuses into one visible
  * block against assistant prose; verbs are neutral bold with status in the › bullet
  * (failed rows tint the discriminators — verb, bash head, basename — error, §12.14);
- * bash bodies sit at the one L3-dim supporting grey with the head command word L0-bold,
- * and native rows for other tools demote unstyled spans to dim (§12.12); the boilerplate
+ * bash bodies sit at the one L3-dim supporting grey with each command's head word
+ * L0-bold (§12.20: `&&`, `||`, `;`, and flattened `↵` breaks start new commands; pipes
+ * and redirects continue one; heredoc bodies are inert), and native rows for other
+ * tools demote unstyled spans to dim (§12.12); the boilerplate
  * `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
  * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
  * a dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
@@ -63,6 +65,9 @@ import {
  * dim the directory so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
  * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
  * balloons past the size thresholds, so "what flooded the context" pops out of the column.
+ * Rows render into a 2-column right inset mirroring the left gutter (§12.21), with a
+ * ≥2-space gap between body and suffix, so the block nests on both sides and truncated
+ * tails stop crowding the facts.
  * Results under 100 ch render no char suffix (§12.13) unless a neighbouring row in the
  * same block clears the floor — the column is block-scoped (§12.15), so a live column
  * shows every cell and stays vertically aligned, while an all-tiny block stays clean. File-mutation rows with a real diff also reserve `+N -M` in that suffix
@@ -122,6 +127,9 @@ const TOOL_INDENT = "  "; // trace blocks nest one gutter under the prose margin
 const TOOL_AFTER_BULLET = " ";
 // indent + ▏ + space + › + space — six visible columns; prose owns the margin.
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET.length;
+// The block nests on both sides (§12.21): a 2-column right inset mirrors the left
+// gutter, so the suffix column never touches the terminal edge.
+const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
@@ -573,8 +581,8 @@ function blockSizeColumnLive(comp: any): boolean {
 
 // Rows in a block share one body budget (design language §12.17): reserve the block's
 // widest rendered fact suffix — folded read runs count as their single `N calls · size`
-// cell — plus the one-space gap, so every truncated row in the block cuts at the same
-// columns and its tail ends flush where the suffix column begins.
+// cell — plus the two-space gap (§12.21), so every truncated row in the block cuts at
+// the same columns and its tail ends flush where the suffix column begins.
 function blockSuffixReserve(comp: any, available = Number.POSITIVE_INFINITY): number {
   let widest = 0;
   for (const row of blockToolRows(comp)) {
@@ -582,7 +590,7 @@ function blockSuffixReserve(comp: any, available = Number.POSITIVE_INFINITY): nu
     const suffix = run ? foldedReadSuffix(run.rows) : toolFactSuffix(row, available);
     widest = Math.max(widest, visibleWidth(suffix));
   }
-  return widest > 0 ? widest + 1 : 0;
+  return widest > 0 ? widest + 2 : 0;
 }
 
 const LCS_CELL_LIMIT = 200_000;
@@ -1054,10 +1062,12 @@ function stripTimeoutSuffix(text: string): string {
   return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
 }
 
-// --- bash rows: plain-text rebuild + family ink (design language §2/§12.9) -------------
-// Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, the head
-// command word renders L0-bold the way a basename does (`$ rm`, `$ npm`, `$ python3`
-// scan like `read file.ts`; §12.11), and everything else — arguments, connectors,
+// --- bash rows: plain-text rebuild + family ink (design language §2/§12.9/§12.20) ------
+// Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, each
+// command's head word renders L0-bold the way a basename does (`$ rm`, `$ npm`,
+// `$ python3` scan like `read file.ts`; §12.11/§12.20 — sequencing operators and
+// flattened line breaks start new commands, pipes and redirects continue one), and
+// everything else — arguments, connectors,
 // redirects, heredoc markers, and the ↵/⋯ flatten/elision marks — sits at the one
 // L3-dim supporting grey shared with directories, plumbing, and size suffixes.
 // Pi's native bash styling is deliberately dropped: the invocation *text* still comes
@@ -1098,12 +1108,22 @@ function inkBashChunk(comp: any, chunk: string, headPending: boolean): { text: s
   return { text: dim(chunk), headFound: false };
 }
 
+// Sequencing operators start a new command whose head word is a discriminator
+// (§12.20). Pipes and redirects continue the same command — `| head -240` is a filter
+// (§12.2's rejection of brightening filters stands) — so they are deliberately absent.
+const BASH_SEQUENCER = /^(?:&&|\|\||;|\u21b5)$/;
+
+// A heredoc marker arms body-inertness (§12.20): from the `↵` that follows `<<TAG`
+// until the terminator line, chunks are data, not commands — no heads, no resets.
+const BASH_HEREDOC_OP = /^<<-?\s?'?([A-Za-z_][A-Za-z0-9_]*)'?$/;
+
 // Alternating chunk/operator split (String.split keeps the capture group): operators,
-// marks, and argument text all dim; only the head command word of the first command
-// chunk keeps content ink. Chunks are wrapped individually so a dimmed operator can
-// never leak its close into the next chunk's ink; middleTruncate replays the active
-// ink after a cut (§12.10), so a mid-chunk cut can no longer strand the tail at the
-// terminal default.
+// marks, and argument text all dim; the head command word of each command chunk keeps
+// content ink (§12.20) — sequencers and flattened breaks re-arm the head, heredoc
+// bodies stay inert until their terminator. Chunks are wrapped individually so a
+// dimmed operator can never leak its close into the next chunk's ink; middleTruncate
+// replays the active ink after a cut (§12.10), so a mid-chunk cut can no longer
+// strand the tail at the terminal default.
 function inkBashBody(body: string, comp?: any): string {
   let rest = body;
   let out = "";
@@ -1114,16 +1134,36 @@ function inkBashBody(body: string, comp?: any): string {
     rest = rest.slice(PREAMBLE_MARK.length);
   }
   const parts = rest.split(BASH_APPARATUS);
-  let headFound = false;
+  let headPending = true;
+  let heredocTag: string | undefined; // armed by `<<TAG`; active from the next ↵
+  let heredocActive = false;
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
     if (part.length === 0) continue;
     if (i % 2 === 1) {
       out += ` ${dim(part)}`;
+      if (heredocActive) continue; // breaks and operator-lookalikes inside the body are data
+      const heredoc = BASH_HEREDOC_OP.exec(part);
+      if (heredoc) {
+        heredocTag = heredoc[1];
+        continue;
+      }
+      if (part === LINE_BREAK_MARK && heredocTag !== undefined) {
+        heredocActive = true;
+        headPending = false;
+        continue;
+      }
+      if (BASH_SEQUENCER.test(part)) headPending = true;
+    } else if (heredocActive) {
+      out += dim(part);
+      if (part.trim() === heredocTag) {
+        heredocActive = false;
+        heredocTag = undefined;
+      }
     } else {
-      const chunk = inkBashChunk(comp, part, !headFound);
+      const chunk = inkBashChunk(comp, part, headPending);
       out += chunk.text;
-      headFound ||= chunk.headFound;
+      if (chunk.headFound) headPending = false;
     }
   }
   return out;
@@ -1336,7 +1376,7 @@ function oneLine(comp: any, width: number): string {
     }
   }
   const lineWidth = Math.max(1, width);
-  const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
+  const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
   const fitted = rightAlignSuffix(
     invocationInk(comp),
     toolFactSuffix(comp, available),
@@ -1346,7 +1386,7 @@ function oneLine(comp: any, width: number): string {
   );
   const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(comp);
-  return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
+  return bgFn ? shadeRow(row, Math.max(1, lineWidth - TOOL_RIGHT_MARGIN), bgFn) : row;
 }
 
 // --- repetition folding (issue #14, design language §9/traceline 3+5) -------------------
@@ -1462,7 +1502,7 @@ function foldedReadSuffix(rows: any[]): string {
 
 function foldedReadLine(rows: any[], width: number): string {
   const lineWidth = Math.max(1, width);
-  const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
+  const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
   const theme = currentTheme();
   const last = rows[rows.length - 1];
   const tone = statusTone(last);
@@ -1481,7 +1521,7 @@ function foldedReadLine(rows: any[], width: number): string {
   const fitted = rightAlignSuffix(body, suffix, available, theme, blockSuffixReserve(last, available));
   const row = truncateToWidth(`${toolPrefix(tone)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(last);
-  return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
+  return bgFn ? shadeRow(row, Math.max(1, lineWidth - TOOL_RIGHT_MARGIN), bgFn) : row;
 }
 
 // An assistant turn that renders nothing (a tool-call-only turn with no visible

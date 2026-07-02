@@ -172,6 +172,8 @@ Hard rules:
 - **Quantities right.** Per-row magnitudes are a right-aligned dim suffix with a ≥2-space
   gap (traceline's `… 1.4k ch` pattern) or a column-aligned field (contextimate rows,
   cachemire `/cache` table). Never woven mid-sentence when the line is a row in a list.
+  Trace rows keep a 2-column right inset from the terminal edge, mirroring the left
+  gutter (§12.21).
 - **Facts inline are `·`-separated**, ordered: *what happened · how big · share · cost ·
   cause*. Cause is always last and always L3-dim.
 - **Methodology appears once per panel** — a dim line under the panel header, or the
@@ -551,6 +553,33 @@ tails §12.17 was trying to keep aligned.
       status stays on the bullet and the invocation's discriminators. (Amended:
       v1 rendered whole record cells dim, and the facts drowned in the very wall
       they were meant to punctuate.)
+
+Tenth follow-up, same date (the "one bold head" review): in a chained invocation —
+`cd X && printf 'HEAD '; git rev-parse HEAD` — only the first command word was bold,
+which crowned the least informative command (usually `cd`) and hid the operative
+ones; and trace bodies ran flush against the suffix column (a 1-space gap, despite
+§5 specifying two) and against the terminal's right edge, so the block had no
+stable right margin to scan along.
+
+20. **Every command head is bold.** §12.9's head-word rule applies per command,
+    not per invocation: the sequencing operators (`&&`, `||`, space-delimited `;`)
+    and the flattened `↵` break each start a new command whose head word — the
+    first non-assignment token — renders L0-bold, so
+    `cd X && printf 'HEAD ' ; git rev-parse HEAD` scans as three commands rather
+    than one `cd` with baggage, and a flattened script bolds each line's command
+    (`set` ↵ `mkdir` ↵ `npm`). Pipes and redirects *continue* a command:
+    `| head -240` is a filter, and §12.2's rejection of brightening filters
+    stands. Heredoc bodies are inert — between `<<TAG` and its terminator line,
+    no word is a head and no `↵` resets; those lines are data, not commands.
+    Failed rows tint every head error (§12.14).
+
+21. **The right edge is a margin, not a wall.** Trace rows render into a 2-column
+    right inset mirroring the left gutter (§12.8): the block nests on both sides,
+    and the suffix column never touches the terminal edge. The body↔suffix gap
+    floor rises to the two spaces §5 always specified (the implementation had
+    drifted to one), so a truncated tail stops crowding the facts. Block-shared
+    cut columns (§12.17) are unchanged in kind — every truncated row in a block
+    still ends flush at one column — that column now just breathes.
 
 ## Suggested implementation order
 

@@ -214,10 +214,11 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   return `${headRaw}${RESET}${dimEllipsis}${tailRaw}`;
 }
 
-/** Quantities right (design language §5): body left, right-aligned suffix, ≥1-space gap;
- * the body middle-truncates and the suffix wins when the width is starved. `reserve`
- * (design language §12.17) is a minimum right-side reservation — gap included — so callers
- * can hold every body in a block to the same budget regardless of each row's own suffix. */
+/** Quantities right (design language §5): body left, right-aligned suffix, ≥2-space gap
+ * (§12.21 — the tail must not crowd the facts); the body middle-truncates and the suffix
+ * wins when the width is starved. `reserve` (design language §12.17) is a minimum
+ * right-side reservation — gap included — so callers can hold every body in a block to
+ * the same budget regardless of each row's own suffix. */
 export function rightAlignSuffix(
   body: string,
   suffix: string,
@@ -235,7 +236,7 @@ export function rightAlignSuffix(
   const suffixWidth = visibleWidth(suffix);
   if (suffixWidth >= maxWidth) return truncateToWidth(suffix, maxWidth, ELLIPSIS);
 
-  const bodyWidth = Math.max(0, maxWidth - Math.max(suffixWidth + 1, reserve));
+  const bodyWidth = Math.max(0, maxWidth - Math.max(suffixWidth + 2, reserve));
   const fittedBody = bodyWidth > 0 ? middleTruncate(bodyText, bodyWidth, theme) : "";
   const gapWidth = Math.max(1, maxWidth - visibleWidth(fittedBody) - suffixWidth);
   return `${fittedBody}${" ".repeat(gapWidth)}${suffix}`;
