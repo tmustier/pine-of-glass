@@ -120,9 +120,10 @@ function shoot(name, { trimTo, cutFrom, cols = 120 } = {}) {
     if (start > 0) ansi = lines.slice(start).join("\n");
   }
   if (cutFrom) {
+    // Excerpt mode: cut the tail and leave a dim ⋮ so the slice reads as intentional.
     const lines = ansi.split("\n");
     const end = lines.findIndex((l) => l.replace(/\x1b\[[0-9;:]*m/g, "").includes(cutFrom));
-    if (end > 0) ansi = lines.slice(0, end).join("\n").replace(/\s+$/, "");
+    if (end > 0) ansi = lines.slice(0, end).join("\n").replace(/\s+$/, "") + "\n\n  \x1b[2m⋮\x1b[0m";
   }
   const base = join(tmpdir(), `${session}-${name}`);
   writeFileSync(`${base}.txt`, ansi);
@@ -190,10 +191,15 @@ function contextimateShot() {
     waitFor("panel", (t) => t.includes("[Contextimate]"), 90000);
     sleep(2000);
     shoot("pi-contextimate-summary", { trimTo: "[Contextimate]" });
+    send("/contextimate compact", "Enter");
+    waitFor("compact", (t) => t.includes("(inactive)"));
+    sleep(1500);
+    shoot("pi-contextimate-compact", { trimTo: "[Contextimate]" });
     send("/contextimate expanded", "Enter");
     waitFor("expanded", (t) => t.includes("readable view"));
     sleep(1500);
-    shoot("pi-contextimate-expanded", { trimTo: "[Contextimate]" });
+    // Excerpt: the full schema-tree dump is a wall; one tool tree gives the sense.
+    shoot("pi-contextimate-expanded", { trimTo: "[Contextimate]", cutFrom: "read · builtin" });
   } finally {
     cleanup(fixture);
   }

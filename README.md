@@ -5,7 +5,7 @@ Small observability and context management tools for [Pi](https://github.com/ear
 2. [`traceline`](./extensions/pi-traceline) collapses tool calls to one trace line each, so you can see the full arc of what Pi did (path taken, context read, bloated tool results). Toggle with ctrl+t (expands/collapses both thinking blocks and tools).
 3. [`cachemire`](./extensions/pi-cachemire) (**experimental**) explains cache behaviour and agent-loop economics: a cache TTL clock above the editor, predicted-then-resolved cache-break notices, a per-turn ledger, and `/cache` forensics. Included in the package as of `0.4.0`; wording, thresholds, and states may still evolve.
 
-See each extension's own `README.md` for details, and `docs/` for deeper reference.
+See each extension's own `README.md` for details, `docs/` for deeper reference, and [`AGENTS.md`](./AGENTS.md) for development workflows and conventions.
 
 ## Installation
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
@@ -23,38 +23,20 @@ Each new session and /reload now lists what's in your context window before you 
 Summary mode:
 ![Contextimate summary panel](./docs/img/pi-contextimate-summary.png)
 
+Compact mode — one aligned line per skill and tool:
+
+![Contextimate compact view](./docs/img/pi-contextimate-compact.png)
+
+Expanded mode — per-section sources and a schema field tree for every active tool (excerpt):
+
+![Contextimate expanded view, excerpt](./docs/img/pi-contextimate-expanded.png)
+
 ### [Cachemire](./extensions/pi-cachemire)
 You now see cache-related warnings inline and a cache shotclock above the editor. `/cache` gives you a full session review by turn.
 
 ![Cachemire turn ledger and cache clock](./docs/img/pi-cachemire-clock.png)
 
 ![Cachemire /cache ledger table](./docs/img/pi-cachemire-ledger.png)
-
-## Development
-
-```bash
-npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests)
-npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
-npm run typecheck       # tsc against the real installed pi
-npm test                # unit + golden + pi contract tests (zero deps, node:test)
-npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)
-```
-
-The README screenshots regenerate with the rig in
-[`scripts/dev/screenshots/`](./scripts/dev/screenshots/) — it replays crafted sessions
-(or runs live turns) inside the real pi TUI in an isolated tmux/HOME and renders the
-pane captures to `docs/img/`. See its README for the recipe and the gotchas.
-
-Extensions share code through [`extensions/_lib`](./extensions/_lib) (number grammar,
-family style — glyphs, theme-derived ink, panel headers — ANSI helpers, chat-container
-detection, config convention). The visual grammar all three speak is specified in
-[`docs/design-language.md`](./docs/design-language.md); when a renderer and that document
-disagree, one of them is wrong. pi resolves extension-relative
-imports against the symlink path, so local installs must link the extension *directories*
-plus `_lib` — `npm run link-extensions` does exactly that. `_lib` has no `index.ts`, so
-pi's extension discovery skips it.
-
-The contract suite pins every structural assumption about pi internals, so after `pi update` a quick `npm test` says exactly which seam (if any) drifted. Test design notes live in [`docs/testing.md`](./docs/testing.md). Goldens regenerate with `UPDATE_GOLDENS=1 npm test` — review the diff like code.
 
 ## Plans
 1. The current goal is to provide an interface that makes tool and agent behaviour more legible for humans using pi in their terminal interactively. 

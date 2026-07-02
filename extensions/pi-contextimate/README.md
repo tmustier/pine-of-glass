@@ -4,9 +4,13 @@
 
 ![Contextimate summary panel at startup](../../docs/img/pi-contextimate-summary.png)
 
-The expanded view (`ctrl+o` or `/contextimate expanded`) adds per-section sources and a readable schema tree for every active tool:
+`ctrl+o` cycles two deeper views. Compact — one aligned line per skill and tool:
 
-![Contextimate expanded view](../../docs/img/pi-contextimate-expanded.png)
+![Contextimate compact view](../../docs/img/pi-contextimate-compact.png)
+
+and expanded, which adds per-section sources and a readable schema tree for every active tool (excerpt):
+
+![Contextimate expanded view, excerpt](../../docs/img/pi-contextimate-expanded.png)
 
 ## Install
 

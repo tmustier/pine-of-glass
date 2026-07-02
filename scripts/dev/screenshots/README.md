@@ -53,7 +53,8 @@ Per scenario, `rig.mjs`:
    - **crops everything below the input box** — finds the editor's bottom border and
      cuts the footer buckets (cwd · usage · model);
    - `trimTo:` cuts leading lines (pi header, extension announce) down to the first
-     interesting line; `cutFrom:` cuts the tail from a marker onward if needed.
+     interesting line; `cutFrom:` cuts the tail from a marker onward and leaves a dim
+     `⋮`, so long views ship as intentional-looking excerpts.
 6. **Renders**: ANSI → HTML → PNG at device scale 2 in a fake window chrome, autocropped
    with a thresholded diff so the frame's soft drop shadow doesn't skew the margins.
 
@@ -87,8 +88,10 @@ shooting. Same trick in the cachemire scenario for a consistent look.
 ### contextimate — fully real
 
 Fresh `pi --no-session` startup over a fixture project with an `AGENTS.md` and one
-skill (`release-notes`), so the panel has real material to account for. Shoots the
-summary panel, then `/contextimate expanded` for the schema-tree view.
+skill (`release-notes`), so the panel has real material to account for. Shoots all
+three views: the summary panel, `/contextimate compact` (whole table — it's short),
+and `/contextimate expanded` cut after the first tool's schema tree (`cutFrom`), since
+the full dump is a wall and one tree gives the sense.
 
 ### cachemire — fully live (costs money)
 
