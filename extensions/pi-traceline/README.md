@@ -52,9 +52,9 @@ range) while a shared prefix dominates. Three folds keep the trace skimmable:
   more trace lines are hidden, and coalesces adjacent label runs into one.
 
 ```
-  ▏ › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5      1.4k ch
-  ▏ › $ ⋯ && npm run typecheck                                            14.2k ch
-  ▏ › read ~/projects/pine-of-gl…index.ts:1-200,201-400,401-600 3 calls · 51.1k ch
+  ▏ › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5  1.4k ch
+  ▏ › $ ⋯ && npm run typecheck                                        14.2k ch
+  ▏ › read ~/projects/pine-of…dex.ts:1-200,201-400,401-600  3 calls · 51.1k ch
 ```
 
 ### Tool backgrounds

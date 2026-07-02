@@ -111,7 +111,7 @@ export function buildTracelineSession(cwd) {
 
   const readRange = call("read", { path: `${cwd}/src/components/PricingTable.astro`, offset: 88, limit: 17 });
   const editFix = call("edit", { path: `${cwd}/src/components/PricingTable.astro`, oldText: "…", newText: "…" });
-  const buildOk = call("bash", { command: "npm run build 2>&1 | tail -3", timeout: 120 });
+  const buildOk = call("bash", { command: "rm -rf dist && npm run build 2>&1 | tail -3", timeout: 120 });
   const worklog = call("write", { path: `${cwd}/worklog/2026-07-01-pricing-pass.md`, content: "…" });
   msg({
     role: "assistant",
