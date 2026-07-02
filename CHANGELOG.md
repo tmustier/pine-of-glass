@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.11 — 2026-07-02
+
+Record verbs render bold in `pi-traceline` (§12.19 amended):
+
+- 0.5.10 rendered whole record cells dim, and the facts drowned in the very wall
+  they were meant to punctuate. The verb (`committed`/`pushed`/`merged`/…) is now
+  bold — the trace row's white — so it pops from the dim right edge the way a bash
+  head command pops from its arguments. Data and separators stay at the supporting
+  grey; the size cell keeps its severity ink. Neutral bold even on failed rows: the
+  fact states porcelain that succeeded.
+
 ## 0.5.10 — 2026-07-02
 
 Records of consequence in `pi-traceline` (design language §12.19):

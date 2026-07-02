@@ -543,8 +543,14 @@ tails §12.17 was trying to keep aligned.
     - **Overflow drops whole facts, oldest first** — records may take at most
       roughly a third of the row; a mangled sha is worse than none, and the full
       output stays one Ctrl+T away.
-    - Record facts are dim like every fact cell: the right edge stays calm, and
-      presence — not colour — is the signal.
+    - **The record verb is bold** — the trace row's white (§12.11): `committed`/
+      `pushed`/`merged` pop from the dim wall exactly like a bash head command,
+      which is what makes the cell visible at the right edge. Data and separators
+      stay at the supporting grey; the size cell keeps its severity ink. Neutral
+      bold even on a failed row — the fact states porcelain that *succeeded*;
+      status stays on the bullet and the invocation's discriminators. (Amended:
+      v1 rendered whole record cells dim, and the facts drowned in the very wall
+      they were meant to punctuate.)
 
 ## Suggested implementation order
 

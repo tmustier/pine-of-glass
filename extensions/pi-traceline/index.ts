@@ -125,7 +125,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 23;
+const TRACELINE_PATCH_VERSION = 24;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -864,12 +864,24 @@ function recordCells(comp: any): string[] {
 // full output stays one Ctrl+T away.
 const RECORD_SUFFIX_SHARE = 1 / 3;
 
+// The record verb is bold — the trace row's white (§12.11): `committed`/`pushed`/
+// `merged` pop from the dim wall exactly like a bash head command, which is what makes
+// the cell visible at the right edge; data and separators stay at the supporting grey.
+// Neutral bold even on a failed row: the fact states porcelain that *succeeded* —
+// status stays on the bullet and the invocation's discriminators.
+function inkRecordCell(cell: string): string {
+  const space = cell.indexOf(" ");
+  const verb = space >= 0 ? cell.slice(0, space) : cell;
+  const rest = space >= 0 ? cell.slice(space) : "";
+  return `${ink(currentTheme(), "text", `${BOLD}${verb}${BOLD_OFF}`)}${rest ? dim(rest) : ""}`;
+}
+
 function recordSuffix(comp: any, available: number): string {
   const cells = recordCells(comp);
   if (!cells.length) return "";
   const cap = Math.floor(available * RECORD_SUFFIX_SHARE);
   while (cells.length && cells.join(SEP).length > cap) cells.shift();
-  return cells.length ? dim(cells.join(SEP)) : "";
+  return cells.map(inkRecordCell).join(dim(SEP));
 }
 
 function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY): string {

@@ -132,6 +132,19 @@ test("records join the fact suffix before the size cell", () => {
   assert.equal(stripAnsi(toolFactSuffix(comp, 200)), "committed a4f21c9 · pushed main · 0.4k ch");
 });
 
+test("the record verb is bold; data and separators stay dim (§12.19)", () => {
+  const comp = bash("git commit -m x && git push", `[main a4f21c9] x\n${PUSH_OK}`);
+  const raw = recordSuffix(comp, 200);
+  // Verb opens bold (the trace row's white), then bold-off before the datum.
+  assert.match(raw, /\x1b\[1mcommitted\x1b\[22m/);
+  assert.match(raw, /\x1b\[1mpushed\x1b\[22m/);
+  // The datum never rides inside the bold span.
+  assert.doesNotMatch(raw, /\x1b\[1mcommitted a4f21c9/);
+  // Neutral bold even on a failed row: the fact states porcelain that succeeded.
+  const failed = bash("git commit -m x && git push", "[main a4f21c9] x\n ! [rejected] main -> main\n", { error: true });
+  assert.match(recordSuffix(failed, 200), /\x1b\[1mcommitted\x1b\[22m/);
+});
+
 test("facts cache against result identity", () => {
   const comp = bash("git commit -m x", "[main a4f21c9] x\n");
   assert.deepEqual(recordCells(comp), ["committed a4f21c9"]);
