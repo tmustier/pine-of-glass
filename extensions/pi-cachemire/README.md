@@ -8,6 +8,8 @@ Explains the cache and agent-loop economics of a pi session. pi's footer *counts
 (input/output/cache read/write/cost); cachemire *explains* — when the cache will go cold,
 why it broke, and what the loop actually cost.
 
+![Cachemire turn ledger lines in the transcript and the cache clock above the editor](../../docs/img/pi-cachemire-clock.png)
+
 ## What you get
 
 **1. A cache clock above the input box** — counts down the provider cache TTL from the
@@ -167,7 +169,12 @@ bar if you want the old ≥2-calls behaviour):
 ◍ turn: 59 calls · 29m37s · read 9.1M (100% cached) · wrote 222.9k · out 103.5k · $17.03
 ```
 
-and `/cache` for the full per-call table:
+and `/cache` for the full per-call table (live capture on an OpenAI band cache — cold
+start, hit, and one honestly-attributed miss):
+
+![Cachemire /cache ledger table](../../docs/img/pi-cachemire-ledger.png)
+
+On an Anthropic contract cache it reads like this:
 
 ```
 [Cachemire]

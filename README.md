@@ -12,11 +12,22 @@ See each extension's own `README.md` for details, and `docs/` for deeper referen
 - From npm (installs `contextimate`, `traceline`, and experimental `cachemire`): `pi install npm:pine-of-glass`
 
 ## Screenshots
-### [Contextimate](./extensions/pi-contextimate)
-<img width="1477" height="589" alt="image" src="https://github.com/user-attachments/assets/8ff81aa2-f61b-4d8d-9507-f455f37c12cc" />
-
 ### [Traceline](./extensions/pi-traceline)
-<img width="709" height="409" alt="image" src="https://github.com/user-attachments/assets/4a59fbae-8270-46d3-a4fc-fdf2e5c3ba8c" />
+The full arc of a working session — reads folded per file, edits carrying their diff facts, one failed build tinted, everything else calm:
+
+![Traceline: one tool call per trace line](./docs/img/pi-traceline-collapsed.png)
+
+### [Contextimate](./extensions/pi-contextimate)
+What is in your context window before you type a word:
+
+![Contextimate summary panel](./docs/img/pi-contextimate-summary.png)
+
+### [Cachemire](./extensions/pi-cachemire)
+Per-turn ledger lines and the cache clock above the editor, then `/cache` forensics on demand:
+
+![Cachemire turn ledger and cache clock](./docs/img/pi-cachemire-clock.png)
+
+![Cachemire /cache ledger table](./docs/img/pi-cachemire-ledger.png)
 
 ## Development
 

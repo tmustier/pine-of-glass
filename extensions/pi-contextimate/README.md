@@ -2,6 +2,12 @@
 
 `pi-contextimate` is a Pi extension that adds a startup `[Contextimate]` panel showing what is filling the current model context window: system prompt, AGENTS.md files, skill frontmatter (the always-loaded skill index, not the skill bodies), active tools, and current session material.
 
+![Contextimate summary panel at startup](../../docs/img/pi-contextimate-summary.png)
+
+The expanded view (`ctrl+o` or `/contextimate expanded`) adds per-section sources and a readable schema tree for every active tool:
+
+![Contextimate expanded view](../../docs/img/pi-contextimate-expanded.png)
+
 ## Install
 
 Install from npm:
