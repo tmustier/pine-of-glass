@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Deterministic truncation columns for `pi-traceline` (design language §12.17):
+
+- The cut is a column: middle truncation now cuts at exact positions — the tail is a
+  fixed share of the budget and truncated lines fill it exactly. The content-dependent
+  snapping (tail sliding to the nearest `/` or space, head snapping back up to eight
+  columns) is gone; it made every row's ellipsis land somewhere different.
+- Body budgets are block-scoped: every row in a rail-fused block reserves the block's
+  widest fact suffix (folded read runs count as their single `N calls · size` cell), so
+  ellipses and truncated tail edges align down the block. Rows that fit simply end
+  early, like prose.
+- Block boundaries now respect the rendered rail: a collapsed thinking preview renders
+  with a blank line above it, so it starts a new block (it previously fused, which let a
+  lone row above a `Thinking:` line inherit the block's budget and truncate needlessly).
+
 ## 0.5.7 — 2026-07-02
 
 Block-scoped scannability for `pi-traceline` (design language §12.15–§12.16):

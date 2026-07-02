@@ -73,7 +73,7 @@ Bash commands keep their real newlines — heredocs, inline `python3 -c` scripts
 The discriminating part of a row usually lives at the **tail** — the filename + `:line-range` for a path, or the operative end of a command — while the head is boilerplate (long `~/projects/...` prefixes, `cd ... &&` preambles). So instead of a trailing ellipsis that deletes the signal, `pi-traceline`:
 
 - **tildifies** home directories (`/Users/you/...` -> `~/...`) to reclaim width before truncating (OSC 8 hyperlink URLs are left intact, so click targets keep working);
-- **middle-truncates** with a dimmed `…`, protecting the tail so the basename and warning-coloured `:range` survive, snapping the cut to a nearby `/` or space;
+- **middle-truncates** with a dimmed `…` at deterministic, block-scoped columns: every row in a contiguous tool block shares one body budget (the width left after the block's widest fact suffix), the tail is a fixed share of that budget, and truncated rows fill it exactly — so ellipses and tail edges line up down the block instead of wandering with each row's content, and the discriminating tail (basename, `:range`, the operative command end) always survives;
 - **dims the boring prefix** on plain file reads, edits, and writes: the block's common directory prefix (successive calls under one `src/` dim the shared part, and the divergent `pages/…`, `components/…` tails render bold) or the cwd prefix — session-ambient context is boring by default — falling back to the whole directory, so a lone call keeps the classic dim-directory/bold-basename look.
 
 ```

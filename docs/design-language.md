@@ -467,8 +467,9 @@ its neighbours ended in `…k ch`, so nothing lined up vertically and the column
 stopped being scannable.
 
 15. **Columns are block-scoped.** The fact floor of §12.13 applies per visual block,
-    not per row: within one contiguous trace block (the rail-fused run — connectors
-    and collapsed thinking lines fuse, visible prose breaks), if any completed row
+    not per row: within one contiguous trace block (the rail-fused run — invisible
+    connectors fuse; visible prose breaks, and so does a collapsed thinking preview,
+    which renders with a blank line above it and restarts the rail), if any completed row
     clears the floor the size column is *live* and every completed row shows its
     cell, dim `0.0k ch` included — inside a live column a blank is a misalignment,
     not a calm. A block with no row above the floor (a `mkdir`/`rm` cleanup run)
@@ -489,6 +490,21 @@ tell rows apart.
     common prefix is its whole directory, so single calls keep the basename-only
     emphasis, as do blocks that never diverge (the same file re-edited). cwd counts
     as boring by default: it is session-ambient context, not information.
+
+Eighth follow-up, same date (the `…` wandered): middle truncation cut each row at a
+content-dependent column — the tail slid forward to the nearest separator, the head
+snapped back within eight columns, and each row's body budget flexed with its own
+suffix width — so a block of long bash rows scattered ellipses and tail edges across
+the page, and the eye had no stable seam to skip over.
+
+17. **The cut is a column.** Truncation columns are deterministic and block-scoped.
+    Within a rail-fused block every row shares one body budget — the width left
+    after the block's widest fact suffix — and a truncated row cuts at exact
+    columns: the head fills its share, a dim `…`, then a tail of exactly the
+    reserved width ending flush where the suffix column begins. Content-dependent
+    snapping is gone: a mid-token cut beside a dim ellipsis is legible, but a
+    wandering ellipsis column is not. Rows that fit their budget simply end early,
+    like prose.
 
 ## Suggested implementation order
 

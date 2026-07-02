@@ -10,5 +10,5 @@ Thinking: Checking the typecheck before the next command. ... (2 lines)
 
 The typecheck output looks wrong — checking the runner script.
 
-  ▏ › $ python3 -c ' ↵ import json ↵ print(json.dumps(cf… ↵ ' | tail -2 56.3k ch
+  ▏ › $ python3 -c ' ↵ import json …rint(json.dumps(cfg)) ↵ ' | tail -2 56.3k ch
   ▏ › $ git status --short

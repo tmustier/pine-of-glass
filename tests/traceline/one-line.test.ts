@@ -253,6 +253,59 @@ test("ink derives from the theme when one is active", () => {
   assert.ok(!line.includes(DIM), "no raw fallback grey may leak while a theme is active");
 });
 
+test("the cut is a column: a block shares one body budget so ellipses and tails align (§12.17)", () => {
+  const longBash = (cmd: string, over: SyntheticComp = {}) =>
+    toolComp({
+      toolName: "bash",
+      args: { command: cmd },
+      callRendererComponent: { render: () => [`$ ${cmd}`] },
+      ...over,
+    });
+  // Two long rows, different suffix widths: bare size vs diff · size.
+  const a = longBash(
+    "grep -rni 'gate\\|mark\\|held\\|released\\|wheel\\|autopilot' src/data src/content --include='*.astro' -l",
+    { result: { content: [{ type: "text", text: "y".repeat(200) }], isError: false } },
+  );
+  const b = longBash(
+    "sed -n 195,250p src/data/site.ts && grep -n 'mark\\|gate' DESIGN.md | grep -vi 'market' | head -20",
+    {
+      toolName: "edit",
+      args: { path: `${homedir()}/projects/demo/src/data/site.ts` },
+      callRendererComponent: { render: () => ["edit ~/projects/demo/src/data/site.ts"] },
+      result: {
+        content: [{ type: "text", text: "z".repeat(1400) }],
+        isError: false,
+        details: { diff: "+12\n+x\n-3\n" },
+      },
+    },
+  );
+  const c = longBash(
+    "git log --oneline --graph --decorate --all --color=never --since='2 weeks ago' -n 50 | head -30",
+    { result: { content: [{ type: "text", text: "w".repeat(200) }], isError: false } },
+  );
+  g.__tracelineChat = { children: [a, b, c] };
+  const lines = [a, c].map((row) => stripAnsi(oneLine(row, 80)));
+  const cuts = lines.map((l) => l.indexOf("…"));
+  assert.ok(cuts[0]! > 0, `expected truncation: ${JSON.stringify(lines[0])}`);
+  assert.equal(cuts[0], cuts[1], `ellipsis columns differ: ${JSON.stringify(lines)}`);
+  // Tails end flush at one column: the body ends where the block's widest suffix begins.
+  const bodyEnds = lines.map((l) => l.slice(0, l.lastIndexOf(" ch") - 4).trimEnd().length);
+  assert.equal(bodyEnds[0], bodyEnds[1], `tail-end columns differ: ${JSON.stringify(lines)}`);
+  g.__tracelineChat = undefined;
+});
+
+test("reserve holds a body to the shared block budget (§12.17)", () => {
+  const body = "x".repeat(100);
+  const out = stripAnsi(rightAlignSuffix(body, "0.2k ch", 80, undefined, 20));
+  assert.equal(out.length, 80);
+  assert.ok(out.endsWith("0.2k ch"), "suffix stays right-aligned at the edge");
+  // body budget = 80 - max(7+1, 20) = 60; the gap absorbs the difference
+  assert.equal(out.slice(60, 73), " ".repeat(13), JSON.stringify(out));
+  // a suffix-less row under the same reserve cuts at the same column
+  const bare = stripAnsi(rightAlignSuffix(body, "", 80, undefined, 20));
+  assert.equal(bare.length, 60);
+});
+
 test("size column is block-scoped: one row over the floor lights every cell (§12.15)", () => {
   const tiny = (over: SyntheticComp = {}) =>
     toolComp({ result: { content: [{ type: "text", text: "ok" }], isError: false }, ...over });

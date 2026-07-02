@@ -129,7 +129,6 @@ export const ELLIPSIS = "\u2026"; // …
 
 const MIN_HEAD_COLS = 6;
 const TAIL_RATIO = 0.55;
-const SNAP_WINDOW = 8;
 
 // Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
 // width (e.g. bash `cd /Users/me/... && ...` -> `cd ~/... && ...`). OSC sequences are
@@ -145,10 +144,6 @@ const TILDIFY_PATTERN = (() => {
 export function tildify(text: string): string {
   if (!TILDIFY_PATTERN) return text;
   return text.replace(TILDIFY_PATTERN, (match) => (match.startsWith("\x1b") ? match : "~"));
-}
-
-function isVisibleBoundary(ch: string): boolean {
-  return ch === "/" || ch === " ";
 }
 
 // ANSI-aware middle truncation that protects the *tail* of the line — the basename +
@@ -203,33 +198,16 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   const maxTail = Math.min(budget - MIN_HEAD_COLS, Math.max(12, Math.floor(budget * TAIL_RATIO)));
   if (maxTail < 1) return truncateToWidth(line, maxWidth, ELLIPSIS);
 
-  // Longest tail that fits `maxTail` and starts at a separator, so it reads as `.../seg`.
-  let tailStart = -1;
-  for (let i = Math.max(0, visLen - maxTail); i < visLen; i++) {
-    if (isVisibleBoundary(vis[i]!)) {
-      tailStart = i;
-      break;
-    }
-  }
-  if (tailStart < 0) tailStart = visLen - maxTail; // no boundary in range: keep the end
-
+  // The cut is a column (design language §12.17): the tail is exactly `maxTail` wide and
+  // the head exactly fills the rest, so every line truncated to the same budget cuts at
+  // identical columns and fills the budget exactly. No content-dependent snapping — a
+  // mid-token cut beside a dim ellipsis is legible; a wandering ellipsis column is not.
+  const tailStart = visLen - maxTail;
   const dimEllipsis = ink(theme, "dim", ELLIPSIS);
   const tailRawStart = rawIndexAtVisibleIndex(line, tailStart);
   const tailRaw = `${activeSgrAt(line, tailRawStart)}${line.slice(tailRawStart)}`;
 
-  let headEnd = budget - (visLen - tailStart);
-  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
-
-  // Snap the head back to a nearby boundary so the ellipsis lands on a clean edge: keep a
-  // trailing "/" on the head side, drop a trailing space. Search from the last kept char
-  // inward so keeping the "/" can never push the head past its budget.
-  for (let i = headEnd - 1; i >= Math.max(0, headEnd - SNAP_WINDOW); i--) {
-    if (isVisibleBoundary(vis[i]!)) {
-      headEnd = vis[i] === "/" ? i + 1 : i;
-      break;
-    }
-  }
-  headEnd = Math.min(headEnd, tailStart);
+  const headEnd = budget - maxTail;
   if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
 
   const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headEnd));
@@ -237,16 +215,27 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
 }
 
 /** Quantities right (design language §5): body left, right-aligned suffix, ≥1-space gap;
- * the body middle-truncates and the suffix wins when the width is starved. */
-export function rightAlignSuffix(body: string, suffix: string, width: number, theme?: Theme): string {
+ * the body middle-truncates and the suffix wins when the width is starved. `reserve`
+ * (design language §12.17) is a minimum right-side reservation — gap included — so callers
+ * can hold every body in a block to the same budget regardless of each row's own suffix. */
+export function rightAlignSuffix(
+  body: string,
+  suffix: string,
+  width: number,
+  theme?: Theme,
+  reserve = 0,
+): string {
   const maxWidth = Math.max(1, width);
   const bodyText = body.trimEnd();
-  if (!suffix) return middleTruncate(bodyText, maxWidth, theme);
+  if (!suffix) {
+    const budget = maxWidth - reserve >= MIN_HEAD_COLS ? maxWidth - reserve : maxWidth;
+    return middleTruncate(bodyText, budget, theme);
+  }
 
   const suffixWidth = visibleWidth(suffix);
   if (suffixWidth >= maxWidth) return truncateToWidth(suffix, maxWidth, ELLIPSIS);
 
-  const bodyWidth = Math.max(0, maxWidth - suffixWidth - 1);
+  const bodyWidth = Math.max(0, maxWidth - Math.max(suffixWidth + 1, reserve));
   const fittedBody = bodyWidth > 0 ? middleTruncate(bodyText, bodyWidth, theme) : "";
   const gapWidth = Math.max(1, maxWidth - visibleWidth(fittedBody) - suffixWidth);
   return `${fittedBody}${" ".repeat(gapWidth)}${suffix}`;

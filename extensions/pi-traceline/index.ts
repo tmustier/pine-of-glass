@@ -125,7 +125,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 20;
+const TRACELINE_PATCH_VERSION = 21;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -538,13 +538,15 @@ function resultCharSuffix(comp: any): string {
 }
 
 // The row's contiguous visual block — the rail-fused run. Boundaries mirror the
-// rail's: tool rows fuse across empty connectors and collapsed thinking lines;
-// visible prose (or any other row) breaks the block. Both §12.15 (block-scoped
-// columns) and §12.16 (boring-prefix path emphasis) scope their facts to this run.
+// *rendered* rail: tool rows fuse across invisible empty connectors; visible prose
+// breaks the block, and so does a collapsed thinking preview — it renders with a
+// blank line above it, which breaks the rail and starts a new block. §12.15
+// (block-scoped columns), §12.16 (boring-prefix path emphasis) and §12.17 (shared
+// cut columns) all scope their facts to this run.
 function blockToolRows(comp: any): any[] {
   const found = componentLocation(comp);
   if (!found) return [comp];
-  const breaksBlock = (c: any) => !isToolRow(c) && !isEmptyConnector(c) && !isCollapsedThinkingRow(c);
+  const breaksBlock = (c: any) => !isToolRow(c) && !isEmptyConnector(c);
   let start = found.index;
   for (let j = found.index - 1; j >= 0; j--) {
     if (breaksBlock(found.sibs[j])) break;
@@ -567,6 +569,20 @@ function blockSizeColumnLive(comp: any): boolean {
     const chars = resultTextCharCount(c);
     return chars !== undefined && chars >= CHAR_SUFFIX_FLOOR;
   });
+}
+
+// Rows in a block share one body budget (design language §12.17): reserve the block's
+// widest rendered fact suffix — folded read runs count as their single `N calls · size`
+// cell — plus the one-space gap, so every truncated row in the block cuts at the same
+// columns and its tail ends flush where the suffix column begins.
+function blockSuffixReserve(comp: any): number {
+  let widest = 0;
+  for (const row of blockToolRows(comp)) {
+    const run = readRun(row);
+    const suffix = run ? foldedReadSuffix(run.rows) : toolFactSuffix(row);
+    widest = Math.max(widest, visibleWidth(suffix));
+  }
+  return widest > 0 ? widest + 1 : 0;
 }
 
 const LCS_CELL_LIMIT = 200_000;
@@ -1157,7 +1173,13 @@ function oneLine(comp: any, width: number): string {
   }
   const lineWidth = Math.max(1, width);
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
-  const fitted = rightAlignSuffix(invocationInk(comp), toolFactSuffix(comp), available, currentTheme());
+  const fitted = rightAlignSuffix(
+    invocationInk(comp),
+    toolFactSuffix(comp),
+    available,
+    currentTheme(),
+    blockSuffixReserve(comp),
+  );
   const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(comp);
   return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
@@ -1262,6 +1284,18 @@ function readRun(comp: any): { rows: any[]; index: number } | undefined {
   return rows.length > 1 ? { rows, index: selfIndex } : undefined;
 }
 
+function foldedReadSuffix(rows: any[]): string {
+  const last = rows[rows.length - 1];
+  let total: number | undefined;
+  for (const row of rows) {
+    const chars = resultTextCharCount(row);
+    if (chars !== undefined) total = (total ?? 0) + chars;
+  }
+  const calls = `${rows.length} calls`;
+  const sizeCell = charSuffix(total, blockSizeColumnLive(last));
+  return total === undefined || !sizeCell ? dim(calls) : `${dim(`${calls}${SEP}`)}${sizeCell}`;
+}
+
 function foldedReadLine(rows: any[], width: number): string {
   const lineWidth = Math.max(1, width);
   const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH);
@@ -1277,17 +1311,10 @@ function foldedReadLine(rows: any[], width: number): string {
     .filter(Boolean)
     .join(",");
   const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
-  let total: number | undefined;
-  for (const row of rows) {
-    const chars = resultTextCharCount(row);
-    if (chars !== undefined) total = (total ?? 0) + chars;
-  }
   // Call count rides the right-aligned suffix (fact order: what · how many · how big),
   // so middle truncation protects the discriminating basename+ranges tail of the body.
-  const calls = `${rows.length} calls`;
-  const sizeCell = charSuffix(total, blockSizeColumnLive(last));
-  const suffix = total === undefined || !sizeCell ? dim(calls) : `${dim(`${calls}${SEP}`)}${sizeCell}`;
-  const fitted = rightAlignSuffix(body, suffix, available, theme);
+  const suffix = foldedReadSuffix(rows);
+  const fitted = rightAlignSuffix(body, suffix, available, theme, blockSuffixReserve(last));
   const row = truncateToWidth(`${toolPrefix(tone)}${fitted}`, lineWidth, ELLIPSIS);
   const bgFn = rowBackground(last);
   return bgFn ? shadeRow(row, lineWidth, bgFn) : row;
@@ -1638,6 +1665,7 @@ export const internals = {
   lineRange,
   toolStatus,
   blockSizeColumnLive,
+  blockSuffixReserve,
   blockToolRows,
   boringPrefix,
   fallbackInvocationLine,

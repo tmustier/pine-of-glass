@@ -49,6 +49,32 @@ test("tiny widths fall back without exceeding budget", () => {
   }
 });
 
+test("the cut is a column: equal budgets cut at identical columns and fill exactly (§12.17)", () => {
+  const a = "$ git log --oneline --graph --decorate --all --color=never -n 50 | head -30";
+  const b = "read ~/somewhere/completely/different/path/to/a/deeply/nested/file.tsx:12-400";
+  for (const width of [30, 44, 60]) {
+    const outA = middleTruncate(a, width);
+    const outB = middleTruncate(b, width);
+    assert.equal(stripAnsi(outA).indexOf(ELLIPSIS), stripAnsi(outB).indexOf(ELLIPSIS), `cut column differs at width ${width}`);
+    assert.equal(visibleWidth(outA), width, `truncated line must fill its budget exactly (a, ${width})`);
+    assert.equal(visibleWidth(outB), width, `truncated line must fill its budget exactly (b, ${width})`);
+  }
+});
+
+test("ink continuity across the cut with truecolor theme spans (§12.10)", () => {
+  // Shaped like pi's real Theme output: truecolor fg openers closed by ESC[39m, bold
+  // pairs 1/22 — the tail resumes inside the dim span, so the replay right after the
+  // ellipsis must re-open the truecolor dim foreground.
+  const dim = (s: string) => `\x1b[38;2;102;102;102m${s}\x1b[39m`;
+  const boldText = (s: string) => `\x1b[38;2;212;212;212m\x1b[1m${s}\x1b[22m\x1b[39m`;
+  const line = `${boldText("$")} ${boldText("grep")}${dim(` -rni 'pattern' ${"src/a src/b ".repeat(12)}--include='*.ts' -l`)}`;
+  const out = middleTruncate(line, 60);
+  assert.ok(
+    /\u2026(?:\x1b\[[0-9;]*m)*\x1b\[38;2;102;102;102m/.test(out),
+    `tail must replay the truecolor dim opener: ${JSON.stringify(out)}`,
+  );
+});
+
 test("no torn ANSI sequences after truncation", () => {
   for (const width of [18, 26, 34, 48]) {
     const out = middleTruncate(ansiLong, width);
