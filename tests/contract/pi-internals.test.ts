@@ -282,6 +282,53 @@ test("chat-rebuild surface cachemire's line persistence depends on", () => {
   }
 });
 
+test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", () => {
+  // pi's toggleThinkingBlockVisibility ends with showStatus(`Thinking blocks: …`),
+  // which appends a Spacer(1) + Text pair to chatContainer. Traceline drops exactly
+  // that trailing pair (design language §12.24); if the message text or the pair
+  // shape drifts, the status line reappears silently — this contract names it.
+  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
+  assert.ok(
+    source.includes('`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`'),
+    "Ctrl+T status message text drifted — THINKING_TOGGLE_STATUS no longer matches",
+  );
+  assert.ok(
+    /showStatus\(message\)\s*\{[\s\S]{0,900}?new Spacer\(1\);[\s\S]{0,200}?new Text\(theme\.fg\("dim", message\)[\s\S]{0,300}?addChild\(spacer\);[\s\S]{0,100}?addChild\(text\);/.test(source),
+    "showStatus no longer appends a Spacer + dim Text pair to the chat — suppression seam drifted",
+  );
+
+  // The real pi-tui components satisfy (and only the right one satisfies) the duck
+  // types. The text is stored ANSI-styled (theme.fg("dim", message)); the duck type
+  // strips ANSI, so any dim wrapper stands in for the live theme's.
+  const text = new piTui.Text("\x1b[90mThinking blocks: hidden\x1b[0m", 1, 0);
+  const spacer = new piTui.Spacer(1);
+  assert.equal(traceline.isThinkingToggleStatusRow(text), true, "real Text no longer matches the status duck type");
+  assert.equal(traceline.isSpacerRow(spacer), true, "real Spacer no longer matches the spacer duck type");
+  assert.equal(traceline.isSpacerRow(text), false);
+  assert.equal(traceline.isThinkingToggleStatusRow(spacer), false);
+  assert.equal(
+    traceline.isThinkingToggleStatusRow(new piTui.Text("\x1b[90mForked to new session\x1b[0m", 1, 0)),
+    false,
+    "other showStatus messages must pass through",
+  );
+
+  // End-to-end against a real Container: mimic the toggle's tail, then suppress.
+  const container = new piTui.Container();
+  const keep = new piTui.Text("assistant prose", 1, 0);
+  container.addChild(keep);
+  container.addChild(spacer);
+  container.addChild(text);
+  const g = globalThis as Record<string, unknown>;
+  const previousChat = g.__tracelineChat;
+  g.__tracelineChat = container;
+  try {
+    traceline.suppressThinkingToggleStatus();
+    assert.deepEqual(container.children, [keep], "trailing Spacer + Text status pair must be removed");
+  } finally {
+    g.__tracelineChat = previousChat;
+  }
+});
+
 test("TUI prototype chain still contains a patchable Container", () => {
   assert.equal(typeof piTui.Container.prototype.render, "function");
   assert.equal(piTui.Container.name, "Container", "Container class renamed — traceline findContainerPrototype breaks");

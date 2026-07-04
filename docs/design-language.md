@@ -612,6 +612,20 @@ crowned as a head.
     conservative — `! grep …` renders headless too — because under-brightening is
     the family's bias (§12.2); a sequencer after the apparatus re-arms as always.
 
+Thirteenth follow-up, 2026-07-04 (the toggle announced itself): pi's Ctrl+T handler
+appends a dim "Thinking blocks: hidden/visible" status pair (Spacer + Text) to the
+chat tail, a holdover from when the toggle's only visible effect was each thinking
+block collapsing to a label.
+
+24. **A self-evident toggle needs no caption.** With traceline loaded, Ctrl+T's
+    effect is unmistakable: every tool row collapses to a trace line or expands
+    back. The status line restates what the screen already shows, so traceline
+    drops the pair inside the requestRender that announces it, before it ever
+    renders. The suppression is surgical: only the exact
+    `Thinking blocks: hidden/visible` text at the chat tail matches; every other
+    showStatus message ("Forked to new session", …) announces an otherwise
+    invisible action and passes through untouched.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

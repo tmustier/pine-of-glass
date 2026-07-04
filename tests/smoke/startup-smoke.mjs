@@ -7,7 +7,7 @@
 //   4. traceline announces itself (extension loaded without crashing the TUI).
 // Local-only: needs tmux + an installed pi on PATH. Exits non-zero on any failure.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,15 +164,31 @@ try {
   const blocks = (pane.match(/\[Contextimate\]/g) ?? []).length;
   check("exactly one estimator block after /reload", blocks === 1, `found ${blocks}`);
 
-  // 4. Cachemire chat lines persist across pi's chat rebuild (Ctrl+T toggles reasoning
-  // visibility by clearing + rebuilding the chat container from session messages, which
-  // drops raw appended children). /cache appends a ledger line; it must still be on
-  // screen after the rebuild. Visible-only: scrollback retains pre-toggle frames.
+  // 4. The Ctrl+T chat rebuild (pi clears + rebuilds the chat container from session
+  // messages, dropping raw appended children): cachemire's /cache ledger line must
+  // survive it, and traceline must have eaten pi's status caption. Visible-only:
+  // scrollback retains pre-toggle frames.
   run(["tmux", "send-keys", "-t", session, "/cache", "Enter"]);
   waitFor("cachemire ledger renders", (text) => text.includes("cache & loop ledger"));
   run(["tmux", "send-keys", "-t", session, "C-t"]);
-  pane = waitFor("thinking toggle status", (text) => /Thinking blocks: (hidden|visible)/.test(capture({ visibleOnly: true })));
+  // Traceline suppresses pi's "Thinking blocks: hidden/visible" status caption (design
+  // language §12.24), so the on-screen text can no longer signal the toggle. The proof
+  // the keypress landed is pi persisting hideThinkingBlock into the fixture HOME's
+  // settings.json; only then is the caption's absence meaningful.
+  waitFor("ctrl+t persisted hideThinkingBlock", () => {
+    try {
+      return JSON.parse(readFileSync(join(fixtureHome, ".pi", "agent", "settings.json"), "utf8")).hideThinkingBlock === true;
+    } catch {
+      return false;
+    }
+  });
+  sleep(1500); // settle: the toggle clears + rebuilds the chat container
   pane = capture({ visibleOnly: true });
+  check(
+    "traceline suppresses the Ctrl+T status caption",
+    !/Thinking blocks: (hidden|visible)/.test(pane),
+    "status line still rendered",
+  );
   check("cachemire ledger survives the Ctrl+T chat rebuild", pane.includes("cache & loop ledger"));
 } finally {
   run(["tmux", "send-keys", "-t", session, "/exit", "Enter"]);

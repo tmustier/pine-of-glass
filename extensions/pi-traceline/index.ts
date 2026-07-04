@@ -41,6 +41,11 @@ import {
  *   native   = reasoning shown  + pi's native tool rows, unchanged by this extension
  *   one-line = reasoning hidden + each tool row collapsed to one invocation trace line
  *
+ * pi announces that toggle with a dim "Thinking blocks: hidden/visible" status line at
+ * the chat tail. Under traceline the flip is self-evident (every tool row visibly
+ * collapses or expands), so that status pair is suppressed before it renders (§12.24);
+ * every other showStatus message passes through untouched.
+ *
  * One-line rendering reuses pi's native tool call renderer for most tools, so visual
  * defaults (accent paths/backticks, warning line ranges, custom renderers) drift with pi;
  * bash rows re-ink their body from the rendered *text* instead, so the wall of commands
@@ -133,7 +138,7 @@ const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 24;
+const TRACELINE_PATCH_VERSION = 25;
 const TRACELINE_CONTAINER_PATCH_VERSION = 1;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
@@ -193,6 +198,39 @@ function thinkingHidden(): boolean {
 
 function displayMode(): ToolDisplayMode {
   return thinkingHidden() ? "oneLine" : "native";
+}
+
+// --- suppressing pi's Ctrl+T status line (design language §12.24) ---------------------
+// pi's toggleThinkingBlockVisibility appends a dim "Thinking blocks: hidden/visible"
+// status pair (Spacer + Text) to the chat tail — a holdover from when the toggle's only
+// visible effect was each thinking block collapsing to a label. With traceline loaded
+// the flip is self-evident (every tool row collapses to a trace line or expands back),
+// so the label is redundant noise; drop the pair inside the requestRender that
+// announces it, before it ever reaches the screen. Other showStatus messages
+// ("Forked to new session", …) are announcements of otherwise-invisible actions and
+// pass through untouched.
+const THINKING_TOGGLE_STATUS = /^Thinking blocks: (?:hidden|visible)$/;
+
+function isThinkingToggleStatusRow(comp: any): boolean {
+  return (
+    !!comp &&
+    typeof comp.text === "string" &&
+    typeof comp.setText === "function" &&
+    THINKING_TOGGLE_STATUS.test(stripAnsi(comp.text).trim())
+  );
+}
+
+// pi's showStatus pairs the Text with a one-line Spacer; drop that too so no stray
+// blank line accumulates at the chat tail.
+function isSpacerRow(comp: any): boolean {
+  return !!comp && typeof comp.setLines === "function" && typeof comp.lines === "number" && !("text" in comp);
+}
+
+function suppressThinkingToggleStatus(): void {
+  const sibs = chatChildren();
+  if (!sibs || sibs.length === 0 || !isThinkingToggleStatusRow(sibs[sibs.length - 1])) return;
+  sibs.pop();
+  if (sibs.length > 0 && isSpacerRow(sibs[sibs.length - 1])) sibs.pop();
 }
 
 // --- click-to-expand hit testing ------------------------------------------------------
@@ -1930,6 +1968,10 @@ export const internals = {
   thinkingPreviewLines,
   dedupeThinkingLabels,
   patchAssistantRowPrototype,
+  // Ctrl+T status-line suppression
+  isThinkingToggleStatusRow,
+  isSpacerRow,
+  suppressThinkingToggleStatus,
   // mouse / click state machine
   parseSgrMouse,
   isLeftMousePress,
@@ -2000,6 +2042,11 @@ export default function piTraceline(pi: ExtensionAPI) {
         t.__tracelineOriginalRequestRender = orig;
         t.requestRender = (force?: boolean) => {
           tryPatch();
+          try {
+            suppressThinkingToggleStatus();
+          } catch {
+            /* never let pi-traceline break a render */
+          }
           return orig(force);
         };
         t.__tracelineRRWrapVersion = TRACELINE_PATCH_VERSION;

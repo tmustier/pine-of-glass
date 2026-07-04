@@ -108,6 +108,7 @@ Or add it to your Pi config's extension list pointing at this directory. If you 
   - **reasoning shown** → native tool rows, untouched (full detail).
   - **reasoning hidden** → each tool row collapses to one trace line.
 - So one keystroke flips the whole turn between "full detail" and "trace line", and back again when you want to expand.
+- Pi's own `Thinking blocks: hidden/visible` status line is suppressed: with traceline loaded the toggle is self-evident (every tool row visibly collapses or expands), so the caption is redundant noise. Every other status message passes through untouched.
 - Plain terminal scrolling stays available by default. To expand/collapse one row with the mouse, press `Ctrl+Shift+O` or run `/traceline-click` (optionally `/traceline-click 20` for a 20s window), then click the row.
 - If you prefer always-on click handling, run `/traceline-click on`; this uses terminal mouse reporting and may capture wheel/trackpad scrolling until `/traceline-click off`. You can also start Pi with `PI_TRACELINE_CLICK=1` to opt into persistent click handling by default.
 

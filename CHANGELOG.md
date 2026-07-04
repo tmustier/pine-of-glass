@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.14 — 2026-07-04
+
+A self-evident toggle needs no caption in `pi-traceline` (design language §12.24):
+
+- pi's Ctrl+T handler appends a dim `Thinking blocks: hidden/visible` status pair
+  (Spacer + Text) to the chat tail — a holdover from when the toggle's only visible
+  effect was each thinking block collapsing to a label. With traceline loaded the
+  flip is unmistakable (every tool row collapses to a trace line or expands back),
+  so the pair is dropped inside the requestRender that announces it, before it ever
+  renders. Surgical: only that exact caption at the chat tail matches; every other
+  showStatus message ("Forked to new session", …) passes through untouched.
+
 ## 0.5.13 — 2026-07-02
 
 A head must carry a word character in `pi-traceline` (design language §12.23):
