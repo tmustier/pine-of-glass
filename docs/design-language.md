@@ -552,7 +552,9 @@ tails §12.17 was trying to keep aligned.
       bold even on a failed row — the fact states porcelain that *succeeded*;
       status stays on the bullet and the invocation's discriminators. (Amended:
       v1 rendered whole record cells dim, and the facts drowned in the very wall
-      they were meant to punctuate.)
+      they were meant to punctuate. Ink superseded by §12.28: record cells wear
+      their fact's tone, success or warning for a forced push, with opaque shas
+      staying dim.)
 
 Tenth follow-up, same date (the "one bold head" review): in a chained invocation —
 `cd X && printf 'HEAD '; git rev-parse HEAD` — only the first command word was bold,
@@ -684,6 +686,30 @@ stops being readable at a glance.
     block is each column's right edge, the blank a dropped zero side holds
     (§12.13), and the `·` separator after it. Materiality reads as width: a
     bigger count grows leftward into its column.
+
+Sixteenth follow-up, same date (records wore discriminator ink): §12.19's record
+verbs rendered in the same bold-white as every bash head and basename, so
+`committed` read as just another discriminator rather than an event. Position at
+the right edge was the only cue that shared state had changed, and the one cell
+worth spotting in a scrollback wore the wall's own ink.
+
+28. **Records wear the ink of what they state.** A record fact exists only
+    because success porcelain appeared in the output (§12.19), and its ink now
+    says so: the cell renders success-toned bold, verb and datum together as one
+    chunk (`pushed main`, `merged PR #87`, `released v0.5.9`), because a refname,
+    tag, version, or PR number is the event's identity, not decoration. Opaque
+    audit data is the exception: a commit sha stays dim (`committed 6688b32`:
+    success-bold verb, supporting-grey sha) since a sha is copy-paste material,
+    not news. A forced push is a riskier real state and its porcelain says so
+    (git's `+` flag column, `(forced update)`): that cell tints warning instead,
+    and same-verb facts merge only when their tones agree, so a forced push never
+    hides inside a routine one. The tone is per-fact, not per-row: a failed row
+    keeps its surviving facts success-toned, and red discriminators beside a
+    green `committed a4f21c9` is exactly §12.19's "committed, demonstrably not
+    landed", loudest precisely when state changed before a failure. (Supersedes
+    §12.19's neutral-bold record cell. Rarity keeps this on the right side of
+    §12.1: a handful of green events punctuate the wall; ambient green stays
+    purged.)
 
 ## Suggested implementation order
 

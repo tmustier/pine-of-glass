@@ -822,13 +822,21 @@ function formatMutationDiffStats(
 // success porcelain must appear. A failed push after a good commit therefore shows
 // `committed a4f21c9` on a red row — committed, demonstrably not landed. `git tag`
 // earns nothing: its success porcelain is silence.
-type RecordFact = { verb: string; datum: string; at: number };
+type RecordTone = "success" | "warning";
+type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean };
 
 type RecordRule = { gate: RegExp; parse: (out: string) => RecordFact[] };
 
-function factsFrom(out: string, pattern: RegExp, verb: string, datum: (m: RegExpMatchArray) => string): RecordFact[] {
+function factsFrom(
+  out: string,
+  pattern: RegExp,
+  verb: string,
+  datum: (m: RegExpMatchArray) => string,
+  options: { opaque?: boolean; tone?: (m: RegExpMatchArray) => RecordTone } = {},
+): RecordFact[] {
   const facts: RecordFact[] = [];
-  for (const m of out.matchAll(pattern)) facts.push({ verb, datum: datum(m), at: m.index ?? 0 });
+  for (const m of out.matchAll(pattern))
+    facts.push({ verb, datum: datum(m), at: m.index ?? 0, tone: options.tone?.(m) ?? "success", opaque: options.opaque === true });
   return facts;
 }
 
@@ -849,7 +857,8 @@ const RECORD_RULES: RecordRule[] = [
   {
     // `[main a4f21c9]`, `[main (root-commit) a4f21c9]`, `[detached HEAD a4f21c9]`
     gate: /\bgit\b[^|;&]*\bcommit\b/,
-    parse: (out) => factsFrom(out, /^\[[^\n\]]*?([0-9a-f]{7,40})\]/gm, "committed", (m) => m[1]!),
+    // The sha is opaque audit data (§12.28): the verb wears the ink, the sha stays dim.
+    parse: (out) => factsFrom(out, /^\[[^\n\]]*?([0-9a-f]{7,40})\]/gm, "committed", (m) => m[1]!, { opaque: true }),
   },
   {
     // `   1c75c2a..50cf33f  main -> main`, ` + … (forced update)`, ` * [new tag] …`
@@ -860,6 +869,9 @@ const RECORD_RULES: RecordRule[] = [
         /^\s*(?:\+?\s?[0-9a-f]+\.\.\.?[0-9a-f]+|\* \[new (?:branch|tag)\])\s+\S+\s+->\s+(\S+)/gm,
         "pushed",
         (m) => m[1]!,
+        // git's `+` flag column is its forced-update porcelain — a riskier real
+        // state, so the fact tints warning instead of success (§12.28).
+        { tone: (m) => (m[0].trimStart().startsWith("+") ? "warning" : "success") },
       ),
   },
   {
@@ -923,18 +935,29 @@ function recordFacts(comp: any): RecordFact[] {
 }
 
 // Facts chain in output order; consecutive same-verb facts merge their data
-// (`pushed main, v0.5.9`) and exact duplicates collapse.
-function recordCells(comp: any): string[] {
-  const merged: { verb: string; data: string[] }[] = [];
+// (`pushed main, v0.5.9`) and exact duplicates collapse. Merging also requires the
+// tones to agree (§12.28): a forced push never hides inside a routine one.
+type RecordCellData = { verb: string; data: string[]; tone: RecordTone; opaque: boolean };
+
+function recordCellData(comp: any): RecordCellData[] {
+  const merged: RecordCellData[] = [];
   for (const fact of recordFacts(comp)) {
     const last = merged[merged.length - 1];
-    if (last && last.verb === fact.verb) {
+    if (last && last.verb === fact.verb && last.tone === fact.tone) {
       if (!last.data.includes(fact.datum)) last.data.push(fact.datum);
     } else {
-      merged.push({ verb: fact.verb, data: [fact.datum] });
+      merged.push({ verb: fact.verb, data: [fact.datum], tone: fact.tone, opaque: fact.opaque });
     }
   }
-  return merged.map((cell) => `${cell.verb} ${cell.data.join(", ")}`);
+  return merged;
+}
+
+function recordCellText(cell: RecordCellData): string {
+  return `${cell.verb} ${cell.data.join(", ")}`;
+}
+
+function recordCells(comp: any): string[] {
+  return recordCellData(comp).map(recordCellText);
 }
 
 // Records may take at most roughly a third of the row (§12.19): overflow drops whole
@@ -942,23 +965,28 @@ function recordCells(comp: any): string[] {
 // full output stays one Ctrl+T away.
 const RECORD_SUFFIX_SHARE = 1 / 3;
 
-// The record verb is bold — the trace row's white (§12.11): `committed`/`pushed`/
-// `merged` pop from the dim wall exactly like a bash head command, which is what makes
-// the cell visible at the right edge; data and separators stay at the supporting grey.
-// Neutral bold even on a failed row: the fact states porcelain that *succeeded* —
-// status stays on the bullet and the invocation's discriminators.
-function inkRecordCell(cell: string): string {
-  const space = cell.indexOf(" ");
-  const verb = space >= 0 ? cell.slice(0, space) : cell;
-  const rest = space >= 0 ? cell.slice(space) : "";
-  return `${ink(currentTheme(), "text", `${BOLD}${verb}${BOLD_OFF}`)}${rest ? dim(rest) : ""}`;
+// Records wear the ink of what they state (§12.28): the cell renders bold in its
+// fact's tone — success for landed state, warning for a forced push — verb and datum
+// as one chunk, because the refname/tag/version/PR number is the event's identity.
+// Opaque audit data (a commit sha) stays dim: copy-paste material, not news. The tone
+// is per-fact, not per-row: a failed row keeps its surviving facts success-toned —
+// red discriminators beside a green `committed` is exactly "committed, demonstrably
+// not landed" (§12.19); separators stay at the supporting grey and the size cell
+// keeps its severity ink.
+function inkRecordCell(cell: RecordCellData): string {
+  const theme = currentTheme();
+  if (cell.opaque) {
+    const verb = ink(theme, cell.tone, `${BOLD}${cell.verb}${BOLD_OFF}`);
+    return `${verb}${dim(` ${cell.data.join(", ")}`)}`;
+  }
+  return ink(theme, cell.tone, `${BOLD}${recordCellText(cell)}${BOLD_OFF}`);
 }
 
 function recordSuffix(comp: any, available: number): string {
-  const cells = recordCells(comp);
+  const cells = recordCellData(comp);
   if (!cells.length) return "";
   const cap = Math.floor(available * RECORD_SUFFIX_SHARE);
-  while (cells.length && cells.join(SEP).length > cap) cells.shift();
+  while (cells.length && cells.map(recordCellText).join(SEP).length > cap) cells.shift();
   return cells.map(inkRecordCell).join(dim(SEP));
 }
 
