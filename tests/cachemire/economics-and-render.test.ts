@@ -316,7 +316,7 @@ test("ledger view: rows, totals, and the savings line", () => {
     },
   ];
   const lines = renderLedger(records, { providerLabel: "anthropic", window: CONTRACT_5M, modelLabel: "anthropic/claude-opus-4-8" });
-  // Panel-header form (design language §5): [Cachemire] brand, then the dim hint line
+  // Panel-header form (design language §8): [Cachemire] brand, then the dim hint line
   // carrying the descriptive title and provider profile.
   assert.match(lines[0]!, /\[Cachemire\]/);
   assert.match(lines[1]!, /cache & loop ledger · anthropic · 5m TTL · anthropic\/claude-opus-4-8/);

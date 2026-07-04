@@ -266,7 +266,7 @@ test("chat-rebuild surface cachemire's line persistence depends on", () => {
 test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", () => {
   // pi's toggleThinkingBlockVisibility ends with showStatus(`Thinking blocks: …`),
   // which appends a Spacer(1) + Text pair to chatContainer. Traceline drops exactly
-  // that trailing pair (design language §12.24); if the message text or the pair
+  // that trailing pair (design language §9.11); if the message text or the pair
   // shape drifts, the status line reappears silently — this contract names it.
   const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
   assert.ok(

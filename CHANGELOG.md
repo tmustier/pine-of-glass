@@ -21,6 +21,11 @@ facts. No visible change; the goldens are byte-identical.
   tool-row render patch to a single guard, and dropped provably dead members:
   the redundant `__tracelinePatched` global, a dead type field, and `internals`
   entries no test uses.
+- docs/design-language.md rewritten from a layered amendment log into the
+  current-state rules, in plain English: §1 to §7 keep their numbers, panels
+  gather in §8, trace rows in §9, and an appendix maps the retired §12.x
+  numbers (which this changelog's older entries still cite). All live code and
+  test citations updated.
 
 ## 0.5.16 — 2026-07-04
 

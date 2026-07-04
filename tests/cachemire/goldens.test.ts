@@ -1,4 +1,4 @@
-// Visual regression net for cachemire's user-facing strings (design language §9/cachemire):
+// Visual regression net for cachemire's user-facing strings (design language §10):
 // the /cache ledger panel (header, status-scale rows, totals, savings) and every one-line
 // ◍ surface — clock states, break notices, resolutions, and the turn summary. Colour is
 // not under test (see docs/testing.md); wording, glyphs, alignment, and fact order are.

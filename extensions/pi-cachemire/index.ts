@@ -731,7 +731,7 @@ function renderLedger(
   records: CallRecord[],
   options: { providerLabel?: string; window?: CacheWindow; modelLabel?: string; theme?: Theme } = {},
 ): string[] {
-  // The family panel-header form (design language §5): [Cachemire] brand line, with the
+  // The family panel-header form (design language §8): [Cachemire] brand line, with the
   // descriptive title and provider profile demoted to the dim hint. The appended chat
   // line carries its own spacer, so panelHeader's leading blank is dropped.
   const profile: string[] = ["cache & loop ledger"];

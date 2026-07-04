@@ -42,7 +42,7 @@ import {
  *
  * pi announces that toggle with a dim "Thinking blocks: hidden/visible" status line at
  * the chat tail. Under traceline the flip is self-evident (every tool row visibly
- * collapses or expands), so that status pair is suppressed before it renders (§12.24);
+ * collapses or expands), so that status pair is suppressed before it renders (§9.11);
  * every other showStatus message passes through untouched.
  *
  * One-line rendering reuses pi's native tool call renderer for most tools, so visual
@@ -52,16 +52,16 @@ import {
  * the bullet and severity suffixes. Multiline bash commands are flattened
  * into the one trace line with a dim ↵ marking each original break, so heredocs and
  * inline scripts keep their operative tail instead of collapsing to `$ python3 -c "`.
- * The ink follows the family hierarchy (docs/design-language.md, amended §12): every
+ * The ink follows the family hierarchy (docs/design-language.md §9): every
  * trace row opens with a dim `▏` rail so a run of tool rows fuses into one visible
  * block against assistant prose; verbs are neutral bold with status in the › bullet
- * (failed rows tint the discriminators — verb, bash head, basename — error, §12.14);
+ * (failed rows tint the discriminators — verb, bash head, basename — error, §9.2);
  * bash bodies sit at the one L3-dim supporting grey with the informative command
- * heads L0-bold (§12.20/§12.25/§12.26: sequencers — space-delimited or attached `;`,
+ * heads L0-bold (§9.4: sequencers — space-delimited or attached `;`,
  * quote-aware — and flattened `↵` breaks start new commands; pipes and redirects
  * continue one; heredoc bodies are inert; `cd`/`set` preambles and echo/true-style
  * plumbing only wear a crown when no real command does), and native rows for other
- * tools demote unstyled spans to dim (§12.12); the boilerplate
+ * tools demote unstyled spans to dim (§9.6); the boilerplate
  * `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
  * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
  * a dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
@@ -70,11 +70,11 @@ import {
  * dim the directory so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
  * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
  * balloons past the size thresholds, so "what flooded the context" pops out of the column.
- * Rows render into a 2-column right inset mirroring the left gutter (§12.21), with a
+ * Rows render into a 2-column right inset mirroring the left gutter (§9.1), with a
  * ≥2-space gap between body and suffix, so the block nests on both sides and truncated
  * tails stop crowding the facts.
- * Results under 100 ch render no char suffix (§12.13) unless a neighbouring row in the
- * same block clears the floor — the column is block-scoped (§12.15), so a live column
+ * Results under 100 ch render no char suffix (§9.7) unless a neighbouring row in the
+ * same block clears the floor — the column is block-scoped (§9.7), so a live column
  * shows every cell and stays vertically aligned, while an all-tiny block stays clean. File-mutation rows with a real diff also reserve `+N -M` in that suffix
  * (zero sides dropped: `+2 -0` → `+2`), so the collapsed trace shows how much the
  * model changed without expanding the row.
@@ -126,11 +126,11 @@ const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
 const TOOL_RAIL = GLYPH.rail;
 const TOOL_BULLET = GLYPH.tool;
-const TOOL_INDENT = "  "; // trace blocks nest one gutter under the prose margin (§12.8)
+const TOOL_INDENT = "  "; // trace blocks nest one gutter under the prose margin (§9.1)
 const TOOL_AFTER_BULLET = " ";
 // indent + ▏ + space + › + space — six visible columns; prose owns the margin.
 const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET.length;
-// The block nests on both sides (§12.21): a 2-column right inset mirrors the left
+// The block nests on both sides (§9.1): a 2-column right inset mirrors the left
 // gutter, so the suffix column never touches the terminal edge.
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
@@ -188,7 +188,7 @@ function displayMode(): ToolDisplayMode {
   return thinkingHidden() ? "oneLine" : "native";
 }
 
-// --- suppressing pi's Ctrl+T status line (design language §12.24) ---------------------
+// --- suppressing pi's Ctrl+T status line (design language §9.11) ---------------------
 // pi's toggleThinkingBlockVisibility appends a dim "Thinking blocks: hidden/visible"
 // status pair (Spacer + Text) to the chat tail — a holdover from when the toggle's only
 // visible effect was each thinking block collapsing to a label. With traceline loaded
@@ -470,7 +470,7 @@ function statusTone(comp: any): Tone {
   return "running";
 }
 
-// Verb ink (design language §2/§12): identity is neutral bold — status lives in the ›
+// Verb ink (design language §2/§9.2): identity is neutral bold — status lives in the ›
 // bullet — so a healthy column of read/edit/$ verbs stays calm while assistant prose
 // owns full brightness. Only a real anomaly (a failed call) tints its verb.
 function verbTone(comp: any): Tone {
@@ -481,8 +481,8 @@ function verbInk(comp: any, verb: string): string {
   return ink(currentTheme(), verbTone(comp), `${BOLD}${verb}${BOLD_OFF}`);
 }
 
-// Bold is the trace row's white (design language §12.11) and errors tint the
-// discriminators (§12.14): basenames and bash head commands take exactly the verb's
+// Bold is the trace row's white (design language §9.3) and errors tint the
+// discriminators (§9.2): basenames and bash head commands take exactly the verb's
 // treatment — bold `text` on healthy rows, bold `error` on failed rows — so plain
 // prose-weight white never appears inside a trace row and a failed call is more than
 // one red glyph in a dim wall.
@@ -491,7 +491,7 @@ function discriminatorInk(comp: any, text: string): string {
 }
 
 // Every trace row indents one gutter, then opens with the dim ▏ rail (design language
-// §1/§5/§12): the block nests under the narrative line that motivated it, consecutive
+// §1/§5/§9.1): the block nests under the narrative line that motivated it, consecutive
 // rows fuse into one visible block, and the blank spacer before a group ends the rail.
 function toolPrefix(tone: Tone): string {
   return `${TOOL_INDENT}${dim(TOOL_RAIL)} ${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
@@ -523,9 +523,9 @@ function configureSizeThresholds(config: TracelineConfig | undefined): void {
   sizeThresholds = { warning, error: Math.max(error, warning) };
 }
 
-// A fact suffix must carry a fact (design language §12.13): results smaller than one
+// A fact suffix must carry a fact (design language §9.7): results smaller than one
 // line of text render no char suffix — the bullet already says the call completed.
-// The floor is block-scoped (§12.15): when the surrounding block's size column is
+// The floor is block-scoped (§9.7): when the surrounding block's size column is
 // live, even a below-floor cell renders — a blank inside a live column is a
 // misalignment, not a calm.
 const CHAR_SUFFIX_FLOOR = 100;
@@ -553,8 +553,8 @@ function resultCharSuffix(comp: any, facts: BlockFacts): string {
 // The row's contiguous visual block — the rail-fused run. Boundaries mirror the
 // *rendered* rail: tool rows fuse across invisible empty connectors; visible prose
 // breaks the block, and so does a collapsed thinking preview — it renders with a
-// blank line above it, which breaks the rail and starts a new block. §12.15
-// (block-scoped columns), §12.16 (boring-prefix path emphasis) and §12.17 (shared
+// blank line above it, which breaks the rail and starts a new block. §9.7
+// (block-scoped columns), §9.5 (boring-prefix path emphasis) and §9.8 (shared
 // cut columns) all scope their facts to this run.
 function blockToolRows(comp: any): any[] {
   const found = componentLocation(comp);
@@ -582,7 +582,7 @@ function blockToolRows(comp: any): any[] {
 type BlockFacts = { sizeColumnLive: boolean; diffColumns: DiffColumns };
 
 function blockFacts(rows: any[]): BlockFacts {
-  // Columns are block-scoped (design language §12.15): the size column lights up for
+  // Columns are block-scoped (design language §9.7): the size column lights up for
   // a whole contiguous trace block when any of its completed rows clears the fact
   // floor. An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
   const sizeColumnLive = rows.some((c) => {
@@ -611,9 +611,9 @@ function blockSizeColumnLive(comp: any): boolean {
   return blockFactsOf(comp).sizeColumnLive;
 }
 
-// Rows in a block share one body budget (design language §12.17): reserve the block's
+// Rows in a block share one body budget (design language §9.8): reserve the block's
 // widest rendered fact suffix — folded read runs count as their single `N calls · size`
-// cell — plus the two-space gap (§12.21), so every truncated row in the block cuts at
+// cell — plus the two-space gap (§9.1), so every truncated row in the block cuts at
 // the same columns and its tail ends flush where the suffix column begins.
 function blockSuffixReserve(rows: any[], facts: BlockFacts, available: number): number {
   let widest = 0;
@@ -763,7 +763,7 @@ function diffStatsFromText(diff: string | undefined): DiffStats | undefined {
   return added > 0 || removed > 0 ? { added, removed } : undefined;
 }
 
-// Parsing a diff is O(its length), and the block's shared fact columns (§12.22) ask
+// Parsing a diff is O(its length), and the block's shared fact columns (§9.7) ask
 // every row for stats on every frame — so the parse caches per row against the diff
 // text's identity. A settled row hits the reference-equality fast path; a streaming
 // edit's changing preview text misses and re-parses. The write-snapshot fallback
@@ -780,10 +780,10 @@ function mutationDiffStats(comp: any): DiffStats | undefined {
   return stats ?? writeDiffStats(comp);
 }
 
-// Zero sides are dropped (design language §12.13): `+2 -0` → `+2` — the dimmed zero
+// Zero sides are dropped (design language §9.7): `+2 -0` → `+2` — the dimmed zero
 // was a half-measure, and every new-file write wore a guaranteed-noise `-0`. But the
 // drop is ink-only: within a block the diff cells form two right-aligned columns
-// (§12.22/§12.27) — every cell pads left so units sit under units, and a dropped side
+// (§9.7) — every cell pads left so units sit under units, and a dropped side
 // holds its column as blank space — so each column's right edge and the `·` share one
 // x down the block. Without column widths (a lone row), a cell pads to itself and
 // renders exactly as before.
@@ -804,7 +804,7 @@ function formatMutationDiffStats(
   return cells.join(" ");
 }
 
-// --- records of consequence (design language §12.19) -----------------------------------
+// --- records of consequence (design language §9.10) -----------------------------------
 
 // Some bash rows change shared state beyond the working tree — a commit, a push, a PR
 // merged or closed, an issue closed, a release or package published. The invocation
@@ -850,7 +850,7 @@ const RECORD_RULES: RecordRule[] = [
   {
     // `[main a4f21c9]`, `[main (root-commit) a4f21c9]`, `[detached HEAD a4f21c9]`
     gate: /\bgit\b[^|;&]*\bcommit\b/,
-    // The sha is opaque audit data (§12.28): the verb wears the ink, the sha stays dim.
+    // The sha is opaque audit data (§9.10): the verb wears the ink, the sha stays dim.
     parse: (out) => factsFrom(out, /^\[[^\n\]]*?([0-9a-f]{7,40})\]/gm, "committed", (m) => m[1]!, { opaque: true }),
   },
   {
@@ -863,7 +863,7 @@ const RECORD_RULES: RecordRule[] = [
         "pushed",
         (m) => m[1]!,
         // git's `+` flag column is its forced-update porcelain — a riskier real
-        // state, so the fact tints warning instead of success (§12.28).
+        // state, so the fact tints warning instead of success (§9.10).
         { tone: (m) => (m[0].trimStart().startsWith("+") ? "warning" : "success") },
       ),
   },
@@ -929,7 +929,7 @@ function recordFacts(comp: any): RecordFact[] {
 
 // Facts chain in output order; consecutive same-verb facts merge their data
 // (`pushed main, v0.5.9`) and exact duplicates collapse. Merging also requires the
-// tones to agree (§12.28): a forced push never hides inside a routine one.
+// tones to agree (§9.10): a forced push never hides inside a routine one.
 type RecordCellData = { verb: string; data: string[]; tone: RecordTone; opaque: boolean };
 
 function recordCellData(comp: any): RecordCellData[] {
@@ -953,18 +953,18 @@ function recordCells(comp: any): string[] {
   return recordCellData(comp).map(recordCellText);
 }
 
-// Records may take at most roughly a third of the row (§12.19): overflow drops whole
+// Records may take at most roughly a third of the row (§9.10): overflow drops whole
 // facts oldest first — terminal state wins, a mangled sha is worse than none, and the
 // full output stays one Ctrl+T away.
 const RECORD_SUFFIX_SHARE = 1 / 3;
 
-// Records wear the ink of what they state (§12.28): the cell renders bold in its
+// Records wear the ink of what they state (§9.10): the cell renders bold in its
 // fact's tone — success for landed state, warning for a forced push — verb and datum
 // as one chunk, because the refname/tag/version/PR number is the event's identity.
 // Opaque audit data (a commit sha) stays dim: copy-paste material, not news. The tone
 // is per-fact, not per-row: a failed row keeps its surviving facts success-toned —
 // red discriminators beside a green `committed` is exactly "committed, demonstrably
-// not landed" (§12.19); separators stay at the supporting grey and the size cell
+// not landed" (§9.10); separators stay at the supporting grey and the size cell
 // keeps its severity ink.
 function inkRecordCell(cell: RecordCellData): string {
   const theme = currentTheme();
@@ -993,7 +993,7 @@ function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY, facts: 
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`
-    // hold one x down the block (§12.22/§12.27).
+    // hold one x down the block (§9.7).
     const cols = facts.diffColumns;
     parts.push(formatMutationDiffStats(diff, theme, cols));
     if (chars) parts.push(" ".repeat(Math.max(0, cols.size - visibleWidth(chars))) + chars);
@@ -1092,10 +1092,10 @@ function stripSgrForegrounds(text: string): string {
 
 // ansiEndIndex / rawIndexAtVisibleIndex / rawIndexBeforeVisibleIndex live in _lib/ansi.ts.
 
-// No plain ink in native rows (design language §12.12): every span a native renderer
+// No plain ink in native rows (design language §9.6): every span a native renderer
 // leaves unstyled would render at the terminal default — prose ink inside a trace row,
-// the §12.11 problem alive on grep/web_search/fetch/mcp rows. Demote such spans to
-// L3-dim; spans with a deliberate foreground, and bold/faint-only spans (§12.11's
+// the §9.3 problem alive on grep/web_search/fetch/mcp rows. Demote such spans to
+// L3-dim; spans with a deliberate foreground, and bold/faint-only spans (§9.3's
 // white), pass through untouched. OSC sequences (hyperlinks, zone marks) are copied
 // verbatim and never counted as text.
 const SGR_OR_OSC = /\x1b\[([0-9;]*)m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
@@ -1161,10 +1161,10 @@ function stripTimeoutSuffix(text: string): string {
   return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
 }
 
-// --- bash rows: plain-text rebuild + family ink (§2/§12.9/§12.20/§12.25/§12.26) ------
+// --- bash rows: plain-text rebuild + family ink (§2/§9.3/§9.4) ------
 // Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, and the
 // head words that survive crown selection (below) render L0-bold the way a basename
-// does (`$ rm`, `$ npm`, `$ python3` scan like `read file.ts`; §12.11), while
+// does (`$ rm`, `$ npm`, `$ python3` scan like `read file.ts`; §9.3), while
 // everything else — arguments, connectors, redirects, heredoc markers, demoted glue
 // commands, and the ↵/⋯ flatten/elision marks — sits at the one L3-dim supporting
 // grey shared with directories, plumbing, and size suffixes. Pi's native bash styling
@@ -1188,20 +1188,20 @@ function bashInvocationText(comp: any): string | undefined {
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 // Sequencing operators start a new command whose head word is a discriminator
-// (§12.20). Pipes and redirects continue a command — `| head -240` is a filter, and
-// §12.2's rejection of brightening filters stands — so `|` consumes a pending head
+// (§9.4). Pipes and redirects continue a command — `| head -240` is a filter, and
+// §9.4's rejection of brightening filters stands — so `|` consumes a pending head
 // slot instead of re-arming it. The attached form of the semicolon (`sleep 60; ps`)
-// sequences too (§12.25); it is detected on the token, quote-aware, in the walk below.
+// sequences too (§9.4); it is detected on the token, quote-aware, in the walk below.
 const BASH_SEQUENCER = /^(?:&&|\|\||;)$/;
 
-// A heredoc marker arms body-inertness (§12.20): from the `↵` that follows `<<TAG`
+// A heredoc marker arms body-inertness (§9.4): from the `↵` that follows `<<TAG`
 // until the terminator line, tokens are data — no heads, no re-arms, and no quote
 // tracking, so an unbalanced apostrophe in heredoc prose cannot silence the commands
-// after the terminator (§12.25). A bare `<<`/`<<-` takes the next token as its tag;
+// after the terminator (§9.4). A bare `<<`/`<<-` takes the next token as its tag;
 // `<<<` is a here-string, not a heredoc, and matches neither form.
 const BASH_HEREDOC_TOKEN = /^<<-?(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))?$/;
 
-// The crown vocabularies (§12.26, measured over a 51k-invocation corpus — see
+// The crown vocabularies (§9.4, measured over a 51k-invocation corpus — see
 // scripts/dev/bash-corpus/). Preambles situate (`cd X && …`, `set -e; …`); plumbing
 // glues (`|| true`, `&& echo done`); neither is why the row exists, so neither wears
 // a crown when a real command in the row does. Closers are the block keywords a
@@ -1213,14 +1213,14 @@ const BASH_CLOSERS = new Set(["do", "done", "then", "else", "elif", "fi", "esac"
 type BashHeadClass = "real" | "plumbing" | "preamble";
 type BashHead = { start: number; end: number; cls: BashHeadClass };
 
-// One walk over the flattened body collects every command's head candidate (§12.20's
-// grammar, amended §12.25): tokens scan left to right with quote state carried across
+// One walk over the flattened body collects every command's head candidate (§9.4's
+// grammar): tokens scan left to right with quote state carried across
 // them (the gaps are whitespace and hold none), sequencers re-arm the pending head
 // slot only outside quotes, a token-final unquoted `;` re-arms exactly like the
 // space-delimited form, and heredoc bodies are skipped whole. Within an armed slot:
-// env assignments are scanned past (§12.20), block closers pass the crown through,
-// and a token with no word character (§12.23) or a leading `-` (a flattened
-// continuation line's flag, §12.25) renders headless and consumes the slot so a
+// env assignments are scanned past (§9.4), block closers pass the crown through,
+// and a token with no word character (§9.4) or a leading `-` (a flattened
+// continuation line's flag, §9.4) renders headless and consumes the slot so a
 // pipe filter cannot inherit it.
 function bashHeadCandidates(body: string): BashHead[] {
   const heads: BashHead[] = [];
@@ -1294,16 +1294,16 @@ function bashHeadCandidates(body: string): BashHead[] {
         continue;
       }
       if (headPending && !ENV_ASSIGNMENT.test(text)) {
-        // Parens are apparatus (§12.23's spirit): `(cd …` and `… || true)` classify
+        // Parens are apparatus (§9.4's spirit): `(cd …` and `… || true)` classify
         // and crown on the inner word, so a subshell close cannot smuggle glue past
-        // the §12.26 vocabularies and a crown never bolds punctuation.
+        // the §9.4 vocabularies and a crown never bolds punctuation.
         const trimmed = endsWithUnquotedSemi ? text.slice(0, -1) : text;
         const open = /^\(+/.exec(trimmed)?.[0].length ?? 0;
         const close = /\)+$/.exec(trimmed)?.[0].length ?? 0;
         const word = trimmed.slice(open, trimmed.length - close);
         const wordStart = match.index + open;
         if (!/[A-Za-z0-9]/.test(word) || word.startsWith("-")) {
-          headPending = false; // §12.23/§12.25: apparatus and flags consume the slot
+          headPending = false; // §9.4: apparatus and flags consume the slot
         } else if (!BASH_CLOSERS.has(word)) {
           const cls: BashHeadClass = BASH_PREAMBLE_HEADS.has(word)
             ? "preamble"
@@ -1322,7 +1322,7 @@ function bashHeadCandidates(body: string): BashHead[] {
   return heads;
 }
 
-// Crown selection is row-global (§12.26): every real command head is crowned, and
+// Crown selection is row-global (§9.4): every real command head is crowned, and
 // preamble (`cd`, `set`) and plumbing (`echo`, `true`, …) heads render headless
 // beside them. A row with no real head keeps its first operative head — plumbing
 // before preamble — so no row goes dark: `$ cd /tmp` and `$ echo hi > f` still
@@ -1337,9 +1337,9 @@ function bashCrownedHeads(body: string): BashHead[] {
 
 // Emission splices the crowns into dim runs: everything between crowned head words —
 // arguments, operators, marks, quoted scripts, demoted glue — dims in maximal spans
-// (middleTruncate replays the active ink after a cut, §12.10, so a long dim run
-// survives truncation), and each crowned word takes the discriminator ink (§12.11;
-// §12.14's error tint on failed rows). The visible text is untouched.
+// (middleTruncate replays the active ink after a cut, §5, so a long dim run
+// survives truncation), and each crowned word takes the discriminator ink (§9.3;
+// §9.2's error tint on failed rows). The visible text is untouched.
 function inkBashBody(body: string, comp?: any): string {
   let out = "";
   let cursor = 0;
@@ -1420,13 +1420,13 @@ function inkedFallbackLine(comp: any): string {
   const verb = toolLabel(comp?.toolName);
   if (body === verb) return verbInk(comp, verb);
   if (body.startsWith(`${verb} `)) {
-    // Argument text at the one supporting grey (§12.9), matching bash argument ink.
+    // Argument text at the one supporting grey (§9.3), matching bash argument ink.
     return `${verbInk(comp, verb)} ${dim(body.slice(verb.length + 1))}`;
   }
   return dim(body);
 }
 
-// Emphasis for plain file reads, edits, and writes (design language §12): dim the
+// Emphasis for plain file reads, edits, and writes (design language §9.5): dim the
 // directory so the basename (which file) stands out, and keep the read :line-range in
 // pi's warning/yellow treatment so scoped reads pop. Applied only when the native row
 // is a bare `<verb> <path>[:range]`; rows with extra native decoration (resource /
@@ -1439,7 +1439,7 @@ function toolPathArg(c: any): string | undefined {
   return typeof path === "string" && path.length > 0 ? cwdRelativePath(c, path) : undefined;
 }
 
-// cwd collapses to `./` (design language §12.18): a path under the row's cwd renders
+// cwd collapses to `./` (design language §9.5): a path under the row's cwd renders
 // as the shell's own notation for "here" — two columns instead of thirty. Paths
 // outside cwd keep their tildified absolute form; the asymmetry is the information.
 function cwdRelativePath(comp: any, rawPath: string): string {
@@ -1464,7 +1464,7 @@ function commonDirSegments(paths: string[]): string[] {
   return common;
 }
 
-// Dim the boring prefix, not the directory (design language §12.16): the dim zone is
+// Dim the boring prefix, not the directory (design language §9.5): the dim zone is
 // the longest of the block's common directory prefix (when at least two meaningful
 // segments deep — a shared bare `/` or `~/` carries no information) and the row's
 // cwd prefix (session-ambient context is boring by default). Everything past it —
@@ -1477,7 +1477,7 @@ function boringPrefix(comp: any, tildePath: string): string {
     .map(toolPathArg)
     .filter((p): p is string => p !== undefined);
   const common = commonDirSegments(blockPaths.length ? blockPaths : [tildePath]);
-  // `./` counts like `~` (§12.18): alone it is a trivial root marker, but `./src/`
+  // `./` counts like `~` (§9.5): alone it is a trivial root marker, but `./src/`
   // is a meaningful shared prefix. Either way it is always boring on its own.
   if (common.filter((s) => s !== "").length >= 2) {
     const prefix = `${common.join("/")}/`;
@@ -1525,14 +1525,14 @@ function invocationInk(comp: any): string {
   return base ? tildify(base) : inkedFallbackLine(comp);
 }
 
-// The body+suffix budget inside the two-sided inset (§12.21): what remains after the
+// The body+suffix budget inside the two-sided inset (§9.1): what remains after the
 // rail prefix and the right margin.
 function traceRowAvailable(width: number): number {
   return Math.max(1, Math.max(1, width) - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
 }
 
 // The one row form shared by single rows and folded read runs: body left, the block's
-// reserved fact-suffix column right (§12.17/§12.21), behind the railed status prefix.
+// reserved fact-suffix column right (§9.8/§9.1), behind the railed status prefix.
 function fitTraceRow(tone: Tone, body: string, suffix: string, reserve: number, width: number): string {
   const fitted = rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve);
   return truncateToWidth(`${toolPrefix(tone)}${fitted}`, Math.max(1, width), ELLIPSIS);
@@ -1558,7 +1558,7 @@ function oneLine(comp: any, width: number): string {
   );
 }
 
-// --- repetition folding (issue #14, design language §9/traceline 3+5) -------------------
+// --- repetition folding (issue #14, design language §9.9) -------------------
 
 // pi's bash tool is stateless per call, so agents working outside the session cwd re-`cd`
 // on every call — measured at 90% of bash rows in a live session. When a row's

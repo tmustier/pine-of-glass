@@ -1,4 +1,4 @@
-// Records of consequence (design language §12.19/§12.28): bash rows that change shared
+// Records of consequence (design language §9.10): bash rows that change shared
 // state — commit, push, PR merge/close/create, issue close, release/publish — earn
 // verb-first record facts in the suffix, parsed from the *success porcelain the tool
 // reported*, never from the command's arguments. These tests pin the exact porcelain
@@ -133,7 +133,7 @@ test("records join the fact suffix before the size cell", () => {
   assert.equal(stripAnsi(toolFactSuffix(comp, 200)), "committed a4f21c9 · pushed main · 0.4k ch");
 });
 
-test("records wear the ink of what they state (§12.28)", () => {
+test("records wear the ink of what they state (§9.10)", () => {
   const comp = bash("git commit -m x && git push", `[main a4f21c9] x\n${PUSH_OK}`);
   const raw = recordSuffix(comp, 200);
   // No theme in tests, so ink resolves to raw ANSI: success 32, warning 33, dim 90.
@@ -146,7 +146,7 @@ test("records wear the ink of what they state (§12.28)", () => {
   assert.match(raw, /\x1b\[32m\x1b\[1mpushed main\x1b\[22m\x1b\[0m/);
 });
 
-test("a forced push tints warning; tones never merge across (§12.28)", () => {
+test("a forced push tints warning; tones never merge across (§9.10)", () => {
   const forced = bash("git push --force", "To github.com:o/r.git\n + 1c75c2a...50cf33f main -> main (forced update)\n");
   assert.match(recordSuffix(forced, 200), /\x1b\[33m\x1b\[1mpushed main\x1b\[22m\x1b\[0m/);
   // A forced ref and a routine tag in one push stay separate cells: a forced push
@@ -158,7 +158,7 @@ test("a forced push tints warning; tones never merge across (§12.28)", () => {
   assert.deepEqual(recordCells(mixed), ["pushed main", "pushed v0.5.9"]);
 });
 
-test("the tone is per-fact, not per-row: failed rows keep surviving facts green (§12.28)", () => {
+test("the tone is per-fact, not per-row: failed rows keep surviving facts green (§9.10)", () => {
   // Committed, demonstrably not landed: red discriminators, green fact.
   const failed = bash("git commit -m x && git push", "[main a4f21c9] x\n ! [rejected] main -> main\n", { error: true });
   assert.match(recordSuffix(failed, 200), /\x1b\[32m\x1b\[1mcommitted\x1b\[22m/);

@@ -1,4 +1,4 @@
-// Visual regression net for the one-line trace grammar (design language §9/traceline):
+// Visual regression net for the one-line trace grammar (design language §10):
 // a realistic scripted sequence — repeated cd preambles, a paginated read run, healthy
 // and ballooned outputs, a flattened multiline command — rendered at 80 and 120 columns.
 // Colour is not under test (see docs/testing.md); structure, alignment, folding, and

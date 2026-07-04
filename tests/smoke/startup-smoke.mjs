@@ -172,7 +172,7 @@ try {
   waitFor("cachemire ledger renders", (text) => text.includes("cache & loop ledger"));
   run(["tmux", "send-keys", "-t", session, "C-t"]);
   // Traceline suppresses pi's "Thinking blocks: hidden/visible" status caption (design
-  // language §12.24), so the on-screen text can no longer signal the toggle. The proof
+  // language §9.11), so the on-screen text can no longer signal the toggle. The proof
   // the keypress landed is pi persisting hideThinkingBlock into the fixture HOME's
   // settings.json; only then is the caption's absence meaningful.
   waitFor("ctrl+t persisted hideThinkingBlock", () => {

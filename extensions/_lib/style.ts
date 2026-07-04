@@ -55,7 +55,7 @@ const THEME_ROLE: Partial<Record<Tone, ThemeColor>> = {
   accent: "accent",
   // "running" has no faithful theme role (accent would collide with brand/total
   // highlights; warning overloads "fading") — resolved to the ANSI-blue raw tone
-  // (design language §11).
+  // (design language §2).
 };
 
 const RESET = "\x1b[0m";
@@ -89,7 +89,7 @@ export function ink(theme: Theme | undefined, tone: Tone, text: string): string 
   return open ? `${open}${text}${RESET}` : text;
 }
 
-// --- panel headers (design language §5) -------------------------------------------------
+// --- panel headers (design language §8) -------------------------------------------------
 
 /** Mode pips for a panel header: active mode accent-bold, others dim, `→` dim. */
 export function panelPips(theme: Theme | undefined, modes: readonly string[], active: string): string {
@@ -99,7 +99,7 @@ export function panelPips(theme: Theme | undefined, modes: readonly string[], ac
 }
 
 /**
- * The family panel-header form (design language §5): `[Name]` in bold accent, optional
+ * The family panel-header form (design language §8): `[Name]` in bold accent, optional
  * mode pips, then one dim hint line carrying keybinding, scope, and the panel's
  * methodology — stated here once, never on data rows.
  */
@@ -152,7 +152,7 @@ export function tildify(text: string): string {
 // or space boundary, and the ellipsis is dimmed so it reads as a UI marker rather than as
 // part of the path/command. Falls back to tail truncation only when the width is too
 // small to keep both ends.
-// Ink continuity across the cut (design language §12.10): the tail's opening SGR may
+// Ink continuity across the cut (design language §5): the tail's opening SGR may
 // sit in the removed middle, which would leave the tail at the terminal default until
 // the next styled span opened. Replay the *net* SGR state active at the cut point —
 // one sequence per attribute, offs and full resets clearing their slots — so the tail
@@ -198,7 +198,7 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   const maxTail = Math.min(budget - MIN_HEAD_COLS, Math.max(12, Math.floor(budget * TAIL_RATIO)));
   if (maxTail < 1) return truncateToWidth(line, maxWidth, ELLIPSIS);
 
-  // The cut is a column (design language §12.17): the tail is exactly `maxTail` wide and
+  // The cut is a column (design language §9.8): the tail is exactly `maxTail` wide and
   // the head exactly fills the rest, so every line truncated to the same budget cuts at
   // identical columns and fills the budget exactly. No content-dependent snapping — a
   // mid-token cut beside a dim ellipsis is legible; a wandering ellipsis column is not.
@@ -215,8 +215,8 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
 }
 
 /** Quantities right (design language §5): body left, right-aligned suffix, ≥2-space gap
- * (§12.21 — the tail must not crowd the facts); the body middle-truncates and the suffix
- * wins when the width is starved. `reserve` (design language §12.17) is a minimum
+ * (§9.1 — the tail must not crowd the facts); the body middle-truncates and the suffix
+ * wins when the width is starved. `reserve` (design language §9.8) is a minimum
  * right-side reservation — gap included — so callers can hold every body in a block to
  * the same budget regardless of each row's own suffix. */
 export function rightAlignSuffix(

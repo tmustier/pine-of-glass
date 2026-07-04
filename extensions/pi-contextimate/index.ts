@@ -412,7 +412,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
   };
 }
 
-// Provenance short form (design language §12.6): the local defining path *is* the
+// Provenance short form (design language §8): the local defining path *is* the
 // audit trail, and the origin URL / package ref / `top-level` decorations duplicate
 // it, so the label is `scope · path` (falling back to the loader source when no path
 // exists) and builtins collapse to one word. Pi keeps the full SourceInfo.
@@ -1254,7 +1254,7 @@ type FieldColumns = { nameCol: number; typeCol: number; hasRequired: boolean };
 
 const fieldIndent = (depth: number) => 6 + depth * 2;
 
-// Column layout across *all* fields in the tools block (design language §12.7): each
+// Column layout across *all* fields in the tools block (design language §8): each
 // tool used to size its own columns, so the section read as a stack of differently
 // ragged mini-tables instead of one aligned table.
 function toolFieldColumns(fields: ToolField[]): FieldColumns {
@@ -1280,7 +1280,7 @@ function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number, c
   });
 }
 
-// Tool entry header (design language §12.6): the name is the L0 anchor — bold — with
+// Tool entry header (design language §8): the name is the L0 anchor — bold — with
 // the shortened provenance beside it at L3-dim, so a column of tools scans by name
 // while the audit trail stays present without competing. Tokens keep the accent,
 // right-aligned. When width runs out the provenance gives way before the name does.
@@ -1351,7 +1351,7 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
   };
 }
 
-// --- proportion (design language §5): "of what" — shares of the context window --------
+// --- proportion (design language §8): "of what" — shares of the context window --------
 
 /**
  * Integer percent of the context window; `<1%` rather than a dishonest `0%`. Shares
@@ -1458,7 +1458,7 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme, width = 80): stri
     renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: harnessDetail(snapshot) }, theme, layout),
     ...renderSessionRows(snapshot, theme, width, layout),
   );
-  lines.push(""); // panel tail spacer (design language §12.5)
+  lines.push(""); // panel tail spacer (design language §8)
   return lines;
 }
 
@@ -1531,7 +1531,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   }
   const sessionTokenLayout = summaryTokenLayout(snapshot);
   lines.push("", renderCompactTotalRow(snapshot, theme, layout), ...renderSessionRows(snapshot, theme, width, sessionTokenLayout));
-  lines.push(""); // panel tail spacer (design language §12.5)
+  lines.push(""); // panel tail spacer (design language §8)
   return lines;
 }
 
@@ -1559,7 +1559,7 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): 
     }
   }
 
-  lines.push(""); // panel tail spacer (design language §12.5)
+  lines.push(""); // panel tail spacer (design language §8)
   return lines;
 }
 
@@ -1782,7 +1782,7 @@ export const internals = {
   estimatedTokenField,
   exactTokenLabel,
   renderMetricRow,
-  // proportion (design language §5)
+  // proportion (design language §8)
   ctxShareLabel,
   contextWindowLabel,
   methodologyHint,

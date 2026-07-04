@@ -124,7 +124,7 @@ test("one-line read row: rail + emphasized path, range kept, suffix right-aligne
   assert.ok(line.startsWith(`  ${DIM}▏\x1b[0m `), "the rail must be dim block chrome, one gutter in");
   assert.ok(visible.endsWith("1.4k ch"), visible);
   // Emphasis dims the directory separately from the basename — which renders L0-bold
-  // (§12.11), never prose-plain — while the range keeps Pi's warning treatment.
+  // (§9.3), never prose-plain — while the range keeps Pi's warning treatment.
   assert.ok(line.includes(`${DIM}~/projects/demo/\x1b[0m`), "directory must be dimmed");
   assert.ok(line.includes("\x1b[1mfile.ts\x1b[22m"), "basename must be bold, not prose-plain");
   assert.ok(line.includes("\x1b[33m:1-40\x1b[0m"), "line range must stay warning/yellow");
@@ -147,7 +147,7 @@ test("mutation diff stats ride the right suffix for edit rows", () => {
 
   assert.deepEqual(diffStatsFromText("--- a/file\n+++ b/file\n+1 real add\n-2 real remove"), { added: 1, removed: 1 });
   assert.deepEqual(mutationDiffStats(comp), { added: 2, removed: 1 });
-  // Result is under the 100 ch fact floor (§12.13): the diff stats stand alone.
+  // Result is under the 100 ch fact floor (§9.7): the diff stats stand alone.
   assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1");
 
   const visible = stripAnsi(oneLine(comp, 90));
@@ -155,7 +155,7 @@ test("mutation diff stats ride the right suffix for edit rows", () => {
   assert.ok(visible.endsWith("+2 -1"), visible);
 });
 
-test("diff stats are a table: columns right-align so units share one x (§12.22/§12.27)", () => {
+test("diff stats are a table: columns right-align so units share one x (§9.7)", () => {
   const mut = (toolName: string, path: string, diff: string) =>
     toolComp({
       toolName,
@@ -175,7 +175,7 @@ test("diff stats are a table: columns right-align so units share one x (§12.22/
   g.__tracelineChat = { children: [both, minusOnly, plusOnly, read] };
   try {
     const [a, b, c, d] = [both, minusOnly, plusOnly, read].map((row) => stripAnsi(oneLine(row, 80)));
-    // Cells right-align (§12.27): `+4` tucks under `+18`'s units digit, a dropped
+    // Cells right-align (§9.7): `+4` tucks under `+18`'s units digit, a dropped
     // zero side keeps its column as space, and the size cell pads to the block's
     // widest (`14.2k ch`), so `·` holds still too.
     assert.ok(a!.endsWith(" +4 -9 \u00b7  0.0k ch"), a);
@@ -260,7 +260,7 @@ test("new write rows count all written lines as additions", () => {
 
     captureWriteSnapshot(comp);
     assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 0 });
-    // Zero sides drop (§12.13): a new-file write never wears a `-0`.
+    // Zero sides drop (§9.7): a new-file write never wears a `-0`.
     assert.equal(stripAnsi(toolFactSuffix(comp)), "+2");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -274,7 +274,7 @@ test("result-size suffix severity: dim while healthy, warning ≥10k ch, error �
   assert.equal(charSuffix(undefined), "");
   assert.equal(stripAnsi(charSuffix(50_000)), "50.0k ch");
 
-  // A fact suffix must carry a fact (§12.13): below 100 ch there is no suffix at all.
+  // A fact suffix must carry a fact (§9.7): below 100 ch there is no suffix at all.
   assert.equal(charSuffix(0), "");
   assert.equal(charSuffix(99), "");
   assert.equal(stripAnsi(charSuffix(100)), "0.1k ch");
@@ -298,7 +298,7 @@ test("ink derives from the theme when one is active", () => {
   assert.ok(!line.includes(DIM), "no raw fallback grey may leak while a theme is active");
 });
 
-test("the cut is a column: a block shares one body budget so ellipses and tails align (§12.17)", () => {
+test("the cut is a column: a block shares one body budget so ellipses and tails align (§9.8)", () => {
   const longBash = (cmd: string, over: SyntheticComp = {}) =>
     toolComp({
       toolName: "bash",
@@ -339,7 +339,7 @@ test("the cut is a column: a block shares one body budget so ellipses and tails 
   g.__tracelineChat = undefined;
 });
 
-test("reserve holds a body to the shared block budget (§12.17)", () => {
+test("reserve holds a body to the shared block budget (§9.8)", () => {
   const body = "x".repeat(100);
   const out = stripAnsi(rightAlignSuffix(body, "0.2k ch", 80, undefined, 20));
   assert.equal(out.length, 80);
@@ -351,7 +351,7 @@ test("reserve holds a body to the shared block budget (§12.17)", () => {
   assert.equal(bare.length, 60);
 });
 
-test("the right edge breathes: 2-col inset and a ≥2-space body↔suffix gap (§12.21)", () => {
+test("the right edge breathes: 2-col inset and a ≥2-space body↔suffix gap (§9.1)", () => {
   // A truncated row with a suffix: the suffix column ends 2 columns short of the
   // terminal edge, and the body tail sits ≥2 spaces before the suffix.
   const comp = toolComp({
@@ -370,7 +370,7 @@ test("the right edge breathes: 2-col inset and a ≥2-space body↔suffix gap (�
   assert.ok(flush.includes("  0.2k ch") && !flush.includes("   0.2k ch"), JSON.stringify(flush));
 });
 
-test("size column is block-scoped: one row over the floor lights every cell (§12.15)", () => {
+test("size column is block-scoped: one row over the floor lights every cell (§9.7)", () => {
   const tiny = (over: SyntheticComp = {}) =>
     toolComp({ result: { content: [{ type: "text", text: "ok" }], isError: false }, ...over });
   const big = toolComp();
@@ -402,7 +402,7 @@ test("size column is block-scoped: one row over the floor lights every cell (§1
   g.__tracelineChat = undefined;
 });
 
-test("path emphasis dims the boring prefix: block-common directory or cwd, tail bold (§12.16)", () => {
+test("path emphasis dims the boring prefix: block-common directory or cwd, tail bold (§9.5)", () => {
   const home = homedir();
   const edit = (path: string, cwd?: string) =>
     toolComp({
@@ -422,7 +422,7 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   assert.ok(line.includes(`${DIM}~/projects/site/src/\x1b[0m`), `common prefix dims: ${JSON.stringify(line)}`);
   assert.ok(line.includes("\x1b[1mpages/product.astro\x1b[22m"), `divergent tail bold: ${JSON.stringify(line)}`);
 
-  // cwd is boring by default — and collapses to ./ (§12.18): the in-repo path renders
+  // cwd is boring by default — and collapses to ./ (§9.5): the in-repo path renders
   // cwd-relative behind a dim ./ while the out-of-cwd neighbour keeps its absolute form.
   const inRepo = edit(`${home}/projects/site/src/lib/util.ts`, `${home}/projects/site`);
   const inTmp = edit("/tmp/scratch-note.md", `${home}/projects/site`);
@@ -440,7 +440,7 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   assert.equal(boringPrefix(lone, "~/projects/site/src/pages/product.astro"), "~/projects/site/src/pages/");
 });
 
-test("cwd collapses to ./: two columns of ambient context instead of thirty (§12.18)", () => {
+test("cwd collapses to ./: two columns of ambient context instead of thirty (§9.5)", () => {
   const home = homedir();
   const cwd = `${home}/projects/site`;
   const read = (path: string) =>
@@ -484,13 +484,13 @@ test("status lives in the bullet: red error, blue running, green success; verbs 
   assert.ok(error.includes("\x1b[31m›"), "error bullet red");
   assert.ok(running.includes("\x1b[34m›"), "running bullet blue");
 
-  // Verbs are neutral bold (design language §2/§12); only a failed call tints its verb.
+  // Verbs are neutral bold (design language §2/§9.2); only a failed call tints its verb.
   assert.ok(success.includes("\x1b[1mread\x1b[22m"), "healthy verb must be neutral bold");
   assert.ok(!success.includes("\x1b[32m\x1b[1mread"), "healthy verb must not be success-tinted");
   assert.ok(error.includes("\x1b[31m\x1b[1mread\x1b[22m"), "failed verb keeps the error tint");
 });
 
-test("errors tint the discriminators: basename and bash head go error-bold on failed rows (§12.14)", () => {
+test("errors tint the discriminators: basename and bash head go error-bold on failed rows (§9.2)", () => {
   const g = globalThis as any;
   g.__tracelineGetTheme = () => themed();
   try {
@@ -519,7 +519,7 @@ test("errors tint the discriminators: basename and bash head go error-bold on fa
   }
 });
 
-test("no plain ink in native rows: unstyled spans demote to dim, accents and bold survive (§12.12)", () => {
+test("no plain ink in native rows: unstyled spans demote to dim, accents and bold survive (§9.6)", () => {
   const g = globalThis as any;
   g.__tracelineGetTheme = () => themed();
   try {
@@ -563,19 +563,19 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.ok(visible.includes("$ pwd && git remote -v 2>/dev/null | head -5"), visible);
   assert.ok(line.includes("\x1b[1m$\x1b[22m"), "the $ prompt anchors the row in neutral bold");
   // Raw fallback (no theme): everything between crowns dims in maximal runs —
-  // middleTruncate replays the active ink after a cut (§12.10), so a run survives
+  // middleTruncate replays the active ink after a cut (§5), so a run survives
   // truncation without stranding its tail.
   assert.ok(line.includes(`${DIM} && \x1b[0m`), "the operator must sit in a dim run");
   assert.ok(line.includes(`${DIM} remote -v 2>/dev/null | head -5\x1b[0m`), "arguments, redirects, and pipe filters share one dim run");
 
-  // With a theme (design language §2/§12.9/§12.11/§12.20): one supporting grey — each
+  // With a theme (design language §2/§9.3/§9.4): one supporting grey — each
   // command's head word renders L0-bold, the bash row's basename; arguments and
   // plumbing all sit at L3-dim. No muted level anywhere in a trace row.
   g.__tracelineGetTheme = () => themed();
   const body = inkBashBody("pwd && git remote -v 2>/dev/null");
   assert.ok(body.startsWith(`${T.text}\x1b[1mpwd\x1b[22m`), `head command must be bold text: ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim} && `), `operators must be dim: ${JSON.stringify(body)}`);
-  assert.ok(body.includes(`${T.text}\x1b[1mgit\x1b[22m`), `&& starts a new command — its head is bold (§12.20): ${JSON.stringify(body)}`);
+  assert.ok(body.includes(`${T.text}\x1b[1mgit\x1b[22m`), `&& starts a new command — its head is bold (§9.4): ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim} remote -v`), `arguments of later commands stay dim: ${JSON.stringify(body)}`);
   assert.ok(!body.includes(T.muted), `no muted ink in a bash body: ${JSON.stringify(body)}`);
 
@@ -600,23 +600,23 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.equal(stripTimeoutSuffix("$ ls"), "$ ls");
 });
 
-test("real command heads are bold: sequencers re-arm, filters stay dim, crowns are rationed (§12.20/§12.25/§12.26)", () => {
+test("real command heads are bold: sequencers re-arm, filters stay dim, crowns are rationed (§9.4)", () => {
   const g = globalThis as any;
   g.__tracelineGetTheme = () => themed();
   try {
     const bold = (word: string) => `${T.text}\x1b[1m${word}\x1b[22m`;
 
-    // Sequencers start new commands, but the crown is rationed (§12.26): the cd
+    // Sequencers start new commands, but the crown is rationed (§9.4): the cd
     // preamble and the printf plumbing demote, and the real command pops.
     const chain = inkBashBody("cd /tmp/x && printf 'HEAD ' ; git rev-parse HEAD | head -3");
     assert.ok(chain.includes(bold("git")), `git is the row's real command: ${JSON.stringify(chain)}`);
     assert.ok(!chain.includes(bold("cd")), `a cd preamble never outshines the point: ${JSON.stringify(chain)}`);
     assert.ok(!chain.includes(bold("printf")), `plumbing demotes beside a real command: ${JSON.stringify(chain)}`);
     assert.ok(chain.includes(`${T.dim} rev-parse HEAD`), `arguments stay dim: ${JSON.stringify(chain)}`);
-    // A pipe continues the command: `head -3` is a filter and stays dim (§12.2).
+    // A pipe continues the command: `head -3` is a filter and stays dim (§9.4).
     assert.ok(!chain.includes(bold("head")), `pipe tails must not bold: ${JSON.stringify(chain)}`);
 
-    // Flattened line breaks are new commands; a `set -…` preamble demotes (§12.26)
+    // Flattened line breaks are new commands; a `set -…` preamble demotes (§9.4)
     // and consumes its own slot, so its flag arguments cannot inherit the crown.
     const script = inkBashBody("set -euo pipefail \u21b5 mkdir -p /tmp/x \u21b5 npm pack");
     for (const head of ["mkdir", "npm"]) {
@@ -631,7 +631,7 @@ test("real command heads are bold: sequencers re-arm, filters stay dim, crowns a
     assert.ok(env.includes(`${T.dim} test && BAR=2 \x1b[39m`), `assignments and operators share the dim run: ${JSON.stringify(env)}`);
 
     // Heredoc bodies are inert: no heads between <<TAG and its terminator, and quote
-    // tracking suspends (§12.25) — a heredoc apostrophe cannot silence later commands.
+    // tracking suspends (§9.4) — a heredoc apostrophe cannot silence later commands.
     const heredoc = inkBashBody("cat <<'EOF' \u21b5 alpha don't beta \u21b5 EOF \u21b5 git diff");
     assert.ok(heredoc.includes(bold("cat")), JSON.stringify(heredoc));
     assert.ok(!heredoc.includes(bold("alpha")), `heredoc body lines are data, not commands: ${JSON.stringify(heredoc)}`);
@@ -641,9 +641,9 @@ test("real command heads are bold: sequencers re-arm, filters stay dim, crowns a
     const heredocEcho = inkBashBody("cat <<'EOF' \u21b5 alpha \u21b5 EOF \u21b5 echo done");
     assert.ok(heredocEcho.includes(bold("cat")) && !heredocEcho.includes(bold("echo")), JSON.stringify(heredocEcho));
 
-    // A ↵ inside an open quote is data (§12.25): a flattened inline script crowns
+    // A ↵ inside an open quote is data (§9.4): a flattened inline script crowns
     // its interpreter once and nothing inside the string; the closing quote is
-    // apparatus (§12.23) and the pipe filter cannot inherit the crown.
+    // apparatus (§9.4) and the pipe filter cannot inherit the crown.
     const closer = inkBashBody("node -e ' \u21b5 const x = 1; \u21b5 ' | tail -2");
     assert.ok(closer.includes(bold("node")), JSON.stringify(closer));
     assert.ok(!closer.includes(bold("const")), `quoted script lines are data, not commands: ${JSON.stringify(closer)}`);
@@ -651,9 +651,9 @@ test("real command heads are bold: sequencers re-arm, filters stay dim, crowns a
     assert.ok(!closer.includes(bold("tail")), `the filter must not inherit the crown: ${JSON.stringify(closer)}`);
     const bracket = inkBashBody("[ -f dist ] && echo ok");
     assert.ok(!bracket.includes(bold("[")) && !bracket.includes(bold("-f")), JSON.stringify(bracket));
-    assert.ok(bracket.includes(bold("echo")), `with no real command, the first operative head keeps the crown (§12.26): ${JSON.stringify(bracket)}`);
+    assert.ok(bracket.includes(bold("echo")), `with no real command, the first operative head keeps the crown (§9.4): ${JSON.stringify(bracket)}`);
 
-    // Failed rows tint every crowned head error (§12.14 × §12.20).
+    // Failed rows tint every crowned head error (§9.2 × §9.4).
     const failed = { toolName: "bash", result: { content: [], isError: true } };
     const red = inkBashBody("pwd && git push", failed);
     assert.ok(red.includes(`${T.error}\x1b[1mpwd\x1b[22m`), JSON.stringify(red));
@@ -663,7 +663,7 @@ test("real command heads are bold: sequencers re-arm, filters stay dim, crowns a
   }
 });
 
-test("crown selection over real shell shapes: attached ;, quote state, preambles, plumbing (§12.25/§12.26)", () => {
+test("crown selection over real shell shapes: attached ;, quote state, preambles, plumbing (§9.4)", () => {
   const crowns = (body: string) => bashCrownedHeads(body).map((head: any) => body.slice(head.start, head.end));
 
   // The corpus poster child: an attached `;` sequences like the space-delimited form,
@@ -674,7 +674,7 @@ test("crown selection over real shell shapes: attached ;, quote state, preambles
   );
 
   // Preambles demote beside a real command — wherever they sit — but a row that is
-  // nothing but preamble keeps its head (§12.26: no row goes dark).
+  // nothing but preamble keeps its head (§9.4: no row goes dark).
   assert.deepEqual(crowns("cd /tmp/x && git pull"), ["git"]);
   assert.deepEqual(crowns("mkdir -p /tmp/x && cd /tmp/x && npm init -y"), ["mkdir", "npm"]);
   assert.deepEqual(crowns("set -e; make build"), ["make"]);

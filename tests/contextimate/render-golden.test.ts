@@ -54,7 +54,7 @@ test("compact view goldens at 80 and 120 columns", () => {
 });
 
 // The golden normalizes the trailing newline away, so the panel tail spacer
-// (design language §12.5) is pinned explicitly: exactly one blank line, every mode.
+// (design language §8) is pinned explicitly: exactly one blank line, every mode.
 test("every view ends with exactly one blank spacer line", () => {
   const snapshot = fixtureSnapshot(anthropicModel);
   const views = [

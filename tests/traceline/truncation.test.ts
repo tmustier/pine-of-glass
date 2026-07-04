@@ -49,7 +49,7 @@ test("tiny widths fall back without exceeding budget", () => {
   }
 });
 
-test("the cut is a column: equal budgets cut at identical columns and fill exactly (§12.17)", () => {
+test("the cut is a column: equal budgets cut at identical columns and fill exactly (§9.8)", () => {
   const a = "$ git log --oneline --graph --decorate --all --color=never -n 50 | head -30";
   const b = "read ~/somewhere/completely/different/path/to/a/deeply/nested/file.tsx:12-400";
   for (const width of [30, 44, 60]) {
@@ -61,7 +61,7 @@ test("the cut is a column: equal budgets cut at identical columns and fill exact
   }
 });
 
-test("ink continuity across the cut with truecolor theme spans (§12.10)", () => {
+test("ink continuity across the cut with truecolor theme spans (§5)", () => {
   // Shaped like pi's real Theme output: truecolor fg openers closed by ESC[39m, bold
   // pairs 1/22 — the tail resumes inside the dim span, so the replay right after the
   // ellipsis must re-open the truecolor dim foreground.

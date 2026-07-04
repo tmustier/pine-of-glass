@@ -1,4 +1,4 @@
-// Suppressing pi's Ctrl+T status line (design language §12.24): the dim
+// Suppressing pi's Ctrl+T status line (design language §9.11): the dim
 // "Thinking blocks: hidden/visible" Spacer + Text pair pi appends to the chat tail is
 // dropped before it renders — the toggle is self-evident under traceline — while every
 // other showStatus message passes through untouched. Comps here are synthetic

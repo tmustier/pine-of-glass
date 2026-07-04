@@ -131,7 +131,7 @@ export function buildTracelineSession(cwd) {
   result(verify, "/resources ok\n/releases ok");
   result(worklog, `Wrote ${cwd}/worklog/2026-07-01-pricing-pass.md`, { details: { diff: diff(18, 0) } });
 
-  // Records of consequence (§12.19): commit + push porcelain becomes verb-first facts.
+  // Records of consequence (§9.10): commit + push porcelain becomes verb-first facts.
   const ship = call("bash", { command: "git add -A && git commit -m 'product: tighten pricing copy, repoint nav links' && git push", timeout: 120 });
   msg({
     role: "assistant",

@@ -168,7 +168,7 @@ function tracelineShot() {
     sleep(2500);
     // Restored sessions open with thinking visible; traceline's one-line mode applies
     // while reasoning is hidden (its live default). One Ctrl+T restores that state.
-    // §12.24 suppresses the "Thinking blocks: hidden" caption, so wait for the visible
+    // §9.11 suppresses the "Thinking blocks: hidden" caption, so wait for the visible
     // effect instead: only hidden mode renders traceline's labelled "Thinking: …"
     // preview line (visible mode prints the raw reasoning text, unlabelled).
     send("C-t");

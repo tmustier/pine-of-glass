@@ -52,7 +52,7 @@ test("ink never styles empty text and never lets a broken theme break a render",
   assert.equal(ink(broken, "error", "x"), "\x1b[31mx\x1b[0m");
 });
 
-test("middleTruncate replays active ink across the cut (design language §12.10)", () => {
+test("middleTruncate replays active ink across the cut (design language §5)", () => {
   // The dim span opens before the cut and closes after it: the tail's opening SGR
   // lives in the removed middle and must be replayed after the ellipsis.
   const line = `head \x1b[38;5;245m${"a".repeat(120)}\x1b[39m`;
@@ -80,7 +80,7 @@ test("sizeTone honours overridden thresholds", () => {
   assert.equal(sizeTone(2_000, { warning: 100, error: 1_000 }), "error");
 });
 
-test("panel header: bold accent brand, mode pips, one dim hint line (design language §5)", () => {
+test("panel header: bold accent brand, mode pips, one dim hint line (design language §8)", () => {
   const lines = panelHeader(recordingTheme, "Contextimate", {
     modes: ["summary", "compact", "expanded"],
     active: "compact",
