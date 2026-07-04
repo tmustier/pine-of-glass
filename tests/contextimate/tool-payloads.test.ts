@@ -21,7 +21,6 @@ const ping: ToolSummary = {
   name: "ping",
   description: "Send a ping.",
   source: "builtin",
-  parameterKeys: ["host"],
   schema: {
     type: "object",
     properties: { host: { type: "string", description: "Target host" } },
@@ -34,7 +33,6 @@ const mode: ToolSummary = {
   name: "mode",
   description: "Pick a mode",
   source: "builtin",
-  parameterKeys: ["level"],
   schema: {
     type: "object",
     properties: { level: { type: "string", enum: ["a", "bb"], description: "" } },
@@ -48,7 +46,7 @@ test("per-provider payload shapes are exact", () => {
     description: "Send a ping.",
     input_schema: ping.schema,
   });
-  assert.deepEqual(toolPayloadForShape(ping, undefined), {
+  assert.deepEqual(toolPayloadForShape(ping, "openai-responses"), {
     type: "function",
     name: "ping",
     description: "Send a ping.",
@@ -72,7 +70,7 @@ test("per-provider payload shapes are exact", () => {
 });
 
 test("unknown shapes fall back to the OpenAI Responses payload", () => {
-  assert.deepEqual(toolPayloadForShape(ping, "some-future-shape"), toolPayloadForShape(ping, undefined));
+  assert.deepEqual(toolPayloadForShape(ping, "some-future-shape"), toolPayloadForShape(ping, "openai-responses"));
 });
 
 test("OpenAI cookbook formula matches hand-computed expectations", () => {

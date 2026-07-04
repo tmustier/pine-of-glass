@@ -1,9 +1,10 @@
 import type { Component } from "@earendil-works/pi-tui";
-import type { ContextUsage, ExtensionAPI, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, ExtensionAPI, ExtensionContext, SessionEntry, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
+import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE } from "../_lib/chat.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
@@ -22,7 +23,6 @@ type ToolSummary = {
   name: string;
   description: string;
   source: string;
-  parameterKeys: string[];
   schema: unknown;
   promptGuidelines: string[];
 };
@@ -60,12 +60,14 @@ type PrefixSection = {
   title: string;
   content: string;
   /** Dim suffix after the char count, e.g. "÷ 2.6" or "÷ 2.6 · Anthropic tool payload". */
-  detail?: string;
+  detail: string;
+  /** Tools only: formula-derived tokens replacing the ch ÷ denominator estimate. */
   effectiveTokens?: number;
+  /** Tools only: minified-payload size, when content.length is not the counted chars. */
   rawChars?: number;
-  denominator?: number;
+  denominator: number;
   compactRows?: ScanRow[];
-  expanded?: ExpandedContent;
+  expanded: ExpandedContent;
 };
 
 type ModelSummary = {
@@ -73,8 +75,6 @@ type ModelSummary = {
   id: string;
   api: string;
 };
-
-type ToolNumeratorSpec = string;
 
 type HeuristicProfile = Partial<Pick<ResolvedHeuristic, "label" | "textDenominator" | "sessionDenominator" | "toolDenominator" | "toolNumerator">>;
 
@@ -100,26 +100,26 @@ type ResolvedHeuristic = {
   textDenominator: number;
   sessionDenominator: number;
   toolDenominator: number;
-  toolNumerator: ToolNumeratorSpec;
+  toolNumerator: string;
 };
 
 type BuiltInHeuristicRule = {
   label: string;
-  providerIncludes?: string[];
-  apiEquals?: string[];
+  providerIncludes: string[];
+  apiEquals: string[];
   modelRegex?: RegExp;
   textDenominator: number;
   sessionDenominator: number;
   toolDenominator: number;
-  toolNumerator: ToolNumeratorSpec;
+  toolNumerator: string;
 };
 
 type ToolNumeratorResult = {
   label: string;
   content: string;
   chars: number;
+  /** Present only for the openai-cookbook formula; ratio shapes divide chars instead. */
   tokens?: number;
-  denominator?: number;
 };
 
 type ToolDisplayEstimate = {
@@ -134,16 +134,18 @@ type SessionBreakdown = {
   messageCount: number;
 };
 
+/** The slice of pi's ReadonlySessionManager the session walk needs. */
+type SessionSource = {
+  getEntries(): SessionEntry[];
+  getLeafId(): string | null;
+};
+
 type PrefixSnapshot = {
   signature: string;
-  fullSystemPromptChars: number;
   sections: PrefixSection[];
-  skills: SkillSummary[];
   tools: ToolSummary[];
-  loadedToolCount: number;
   heuristic: ResolvedHeuristic;
   model?: ModelSummary;
-  configSignature: string;
   session?: SessionBreakdown;
   contextUsage?: ContextUsage;
 };
@@ -163,7 +165,6 @@ const PROJECT_CONTEXT_RE = /\n?<project_context>\n\n[\s\S]*?\n<\/project_context
 const PROJECT_INSTRUCTIONS_RE = /<project_instructions path="([^"]*)">\n([\s\S]*?)\n<\/project_instructions>/g;
 const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>/;
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
-const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
 const DEFAULT_MODE: ViewMode = "summary";
 const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
 
@@ -176,7 +177,7 @@ function accent(theme: Theme | undefined, text: string): string {
 type TokenLabelLayout = { unitWidth: number; fieldWidth: number };
 
 function tokenIntegerWidth(tokens: number): number {
-  return compactCount(tokens).split(".", 1)[0]?.length ?? 0;
+  return compactCount(tokens).split(".", 1)[0].length;
 }
 
 function estimatedTokenLabel(tokens: number, layout: TokenLabelLayout = tokenLabelLayout([tokens])): string {
@@ -211,8 +212,10 @@ function cleanDenominator(value: unknown, fallback = 4): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+// Denominators are sanitized once, at heuristic resolution (applyHeuristicPatch); by
+// the time one reaches a count it is a trusted positive number.
 function estimateCharsAsTokens(chars: number, denominator: number): number {
-  return Math.ceil(chars / cleanDenominator(denominator));
+  return Math.ceil(chars / denominator);
 }
 
 function formatDenominator(value: number): string {
@@ -238,11 +241,6 @@ function compactPath(filePath: string): string {
   if (filePath === `${home}/.pi/agent/AGENTS.md`) return "Global AGENTS.md";
   if (filePath.startsWith(`${home}/`)) return `~/${filePath.slice(home.length + 1)}`;
   return filePath;
-}
-
-function tildePath(filePath: string): string {
-  const home = homedir();
-  return filePath.startsWith(`${home}/`) ? `~/${filePath.slice(home.length + 1)}` : filePath;
 }
 
 function tildeAll(text: string): string {
@@ -340,7 +338,7 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
       detail: ratioDetail(denominator),
       expanded: {
         kind: "text",
-        note: `${tildePath(filePath)} · preview only`,
+        note: `${tildeAll(filePath)} · preview only`,
         preview: preview.length > 0 ? preview : ["(no non-empty lines)"],
       },
     });
@@ -420,37 +418,26 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
 // exists) and builtins collapse to one word. Pi keeps the full SourceInfo.
 function sourceInfoLabel(tool: ToolInfo): string {
   const sourceInfo = tool.sourceInfo;
-  if (!sourceInfo) return "unknown";
   if (sourceInfo.source === "builtin") return "builtin";
   const where = sourceInfo.path ?? sourceInfo.source;
   return [sourceInfo.scope, where].filter(Boolean).join(SEP) || "unknown";
 }
 
-function getParameterKeys(schema: unknown): string[] {
-  if (!schema || typeof schema !== "object") return [];
-  const properties = (schema as { properties?: unknown }).properties;
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return [];
-  return Object.keys(properties as Record<string, unknown>);
-}
-
 function summarizeTool(tool: ToolInfo): ToolSummary {
   return {
     name: tool.name,
-    description: tool.description?.trim() || "(no description)",
+    description: tool.description.trim() || "(no description)",
     source: sourceInfoLabel(tool),
-    parameterKeys: getParameterKeys(tool.parameters),
     schema: tool.parameters,
     promptGuidelines: tool.promptGuidelines ?? [],
   };
 }
 
-function toModelSummary(model: unknown): ModelSummary | undefined {
-  if (!model || typeof model !== "object") return undefined;
-  const typed = model as { provider?: unknown; id?: unknown; api?: unknown };
-  const provider = typeof typed.provider === "string" ? typed.provider : "unknown";
-  const id = typeof typed.id === "string" ? typed.id : "unknown";
-  const api = typeof typed.api === "string" ? typed.api : "unknown";
-  return { provider, id, api };
+// pi does not re-export pi-ai's Model type; ctx.model carries it.
+type PiModel = NonNullable<ExtensionContext["model"]>;
+
+function toModelSummary(model: PiModel | undefined): ModelSummary | undefined {
+  return model ? { provider: model.provider, id: model.id, api: model.api } : undefined;
 }
 
 function modelLabel(model?: ModelSummary): string {
@@ -478,10 +465,6 @@ function loadContextimateConfig(cwd: string): ContextimateConfig {
     (config, filePath) => mergeContextimateConfig(config, readJsonConfig<ContextimateConfig>(filePath)),
     {},
   );
-}
-
-function configSignature(config: ContextimateConfig): string {
-  return safeJson(config);
 }
 
 function globToRegex(pattern: string): RegExp {
@@ -626,12 +609,10 @@ const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
 
 function builtInRuleMatches(rule: BuiltInHeuristicRule, model: ModelSummary): boolean {
   const provider = model.provider.toLowerCase();
-  const id = model.id.toLowerCase();
   const api = model.api.toLowerCase();
-  const providerOrApiMatches = (rule.providerIncludes?.some((entry) => provider.includes(entry)) ?? false)
-    || (rule.apiEquals?.some((entry) => api === entry) ?? false)
-    || (!rule.providerIncludes && !rule.apiEquals);
-  const modelMatches = rule.modelRegex ? rule.modelRegex.test(id) : true;
+  const providerOrApiMatches = rule.providerIncludes.some((entry) => provider.includes(entry))
+    || rule.apiEquals.includes(api);
+  const modelMatches = rule.modelRegex ? rule.modelRegex.test(model.id.toLowerCase()) : true;
   return providerOrApiMatches && modelMatches;
 }
 
@@ -732,7 +713,7 @@ function rawToolPayload(tool: ToolSummary): unknown {
   };
 }
 
-function toolPayloadForShape(tool: ToolSummary, shape: string | undefined): unknown {
+function toolPayloadForShape(tool: ToolSummary, shape: string): unknown {
   switch (shape) {
     case "openai-chat":
     case "openai-completions":
@@ -753,12 +734,12 @@ function toolPayloadForShape(tool: ToolSummary, shape: string | undefined): unkn
   }
 }
 
-function aggregateToolPayloadForShape(tools: ToolSummary[], shape: string | undefined): unknown {
+function aggregateToolPayloadForShape(tools: ToolSummary[], shape: string): unknown {
   if (shape === "gemini" || shape === "google" || shape === "vertex") return geminiToolPayload(tools);
   return tools.map((tool) => toolPayloadForShape(tool, shape));
 }
 
-function toolPayloadLabel(shape: string | undefined): string {
+function toolPayloadLabel(shape: string): string {
   switch (shape) {
     case "openai-responses":
     case "openai-codex-responses":
@@ -778,7 +759,7 @@ function toolPayloadLabel(shape: string | undefined): string {
     case "raw-schema":
       return "Raw tool schema payload";
     default:
-      return shape ? `Unknown tool shape ${String(shape)}; OpenAI Responses fallback` : "custom template";
+      return `Unknown tool shape ${shape}; OpenAI Responses fallback`;
   }
 }
 
@@ -798,7 +779,6 @@ function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic):
     label: toolPayloadLabel(shape),
     content,
     chars: content.length,
-    denominator: heuristic.toolDenominator,
   };
 }
 
@@ -882,7 +862,7 @@ function buildToolFields(schema: unknown): ToolField[] {
   const fields: ToolField[] = [];
   const requiredKeys = new Set(getSchemaRequired(schema));
   for (const [name, property] of Object.entries(getSchemaProperties(schema))) {
-    collectToolFields(name, property, 0, requiredKeys.has(name), fields, 3);
+    collectToolFields(name, property, 0, requiredKeys.has(name), fields);
   }
   return fields;
 }
@@ -953,7 +933,7 @@ function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristi
   return { tokens: estimateCharsAsTokens(chars, heuristic.toolDenominator), chars };
 }
 
-function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { section?: PrefixSection; tools: ToolSummary[]; loadedToolCount: number } {
+function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { section?: PrefixSection; tools: ToolSummary[] } {
   const activeNames = new Set(pi.getActiveTools());
   const allTools = pi.getAllTools();
   const activeToolInfos = allTools.filter((tool) => activeNames.has(tool.name));
@@ -962,15 +942,14 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { se
     .map(summarizeTool)
     .sort((a, b) => a.name.localeCompare(b.name));
   const tools = activeToolInfos.map(summarizeTool);
-  if (tools.length === 0) return { tools, loadedToolCount: allTools.length };
+  if (tools.length === 0) return { tools };
 
   const numerator = buildToolNumerator(tools, heuristic);
-  const denominator = numerator.denominator ?? heuristic.toolDenominator;
+  const denominator = heuristic.toolDenominator;
   const effectiveTokens = numerator.tokens ?? estimateCharsAsTokens(numerator.chars, denominator);
-  const numeratorLabel = numerator.label;
   const sectionDetail = typeof numerator.tokens === "number"
     ? `· OpenAI formula · schema text ${ratioDetail(OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR)}`
-    : `${ratioDetail(denominator)} · ${numeratorLabel}`;
+    : `${ratioDetail(denominator)} · ${numerator.label}`;
   const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic) }));
   const sortedEstimates = [...toolEstimates].sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name));
   const compactToolRows: ScanRow[] = [
@@ -990,11 +969,10 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { se
         `counted on the minified provider payload (${compactCount(numerator.chars)} ch); tree below is the readable view of it`,
       ]
     : [
-        `counts use ${numeratorLabel} at ch ${ratioDetail(denominator)} over the minified provider payload (${compactCount(numerator.chars)} ch); the tree below is the readable view`,
+        `counts use ${numerator.label} at ch ${ratioDetail(denominator)} over the minified provider payload (${compactCount(numerator.chars)} ch); the tree below is the readable view`,
       ];
   return {
     tools,
-    loadedToolCount: allTools.length,
     section: {
       id: "tools",
       title: `Tools (${tools.length}/${allTools.length} active)`,
@@ -1037,16 +1015,12 @@ function countReasoningPayload(value: unknown): number {
   }
 }
 
-function buildSessionBreakdown(sessionManager: unknown): SessionBreakdown | undefined {
+function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
+  if (!sessionManager) return undefined;
+  // Session entries are arbitrary historical content; a malformed session should cost
+  // the session rows, not the whole panel.
   try {
-    const manager = sessionManager as {
-      getEntries?: () => unknown[];
-      getLeafId?: () => string | null;
-    };
-    const entries = manager.getEntries?.();
-    if (!entries || entries.length === 0) return undefined;
-
-    const { messages } = buildSessionContext(entries as any, manager.getLeafId?.());
+    const { messages } = buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId());
     if (messages.length === 0) return undefined;
 
     const breakdown: SessionBreakdown = {
@@ -1091,6 +1065,10 @@ function sessionChars(session: SessionBreakdown): number {
   return session.thinkingChars + session.toolOutputChars + session.messageChars;
 }
 
+// Only for walking the foreign TUI component tree, whose objects we do not control.
+// Snapshot building deliberately has no such guards: if pi's session callbacks throw
+// (resume race), render()'s catch shows the honest "unavailable" line instead of a
+// quietly zeroed panel.
 function safely<T>(fn: () => T, fallback: T): T {
   try {
     return fn();
@@ -1099,16 +1077,18 @@ function safely<T>(fn: () => T, fallback: T): T {
   }
 }
 
+// May throw while pi is still wiring a resumed session; StartupContextComponent.render()
+// catches, renders the "unavailable" line, and recovers on the next snapshot.
 function buildSnapshot(
   pi: ExtensionAPI,
   getSystemPrompt: () => string,
-  sessionManager?: unknown,
+  sessionManager?: SessionSource,
   getContextUsage?: () => ContextUsage | undefined,
-  getModel?: () => unknown,
+  getModel?: () => ModelSummary | undefined,
   config: ContextimateConfig = {},
 ): PrefixSnapshot {
-  const systemPrompt = safely(() => getSystemPrompt() ?? "", "");
-  const model = toModelSummary(safely(() => getModel?.(), undefined)) ?? g.__piContextimateModel;
+  const systemPrompt = getSystemPrompt();
+  const model = getModel?.();
   const heuristic = resolveHeuristic(model, config);
   const textDenominator = heuristic.textDenominator;
   const promptRemainder = getPromptRemainder(systemPrompt);
@@ -1116,14 +1096,8 @@ function buildSnapshot(
 
   // Tools are resolved before the system section so the runtime prompt row can attribute
   // the tool/extension instructions embedded in it (issue #9).
-  let tools: ToolSummary[] = [];
-  let loadedToolCount = 0;
-  const toolsResult = safely(() => buildToolsSection(pi, heuristic), undefined as ReturnType<typeof buildToolsSection> | undefined);
-  if (toolsResult) {
-    tools = toolsResult.tools;
-    loadedToolCount = toolsResult.loadedToolCount;
-  }
-  const runtimeAdditions = safely(() => detectRuntimeAdditions(promptRemainder, tools), { chars: 0, snippetCount: 0, guidelineCount: 0 });
+  const { section: toolsSection, tools } = buildToolsSection(pi, heuristic);
+  const runtimeAdditions = detectRuntimeAdditions(promptRemainder, tools);
 
   const sections: PrefixSection[] = [
     {
@@ -1142,35 +1116,29 @@ function buildSnapshot(
     ...parseContextSections(systemPrompt, textDenominator),
   ];
 
-  const { section: skillsSection, skills } = buildSkillsSection(systemPrompt, textDenominator);
+  const { section: skillsSection } = buildSkillsSection(systemPrompt, textDenominator);
   if (skillsSection) sections.push(skillsSection);
-  if (toolsResult?.section) sections.push(toolsResult.section);
+  if (toolsSection) sections.push(toolsSection);
 
   const session = buildSessionBreakdown(sessionManager);
-  const contextUsage = safely(() => getContextUsage?.(), undefined);
-  const cfgSignature = configSignature(config);
-  const activeToolSignature = safely(() => pi.getActiveTools().join(","), "tools-unavailable");
-  const loadedToolSignature = safely(
-    () => pi.getAllTools().map((tool) => `${tool.name}:${tool.description?.length ?? 0}`).join(","),
-    "tools-unavailable",
-  );
+  const contextUsage = getContextUsage?.();
 
   const signature = [
     systemPrompt.length,
     model ? `${model.provider}:${model.id}:${model.api}` : "no-model",
-    `${heuristic.label}:${heuristic.textDenominator}:${heuristic.sessionDenominator}:${heuristic.toolDenominator}:${safeJson(heuristic.toolNumerator)}`,
-    cfgSignature,
-    activeToolSignature,
-    loadedToolSignature,
+    `${heuristic.label}:${heuristic.textDenominator}:${heuristic.sessionDenominator}:${heuristic.toolDenominator}:${heuristic.toolNumerator}`,
+    JSON.stringify(config),
+    pi.getActiveTools().join(","),
+    pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
     session ? `${session.thinkingChars}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}` : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
   ].join("|");
 
-  return { signature, fullSystemPromptChars: systemPrompt.length, sections, skills, tools, loadedToolCount, heuristic, model, configSignature: cfgSignature, session, contextUsage };
+  return { signature, sections, tools, heuristic, model, session, contextUsage };
 }
 
 function sectionTokens(section: PrefixSection): number {
-  return section.effectiveTokens ?? estimateCharsAsTokens(section.content.length, section.denominator ?? 4);
+  return section.effectiveTokens ?? estimateCharsAsTokens(section.content.length, section.denominator);
 }
 
 function sectionChars(section: PrefixSection): number {
@@ -1265,12 +1233,11 @@ function wrapPlainText(text: string, width: number, maxLines: number): string[] 
   return capped;
 }
 
-function renderExpandedSectionHeader(section: PrefixSection, snapshot: PrefixSnapshot, theme: Theme, width: number): string {
+function renderExpandedSectionHeader(section: PrefixSection, theme: Theme, width: number): string {
   const tokens = sectionTokens(section);
   const chars = sectionChars(section);
-  const method = section.detail ?? ratioDetail(section.denominator ?? snapshot.heuristic.textDenominator);
   const left = `  ${theme.bold(section.title)}  ${accent(theme, `${estimatedTokenLabel(tokens)} tokens`)}`;
-  const right = theme.fg("dim", `${compactCount(chars)} ch ${method}`);
+  const right = theme.fg("dim", `${compactCount(chars)} ch ${section.detail}`);
   return joinLeftRight(left, right, Math.max(40, width));
 }
 
@@ -1301,9 +1268,8 @@ function toolFieldColumns(fields: ToolField[]): FieldColumns {
 function renderToolFieldRows(fields: ToolField[], theme: Theme, width: number, columns?: FieldColumns): string[] {
   if (fields.length === 0) return [`      ${theme.fg("dim", "(no parameters)")}`];
   const { nameCol, typeCol, hasRequired } = columns ?? toolFieldColumns(fields);
-  const indentFor = fieldIndent;
   return fields.map((field) => {
-    const rawName = `${" ".repeat(indentFor(field.depth))}${field.name}`;
+    const rawName = `${" ".repeat(fieldIndent(field.depth))}${field.name}`;
     const namePart = rawName.length > nameCol ? `${rawName.slice(0, nameCol - 1)}…` : rawName.padEnd(nameCol, " ");
     const typePart = field.type.length > typeCol ? `${field.type.slice(0, typeCol - 1)}…` : field.type.padEnd(typeCol, " ");
     const reqPart = hasRequired ? (field.required ? "required" : "        ") : "";
@@ -1463,7 +1429,7 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
   return rows;
 }
 
-function summaryTokenWidth(snapshot: PrefixSnapshot): TokenLabelLayout {
+function summaryTokenLayout(snapshot: PrefixSnapshot): TokenLabelLayout {
   const values = [...snapshot.sections.map(sectionTokens), totalTokens(snapshot)];
   const sessionEstimate = buildSessionEstimate(snapshot);
   if (sessionEstimate) values.push(
@@ -1478,7 +1444,7 @@ function summaryTokenWidth(snapshot: PrefixSnapshot): TokenLabelLayout {
 
 function renderSummary(snapshot: PrefixSnapshot, theme: Theme, width = 80): string[] {
   const lines = renderHeader(snapshot, "summary", theme);
-  const layout = summaryTokenWidth(snapshot);
+  const layout = summaryTokenLayout(snapshot);
   lines.push("");
   for (const section of snapshot.sections) {
     lines.push(renderMetricRow({
@@ -1563,27 +1529,23 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
       lines.push(...renderScanRows(section.compactRows, theme, width, layout));
     }
   }
-  const sessionTokenWidth = summaryTokenWidth(snapshot);
-  lines.push("", renderCompactTotalRow(snapshot, theme, layout), ...renderSessionRows(snapshot, theme, width, sessionTokenWidth));
+  const sessionTokenLayout = summaryTokenLayout(snapshot);
+  lines.push("", renderCompactTotalRow(snapshot, theme, layout), ...renderSessionRows(snapshot, theme, width, sessionTokenLayout));
   lines.push(""); // panel tail spacer (design language §12.5)
   return lines;
 }
 
 function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "expanded", theme);
-  const layout = summaryTokenWidth(snapshot);
+  const layout = summaryTokenLayout(snapshot);
   lines.push(
     renderMetricRow({ label: "Total harness", tokens: totalTokens(snapshot), emphasis: true, detail: harnessDetail(snapshot) }, theme, layout),
     ...renderSessionRows(snapshot, theme, width, layout),
   );
 
   for (const section of snapshot.sections) {
-    lines.push("", renderExpandedSectionHeader(section, snapshot, theme, width));
+    lines.push("", renderExpandedSectionHeader(section, theme, width));
     const expanded = section.expanded;
-    if (!expanded) {
-      lines.push(...renderExpandedPreview(firstMeaningfulLines(section.content || "(empty)", 6), theme, width));
-      continue;
-    }
     if (expanded.kind === "tools") {
       lines.push(...renderExpandedToolsBlock(expanded, theme, width));
       continue;
@@ -1604,7 +1566,7 @@ function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: number): 
 function wrapLines(lines: string[], width: number): string[] {
   const maxWidth = Math.max(24, width);
   const out: string[] = [];
-  for (const rawLine of lines.join("\n").split("\n")) {
+  for (const rawLine of lines) {
     if (rawLine.length === 0) {
       out.push("");
       continue;
@@ -1716,13 +1678,10 @@ function isPrefixBlock(component: unknown): component is StartupContextComponent
   return !!component && typeof component === "object" && (component as { __piContextimateBlock?: boolean }).__piContextimateBlock === true;
 }
 
-function isResourceComponent(component: Component): boolean {
-  if (isPrefixBlock(component)) return false;
-  // Resource rows are leaf ExpandableText components. Aggregate containers such as
-  // the chat root can render their children and would otherwise be mistaken for a
-  // resource row, causing us to remove the whole chat container.
-  if (Array.isArray((component as Component & { children?: unknown }).children)) return false;
-  return RESOURCE_HEADER_RE.test(renderPlain(component));
+// _lib/chat.ts isResourceRow, minus the panel itself: the [Contextimate] block renders
+// arbitrary text the fuzzy [Section] regex must never re-anchor on.
+function isResourceComponent(component: unknown): boolean {
+  return !isPrefixBlock(component) && isResourceRow(component);
 }
 
 function isBlankComponent(component: Component): boolean {
@@ -1730,20 +1689,8 @@ function isBlankComponent(component: Component): boolean {
   return text.trim().length === 0;
 }
 
-function findResourceChatContainer(node: any, seen = new Set<any>()): any | undefined {
-  if (!node || typeof node !== "object" || seen.has(node)) return undefined;
-  seen.add(node);
-  const children = node.children;
-  if (Array.isArray(children) && children.some((child) => isResourceComponent(child))) {
-    return node;
-  }
-  if (Array.isArray(children)) {
-    for (const child of children) {
-      const found = findResourceChatContainer(child, seen);
-      if (found) return found;
-    }
-  }
-  return undefined;
+function findResourceChatContainer(node: unknown) {
+  return findContainerBy(node, (children) => children.some((child) => isResourceComponent(child)));
 }
 
 function removeExistingPrefixBlocks(chat: any): void {
@@ -1755,12 +1702,9 @@ function insertionIndexAfterResourceList(chat: any): number {
   if (!Array.isArray(chat.children)) return -1;
   let index = -1;
   for (let i = 0; i < chat.children.length; i++) {
-    const child = chat.children[i] as Component;
-    if (isPrefixBlock(child)) continue;
-    if (RESOURCE_HEADER_RE.test(renderPlain(child))) {
-      index = i;
-      if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;
-    }
+    if (!isResourceComponent(chat.children[i])) continue;
+    index = i;
+    if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;
   }
   return index;
 }
@@ -1820,7 +1764,6 @@ export const internals = {
   parseContextSections,
   buildSkillsSection,
   // heuristic resolution
-  defaultHeuristic,
   cleanDenominator,
   resolveHeuristic,
   // provider payload shaping
@@ -1832,21 +1775,16 @@ export const internals = {
   estimateOpenAIToolDefinitionTokens,
   estimateOpenAIFunctionToolTokens,
   // session accounting
-  buildSessionBreakdown,
   buildSessionEstimate,
   // token label layout
   tokenLabelLayout,
   estimatedTokenLabel,
   estimatedTokenField,
   exactTokenLabel,
-  inlineCount,
-  countDetail,
-  ratioDetail,
   renderMetricRow,
   // proportion (design language §5)
   ctxShareLabel,
   contextWindowLabel,
-  renderContextBar,
   methodologyHint,
   // runtime-addition attribution (issue #9)
   detectRuntimeAdditions,

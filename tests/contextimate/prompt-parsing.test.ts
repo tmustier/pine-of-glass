@@ -70,7 +70,6 @@ test("runtime-addition attribution counts only verified, deduplicated prompt tex
     name,
     description: "",
     source: "builtin",
-    parameterKeys: [],
     schema: {},
     promptGuidelines: guidelines,
   });
