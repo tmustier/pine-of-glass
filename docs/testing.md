@@ -72,8 +72,6 @@ moved.
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
-| A `Container` prototype with `render` and `children` exists on the TUI class chain | traceline hit-map container patch |
-| `~/.pi/agent/settings.json` parse path: `hideThinkingBlock` key name | traceline disk fallback |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 
 Where instantiating real components is impractical, the contract test asserts on the
@@ -94,13 +92,6 @@ mock. Anything requiring a live terminal goes to the smoke layer instead.
 - **`stripSgrBackgrounds` / `stripSgrForegrounds`**: parameterised over `38;2;r;g;b`,
   `38;5;n`, `48;…`, basic 30–37/90–97, mixed multi-param sequences (`\x1b[1;31;48;5;2m`);
   asserts non-colour params (bold) survive.
-- **`parseSgrMouse` + `isLeftMousePress`**: left press accepted; release (`m`) rejected;
-  wheel (`code & 64`) rejected; modifier-held clicks (`code & 3 ≠ 0` variants) rejected;
-  malformed input → `undefined`.
-- **One-shot click state machine** (`setClickHandling`/`armClickOnce` with injected short
-  TTLs): arm → enabled; click path disarms; TTL expiry disarms; disarm always disables
-  mouse reporting (asserted via the `__tracelineMouseReportingEnabled` flag with a stubbed
-  non-TTY stdout). This is the safety property behind issue #7's "one-shot is the default".
 - **`fitOneLineAndSuffix`**: suffix right-aligned at exact width; ≥1 gap column; suffix
   wins when width is tiny; no overlap at any width (sweep widths 1..120 on one fixture).
 - **`formatCharCount`, `lineRange`, `tildify`**: table-driven exact outputs (these strings
@@ -190,9 +181,8 @@ Designed now so the features land with their proofs:
   snapshot fixture, the exact Anthropic `count_tokens` body and OpenAI Responses body it
   would send — asserting the counted payload equals the displayed payload (shared shaping
   code, not a re-implementation). Network execution is manual; tests never call providers.
-- **#7 (click UX decision):** the one-shot state-machine tests above are the regression
-  net for whatever default we keep; if we add keyboard-driven row expansion instead, its
-  selection model gets the same state-machine treatment and the mouse path tests stay.
+- **#7 (click UX decision):** resolved by removal; click-to-expand shipped, proved
+  unusable in practice, and was deleted (v0.5.18). Ctrl+T is the whole surface.
 
 ## What "passing" means
 

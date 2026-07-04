@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.18 — 2026-07-04
+
+Click-to-expand is removed from `pi-traceline`. It shipped behind careful
+guards (one-shot arming, opt-in persistence) precisely because terminal mouse
+reporting steals wheel/trackpad scroll, and in practice the feature never
+became usable enough to justify carrying the machinery. Ctrl+T is the whole
+expansion surface.
+
+- Removed the `traceline-click` command, the `Ctrl+Shift+O` arm shortcut, the
+  `PI_TRACELINE_CLICK` env opt-in, SGR mouse parsing, the one-shot state
+  machine, per-row click expansion, and the container/TUI render wraps that
+  existed only to build the row-to-tool hit map.
+- The raw-input listener stays for Ctrl+T key-release/repeat consumption; the
+  SGR foreground/background filtering tests move to
+  `tests/traceline/sgr-filtering.test.ts` unchanged.
+- No visible change to trace rows; the goldens are byte-identical.
+
 ## 0.5.17 — 2026-07-04
 
 The audit pass: `pi-traceline` sheds dead weight and stops re-deriving block

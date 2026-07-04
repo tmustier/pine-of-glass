@@ -223,7 +223,7 @@ In expanded audit views:
 Traceline collapses each tool call to one line. These rules make a run of those
 lines read as one calm block: dim apparatus, bold discriminators, status accents.
 Nothing in a trace row shares ink with assistant prose. The full invocation and
-output stay one Ctrl+T (or click) away.
+output stay one Ctrl+T away.
 
 ### 9.1 The block
 

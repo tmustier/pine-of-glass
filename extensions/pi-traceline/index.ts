@@ -88,34 +88,18 @@ import {
  * labels gets one `Thinking: <first reasoning line>` preview.
  *
  * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
- * between consecutive tools. One-shot click mode toggles a clicked row only, without
- * changing Pi's global tool expansion state.
+ * between consecutive tools.
  *
  * Nothing in pi's node_modules is modified, so this survives `pi update`.
  */
 
 type ToolDisplayMode = "native" | "oneLine";
 
-type ToolHit = {
-  start: number;
-  end: number;
-  comp: any;
-};
-
 type TracelineGlobal = typeof globalThis & {
   __tracelinePatchVersion?: number;
   __tracelineTui?: any;
   __tracelineChat?: any;
   __tracelineInputUnsubscribe?: () => void;
-  __tracelineLayoutActive?: boolean;
-  __tracelineLayoutRow?: number;
-  __tracelineLayoutHits?: ToolHit[];
-  __tracelineHitMap?: ToolHit[];
-  __tracelineTotalRows?: number;
-  __tracelineClickEnabled?: boolean;
-  __tracelineClickOneShot?: boolean;
-  __tracelineClickArmTimer?: ReturnType<typeof setTimeout>;
-  __tracelineMouseReportingEnabled?: boolean;
   __tracelineGetTheme?: () => Theme | undefined;
   __tracelineAssistantPatchVersion?: number;
 };
@@ -136,8 +120,7 @@ const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 25;
-const TRACELINE_CONTAINER_PATCH_VERSION = 1;
+const TRACELINE_PATCH_VERSION = 26;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
@@ -152,9 +135,6 @@ function currentTheme(): Theme | undefined {
 function dim(text: string): string {
   return ink(currentTheme(), "dim", text);
 }
-const MOUSE_REPORTING_ENABLE = "\x1b[?1000h\x1b[?1006h";
-const MOUSE_REPORTING_DISABLE = "\x1b[?1000l\x1b[?1006l";
-
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
 // Structural detection (isToolRow / isAssistantRow / findChatContainer) lives in _lib
 // and is shared across the extension family.
@@ -219,228 +199,6 @@ function suppressThinkingToggleStatus(): void {
   if (!sibs || sibs.length === 0 || !isThinkingToggleStatusRow(sibs[sibs.length - 1])) return;
   sibs.pop();
   if (sibs.length > 0 && isSpacerRow(sibs[sibs.length - 1])) sibs.pop();
-}
-
-// --- click-to-expand hit testing ------------------------------------------------------
-
-function parseBooleanFlag(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") return value;
-  if (typeof value !== "string") return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "on", "yes"].includes(normalized)) return true;
-  if (["0", "false", "off", "no"].includes(normalized)) return false;
-  return undefined;
-}
-
-function shouldEnableClicks(): boolean {
-  if (g.__tracelineClickEnabled === undefined) {
-    // Mouse reporting steals wheel/trackpad scrolling from the terminal. Keep it off by
-    // default, unless the user explicitly opts into persistent click handling.
-    g.__tracelineClickEnabled = parseBooleanFlag(process.env.PI_TRACELINE_CLICK) ?? false;
-  }
-  return g.__tracelineClickEnabled;
-}
-
-function clearClickArmTimer(): void {
-  if (!g.__tracelineClickArmTimer) return;
-  clearTimeout(g.__tracelineClickArmTimer);
-  g.__tracelineClickArmTimer = undefined;
-}
-
-function enableMouseReporting(): void {
-  if (!shouldEnableClicks() || g.__tracelineMouseReportingEnabled) return;
-  if (!process.stdout.isTTY) return;
-  process.stdout.write(MOUSE_REPORTING_ENABLE);
-  g.__tracelineMouseReportingEnabled = true;
-}
-
-function disableMouseReporting(): void {
-  if (!g.__tracelineMouseReportingEnabled) return;
-  if (process.stdout.isTTY) process.stdout.write(MOUSE_REPORTING_DISABLE);
-  g.__tracelineMouseReportingEnabled = false;
-}
-
-function setClickHandling(enabled: boolean, options: { oneShot?: boolean; ttlMs?: number } = {}): void {
-  clearClickArmTimer();
-  g.__tracelineClickEnabled = enabled;
-  g.__tracelineClickOneShot = enabled && options.oneShot === true;
-
-  if (enabled) {
-    enableMouseReporting();
-    // Hit-map layout tracking only runs while clicks are enabled; render now so the
-    // map is populated before the click lands.
-    g.__tracelineTui?.requestRender?.(true);
-    if (g.__tracelineClickOneShot && options.ttlMs && options.ttlMs > 0) {
-      g.__tracelineClickArmTimer = setTimeout(() => {
-        if (g.__tracelineClickOneShot) setClickHandling(false);
-      }, options.ttlMs);
-    }
-  } else {
-    g.__tracelineClickOneShot = false;
-    disableMouseReporting();
-  }
-}
-
-function armClickOnce(ttlMs = 8_000): void {
-  setClickHandling(true, { oneShot: true, ttlMs });
-}
-
-function findContainerPrototype(tui: any): any {
-  let proto = Object.getPrototypeOf(tui);
-  while (proto) {
-    if (proto.constructor?.name === "Container" && typeof proto.render === "function") return proto;
-    proto = Object.getPrototypeOf(proto);
-  }
-  return undefined;
-}
-
-function registerToolHit(comp: any, start: number, end: number): void {
-  if (!g.__tracelineLayoutActive || end < start) return;
-  g.__tracelineLayoutHits?.push({ start, end, comp });
-}
-
-function withLayoutSuppressed<T>(fn: () => T): T {
-  const wasActive = g.__tracelineLayoutActive;
-  g.__tracelineLayoutActive = false;
-  try {
-    return fn();
-  } finally {
-    g.__tracelineLayoutActive = wasActive;
-  }
-}
-
-function patchContainerPrototype(tui: any): void {
-  const proto = findContainerPrototype(tui);
-  if (!proto || proto.__tracelineContainerPatchVersion === TRACELINE_CONTAINER_PATCH_VERSION) {
-    return;
-  }
-
-  const original = proto.__tracelineOriginalRender ?? proto.render;
-  proto.__tracelineOriginalRender = original;
-  proto.render = function (width: number) {
-    if (!g.__tracelineLayoutActive || !Array.isArray(this.children)) {
-      return original.call(this, width);
-    }
-
-    const lines: string[] = [];
-    for (const child of this.children) {
-      const start = g.__tracelineLayoutRow ?? 0;
-      const rendered = typeof child?.render === "function" ? child.render(width) : [];
-      const childLines = Array.isArray(rendered) ? rendered : [];
-      if (isToolRow(child)) registerToolHit(child, start, start + childLines.length - 1);
-      g.__tracelineLayoutRow = start + childLines.length;
-      for (const line of childLines) lines.push(line);
-    }
-    return lines;
-  };
-  proto.__tracelineContainerPatchVersion = TRACELINE_CONTAINER_PATCH_VERSION;
-}
-
-function wrapTuiRender(tui: any): void {
-  if (!tui || tui.__tracelineRenderWrapVersion === TRACELINE_PATCH_VERSION) return;
-
-  const original = tui.__tracelineOriginalRender ?? tui.render;
-  tui.__tracelineOriginalRender = original;
-  tui.render = function (width: number) {
-    if (g.__tracelineLayoutActive) return original.call(this, width);
-    // Hit-map tracking exists only for click-to-expand. Clicks are opt-in, so the
-    // tracking pass must cost nothing while they are off.
-    if (!shouldEnableClicks()) {
-      g.__tracelineHitMap = undefined;
-      return original.call(this, width);
-    }
-
-    g.__tracelineLayoutActive = true;
-    g.__tracelineLayoutRow = 0;
-    g.__tracelineLayoutHits = [];
-    try {
-      const lines = original.call(this, width);
-      g.__tracelineHitMap = g.__tracelineLayoutHits ?? [];
-      g.__tracelineTotalRows = Array.isArray(lines) ? lines.length : 0;
-      return lines;
-    } finally {
-      g.__tracelineLayoutActive = false;
-      g.__tracelineLayoutRow = undefined;
-      g.__tracelineLayoutHits = undefined;
-    }
-  };
-  tui.__tracelineRenderWrapVersion = TRACELINE_PATCH_VERSION;
-}
-
-type SgrMouseEvent = {
-  code: number;
-  col: number;
-  row: number;
-  isPress: boolean;
-};
-
-function parseSgrMouse(data: string): SgrMouseEvent | undefined {
-  const match = data.match(/^\x1b\[<(\d+);(\d+);(\d+)([mM])$/);
-  if (!match) return undefined;
-  return {
-    code: Number.parseInt(match[1]!, 10),
-    col: Number.parseInt(match[2]!, 10),
-    row: Number.parseInt(match[3]!, 10),
-    isPress: match[4] === "M",
-  };
-}
-
-function isLeftMousePress(event: SgrMouseEvent): boolean {
-  if (!event.isPress) return false;
-  if ((event.code & 64) !== 0) return false; // wheel event
-  return (event.code & 3) === 0;
-}
-
-function toolAtViewportRow(row: number): any | undefined {
-  const hits = g.__tracelineHitMap ?? [];
-  if (hits.length === 0) return undefined;
-
-  const totalRows = g.__tracelineTotalRows ?? 0;
-  const terminalRows = Math.max(1, Number(g.__tracelineTui?.terminal?.rows ?? process.stdout.rows ?? 24));
-  const lineIndex = Math.max(0, totalRows - terminalRows) + row - 1;
-
-  for (let i = hits.length - 1; i >= 0; i--) {
-    const hit = hits[i]!;
-    if (lineIndex >= hit.start && lineIndex <= hit.end) return hit.comp;
-  }
-  return undefined;
-}
-
-function toolIsIndividuallyExpanded(comp: any): boolean {
-  return comp?.__tracelineIndividuallyExpanded === true;
-}
-
-function setToolExpanded(comp: any, expanded: boolean): void {
-  comp.__tracelineIndividuallyExpanded = expanded;
-  try {
-    if (typeof comp.setExpanded === "function") comp.setExpanded(expanded);
-    else comp.expanded = expanded;
-    comp.invalidate?.();
-  } catch {
-    /* ignore row-local expansion failures */
-  }
-}
-
-function toggleClickedTool(comp: any): void {
-  const currentlyExpanded = displayMode() === "oneLine" ? toolIsIndividuallyExpanded(comp) : comp?.expanded === true;
-  setToolExpanded(comp, !currentlyExpanded);
-  g.__tracelineTui?.requestRender?.();
-}
-
-function handleMouseInput(data: string): { consume?: boolean } | undefined {
-  if (!shouldEnableClicks()) return undefined;
-  const mouse = parseSgrMouse(data);
-  if (!mouse) return undefined;
-
-  if (isLeftMousePress(mouse)) {
-    const comp = toolAtViewportRow(mouse.row);
-    if (comp) toggleClickedTool(comp);
-    if (g.__tracelineClickOneShot) setClickHandling(false);
-  }
-
-  // Always consume mouse escape sequences while reporting is enabled; otherwise raw
-  // CSI bytes can leak into the editor when the click is outside a tool row.
-  return { consume: true };
 }
 
 // --- one-line rendering ---------------------------------------------------------------
@@ -1155,7 +913,7 @@ function stripTrailingExpandHint(line: string): string {
 
 // Native bash rows append " (timeout Ns)". It is near-constant boilerplate — the same
 // dim parenthetical on every row — so in one-line mode it only spends width and adds
-// noise; the full invocation (timeout included) is one Ctrl+T / click away. Bash rows
+// noise; the full invocation (timeout included) is one Ctrl+T away. Bash rows
 // are rebuilt from plain text (see bashInvocationText), so this works on plain text.
 function stripTimeoutSuffix(text: string): string {
   return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
@@ -1177,7 +935,7 @@ function stripTimeoutSuffix(text: string): string {
 function bashInvocationText(comp: any): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
-  const rendered = withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH));
+  const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
   const lines = Array.isArray(rendered) ? rendered : [];
   const flattened = flattenInvocationLines(lines.map((line: unknown) => stripAnsi(String(line))));
   if (!flattened) return undefined;
@@ -1389,7 +1147,7 @@ function colourCommandPrefix(comp: any, line: string): string {
 function nativeInvocationLine(comp: any): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
-  const rendered = withLayoutSuppressed(() => call.render(ONE_LINE_CAPTURE_WIDTH));
+  const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
   const lines = Array.isArray(rendered) ? rendered : [];
   const line = firstVisibleLine(lines);
   // Demote *after* the verb re-ink: colourCommandPrefix strips foregrounds from the
@@ -1616,8 +1374,8 @@ function elideCdPreamble(line: string): string {
 // `read path:1-200,201-400 · 2 calls` with the combined result size — carried by the
 // run's first row while the later rows render nothing. Runs are broken by anything
 // visible between the reads (prose, a collapsed Thinking… line, another tool), so the
-// fold never reorders what the transcript shows; clicking the folded row open restores
-// the individual rows.
+// fold never reorders what the transcript shows; Ctrl+T's native view restores the
+// individual rows.
 function readPath(comp: any): string | undefined {
   if (toolLabel(comp?.toolName) !== "read") return undefined;
   const path = comp?.args?.path;
@@ -1753,7 +1511,7 @@ function leadingBlank(comp: any): boolean {
 // Shared by the prototype patch and the test suites.
 function renderTraceRow(comp: any, width: number): string[] {
   const run = readRun(comp);
-  if (run && !run.rows.some((row) => toolIsIndividuallyExpanded(row))) {
+  if (run) {
     if (run.index > 0) return []; // a later page: the run's first row carries the fold
     const line = foldedReadLine(run.rows, width);
     return leadingBlank(comp) ? ["", line] : [line];
@@ -1961,10 +1719,6 @@ function patchToolRowPrototype(proto: any): void {
     // native render — never let pi-traceline break a render.
     try {
       if (displayMode() === "native") return original.call(this, width);
-      if (toolIsIndividuallyExpanded(this)) {
-        if (this.expanded !== true && typeof this.setExpanded === "function") this.setExpanded(true);
-        return original.call(this, width);
-      }
       return renderTraceRow(this, width);
     } catch {
       return original.call(this, width);
@@ -2047,51 +1801,13 @@ export const internals = {
   isThinkingToggleStatusRow,
   isSpacerRow,
   suppressThinkingToggleStatus,
-  // mouse / click state machine
-  parseSgrMouse,
-  isLeftMousePress,
-  shouldEnableClicks,
-  setClickHandling,
-  armClickOnce,
 };
 
 export default function piTraceline(pi: ExtensionAPI) {
-  pi.registerShortcut("ctrl+shift+o", {
-    description: "Arm one pi-traceline row click",
-    handler: async (ctx) => {
-      armClickOnce();
-      ctx.ui.notify("pi-traceline click armed for 8s", "info");
-    },
-  });
-
-  // One command for the whole click feature: no args = arm one click for 8s,
-  // `<seconds>` = arm one click with a custom TTL, `on`/`off` = persistent mode
-  // (uses terminal mouse reporting, which may capture wheel/trackpad scroll).
-  pi.registerCommand("traceline-click", {
-    description: "Click-to-expand tool rows: no args/<seconds> arms one click; on/off toggles persistent mode",
-    handler: async (args, ctx) => {
-      const value = args.trim().toLowerCase();
-      if (value === "on") {
-        setClickHandling(true);
-        ctx.ui.notify("pi-traceline persistent clicks enabled; terminal scroll may be captured", "info");
-        return;
-      }
-      if (value === "off") {
-        setClickHandling(false);
-        ctx.ui.notify("pi-traceline clicks disabled; terminal scroll restored", "info");
-        return;
-      }
-      const seconds = Number.parseFloat(value);
-      const ttlMs = Number.isFinite(seconds) && seconds > 0 ? Math.max(500, seconds * 1000) : 8_000;
-      armClickOnce(ttlMs);
-      ctx.ui.notify(`pi-traceline click armed for ${Math.round(ttlMs / 1000)}s`, "info");
-    },
-  });
-
   pi.on("session_start", async (_event, ctx) => {
     // Capture the real TUI (passed synchronously to the widget factory), then patch only
-    // extension-visible seams: render for hit-map capture, requestRender for delayed
-    // tool-row patching, and raw terminal input for SGR mouse click events.
+    // extension-visible seams: requestRender for delayed tool-row patching, and raw
+    // terminal input for Ctrl+T key-release/repeat handling.
     g.__tracelineGetTheme = () => {
       try {
         return (ctx.ui as any).theme;
@@ -2109,8 +1825,6 @@ export default function piTraceline(pi: ExtensionAPI) {
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
       const t = tui as any;
       g.__tracelineTui = t;
-      patchContainerPrototype(t);
-      wrapTuiRender(t);
       if (t.__tracelineRRWrapVersion !== TRACELINE_PATCH_VERSION) {
         const orig = t.__tracelineOriginalRequestRender ?? t.requestRender.bind(t);
         t.__tracelineOriginalRequestRender = orig;
@@ -2127,16 +1841,12 @@ export default function piTraceline(pi: ExtensionAPI) {
       }
       tryPatch();
     });
-    enableMouseReporting();
 
     // Make reload/session-start idempotent: do not stack raw-input listeners.
     // Ctrl+T itself remains Pi-native: Pi toggles reasoning visibility; this extension
-    // only changes how tool rows render while reasoning is hidden. Mouse events are
-    // consumed so terminal escape bytes never leak into the editor.
+    // only changes how tool rows render while reasoning is hidden.
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
-      const mouseResult = handleMouseInput(data);
-      if (mouseResult) return mouseResult;
       if (!matchesKey(data, "ctrl+t")) return undefined;
       if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
       return undefined;
@@ -2146,6 +1856,5 @@ export default function piTraceline(pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;
-    setClickHandling(false);
   });
 }

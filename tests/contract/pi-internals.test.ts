@@ -310,14 +310,6 @@ test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", () =
   }
 });
 
-test("TUI prototype chain still contains a patchable Container", () => {
-  assert.equal(typeof piTui.Container.prototype.render, "function");
-  assert.equal(piTui.Container.name, "Container", "Container class renamed — traceline findContainerPrototype breaks");
-  assert.ok(piTui.TUI.prototype instanceof piTui.Container, "TUI no longer extends Container — hit-map patch finds nothing");
-  const container = new piTui.Container();
-  assert.ok(Array.isArray((container as unknown as { children: unknown }).children), "Container.children no longer an array");
-});
-
 // ---------------------------------------------------------------------------------------
 // Settings + ExtensionAPI declaration anchors (source-text tripwires).
 
