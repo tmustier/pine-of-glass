@@ -626,6 +626,50 @@ block collapsing to a label.
     showStatus message ("Forked to new session", …) announces an otherwise
     invisible action and passes through untouched.
 
+Fourteenth follow-up, 2026-07-04 (the corpus review): §12.20 shipped on intuition,
+so we measured it: 51k real bash invocations from ~1,200 local pi sessions replayed
+through the live ink pipeline (`scripts/dev/bash-corpus/`). The census was emphatic.
+`echo` was the third-most-crowned word (11.4k crowns) yet the first command of its
+row in under 4% of them (`&& echo ---` separators and `|| echo gone` fallbacks, not
+information), and `|| true` wore 4.8k crowns without once being the point. `set -euo
+pipefail` opened 3.2k rows wearing the first crown. The attached form of the
+sequencing semicolon (`sleep 60; ps …`, present on 23% of rows) never started a new
+command, so the informative `ps` sat dim while a space-delimited `&& echo` beside it
+bolded. And a `↵` inside a quoted inline script re-armed the head, crowning `import`,
+`const`, and `-H` on one row in twenty.
+
+25. **Sequencing reads the shell, not the spacing.** The head hunt tracks quote
+    state across the flattened body. A token-final unquoted `;` starts a new
+    command exactly like the space-delimited form (`sleep 60; ps …` crowns `ps`),
+    and any sequencer or `↵` inside an open quote is data: a flattened inline
+    script (`python3 -c '…'`) crowns `python3` once and nothing inside the string.
+    Continuation lines make no command either: after a `↵`, a flag token (`-H …`)
+    renders headless and consumes the slot like §12.23's apparatus, while a block
+    keyword (`do`, `done`, `then`, `else`, `elif`, `fi`, `esac`, `in`) passes the
+    crown through to the real head that follows (`; do gh issue …` crowns `gh`).
+    Heredoc bodies stay inert (§12.20) and additionally suspend quote tracking, so
+    an unbalanced apostrophe in heredoc prose cannot silence the commands after
+    the terminator.
+
+26. **The crown is rationed to commands that inform.** §12.20 crowned every
+    command head; the corpus showed the wall then bolds its own glue. Two
+    vocabularies demote. *Preambles* (`cd <dir> &&`, `set -…`) are situating
+    throat-clearing before the point (`cd` alone was the most-crowned word in the
+    corpus at 24k, 42% of first crowns). *Plumbing* (`echo`, `true`, `false`,
+    `printf`, `exit`) is flow-control glue (`|| true`, `&& echo done`). A
+    preamble or plumbing head renders headless whenever any real command in the
+    row wears a crown; crown selection is therefore row-global, not left-to-right.
+    When the row is nothing *but* preamble and plumbing (`$ cd /tmp`,
+    `$ echo hi > f`, `[ -f x ] && echo ok`), its first operative head (plumbing
+    before preamble) keeps the crown, because a row with no crown at all would
+    vanish into the wall. Classification reads through parentheses (`(cd …`,
+    `… || true)`), so a subshell edge cannot smuggle glue past the vocabulary, and
+    a crown never bolds punctuation. Failed rows still tint whatever is crowned
+    (§12.14).
+    Measured effect: crowns drop ~20% (3.30 → ~2.6 per row) and the crowned
+    vocabulary becomes a command census (`git`, `python3`, `rg`, `gh`, `tmux`)
+    instead of glue.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

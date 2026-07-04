@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.15 — 2026-07-04
+
+The corpus review: quote-aware sequencing and rationed crowns in `pi-traceline`
+(design language §12.25/§12.26):
+
+- §12.20's crown-every-head rule was measured against 51k real bash invocations
+  from ~1,200 local sessions (new rig: `scripts/dev/bash-corpus/`) and the census
+  was emphatic: `echo` was the third-most-bolded word yet almost never the point,
+  `|| true` wore 4.8k crowns, `set -euo pipefail` opened 3.2k rows bold, the
+  attached `;` (`sleep 60; ps …`, 23% of rows) never started a new command, and a
+  `↵` inside a quoted inline script crowned `import`/`const`/`-H`.
+- Sequencing now reads the shell, not the spacing (§12.25): a token-final unquoted
+  `;` sequences like the space-delimited form; operators and `↵` inside an open
+  quote are data; after a `↵`, flags render headless and block keywords (`do`,
+  `fi`, …) pass the crown through; heredoc bodies additionally suspend quote
+  tracking.
+- The crown is rationed (§12.26): `cd`/`set` preambles and `echo`/`true`/`false`/
+  `printf`/`exit` plumbing render headless whenever a real command in the row
+  wears a crown (selection is row-global), while a row that is nothing but
+  preamble/plumbing keeps its first operative head, so no row goes dark.
+  Classification reads through parentheses (`(cd …`, `… || true)`).
+- Measured effect: crowns drop 28% (3.30 → 2.38 per row) and the top-40 crowned
+  words become a pure command census (`git`, `python3`, `rg`, `gh`, `tmux`, …)
+  with `cd`, `echo`, `true`, `set`, `done`, `const`, `-H` gone from the ranks.
+  Visible text is untouched: ink only, goldens unchanged.
+
 ## 0.5.14 — 2026-07-04
 
 A self-evident toggle needs no caption in `pi-traceline` (design language §12.24):

@@ -58,9 +58,11 @@ import {
  * trace row opens with a dim `▏` rail so a run of tool rows fuses into one visible
  * block against assistant prose; verbs are neutral bold with status in the › bullet
  * (failed rows tint the discriminators — verb, bash head, basename — error, §12.14);
- * bash bodies sit at the one L3-dim supporting grey with each command's head word
- * L0-bold (§12.20: `&&`, `||`, `;`, and flattened `↵` breaks start new commands; pipes
- * and redirects continue one; heredoc bodies are inert), and native rows for other
+ * bash bodies sit at the one L3-dim supporting grey with the informative command
+ * heads L0-bold (§12.20/§12.25/§12.26: sequencers — space-delimited or attached `;`,
+ * quote-aware — and flattened `↵` breaks start new commands; pipes and redirects
+ * continue one; heredoc bodies are inert; `cd`/`set` preambles and echo/true-style
+ * plumbing only wear a crown when no real command does), and native rows for other
  * tools demote unstyled spans to dim (§12.12); the boilerplate
  * `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
  * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
@@ -1136,20 +1138,15 @@ function stripTimeoutSuffix(text: string): string {
   return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
 }
 
-// --- bash rows: plain-text rebuild + family ink (design language §2/§12.9/§12.20) ------
-// Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, each
-// command's head word renders L0-bold the way a basename does (`$ rm`, `$ npm`,
-// `$ python3` scan like `read file.ts`; §12.11/§12.20 — sequencing operators and
-// flattened line breaks start new commands, pipes and redirects continue one), and
-// everything else — arguments, connectors,
-// redirects, heredoc markers, and the ↵/⋯ flatten/elision marks — sits at the one
-// L3-dim supporting grey shared with directories, plumbing, and size suffixes.
-// Pi's native bash styling is deliberately dropped: the invocation *text* still comes
-// from pi's renderer, the ink is the family's. The apparatus pattern matches only
-// space-delimited operator tokens, which keeps it out of most quoted strings; a dimmed
-// operator inside a quoted string would be a cosmetic-only miss.
-const BASH_APPARATUS =
-  / (&&|\|\||\||;|2>&1|[&12]?>>?\s?\/dev\/null|<<-?\s?'?[A-Za-z_][A-Za-z0-9_]*'?|\u21b5)(?= |$)/;
+// --- bash rows: plain-text rebuild + family ink (§2/§12.9/§12.20/§12.25/§12.26) ------
+// Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, and the
+// head words that survive crown selection (below) render L0-bold the way a basename
+// does (`$ rm`, `$ npm`, `$ python3` scan like `read file.ts`; §12.11), while
+// everything else — arguments, connectors, redirects, heredoc markers, demoted glue
+// commands, and the ↵/⋯ flatten/elision marks — sits at the one L3-dim supporting
+// grey shared with directories, plumbing, and size suffixes. Pi's native bash styling
+// is deliberately dropped: the invocation *text* still comes from pi's renderer, the
+// ink is the family's.
 
 // The rendered bash invocation as plain text: every visible line flattened into one,
 // leading bullet and timeout boilerplate dropped. All later transforms (tildify, cd
@@ -1167,84 +1164,168 @@ function bashInvocationText(comp: any): string | undefined {
 // Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
-// The head command word of a chunk: the first non-assignment token renders L0-bold —
-// the bash row's basename (§12.9/§12.11) — while the rest of the chunk dims. A head
-// must carry a word character (§12.23): a lone closing quote, a `[`, a `{` is shell
-// apparatus, and the command renders headless — the token dims and *consumes* the
-// head slot, so a following pipe filter cannot inherit the crown (`↵ ' | tail -2`
-// stays entirely dim, per §12.2's filters rule).
-function inkBashChunk(comp: any, chunk: string, headPending: boolean): { text: string; headFound: boolean } {
-  if (!headPending) return { text: dim(chunk), headFound: false };
-  const words = /\S+/g;
-  let match: RegExpExecArray | null;
-  while ((match = words.exec(chunk))) {
-    if (ENV_ASSIGNMENT.test(match[0])) continue;
-    if (!/[A-Za-z0-9]/.test(match[0])) return { text: dim(chunk), headFound: true };
-    const before = chunk.slice(0, match.index);
-    const after = chunk.slice(match.index + match[0].length);
-    return { text: `${before ? dim(before) : ""}${discriminatorInk(comp, match[0])}${after ? dim(after) : ""}`, headFound: true };
-  }
-  return { text: dim(chunk), headFound: false };
-}
-
 // Sequencing operators start a new command whose head word is a discriminator
-// (§12.20). Pipes and redirects continue the same command — `| head -240` is a filter
-// (§12.2's rejection of brightening filters stands) — so they are deliberately absent.
-const BASH_SEQUENCER = /^(?:&&|\|\||;|\u21b5)$/;
+// (§12.20). Pipes and redirects continue a command — `| head -240` is a filter, and
+// §12.2's rejection of brightening filters stands — so `|` consumes a pending head
+// slot instead of re-arming it. The attached form of the semicolon (`sleep 60; ps`)
+// sequences too (§12.25); it is detected on the token, quote-aware, in the walk below.
+const BASH_SEQUENCER = /^(?:&&|\|\||;)$/;
 
 // A heredoc marker arms body-inertness (§12.20): from the `↵` that follows `<<TAG`
-// until the terminator line, chunks are data, not commands — no heads, no resets.
-const BASH_HEREDOC_OP = /^<<-?\s?'?([A-Za-z_][A-Za-z0-9_]*)'?$/;
+// until the terminator line, tokens are data — no heads, no re-arms, and no quote
+// tracking, so an unbalanced apostrophe in heredoc prose cannot silence the commands
+// after the terminator (§12.25). A bare `<<`/`<<-` takes the next token as its tag;
+// `<<<` is a here-string, not a heredoc, and matches neither form.
+const BASH_HEREDOC_TOKEN = /^<<-?(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))?$/;
 
-// Alternating chunk/operator split (String.split keeps the capture group): operators,
-// marks, and argument text all dim; the head command word of each command chunk keeps
-// content ink (§12.20) — sequencers and flattened breaks re-arm the head, heredoc
-// bodies stay inert until their terminator. Chunks are wrapped individually so a
-// dimmed operator can never leak its close into the next chunk's ink; middleTruncate
-// replays the active ink after a cut (§12.10), so a mid-chunk cut can no longer
-// strand the tail at the terminal default.
-function inkBashBody(body: string, comp?: any): string {
-  let rest = body;
-  let out = "";
-  if (rest.startsWith(`${PREAMBLE_MARK} `)) {
-    out += dim(PREAMBLE_MARK);
-    // Keep the following space in rest: the `&&` the elision always leaves behind then
-    // splits as space-delimited apparatus and dims like any other operator.
-    rest = rest.slice(PREAMBLE_MARK.length);
-  }
-  const parts = rest.split(BASH_APPARATUS);
+// The crown vocabularies (§12.26, measured over a 51k-invocation corpus — see
+// scripts/dev/bash-corpus/). Preambles situate (`cd X && …`, `set -e; …`); plumbing
+// glues (`|| true`, `&& echo done`); neither is why the row exists, so neither wears
+// a crown when a real command in the row does. Closers are the block keywords a
+// sequencer exposes (`; do`, `↵ fi`); they pass the crown to the head that follows.
+const BASH_PREAMBLE_HEADS = new Set(["cd", "set"]);
+const BASH_PLUMBING_HEADS = new Set(["echo", "true", "false", "printf", "exit"]);
+const BASH_CLOSERS = new Set(["do", "done", "then", "else", "elif", "fi", "esac", "in"]);
+
+type BashHeadClass = "real" | "plumbing" | "preamble";
+type BashHead = { start: number; end: number; cls: BashHeadClass };
+
+// One walk over the flattened body collects every command's head candidate (§12.20's
+// grammar, amended §12.25): tokens scan left to right with quote state carried across
+// them (the gaps are whitespace and hold none), sequencers re-arm the pending head
+// slot only outside quotes, a token-final unquoted `;` re-arms exactly like the
+// space-delimited form, and heredoc bodies are skipped whole. Within an armed slot:
+// env assignments are scanned past (§12.20), block closers pass the crown through,
+// and a token with no word character (§12.23) or a leading `-` (a flattened
+// continuation line's flag, §12.25) renders headless and consumes the slot so a
+// pipe filter cannot inherit it.
+function bashHeadCandidates(body: string): BashHead[] {
+  const heads: BashHead[] = [];
+  let quote: "'" | '"' | undefined;
   let headPending = true;
   let heredocTag: string | undefined; // armed by `<<TAG`; active from the next ↵
+  let heredocTagFromNext = false; // armed by a bare `<<`; the next token names the tag
   let heredocActive = false;
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i]!;
-    if (part.length === 0) continue;
-    if (i % 2 === 1) {
-      out += ` ${dim(part)}`;
-      if (heredocActive) continue; // breaks and operator-lookalikes inside the body are data
-      const heredoc = BASH_HEREDOC_OP.exec(part);
-      if (heredoc) {
-        heredocTag = heredoc[1];
+  let atLineStart = false; // inside a heredoc: was the previous token a ↵?
+  const tokens = /\S+/g;
+  let match: RegExpExecArray | null;
+  while ((match = tokens.exec(body))) {
+    const text = match[0];
+    if (heredocActive) {
+      if (text === LINE_BREAK_MARK) {
+        atLineStart = true;
         continue;
       }
-      if (part === LINE_BREAK_MARK && heredocTag !== undefined) {
-        heredocActive = true;
-        headPending = false;
-        continue;
-      }
-      if (BASH_SEQUENCER.test(part)) headPending = true;
-    } else if (heredocActive) {
-      out += dim(part);
-      if (part.trim() === heredocTag) {
+      if (atLineStart && text === heredocTag) {
         heredocActive = false;
         heredocTag = undefined;
       }
-    } else {
-      const chunk = inkBashChunk(comp, part, headPending);
-      out += chunk.text;
-      if (chunk.headFound) headPending = false;
+      atLineStart = false;
+      continue;
     }
+    const startsInQuote = quote !== undefined;
+    // Advance the quote scanner across this token. A backslash escapes the next
+    // character except inside single quotes; a `;` counts as a sequencer only when
+    // it is the token's last character and sits outside any quote (`\;` is find's).
+    let endsWithUnquotedSemi = false;
+    for (let k = 0; k < text.length; k++) {
+      const ch = text[k];
+      if (quote === "'") {
+        if (ch === "'") quote = undefined;
+      } else if (quote === '"') {
+        if (ch === "\\") k++;
+        else if (ch === '"') quote = undefined;
+      } else if (ch === "'") quote = "'";
+      else if (ch === '"') quote = '"';
+      else if (ch === "\\") k++;
+      else if (ch === ";" && k === text.length - 1) endsWithUnquotedSemi = true;
+    }
+    if (!startsInQuote) {
+      if (text === LINE_BREAK_MARK) {
+        if (heredocTag !== undefined) {
+          heredocActive = true;
+          headPending = false;
+        } else headPending = true;
+        atLineStart = true;
+        continue;
+      }
+      if (BASH_SEQUENCER.test(text)) {
+        headPending = true;
+        continue;
+      }
+      if (text === "|") {
+        headPending = false;
+        continue;
+      }
+      if (text === PREAMBLE_MARK) continue; // the ⋯ elision mark neither crowns nor consumes
+      if (heredocTagFromNext) {
+        heredocTagFromNext = false;
+        heredocTag = text.replace(/^['"]|['"]$/g, "");
+        continue;
+      }
+      const heredoc = BASH_HEREDOC_TOKEN.exec(text);
+      if (heredoc) {
+        const tag = heredoc[1] ?? heredoc[2] ?? heredoc[3];
+        if (tag !== undefined) heredocTag = tag;
+        else heredocTagFromNext = true;
+        continue;
+      }
+      if (headPending && !ENV_ASSIGNMENT.test(text)) {
+        // Parens are apparatus (§12.23's spirit): `(cd …` and `… || true)` classify
+        // and crown on the inner word, so a subshell close cannot smuggle glue past
+        // the §12.26 vocabularies and a crown never bolds punctuation.
+        const trimmed = endsWithUnquotedSemi ? text.slice(0, -1) : text;
+        const open = /^\(+/.exec(trimmed)?.[0].length ?? 0;
+        const close = /\)+$/.exec(trimmed)?.[0].length ?? 0;
+        const word = trimmed.slice(open, trimmed.length - close);
+        const wordStart = match.index + open;
+        if (!/[A-Za-z0-9]/.test(word) || word.startsWith("-")) {
+          headPending = false; // §12.23/§12.25: apparatus and flags consume the slot
+        } else if (!BASH_CLOSERS.has(word)) {
+          const cls: BashHeadClass = BASH_PREAMBLE_HEADS.has(word)
+            ? "preamble"
+            : BASH_PLUMBING_HEADS.has(word)
+              ? "plumbing"
+              : "real";
+          heads.push({ start: wordStart, end: wordStart + word.length, cls });
+          headPending = false;
+        }
+        // a closer falls through with the slot still armed: `; do gh …` crowns gh
+      }
+    }
+    atLineStart = false;
+    if (endsWithUnquotedSemi) headPending = true;
   }
+  return heads;
+}
+
+// Crown selection is row-global (§12.26): every real command head is crowned, and
+// preamble (`cd`, `set`) and plumbing (`echo`, `true`, …) heads render headless
+// beside them. A row with no real head keeps its first operative head — plumbing
+// before preamble — so no row goes dark: `$ cd /tmp` and `$ echo hi > f` still
+// carry one crown each.
+function bashCrownedHeads(body: string): BashHead[] {
+  const heads = bashHeadCandidates(body);
+  const real = heads.filter((head) => head.cls === "real");
+  if (real.length > 0) return real;
+  const fallback = heads.find((head) => head.cls === "plumbing") ?? heads[0];
+  return fallback ? [fallback] : [];
+}
+
+// Emission splices the crowns into dim runs: everything between crowned head words —
+// arguments, operators, marks, quoted scripts, demoted glue — dims in maximal spans
+// (middleTruncate replays the active ink after a cut, §12.10, so a long dim run
+// survives truncation), and each crowned word takes the discriminator ink (§12.11;
+// §12.14's error tint on failed rows). The visible text is untouched.
+function inkBashBody(body: string, comp?: any): string {
+  let out = "";
+  let cursor = 0;
+  for (const crown of bashCrownedHeads(body)) {
+    if (crown.start > cursor) out += dim(body.slice(cursor, crown.start));
+    out += discriminatorInk(comp, body.slice(crown.start, crown.end));
+    cursor = crown.end;
+  }
+  if (cursor < body.length) out += dim(body.slice(cursor));
   return out;
 }
 
@@ -1927,6 +2008,7 @@ export const internals = {
   tildify,
   stripTimeoutSuffix,
   bashInvocationText,
+  bashCrownedHeads,
   inkBashBody,
   inkBashRow,
   flattenInvocationLines,

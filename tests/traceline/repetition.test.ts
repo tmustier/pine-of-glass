@@ -83,7 +83,7 @@ test("repeated cd preamble elides to a dim ⋯; the first occurrence keeps the f
   assert.ok(firstVisible.includes("cd /tmp/pog-demo"), firstVisible);
   assert.ok(secondVisible.includes(`$ ${FOLD_MARK} && npm run typecheck`), secondVisible);
   assert.ok(!secondVisible.includes("cd /tmp"), `repeated preamble must not re-print: ${secondVisible}`);
-  assert.ok(oneLine(second, 120).includes(`${DIM}${FOLD_MARK}\x1b[0m`), "the ⋯ must be dimmed");
+  assert.ok(oneLine(second, 120).includes(`${DIM}${FOLD_MARK}`), "the ⋯ must open a dim run");
 });
 
 test("elision scans past interleaved non-bash tools but never across visible prose", () => {

@@ -1,5 +1,6 @@
 node_modules
 .DS_Store
+scripts/dev/bash-corpus/out/
 .pi/
 *.log
 *.local.md

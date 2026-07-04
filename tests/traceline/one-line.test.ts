@@ -35,6 +35,7 @@ const {
   isToolRow,
   isAssistantRow,
   stripTimeoutSuffix,
+  bashCrownedHeads,
   inkBashBody,
   dimUnstyledSpans,
   flattenInvocationLines,
@@ -557,11 +558,11 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.ok(!visible.includes("timeout"), `timeout boilerplate must be stripped: ${visible}`);
   assert.ok(visible.includes("$ pwd && git remote -v 2>/dev/null | head -5"), visible);
   assert.ok(line.includes("\x1b[1m$\x1b[22m"), "the $ prompt anchors the row in neutral bold");
-  // Raw fallback (no theme): everything shares one grey, but pieces are individually
-  // wrapped so a themed terminal keeps the levels honest.
-  assert.ok(line.includes(`${DIM}&&\x1b[0m`), "&& must be dimmed");
-  assert.ok(line.includes(`${DIM}2>/dev/null\x1b[0m`), "2>/dev/null must be dimmed");
-  assert.ok(line.includes(`${DIM}|\x1b[0m`), "pipe must be dimmed");
+  // Raw fallback (no theme): everything between crowns dims in maximal runs —
+  // middleTruncate replays the active ink after a cut (§12.10), so a run survives
+  // truncation without stranding its tail.
+  assert.ok(line.includes(`${DIM} && \x1b[0m`), "the operator must sit in a dim run");
+  assert.ok(line.includes(`${DIM} remote -v 2>/dev/null | head -5\x1b[0m`), "arguments, redirects, and pipe filters share one dim run");
 
   // With a theme (design language §2/§12.9/§12.11/§12.20): one supporting grey — each
   // command's head word renders L0-bold, the bash row's basename; arguments and
@@ -569,7 +570,7 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   g.__tracelineGetTheme = () => themed();
   const body = inkBashBody("pwd && git remote -v 2>/dev/null");
   assert.ok(body.startsWith(`${T.text}\x1b[1mpwd\x1b[22m`), `head command must be bold text: ${JSON.stringify(body)}`);
-  assert.ok(body.includes(`${T.dim}&&`), `plumbing must be dim: ${JSON.stringify(body)}`);
+  assert.ok(body.includes(`${T.dim} && `), `operators must be dim: ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.text}\x1b[1mgit\x1b[22m`), `&& starts a new command — its head is bold (§12.20): ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim} remote -v`), `arguments of later commands stay dim: ${JSON.stringify(body)}`);
   assert.ok(!body.includes(T.muted), `no muted ink in a bash body: ${JSON.stringify(body)}`);
@@ -587,60 +588,68 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.ok(elided.includes(`${T.dim} run typecheck`), `tail arguments dim: ${JSON.stringify(elided)}`);
   g.__tracelineGetTheme = undefined;
 
-  // Unit edges: heredoc markers dim; quoted near-misses stay one chunk.
-  assert.ok(inkBashBody("cat <<'EOF'").includes(`${DIM}<<'EOF'\x1b[0m`));
-  assert.equal(stripAnsi(inkBashBody("echo 'a&&b'")), "echo 'a&&b'", "unspaced operators are left alone");
+  // Unit edges: heredoc markers dim; quoted near-misses stay data.
+  assert.ok(inkBashBody("cat <<'EOF'").includes(`${DIM} <<'EOF'\x1b[0m`));
+  assert.equal(stripAnsi(inkBashBody("echo 'a&&b'")), "echo 'a&&b'", "unspaced quoted operators are left alone");
   assert.ok(!inkBashBody("echo 'a&&b'").includes(`${DIM}&&`), "a quoted && must not be split out");
   assert.equal(stripTimeoutSuffix("$ ls (timeout 10s)"), "$ ls");
   assert.equal(stripTimeoutSuffix("$ ls"), "$ ls");
 });
 
-test("every command head is bold: sequencers and ↵ re-arm, pipes stay filters (§12.20)", () => {
+test("real command heads are bold: sequencers re-arm, filters stay dim, crowns are rationed (§12.20/§12.25/§12.26)", () => {
   const g = globalThis as any;
   g.__tracelineGetTheme = () => themed();
   try {
     const bold = (word: string) => `${T.text}\x1b[1m${word}\x1b[22m`;
 
-    // Sequencers start new commands: cd, printf, and git all read as heads.
+    // Sequencers start new commands, but the crown is rationed (§12.26): the cd
+    // preamble and the printf plumbing demote, and the real command pops.
     const chain = inkBashBody("cd /tmp/x && printf 'HEAD ' ; git rev-parse HEAD | head -3");
-    for (const head of ["cd", "printf", "git"]) {
-      assert.ok(chain.includes(bold(head)), `${head} must be a bold head: ${JSON.stringify(chain)}`);
-    }
+    assert.ok(chain.includes(bold("git")), `git is the row's real command: ${JSON.stringify(chain)}`);
+    assert.ok(!chain.includes(bold("cd")), `a cd preamble never outshines the point: ${JSON.stringify(chain)}`);
+    assert.ok(!chain.includes(bold("printf")), `plumbing demotes beside a real command: ${JSON.stringify(chain)}`);
     assert.ok(chain.includes(`${T.dim} rev-parse HEAD`), `arguments stay dim: ${JSON.stringify(chain)}`);
     // A pipe continues the command: `head -3` is a filter and stays dim (§12.2).
     assert.ok(!chain.includes(bold("head")), `pipe tails must not bold: ${JSON.stringify(chain)}`);
 
-    // Flattened line breaks are new commands: each script line's head bolds.
+    // Flattened line breaks are new commands; a `set -…` preamble demotes (§12.26)
+    // and consumes its own slot, so its flag arguments cannot inherit the crown.
     const script = inkBashBody("set -euo pipefail \u21b5 mkdir -p /tmp/x \u21b5 npm pack");
-    for (const head of ["set", "mkdir", "npm"]) {
+    for (const head of ["mkdir", "npm"]) {
       assert.ok(script.includes(bold(head)), `${head} must be a bold head: ${JSON.stringify(script)}`);
     }
+    assert.ok(!script.includes(bold("set")), `set -euo pipefail is throat-clearing: ${JSON.stringify(script)}`);
+    assert.ok(!script.includes(bold("pipefail")), `set consumes its own slot: ${JSON.stringify(script)}`);
 
     // Env assignments still scan past, per command.
     const env = inkBashBody("FOO=1 npm test && BAR=2 node x.js");
     assert.ok(env.includes(bold("npm")) && env.includes(bold("node")), JSON.stringify(env));
-    assert.ok(env.includes(`${T.dim} BAR=2 \x1b[39m`), `assignments dim: ${JSON.stringify(env)}`);
+    assert.ok(env.includes(`${T.dim} test && BAR=2 \x1b[39m`), `assignments and operators share the dim run: ${JSON.stringify(env)}`);
 
-    // Heredoc bodies are inert: no heads between <<TAG and its terminator; the
-    // command after the terminator re-arms.
-    const heredoc = inkBashBody("cat <<'EOF' \u21b5 alpha beta \u21b5 EOF \u21b5 echo done");
+    // Heredoc bodies are inert: no heads between <<TAG and its terminator, and quote
+    // tracking suspends (§12.25) — a heredoc apostrophe cannot silence later commands.
+    const heredoc = inkBashBody("cat <<'EOF' \u21b5 alpha don't beta \u21b5 EOF \u21b5 git diff");
     assert.ok(heredoc.includes(bold("cat")), JSON.stringify(heredoc));
     assert.ok(!heredoc.includes(bold("alpha")), `heredoc body lines are data, not commands: ${JSON.stringify(heredoc)}`);
     assert.ok(!heredoc.includes(bold("EOF")), `the terminator is not a command: ${JSON.stringify(heredoc)}`);
-    assert.ok(heredoc.includes(bold("echo")), `after the terminator, heads re-arm: ${JSON.stringify(heredoc)}`);
+    assert.ok(heredoc.includes(bold("git")), `after the terminator, heads re-arm: ${JSON.stringify(heredoc)}`);
+    // Trailing plumbing after a heredoc still demotes beside the real command.
+    const heredocEcho = inkBashBody("cat <<'EOF' \u21b5 alpha \u21b5 EOF \u21b5 echo done");
+    assert.ok(heredocEcho.includes(bold("cat")) && !heredocEcho.includes(bold("echo")), JSON.stringify(heredocEcho));
 
-    // A head must carry a word character (§12.23): the closing quote of a flattened
-    // script string is apparatus, not a command — headless, and the slot is consumed
-    // so the pipe filter after it cannot inherit the crown.
+    // A ↵ inside an open quote is data (§12.25): a flattened inline script crowns
+    // its interpreter once and nothing inside the string; the closing quote is
+    // apparatus (§12.23) and the pipe filter cannot inherit the crown.
     const closer = inkBashBody("node -e ' \u21b5 const x = 1; \u21b5 ' | tail -2");
-    assert.ok(closer.includes(bold("node")) && closer.includes(bold("const")), JSON.stringify(closer));
+    assert.ok(closer.includes(bold("node")), JSON.stringify(closer));
+    assert.ok(!closer.includes(bold("const")), `quoted script lines are data, not commands: ${JSON.stringify(closer)}`);
     assert.ok(!closer.includes(bold("'")), `a lone quote is not a head: ${JSON.stringify(closer)}`);
     assert.ok(!closer.includes(bold("tail")), `the filter must not inherit the crown: ${JSON.stringify(closer)}`);
     const bracket = inkBashBody("[ -f dist ] && echo ok");
     assert.ok(!bracket.includes(bold("[")) && !bracket.includes(bold("-f")), JSON.stringify(bracket));
-    assert.ok(bracket.includes(bold("echo")), `a sequencer after apparatus re-arms: ${JSON.stringify(bracket)}`);
+    assert.ok(bracket.includes(bold("echo")), `with no real command, the first operative head keeps the crown (§12.26): ${JSON.stringify(bracket)}`);
 
-    // Failed rows tint every head error (§12.14 × §12.20).
+    // Failed rows tint every crowned head error (§12.14 × §12.20).
     const failed = { toolName: "bash", result: { content: [], isError: true } };
     const red = inkBashBody("pwd && git push", failed);
     assert.ok(red.includes(`${T.error}\x1b[1mpwd\x1b[22m`), JSON.stringify(red));
@@ -648,6 +657,47 @@ test("every command head is bold: sequencers and ↵ re-arm, pipes stay filters 
   } finally {
     g.__tracelineGetTheme = undefined;
   }
+});
+
+test("crown selection over real shell shapes: attached ;, quote state, preambles, plumbing (§12.25/§12.26)", () => {
+  const crowns = (body: string) => bashCrownedHeads(body).map((head: any) => body.slice(head.start, head.end));
+
+  // The corpus poster child: an attached `;` sequences like the space-delimited form,
+  // so the informative ps/tmux crown while echo fallbacks and `|| true` stay glue.
+  assert.deepEqual(
+    crowns("sleep 60; ps -p 7075 -o pid= 2>/dev/null && echo still-up || echo gone; tmux list-sessions 2>/dev/null | grep -c monaco || true"),
+    ["sleep", "ps", "tmux"],
+  );
+
+  // Preambles demote beside a real command — wherever they sit — but a row that is
+  // nothing but preamble keeps its head (§12.26: no row goes dark).
+  assert.deepEqual(crowns("cd /tmp/x && git pull"), ["git"]);
+  assert.deepEqual(crowns("mkdir -p /tmp/x && cd /tmp/x && npm init -y"), ["mkdir", "npm"]);
+  assert.deepEqual(crowns("set -e; make build"), ["make"]);
+  assert.deepEqual(crowns("cd /tmp/x"), ["cd"]);
+  assert.deepEqual(crowns("cd /a && cd /b"), ["cd"]);
+
+  // Plumbing keeps the crown only when no real command is present.
+  assert.deepEqual(crowns("echo hi > f.txt"), ["echo"]);
+  assert.deepEqual(crowns("cd /tmp && echo hi"), ["echo"]);
+  assert.deepEqual(crowns("test -d node_modules && echo yes || echo no"), ["test"]);
+
+  // Quote state silences operators: a `;` or ↵ inside a string is data.
+  assert.deepEqual(crowns("git commit -m 'fix; done'"), ["git"]);
+  assert.deepEqual(crowns("curl -sS https://api.example.com \u21b5 -H 'Authorization: Bearer x' \u21b5 -d '{\"a\": 1}'"), ["curl"]);
+  assert.deepEqual(crowns("python3 - <<'PY' \u21b5 import json \u21b5 print(1) \u21b5 PY"), ["python3"]);
+
+  // Closers pass the crown through; find's escaped \\; never sequences.
+  assert.deepEqual(crowns("for i in 1 2; do gh issue view $i; done"), ["for", "gh"]);
+  assert.deepEqual(crowns("find . -name '*.ts' -exec grep -l foo {} \\;"), ["find"]);
+
+  // An attached `;` after a command substitution re-arms once the quotes close.
+  assert.deepEqual(crowns("pane=$(tmux list-panes -F '#{pane_pid}'); ps -p 7 -o pid="), ["list-panes", "ps"]);
+
+  // Parens are apparatus: classification and the crown read the inner word, so a
+  // subshell close cannot smuggle `true)` past the vocabulary.
+  assert.deepEqual(crowns("(cd /tmp && make) || true"), ["make"]);
+  assert.deepEqual(crowns("(echo hi)"), ["echo"]);
 });
 
 test("multiline bash flattens to one line: tail survives, breaks marked, timeout stripped (#10)", () => {
@@ -670,7 +720,7 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   assert.ok(visible.startsWith('  ▏ › $ python3 -c "'), visible);
   assert.ok(visible.includes("capture-pane"), `operative tail must survive: ${visible}`);
   assert.ok(visible.includes("\u21b5"), `original line breaks must be marked: ${visible}`);
-  assert.ok(line.includes(`${DIM}\u21b5\x1b[0m`), "break marks must be dimmed");
+  assert.match(line, /\x1b\[90m[^\x1b]*\u21b5/, "break marks must sit inside a dim run");
   assert.ok(!visible.includes("timeout"), `timeout boilerplate stays stripped after flatten: ${visible}`);
 
   // Narrow widths middle-truncate but still keep both ends of the flattened command.
