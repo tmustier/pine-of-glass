@@ -211,7 +211,12 @@ function contextimateShot() {
 function cachemireShot() {
   const fixture = makeFixture({ extensions: ["pi-traceline", "pi-cachemire"], withAuth: true });
   writeFileSync(join(fixture.cwd, "README.md"), "# lantern\n\nA tiny CLI that turns build logs into one-line verdicts.\n\n## License\nMIT.\n");
-  writeFileSync(join(fixture.cwd, ".pi", "pi-cachemire.json"), JSON.stringify({ turnSummaryMinCalls: 1 }));
+  // Low materiality thresholds: the fixture session is tiny, and the point of the
+  // shot is the break notice, so let a small-but-real break clear the bar.
+  writeFileSync(
+    join(fixture.cwd, ".pi", "pi-cachemire.json"),
+    JSON.stringify({ turnSummaryMinCalls: 1, missWarnUsd: 0.001, missWarnTokens: 250 }),
+  );
   launchPi({ ...fixture, args: "--model openai-codex/gpt-5.5", rows: 45 });
   try {
     waitFor("editor", (t) => t.includes("gpt-5.5"), 90000);
@@ -226,6 +231,20 @@ function cachemireShot() {
     send("Enter");
     waitFor("turn 2", (t) => (t.match(/turn: /g) ?? []).length >= 2, 120000);
     sleep(2000);
+    // Cycle the thinking level (shift+tab): reasoning effort participates in the
+    // codex backend's cache key (live-verified, see docs/pi-cachemire.md), so the
+    // next send should produce a real break with a *named* cause — the interesting
+    // shot. Best-effort cache: if the break doesn't materialize, re-run the rig.
+    send("BTab");
+    sleep(1000);
+    send("Summarize the README in exactly five words.");
+    sleep(300);
+    send("Enter");
+    waitFor("turn 3", (t) => (t.match(/turn: /g) ?? []).length >= 3, 120000);
+    sleep(2000);
+    if (!/cache (broke|partial)/.test(captureText())) {
+      console.warn("WARNING: no cache break materialized (best-effort cache) — shots will be boring; re-run");
+    }
     // Hide thinking so tool rows render as traceline one-liners, consistent with the
     // other README shots.
     send("C-t");

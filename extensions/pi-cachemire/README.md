@@ -8,7 +8,7 @@ Explains the cache and agent-loop economics of a pi session. pi's footer *counts
 (input/output/cache read/write/cost); cachemire *explains*: when the cache will go
 cold, why it broke, and what the loop actually cost.
 
-![Cachemire turn ledger lines in the transcript and the cache clock above the editor](../../docs/img/pi-cachemire-clock.png)
+![Turn ledger lines in the transcript, a resolved break notice naming its cause (thinking changed), and the cache clock above the editor](../../docs/img/pi-cachemire-clock.png)
 
 **A cache clock above the input box** counts down provider cache freshness from the
 last request, so you know *before* you hit Enter whether the send is cheap or re-bills
@@ -38,8 +38,8 @@ materiality threshold (default $0.05 or 20k re-written tokens):
 ```
 
 **A turn ledger** prints one line after every user turn, and `/cache` renders the full
-per-call table (below: live capture on an OpenAI band cache with a cold start, a hit,
-and one honestly-attributed miss):
+per-call table (below: live capture on an OpenAI band cache: a cold start, two hits,
+then a miss with a named cause after a thinking-level change re-keyed the cache):
 
 ```
 ◍ turn: 7 calls · 2m41s · read 940.1k (99.6% cached) · wrote 11.2k · out 4.2k · $0.09
