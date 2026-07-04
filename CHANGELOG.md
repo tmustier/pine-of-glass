@@ -16,6 +16,11 @@ expansion surface.
   SGR foreground/background filtering tests move to
   `tests/traceline/sgr-filtering.test.ts` unchanged.
 - No visible change to trace rows; the goldens are byte-identical.
+- The `pi-traceline` and `pi-cachemire` READMEs are restructured to mirror
+  `pi-contextimate`'s shape: pitch, screenshots, install, use, then depth.
+  Cachemire's wire-level evidence (thinking-level cache keys, OpenAI replica
+  arithmetic, lifecycle trade-offs) moves to `docs/pi-cachemire.md`, linked
+  from the README the way contextimate links `docs/pi-contextimate.md`.
 
 ## 0.5.17 — 2026-07-04
 
