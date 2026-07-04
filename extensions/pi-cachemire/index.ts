@@ -1,10 +1,10 @@
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { createHash } from "node:crypto";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { captureTui } from "../_lib/capture.ts";
-import { findChatContainer } from "../_lib/chat.ts";
+import { findChatContainer, type ContainerLike } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
@@ -37,7 +37,6 @@ export interface UsageLike {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  totalTokens?: number;
   cost?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
 }
 
@@ -108,7 +107,7 @@ export interface CachemireConfig {
   missWarnTokens: number;
 }
 
-export const DEFAULT_CONFIG: CachemireConfig = {
+const DEFAULT_CONFIG: CachemireConfig = {
   widget: true,
   turnSummary: true,
   turnSummaryMinCalls: 1, // every turn: a single-call turn omitting the line felt inconsistent
@@ -125,7 +124,7 @@ const TTL_LONG_MS = 60 * 60 * 1000;
 // Mirroring that rule lets a restored session show a definite TTL before any live request;
 // the observed cache_control from the first real request replaces the inference (and also
 // covers models without long-retention support).
-export function inferAnthropicTtlMs(env: Record<string, string | undefined> = process.env): number {
+function inferAnthropicTtlMs(env: Record<string, string | undefined> = process.env): number {
   return env.PI_CACHE_RETENTION === "long" ? TTL_LONG_MS : TTL_SHORT_MS;
 }
 
@@ -143,16 +142,16 @@ export type CacheWindow =
   | { kind: "band"; softMs: number; hardMs: number }
   | { kind: "unknown" };
 
-export const OPENAI_WINDOW: CacheWindow = { kind: "band", softMs: TTL_SHORT_MS, hardMs: TTL_LONG_MS };
-export const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
+const OPENAI_WINDOW: CacheWindow = { kind: "band", softMs: TTL_SHORT_MS, hardMs: TTL_LONG_MS };
+const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
 
-export function windowForProvider(provider: string | undefined): CacheWindow | undefined {
+function windowForProvider(provider: string | undefined): CacheWindow | undefined {
   if (provider === "anthropic") return { kind: "contract", ttlMs: inferAnthropicTtlMs(), source: "inferred" };
   if (provider !== undefined && provider.startsWith("openai")) return OPENAI_WINDOW;
   return undefined;
 }
 
-export function windowLabel(window: CacheWindow): string {
+function windowLabel(window: CacheWindow): string {
   switch (window.kind) {
     case "contract":
       return `${formatDuration(window.ttlMs)} TTL${window.source === "inferred" ? " (inferred)" : ""}`;
@@ -163,14 +162,12 @@ export function windowLabel(window: CacheWindow): string {
   }
 }
 
-export function windowExpiry(
-  window: CacheWindow | undefined,
-  gapMs: number | undefined,
-): "within" | "maybe" | "past" | "unknown" {
-  if (!window || window.kind === "unknown" || gapMs === undefined) return "unknown";
-  if (window.kind === "contract") return gapMs > window.ttlMs ? "past" : "within";
-  if (gapMs > window.hardMs) return "past";
-  return gapMs > window.softMs ? "maybe" : "within";
+/** Definitely past the window: contract TTL elapsed, or the band's documented hard cap.
+ * The band's maybe-zone is deliberately not a claim — expiryCause words it only once an
+ * observed miss confirms the eviction. */
+function pastWindow(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
+  if (!window || window.kind === "unknown" || gapMs === undefined) return false;
+  return gapMs > (window.kind === "contract" ? window.ttlMs : window.hardMs);
 }
 
 /**
@@ -178,8 +175,8 @@ export function windowExpiry(
  * mapThinkingLevelToEffort (model map override first, then minimal/low→low,
  * medium→medium, high→high, anything else→high) plus the off→disabled case.
  */
-export function wireThinkingEffort(
-  map: Record<string, string | null> | undefined,
+function wireThinkingEffort(
+  map: Partial<Record<string, string | null>> | undefined,
   level: string,
 ): string {
   if (level === "off") return "off";
@@ -198,8 +195,8 @@ export function wireThinkingEffort(
  * effort-based (adaptive) view; budget models can differ where efforts collide, which
  * under-flips the widget — the send-time fingerprint diff still catches those exactly.
  */
-export function thinkingLevelsDiffer(
-  map: Record<string, string | null> | undefined,
+function thinkingLevelsDiffer(
+  map: Partial<Record<string, string | null>> | undefined,
   a: string | undefined,
   b: string | undefined,
 ): boolean {
@@ -208,7 +205,7 @@ export function thinkingLevelsDiffer(
 }
 
 // Shared cause wording for predictions and resolved classifications.
-export function expiryCause(window: CacheWindow | undefined, gapMs: number | undefined): CallCause | undefined {
+function expiryCause(window: CacheWindow | undefined, gapMs: number | undefined): CallCause | undefined {
   if (!window || gapMs === undefined) return undefined;
   if (window.kind === "contract" && gapMs > window.ttlMs) {
     return { kind: "ttl", detail: `idle ${formatDuration(gapMs)} > ${formatDuration(window.ttlMs)} TTL` };
@@ -236,7 +233,7 @@ const MISS_RATIO = 0.2;
 // pi moves its cache_control breakpoint to the last user message on every request, so
 // breakpoints MUST be stripped before hashing or every call would diff as "history
 // mutated" at the previous breakpoint.
-export function stripCacheControl(value: unknown): unknown {
+function stripCacheControl(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripCacheControl);
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -250,7 +247,7 @@ export function stripCacheControl(value: unknown): unknown {
 }
 
 function hashOf(value: unknown): string {
-  return createHash("sha1").update(JSON.stringify(value) ?? "null").digest("hex").slice(0, 16);
+  return createHash("sha1").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
 function findTtlMs(payload: Record<string, unknown>): number | undefined {
@@ -272,7 +269,7 @@ function findTtlMs(payload: Record<string, unknown>): number | undefined {
   return undefined;
 }
 
-export function fingerprintPayload(payload: unknown): RequestFingerprint {
+function fingerprintPayload(payload: unknown): RequestFingerprint {
   const body = (payload ?? {}) as Record<string, unknown>;
   if (Array.isArray(body.input) || typeof body.instructions === "string") {
     const tools = Array.isArray(body.tools) ? body.tools : [];
@@ -323,7 +320,7 @@ function describeAnthropicThinking(thinking: unknown, outputConfig: unknown): st
 
 // --- forensics: name the first divergent prefix segment --------------------------------
 
-export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerprint): CallCause | undefined {
+function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerprint): CallCause | undefined {
   if (prev.model && cur.model && prev.model !== cur.model) {
     return { kind: "model", detail: `model switched ${prev.model} \u2192 ${cur.model}` };
   }
@@ -380,7 +377,7 @@ const ENTRY_GRANULARITY = 512;
 export interface PriorEntry { index: number; at: number; promptTokens: number }
 export interface EntryMatch { index: number; ageMs: number }
 
-export function matchPriorEntry(
+function matchPriorEntry(
   cacheRead: number,
   priors: PriorEntry[],
   now: number,
@@ -433,7 +430,7 @@ function unknownMissDetail(args: ClassifyInput): string {
   return "unknown (provider-side eviction?)";
 }
 
-export function classifyCall(args: ClassifyInput): CallClassification {
+function classifyCall(args: ClassifyInput): CallClassification {
   if (args.inCompaction) {
     return { kind: "miss", cause: { kind: "compaction-work", detail: "compaction summarizer call" } };
   }
@@ -448,7 +445,7 @@ export function classifyCall(args: ClassifyInput): CallClassification {
   if (args.compacted) {
     cause = { kind: "compaction", detail: "compaction rewrote history" };
   } else if (args.fingerprintCause) {
-    cause = windowExpiry(args.window, args.gapMs) === "past"
+    cause = pastWindow(args.window, args.gapMs)
       ? { ...args.fingerprintCause, detail: `${args.fingerprintCause.detail} (also idle past TTL)` }
       : args.fingerprintCause;
   } else if (idleCause) {
@@ -486,7 +483,7 @@ export interface BreakPrediction {
   expectedUsd?: number;
 }
 
-export function predictBreak(args: {
+function predictBreak(args: {
   isFirst: boolean;
   inCompaction: boolean;
   compacted: boolean;
@@ -524,7 +521,7 @@ export function predictBreak(args: {
   // Only a *definite* expiry earns an in-flight "breaking" line: contract TTL passed, or
   // the band's hard cap passed. The band's maybe-zone stays silent — if the prefix was
   // evicted, the resolved line appears when usage proves it.
-  if (windowExpiry(args.window, args.gapMs) === "past") {
+  if (pastWindow(args.window, args.gapMs)) {
     return sized(expiryCause(args.window, args.gapMs)!);
   }
   return undefined;
@@ -532,18 +529,18 @@ export function predictBreak(args: {
 
 // --- economics -------------------------------------------------------------------------
 
-export function uncachedCostUsd(usage: UsageLike, rates?: ModelRates): number | undefined {
+function uncachedCostUsd(usage: UsageLike, rates?: ModelRates): number | undefined {
   if (!rates) return undefined;
   const inputTokens = usage.input + usage.cacheRead + usage.cacheWrite;
   return (inputTokens * rates.input + usage.output * rates.output) / 1_000_000;
 }
 
-export function rewriteCostUsd(tokens: number, rates?: ModelRates): number | undefined {
+function rewriteCostUsd(tokens: number, rates?: ModelRates): number | undefined {
   if (!rates) return undefined;
   return (tokens * (rates.cacheWrite || rates.input)) / 1_000_000;
 }
 
-export function sessionSavings(records: CallRecord[]): { actual: number; uncached: number; saved: number; pct: number } | undefined {
+function sessionSavings(records: CallRecord[]): { actual: number; uncached: number; saved: number; pct: number } | undefined {
   const usable = records.filter((record) => record.costUsd !== undefined && record.uncachedUsd !== undefined);
   if (usable.length === 0) return undefined;
   const actual = usable.reduce((sum, record) => sum + (record.costUsd ?? 0), 0);
@@ -552,11 +549,8 @@ export function sessionSavings(records: CallRecord[]): { actual: number; uncache
   return { actual, uncached, saved: uncached - actual, pct: (1 - actual / uncached) * 100 };
 }
 
-// --- formatting ------------------------------------------------------------------------
-// All number formatting lives in _lib/fmt.ts (family number grammar); re-exported here
-// because the test suite reaches it through this module's internals surface.
-
-export { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
+// All number formatting lives in _lib/fmt.ts (family number grammar); the test suite
+// reaches it through this module's internals surface.
 
 // --- cache clock (pure state → text; tones applied by the widget layer) -----------------
 
@@ -590,7 +584,7 @@ function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number,
   return ` \u00b7 next send ${verb} ~${compactCount(cachedTokens)}${qualifier}${bill}`;
 }
 
-export function cacheClock(input: ClockInput): ClockState {
+function cacheClock(input: ClockInput): ClockState {
   if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
   if (input.modelSwitched) {
     const scale = input.cachedTokens && input.oldModelId
@@ -658,7 +652,7 @@ export function cacheClock(input: ClockInput): ClockState {
  * provider-confirmed refresh; a first-send abort clears it outright (the clock hides).
  * If the aborted send did touch the cache after all, the next call resolves green
  * ("cache held") — the same correction path as any wrong prediction. */
-export function settleDanglingSend(state: {
+function settleDanglingSend(state: {
   pendingRequestAt?: number;
   prevCallRequestAt?: number;
   lastRequestAt?: number;
@@ -669,7 +663,7 @@ export function settleDanglingSend(state: {
 
 // --- ledger lines ----------------------------------------------------------------------
 
-export function renderRunSummary(run: RunAggregate, endedAt: number): string {
+function renderRunSummary(run: RunAggregate, endedAt: number): string {
   const promptTokens = run.input + run.cacheRead;
   const cachedPct = promptTokens > 0 ? (run.cacheRead / promptTokens) * 100 : 0;
   const parts = [
@@ -686,7 +680,7 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
 // Tense grammar: in-flight predictions are progressive with ~estimates ("breaking ·
 // re-writing ~77.7k"); resolved lines are past tense with exact usage ("broke · re-wrote
 // 77.7k of 80.1k prompt (97%)").
-export function renderBreakingLine(prediction: BreakPrediction): string {
+function renderBreakingLine(prediction: BreakPrediction): string {
   const size = prediction.expectedRewriteTokens
     ? ` \u00b7 re-writing ~${compactCount(prediction.expectedRewriteTokens)}${prediction.expectedUsd !== undefined ? ` (~${formatUsd(prediction.expectedUsd)})` : ""}`
     : prediction.cause.kind === "compaction"
@@ -706,7 +700,7 @@ function promptTokens(usage: UsageLike): number {
   return usage.input + usage.cacheRead + usage.cacheWrite;
 }
 
-export function renderMissLine(record: CallRecord): string {
+function renderMissLine(record: CallRecord): string {
   const prompt = promptTokens(record.usage);
   const pct = prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}% of prompt)` : "";
   const what = record.classification.kind === "partial"
@@ -720,7 +714,7 @@ export function renderMissLine(record: CallRecord): string {
 
 // A predicted break that resolved into a hit — good news, and a small lesson about
 // shared-prefix warmth (another session with the same harness prefix kept it alive).
-export function renderHeldLine(record: CallRecord): string {
+function renderHeldLine(record: CallRecord): string {
   return `cache held \u00b7 read ${compactCount(record.usage.cacheRead)} of ${compactCount(record.expectedRead)} expected` +
     " \u00b7 prefix stayed warm";
 }
@@ -733,7 +727,7 @@ const EVENT_GLYPHS: Record<CallClassification["kind"], string> = {
   miss: SCALE.miss,
 };
 
-export function renderLedger(
+function renderLedger(
   records: CallRecord[],
   options: { providerLabel?: string; window?: CacheWindow; modelLabel?: string; theme?: Theme } = {},
 ): string[] {
@@ -795,7 +789,7 @@ export function renderLedger(
 
 // --- ledger restore (so --continue sessions keep their totals) --------------------------
 
-export function restoreFromMessages(messages: Array<Record<string, unknown>>): CallRecord[] {
+function restoreFromMessages(messages: Array<Record<string, unknown>>): CallRecord[] {
   const records: CallRecord[] = [];
   let previousAt: number | undefined;
   let expectedRead = 0;
@@ -810,7 +804,6 @@ export function restoreFromMessages(messages: Array<Record<string, unknown>>): C
       gapMs: previousAt !== undefined ? at - previousAt : undefined,
       usage,
       expectedRead,
-      fingerprintCause: undefined,
     });
     if (classification.cause && classification.kind !== "cold" && classification.kind !== "hit") {
       classification.cause = { kind: "restored", detail: "restored session (cause unknown)" };
@@ -834,7 +827,7 @@ export function restoreFromMessages(messages: Array<Record<string, unknown>>): C
 
 // --- config ----------------------------------------------------------------------------
 
-export function loadConfig(cwd: string): CachemireConfig {
+function loadConfig(cwd: string): CachemireConfig {
   return configPaths("pi-cachemire", cwd).reduce(
     (config, filePath) => ({ ...config, ...readJsonConfig<Partial<CachemireConfig>>(filePath) }),
     { ...DEFAULT_CONFIG },
@@ -864,7 +857,7 @@ export interface AnchoredLine<C = unknown> {
   gap: number;
 }
 
-export function childAnchorKey(child: unknown): string | undefined {
+function childAnchorKey(child: unknown): string | undefined {
   const c = child as { toolCallId?: unknown; lastMessage?: { role?: unknown; timestamp?: unknown } } | undefined;
   if (typeof c?.toolCallId === "string") return `tool#${c.toolCallId}`;
   const message = c?.lastMessage;
@@ -874,7 +867,7 @@ export function childAnchorKey(child: unknown): string | undefined {
   return undefined;
 }
 
-export function anchorForAppend(children: unknown[], anchored: AnchoredLine[]): { anchorKey?: string; gap: number } {
+function anchorForAppend(children: unknown[], anchored: AnchoredLine[]): { anchorKey?: string; gap: number } {
   const ours = new Set(anchored.flatMap((line) => [line.spacer, line.text]));
   let gap = 0;
   for (let i = children.length - 1; i >= 0; i--) {
@@ -888,7 +881,7 @@ export function anchorForAppend(children: unknown[], anchored: AnchoredLine[]): 
 /** Re-insert tracked lines into a rebuilt children array (mutated in place). Returns the
  * survivors; lines whose anchor vanished are dropped. Idempotent: lines still present
  * (e.g. the hook fired without a rebuild) are left where they are. */
-export function reattachAnchored(children: unknown[], anchored: AnchoredLine[]): AnchoredLine[] {
+function reattachAnchored(children: unknown[], anchored: AnchoredLine[]): AnchoredLine[] {
   const ours = new Set(anchored.flatMap((line) => [line.spacer, line.text]));
   const survivors: AnchoredLine[] = [];
   for (const line of anchored) {
@@ -942,7 +935,7 @@ interface CachemireState {
   anchored: AnchoredLine[];
   /** Cached chat container: rebuilds empty it of recognizable rows, but the instance
    * lives for the whole interactive session, so the first find stays valid. */
-  chat?: { addChild?: (child: unknown) => void; children: unknown[] };
+  chat?: ContainerLike;
   /** Records before this index belong to a dead cache lineage (pre-compaction, or before
    * a model/system/tools/history/thinking change): entries the current prefix cannot
    * read, so entry matching never names them. */
@@ -952,10 +945,7 @@ interface CachemireState {
   run?: RunAggregate;
   /** Theme handle (captured at session_start) — all chat/widget ink flows through ink(). */
   theme?: Theme;
-  ui?: {
-    setWidget: (key: string, content: string[] | undefined) => void;
-    notify: (message: string, level?: "info" | "warning" | "error") => void;
-  };
+  ui?: Pick<ExtensionUIContext, "setWidget" | "notify">;
   tui?: { requestRender?: (force?: boolean) => void };
   lastWidgetText?: string;
 }
@@ -1050,8 +1040,8 @@ function ensureChatClearHook(chat: Record<string, unknown>): void {
 function appendChatLine(text: string): Text | undefined {
   const s = state();
   const chat = (s.tui ? findChatContainer(s.tui) : undefined) ?? s.chat;
-  if (chat?.addChild && Array.isArray(chat.children)) {
-    s.chat = chat as CachemireState["chat"];
+  if (chat?.addChild) {
+    s.chat = chat;
     try {
       const line = new Text(text, 1, 0);
       const spacer = new Spacer(1);
@@ -1085,30 +1075,23 @@ export default function piCachemire(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     s.config = loadConfig(process.cwd());
+    const { messages } = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
+    s.records = restoreFromMessages(messages as unknown as Array<Record<string, unknown>>);
     let restoredModelId: string | undefined;
-    try {
-      const manager = ctx.sessionManager as { getEntries?: () => unknown[]; getLeafId?: () => string | null };
-      const entries = manager.getEntries?.() ?? [];
-      const { messages } = buildSessionContext(entries as never, manager.getLeafId?.());
-      s.records = restoreFromMessages(messages as unknown as Array<Record<string, unknown>>);
-      restoredModelId = [...(messages as unknown as Array<{ role?: string; model?: string; usage?: UsageLike }>)]
-        .reverse()
-        .find((message) => message.role === "assistant" && message.usage)?.model;
-    } catch {
-      s.records = [];
+    for (let i = messages.length - 1; i >= 0 && restoredModelId === undefined; i--) {
+      const message = messages[i]!;
+      if (message.role === "assistant") restoredModelId = message.model;
     }
-    const model = ctx.model as { id?: string; provider?: string; cost?: ModelRates } | undefined;
-    if (model?.cost) s.rates = model.cost;
-    if (model?.id) {
+    const model = ctx.model;
+    if (model) {
+      s.rates = model.cost;
       s.currentModelId = model.id;
-      s.modelLabel = model.provider ? `${model.provider}/${model.id}` : model.id;
+      s.modelLabel = `${model.provider}/${model.id}`;
     }
     // Settings restore with the session, so the current level stands in for the level of
     // the session's last billed call. Note: getThinkingLevel lives on the runtime API
-    // (`pi`), not the per-event ctx — ctx.getThinkingLevel?.() silently yields undefined.
-    try {
-      s.lastCallThinkingLevel = s.currentThinkingLevel = pi.getThinkingLevel();
-    } catch { /* level stays unknown; thinking flips are then ignored, never invented */ }
+    // (`pi`), not the per-event ctx (contract-pinned in tests/contract).
+    s.lastCallThinkingLevel = s.currentThinkingLevel = pi.getThinkingLevel();
     // Restored sessions get the provider's real freshness window immediately (anthropic:
     // inferred contract TTL; openai: documented band); the first live request's observed
     // payload replaces the inference.
@@ -1131,13 +1114,13 @@ export default function piCachemire(pi: ExtensionAPI): void {
       if (s.modelSwitched) s.lineageStart = s.records.length;
     }
     if (!ctx.hasUI) return;
-    s.ui = ctx.ui as unknown as CachemireState["ui"];
-    s.theme = (ctx.ui as { theme?: Theme }).theme;
+    s.ui = ctx.ui;
+    s.theme = ctx.ui.theme;
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
       s.tui = tui as CachemireState["tui"];
     });
     if (g.__piCachemireTimer) clearInterval(g.__piCachemireTimer);
-    g.__piCachemireTimer = setInterval(() => updateWidget(), 1000);
+    g.__piCachemireTimer = s.config.widget ? setInterval(() => updateWidget(), 1000) : undefined;
     updateWidget();
   });
 
@@ -1159,11 +1142,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.window = s.pendingFingerprint.ttlMs !== undefined
         ? { kind: "contract", ttlMs: s.pendingFingerprint.ttlMs, source: "observed" }
         : UNKNOWN_WINDOW; // cacheRetention "none": no breakpoints were sent
+      s.providerLabel = "anthropic";
     } else if (s.pendingFingerprint.kind === "openai-responses") {
       s.window = OPENAI_WINDOW;
+      s.providerLabel = "openai";
     }
-    if (s.pendingFingerprint.kind === "anthropic") s.providerLabel = "anthropic";
-    else if (s.pendingFingerprint.kind === "openai-responses") s.providerLabel = "openai";
 
     // Place the break notice where the causality lives: between the user's action and the
     // response. It shows the expectation now and is resolved in place when usage arrives.
@@ -1193,19 +1176,17 @@ export default function piCachemire(pi: ExtensionAPI): void {
   });
 
   pi.on("model_select", async (event) => {
-    const model = event.model as { id?: string; provider?: string; cost?: ModelRates } | undefined;
-    if (model?.cost) s.rates = model.cost;
-    if (model?.id) s.modelLabel = model.provider ? `${model.provider}/${model.id}` : model.id;
-    if (model?.id) {
-      s.currentModelId = model.id;
-      // Caches are per-model on every provider; the stored token count is also in the old
-      // tokenizer's currency. Switching back before the next call revives both.
-      s.modelSwitched = s.lastCallModelId !== undefined && model.id !== s.lastCallModelId;
-    }
+    const model = event.model;
+    s.rates = model.cost;
+    s.modelLabel = `${model.provider}/${model.id}`;
+    s.currentModelId = model.id;
+    // Caches are per-model on every provider; the stored token count is also in the old
+    // tokenizer's currency. Switching back before the next call revives both.
+    s.modelSwitched = s.lastCallModelId !== undefined && model.id !== s.lastCallModelId;
     // Keep the freshness window honest across provider switches until the next
     // observation lands; an anthropic TTL observed from a live payload stays valid.
-    if (!(model?.provider === "anthropic" && s.window.kind === "contract" && s.window.source === "observed")) {
-      s.window = windowForProvider(model?.provider) ?? UNKNOWN_WINDOW;
+    if (!(model.provider === "anthropic" && s.window.kind === "contract" && s.window.source === "observed")) {
+      s.window = windowForProvider(model.provider) ?? UNKNOWN_WINDOW;
     }
     updateWidget();
   });
@@ -1213,14 +1194,13 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("thinking_level_select", async (event, ctx) => {
     // First flip in a session: the event's own previousLevel is the level every billed
     // call so far used — a baseline that needs no session_start timing assumptions.
-    s.lastCallThinkingLevel ??= (event as { previousLevel?: string }).previousLevel;
+    s.lastCallThinkingLevel ??= event.previousLevel;
     s.currentThinkingLevel = event.level;
     // Material only when something was billed at the old level AND the new level changes
     // the wire params for this model (see thinkingLevelsDiffer); cycling back before the
     // next call revives the cache. The send-time fingerprint diff remains the authority.
-    const model = ctx.model as { reasoning?: boolean; thinkingLevelMap?: Record<string, string | null> } | undefined;
-    s.thinkingChanged = s.records.length > 0 && model?.reasoning === true &&
-      thinkingLevelsDiffer(model.thinkingLevelMap, s.lastCallThinkingLevel, event.level);
+    s.thinkingChanged = s.records.length > 0 && ctx.model?.reasoning === true &&
+      thinkingLevelsDiffer(ctx.model.thinkingLevelMap, s.lastCallThinkingLevel, event.level);
     updateWidget();
   });
 
@@ -1238,8 +1218,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
   });
 
   pi.on("message_end", async (event) => {
-    const message = event.message as { role?: string; usage?: UsageLike };
-    if (message.role !== "assistant" || !message.usage) return;
+    const message = event.message;
+    if (message.role !== "assistant") return;
     const usage = message.usage;
     if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) return;
     const now = Date.now();
@@ -1288,7 +1268,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       expectedRead: s.expectedRead,
       classification,
       rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
-      costUsd: usage.cost?.total,
+      costUsd: usage.cost.total,
       uncachedUsd: uncachedCostUsd(usage, s.rates),
     };
     s.records.push(record);
@@ -1317,7 +1297,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.run.cacheRead += usage.cacheRead;
       s.run.cacheWrite += usage.cacheWrite;
       s.run.output += usage.output;
-      s.run.costUsd += usage.cost?.total ?? 0;
+      s.run.costUsd += usage.cost.total;
     }
 
     const broke = (classification.kind === "miss" || classification.kind === "partial") &&
@@ -1381,7 +1361,7 @@ export const internals = {
   thinkingLevelsDiffer,
   windowForProvider,
   windowLabel,
-  windowExpiry,
+  pastWindow,
   expiryCause,
   OPENAI_WINDOW,
   UNKNOWN_WINDOW,

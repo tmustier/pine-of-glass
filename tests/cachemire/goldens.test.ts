@@ -17,7 +17,7 @@ const {
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
 const MIN = 60_000;
 
-// A realistic four-call session: cold start, warm hit, partial (stale replica), TTL miss.
+// A realistic four-call session: cold start, warm hit, unexplained partial, TTL miss.
 const RECORDS: CallRecord[] = [
   {
     index: 1, at: 0, usage: { input: 12_100, output: 400, cacheRead: 0, cacheWrite: 138_200 },
@@ -33,7 +33,7 @@ const RECORDS: CallRecord[] = [
   {
     index: 3, at: 2 * MIN, gapMs: 106_000,
     usage: { input: 200, output: 900, cacheRead: 90_000, cacheWrite: 62_100 },
-    expectedRead: 152_100, classification: { kind: "partial", cause: { kind: "replica", detail: "read 59% of expected — stale replica or partial expiry" } },
+    expectedRead: 152_100, classification: { kind: "partial", cause: { kind: "unknown", detail: "unknown (provider-side eviction?)" } },
     rewroteTokens: 62_100, costUsd: 1.21, uncachedUsd: 2.41,
   },
   {

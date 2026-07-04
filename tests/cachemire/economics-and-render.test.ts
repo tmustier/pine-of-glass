@@ -10,7 +10,7 @@ const {
   compactCount, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
-  windowForProvider, windowLabel, windowExpiry, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
+  windowForProvider, windowLabel, pastWindow, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
   settleDanglingSend,
 } = internals;
 
@@ -166,13 +166,13 @@ test("window resolution and labels", () => {
   assert.equal(windowLabel(OPENAI_WINDOW), "5m\u20131h window");
   assert.equal(windowLabel({ kind: "unknown" }), "TTL unknown");
 
-  assert.equal(windowExpiry(CONTRACT_5M, 4 * MIN), "within");
-  assert.equal(windowExpiry(CONTRACT_5M, 6 * MIN), "past");
-  assert.equal(windowExpiry(OPENAI_WINDOW, 3 * MIN), "within");
-  assert.equal(windowExpiry(OPENAI_WINDOW, 12 * MIN), "maybe");
-  assert.equal(windowExpiry(OPENAI_WINDOW, 90 * MIN), "past");
-  assert.equal(windowExpiry({ kind: "unknown" }, 90 * MIN), "unknown");
-  assert.equal(windowExpiry(undefined, 90 * MIN), "unknown");
+  assert.equal(pastWindow(CONTRACT_5M, 4 * MIN), false);
+  assert.equal(pastWindow(CONTRACT_5M, 6 * MIN), true);
+  assert.equal(pastWindow(OPENAI_WINDOW, 3 * MIN), false);
+  assert.equal(pastWindow(OPENAI_WINDOW, 12 * MIN), false, "band maybe-zone: eviction is not definite");
+  assert.equal(pastWindow(OPENAI_WINDOW, 90 * MIN), true, "band hard cap is documented — definite");
+  assert.equal(pastWindow({ kind: "unknown" }, 90 * MIN), false);
+  assert.equal(pastWindow(undefined, 90 * MIN), false);
 });
 
 test("anthropic TTL inference mirrors pi-ai's env resolution", () => {

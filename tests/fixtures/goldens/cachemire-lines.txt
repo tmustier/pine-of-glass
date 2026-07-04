@@ -4,7 +4,7 @@
   call     gap    input     read    wrote     out    cost  event
      1       —    12.1k     0.0k   138.2k    0.4k   $0.55  ○ cold start
      2     14s     1.2k   150.3k     1.8k    1.1k  $0.040  ● hit (restored)
-     3   1m46s     0.2k    90.0k    62.1k    0.9k   $1.21  ◑ partial — read 59% of expected — stale replica or partial expiry
+     3   1m46s     0.2k    90.0k    62.1k    0.9k   $1.21  ◑ partial — unknown (provider-side eviction?)
      4      7m     0.2k     0.0k   153.0k    1.4k   $2.97  ◌ miss — idle 7m00s > 5m TTL
   totals: 4 calls · input 13.7k · read 240.3k · wrote 355.1k · out 3.8k · $4.77
   caching saved ~$3.00 vs uncached $7.77 (−39%) · API-priced; notional on subscription
@@ -22,6 +22,6 @@
 ◍ cache breaking · re-writing ~150.3k (~$2.82) · cause: idle 7m00s > 5m TTL
 ◍ cache breaking · re-writing the new prefix · cause: history compacted
 ◍ cache broke · re-wrote 153.0k of 153.2k prompt (100%) · $2.97 · cause: idle 7m00s > 5m TTL
-◍ cache partial · read 90.0k of 152.1k expected · re-wrote 62.1k (41% of prompt) · cause: read 59% of expected — stale replica or partial expiry
+◍ cache partial · read 90.0k of 152.1k expected · re-wrote 62.1k (41% of prompt) · cause: unknown (provider-side eviction?)
 ◍ cache held · read 150.3k of 150.3k expected · prefix stayed warm
 ◍ turn: 3 calls · 4m30s · read 450.9k (99.5% cached) · wrote 3.6k · out 1.2k · $0.18
