@@ -309,8 +309,8 @@ export function sizeTone(chars: number, overrides?): Tone;             // dim | 
    ≥100 ch lights every cell in the block, an all-tiny block shows none (§12.13/
    §12.15) — and diff stats drop their zero side (§12.13). Every
    trace row opens with the dim `▏` rail so a run of rows reads as one block. Trace
-   rows are unbanded by default; the old native-background slab path stays available
-   behind `toolBackgrounds`.
+   rows are unbanded; the old native-background slab path was removed in 0.5.17
+   (git history keeps it).
 5. Fold paginated reads of one file into one row (`read …/index.ts:1-200,201-400 · 2
    calls · 37.0k ch`) and fix doubled `Thinking…` lines — issue #14's scope, executed
    under this language.

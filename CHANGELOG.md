@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.17 — 2026-07-04
+
+The audit pass: `pi-traceline` sheds dead weight and stops re-deriving block
+facts. No visible change; the goldens are byte-identical.
+
+- Block-scoped facts (§12.15/§12.22) are computed once per rendered row and
+  threaded through the suffix builders, and diff-text parsing caches per row
+  against the text's identity. Deriving each fact independently walked the block
+  again for every fact of every row, making a single row render O(block²) in
+  diff parses.
+- Removed the opt-in `toolBackgrounds` native-band path (config key, env var,
+  and the `rowBackground`/`shadeRow` machinery): unbanded rows have been the
+  design since §12, and git history keeps the slab.
+- Removed the pre-0.80 resource-container fallback from the family's chat
+  detection, and the settings.json disk fallback for reasoning visibility (a
+  tool row always has an assistant sibling carrying the live state).
+- Folded the duplicated row assembly (single rows and folded read runs) into one
+  `fitTraceRow` helper, deduplicated the boolean-flag parser, collapsed the
+  tool-row render patch to a single guard, and dropped provably dead members:
+  the redundant `__tracelinePatched` global, a dead type field, and `internals`
+  entries no test uses.
+
 ## 0.5.16 — 2026-07-04
 
 Diff cells align like numbers, not like flags, in `pi-traceline` (design language
@@ -13,6 +35,9 @@ Diff cells align like numbers, not like flags, in `pi-traceline` (design languag
   each column's right edge, the blank a dropped zero side keeps (§12.13), and the
   `·` separator. Materiality reads as width: a bigger count grows leftward into
   its column.
+- Records of consequence wear the ink of what they state (§12.28): each record
+  fact renders bold in its own tone, success for landed state, warning for a
+  forced push, while opaque audit data (a commit sha) stays dim beside its verb.
 
 ## 0.5.15 — 2026-07-04
 

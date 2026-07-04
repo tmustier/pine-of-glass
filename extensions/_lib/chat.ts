@@ -42,13 +42,16 @@ export function findContainerBy(
   return undefined;
 }
 
-// The startup resource listing pi renders into the chat container at session start:
-// leaf ExpandableText sections whose first line is a [Section] header. This is the
-// chat container's only reliable pre-rows tenant (the welcome/changelog block is
-// gated on updates), and the same seam pi-contextimate has anchored on since v1.
-const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
+// The startup resource listing pi renders at session start: leaf ExpandableText
+// sections whose first line is a [Section] header. Since pi 0.80 it lives in a
+// loadedResourcesContainer rendered immediately before the chat container, making it
+// the one reliable pre-rows landmark for finding that container in a fresh session
+// (the welcome/changelog block is gated on updates). Same seam pi-contextimate has
+// anchored on since v1.
+export const RESOURCE_HEADER_RE = /^\s*\[(Context|Skills|Prompts|Extensions|Themes)\]/m;
 
-function isResourceRow(component: unknown): boolean {
+/** A single startup resource section: a leaf component whose render carries a [Section] header. */
+export function isResourceRow(component: unknown): boolean {
   const c = component as { render?: (width: number) => string[]; children?: unknown };
   if (!c || typeof c.render !== "function" || Array.isArray(c.children)) return false;
   try {
@@ -56,11 +59,6 @@ function isResourceRow(component: unknown): boolean {
   } catch {
     return false;
   }
-}
-
-/** A container whose direct children are pi's startup resource sections. */
-function findResourceContainer(node: unknown): ContainerLike | undefined {
-  return findContainerBy(node, (children) => children.some((c) => isResourceRow(c)));
 }
 
 /**
@@ -96,11 +94,10 @@ function findChatContainerAfterResourceContainer(node: unknown, seen = new Set<u
 
 /** pi's chat container: the one whose direct children include the chat rows — or, in a
  * fresh session with no rows yet, the empty sibling immediately after the startup
- * resource listing (pi 0.80+) / the former resource-list host (older pi). */
+ * resource listing (pi 0.80+). */
 export function findChatContainer(node: unknown): ContainerLike | undefined {
   return (
     findContainerBy(node, (children) => children.some((c) => isToolRow(c) || isAssistantRow(c))) ??
-    findChatContainerAfterResourceContainer(node) ??
-    findResourceContainer(node)
+    findChatContainerAfterResourceContainer(node)
   );
 }

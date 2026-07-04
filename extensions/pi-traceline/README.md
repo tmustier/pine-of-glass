@@ -59,7 +59,7 @@ range) while a shared prefix dominates. Three folds keep the trace skimmable:
 
 ### Tool backgrounds
 
-Trace lines are unbanded by default: status stays in the bullet and result-size suffix, while the body keeps the calmer edit-tool look. The previous full-width native background path is still available behind a flag if we want it back: set `PI_TRACELINE_TOOL_BACKGROUNDS=1` or add `{ "toolBackgrounds": true }` to `~/.pi/agent/pi-traceline.json` / `<cwd>/.pi/pi-traceline.json`, then reload Pi. When enabled, the band is still borrowed from Pi's own tool background (`toolPendingBg` / `toolSuccessBg` / `toolErrorBg`) rather than synthesized.
+Trace lines are unbanded: status stays in the bullet and result-size suffix, while the body keeps the calmer edit-tool look. The old opt-in full-width native background band (`toolBackgrounds` config / `PI_TRACELINE_TOOL_BACKGROUNDS`) was removed in 0.5.17; git history keeps it if the slab is ever wanted back.
 
 ### Multiline commands stay one line
 

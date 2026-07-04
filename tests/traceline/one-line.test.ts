@@ -22,8 +22,6 @@ const {
   mutationDiffStats,
   toolFactSuffix,
   configureSizeThresholds,
-  configureToolBackgrounds,
-  toolBackgroundsEnabled,
   lineRange,
   tildify,
   toolStatus,
@@ -39,8 +37,6 @@ const {
   inkBashBody,
   dimUnstyledSpans,
   flattenInvocationLines,
-  rowBackground,
-  shadeRow,
   renderTraceRow,
   repeatsPreviousCdPreamble,
   elideCdPreamble,
@@ -84,7 +80,6 @@ beforeEach(() => {
   g.__tracelineChat = undefined;
   g.__tracelineGetTheme = undefined;
   configureSizeThresholds(undefined);
-  configureToolBackgrounds({ toolBackgrounds: false });
 });
 
 test("row grammar units", () => {
@@ -742,59 +737,6 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   assert.equal(flattenInvocationLines(["", "   "]), undefined);
   assert.equal(flattenInvocationLines(["$ ls -la"]), "$ ls -la");
   assert.equal(flattenInvocationLines(["$ cat <<'EOF'", "  body", "EOF"]), "$ cat <<'EOF' \u21b5 body \u21b5 EOF");
-});
-
-test("tool background flag accepts config and env, with unbanded rows as the default", () => {
-  const previous = process.env.PI_TRACELINE_TOOL_BACKGROUNDS;
-  try {
-    delete process.env.PI_TRACELINE_TOOL_BACKGROUNDS;
-    configureToolBackgrounds(undefined);
-    assert.equal(toolBackgroundsEnabled(), false);
-
-    process.env.PI_TRACELINE_TOOL_BACKGROUNDS = "1";
-    configureToolBackgrounds(undefined);
-    assert.equal(toolBackgroundsEnabled(), true);
-
-    process.env.PI_TRACELINE_TOOL_BACKGROUNDS = "off";
-    configureToolBackgrounds(undefined);
-    assert.equal(toolBackgroundsEnabled(), false);
-
-    process.env.PI_TRACELINE_TOOL_BACKGROUNDS = "1";
-    configureToolBackgrounds({ toolBackgrounds: false });
-    assert.equal(toolBackgroundsEnabled(), false, "explicit config keeps tests and project overrides deterministic");
-  } finally {
-    if (previous === undefined) delete process.env.PI_TRACELINE_TOOL_BACKGROUNDS;
-    else process.env.PI_TRACELINE_TOOL_BACKGROUNDS = previous;
-    configureToolBackgrounds({ toolBackgrounds: false });
-  }
-});
-
-test("tool backgrounds are off by default; opt-in keeps the native full-width band", () => {
-  const BG_OPEN = "\x1b[48;2;30;30;40m";
-  const bgFn = (text: string) => `${BG_OPEN}${text}\x1b[49m`; // theme.bg shape
-  const comp = toolComp({ contentBox: { bgFn }, getRenderShell: () => "box" });
-
-  assert.equal(toolBackgroundsEnabled(), false, "unbanded trace rows are the default");
-  assert.equal(rowBackground(comp), undefined);
-  assert.equal(oneLine(comp, 80).includes(BG_OPEN), false, "default trace row should not paint a background");
-
-  configureToolBackgrounds({ toolBackgrounds: true });
-  assert.equal(toolBackgroundsEnabled(), true);
-  const line = oneLine(comp, 80);
-  assert.ok(line.startsWith(BG_OPEN), "opt-in row must open on the tool background");
-  assert.ok(line.endsWith("\x1b[49m"), "opt-in row must close only the background");
-  assert.equal(visibleWidth(line), 78, "opt-in band must span the inset row width (§12.21)");
-  for (const segment of line.split("\x1b[0m").slice(1)) {
-    assert.ok(segment.startsWith(BG_OPEN), `background must be re-asserted after every reset: ${JSON.stringify(segment)}`);
-  }
-
-  // No native shade → no band: self-framing tools and rows without a contentBox.
-  assert.equal(rowBackground(toolComp({ contentBox: { bgFn }, getRenderShell: () => "self" })), undefined);
-  assert.equal(rowBackground(toolComp()), undefined);
-  assert.equal(oneLine(toolComp(), 80).includes(BG_OPEN), false);
-
-  // A bgFn that paints nothing leaves the row untouched.
-  assert.equal(shadeRow("x", 10, (text) => text), "x");
 });
 
 test("hyperlinked read rows (OSC 8, ST-terminated): text survives stripAnsi, URL survives tildify, emphasis applies", () => {

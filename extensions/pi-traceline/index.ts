@@ -9,8 +9,7 @@ import {
   type MarkdownTheme,
 } from "@earendil-works/pi-tui";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer, isAssistantRow, isToolRow } from "../_lib/chat.ts";
@@ -49,9 +48,8 @@ import {
  * One-line rendering reuses pi's native tool call renderer for most tools, so visual
  * defaults (accent paths/backticks, warning line ranges, custom renderers) drift with pi;
  * bash rows re-ink their body from the rendered *text* instead, so the wall of commands
- * stays quiet. Rows are intentionally unbanded by default (the edit-tool look): status
- * stays in the bullet and severity suffixes, while the old pi-background borrowing path
- * remains behind a config flag for easy rollback. Multiline bash commands are flattened
+ * stays quiet. Rows are intentionally unbanded (the edit-tool look): status stays in
+ * the bullet and severity suffixes. Multiline bash commands are flattened
  * into the one trace line with a dim ↵ marking each original break, so heredocs and
  * inline scripts keep their operative tail instead of collapsing to `$ python3 -c "`.
  * The ink follows the family hierarchy (docs/design-language.md, amended §12): every
@@ -105,9 +103,7 @@ type ToolHit = {
 };
 
 type TracelineGlobal = typeof globalThis & {
-  __tracelinePatched?: boolean;
   __tracelinePatchVersion?: number;
-  __tracelineContainerPatchVersion?: number;
   __tracelineTui?: any;
   __tracelineChat?: any;
   __tracelineInputUnsubscribe?: () => void;
@@ -146,14 +142,11 @@ const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
 // The live Theme handle is captured at session_start; before that (and in unit tests
-// without one) ink() falls back to basic raw ANSI.
+// without one) ink() falls back to basic raw ANSI. The registered getter guards its
+// own property access, so the hottest call in the file stays bare.
 
 function currentTheme(): Theme | undefined {
-  try {
-    return g.__tracelineGetTheme?.();
-  } catch {
-    return undefined;
-  }
+  return g.__tracelineGetTheme?.();
 }
 
 function dim(text: string): string {
@@ -177,17 +170,10 @@ function chatChildren(): any[] | undefined {
 
 // --- reasoning-visibility = source of truth for tool collapse -------------------------
 
-function readHideThinkingFromDisk(): boolean {
-  try {
-    const raw = readFileSync(join(homedir(), ".pi", "agent", "settings.json"), "utf8");
-    return JSON.parse(raw).hideThinkingBlock ?? false;
-  } catch {
-    return false;
-  }
-}
-
 // True when pi is currently hiding reasoning. Read from a live assistant row so tool
-// visibility can never desync from reasoning; fall back to disk before any row exists.
+// visibility can never desync from reasoning. A tool row always follows the assistant
+// turn that issued it, so a sibling assistant row exists whenever this runs; the
+// theoretical no-row case defaults to native rather than guessing from disk.
 function thinkingHidden(): boolean {
   const sibs = chatChildren();
   if (sibs) {
@@ -195,7 +181,7 @@ function thinkingHidden(): boolean {
       if (isAssistantRow(sibs[i])) return sibs[i].hideThinkingBlock;
     }
   }
-  return readHideThinkingFromDisk();
+  return false;
 }
 
 function displayMode(): ToolDisplayMode {
@@ -237,16 +223,20 @@ function suppressThinkingToggleStatus(): void {
 
 // --- click-to-expand hit testing ------------------------------------------------------
 
-function envEnablesPersistentClicks(): boolean {
-  const value = (process.env.PI_TRACELINE_CLICK ?? "").toLowerCase();
-  return value === "1" || value === "true" || value === "on" || value === "yes";
+function parseBooleanFlag(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "on", "yes"].includes(normalized)) return true;
+  if (["0", "false", "off", "no"].includes(normalized)) return false;
+  return undefined;
 }
 
 function shouldEnableClicks(): boolean {
   if (g.__tracelineClickEnabled === undefined) {
     // Mouse reporting steals wheel/trackpad scrolling from the terminal. Keep it off by
     // default, unless the user explicitly opts into persistent click handling.
-    g.__tracelineClickEnabled = envEnablesPersistentClicks();
+    g.__tracelineClickEnabled = parseBooleanFlag(process.env.PI_TRACELINE_CLICK) ?? false;
   }
   return g.__tracelineClickEnabled;
 }
@@ -507,10 +497,6 @@ function toolPrefix(tone: Tone): string {
   return `${TOOL_INDENT}${dim(TOOL_RAIL)} ${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
 }
 
-function hiddenToolPrefix(comp: any): string {
-  return toolPrefix(statusTone(comp));
-}
-
 function formatCharCount(value: number): string {
   return compactCount(Math.max(0, Math.floor(value)));
 }
@@ -523,7 +509,6 @@ let sizeThresholds: SizeThresholds = SIZE_THRESHOLDS;
 type TracelineConfig = {
   sizeWarningChars?: unknown;
   sizeErrorChars?: unknown;
-  toolBackgrounds?: unknown;
 };
 
 function configureSizeThresholds(config: TracelineConfig | undefined): void {
@@ -536,26 +521,6 @@ function configureSizeThresholds(config: TracelineConfig | undefined): void {
       ? Math.floor(config.sizeErrorChars)
       : SIZE_THRESHOLDS.error;
   sizeThresholds = { warning, error: Math.max(error, warning) };
-}
-
-let paintToolBackgrounds = false;
-
-function parseBooleanFlag(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") return value;
-  if (typeof value !== "string") return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "on", "yes"].includes(normalized)) return true;
-  if (["0", "false", "off", "no"].includes(normalized)) return false;
-  return undefined;
-}
-
-function configureToolBackgrounds(config: TracelineConfig | undefined): void {
-  const configured = parseBooleanFlag(config?.toolBackgrounds);
-  paintToolBackgrounds = configured ?? parseBooleanFlag(process.env.PI_TRACELINE_TOOL_BACKGROUNDS) ?? false;
-}
-
-function toolBackgroundsEnabled(): boolean {
-  return paintToolBackgrounds;
 }
 
 // A fact suffix must carry a fact (design language §12.13): results smaller than one
@@ -581,8 +546,8 @@ function resultTextCharCount(comp: any): number | undefined {
   }, 0);
 }
 
-function resultCharSuffix(comp: any): string {
-  return charSuffix(resultTextCharCount(comp), blockSizeColumnLive(comp));
+function resultCharSuffix(comp: any, facts: BlockFacts): string {
+  return charSuffix(resultTextCharCount(comp), facts.sizeColumnLive);
 }
 
 // The row's contiguous visual block — the rail-fused run. Boundaries mirror the
@@ -609,25 +574,52 @@ function blockToolRows(comp: any): any[] {
   return rows.length ? rows : [comp];
 }
 
-// Columns are block-scoped (design language §12.15): the size column lights up for a
-// whole contiguous trace block when any of its completed rows clears the fact floor.
-// An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
-function blockSizeColumnLive(comp: any): boolean {
-  return blockToolRows(comp).some((c) => {
+// The block-scoped facts every row's suffix shares: whether the size column is live
+// and the block's diff/size column widths. One pass, computed once per rendered row
+// and threaded through the suffix builders — deriving each fact independently walked
+// the block again for every fact of every row, making a single row render O(block²)
+// in diff parses.
+type BlockFacts = { sizeColumnLive: boolean; diffColumns: DiffColumns };
+
+function blockFacts(rows: any[]): BlockFacts {
+  // Columns are block-scoped (design language §12.15): the size column lights up for
+  // a whole contiguous trace block when any of its completed rows clears the fact
+  // floor. An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
+  const sizeColumnLive = rows.some((c) => {
     const chars = resultTextCharCount(c);
     return chars !== undefined && chars >= CHAR_SUFFIX_FLOOR;
   });
+  let plus = 0;
+  let minus = 0;
+  let size = 0;
+  for (const row of rows) {
+    const stats = mutationDiffStats(row);
+    if (stats) {
+      if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
+      if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
+    }
+    size = Math.max(size, visibleWidth(charSuffix(resultTextCharCount(row), sizeColumnLive)));
+  }
+  return { sizeColumnLive, diffColumns: { plus, minus, size } };
+}
+
+function blockFactsOf(comp: any): BlockFacts {
+  return blockFacts(blockToolRows(comp));
+}
+
+function blockSizeColumnLive(comp: any): boolean {
+  return blockFactsOf(comp).sizeColumnLive;
 }
 
 // Rows in a block share one body budget (design language §12.17): reserve the block's
 // widest rendered fact suffix — folded read runs count as their single `N calls · size`
 // cell — plus the two-space gap (§12.21), so every truncated row in the block cuts at
 // the same columns and its tail ends flush where the suffix column begins.
-function blockSuffixReserve(comp: any, available = Number.POSITIVE_INFINITY): number {
+function blockSuffixReserve(rows: any[], facts: BlockFacts, available: number): number {
   let widest = 0;
-  for (const row of blockToolRows(comp)) {
+  for (const row of rows) {
     const run = readRun(row);
-    const suffix = run ? foldedReadSuffix(run.rows) : toolFactSuffix(row, available);
+    const suffix = run ? foldedReadSuffix(run.rows, facts) : toolFactSuffix(row, available, facts);
     widest = Math.max(widest, visibleWidth(suffix));
   }
   return widest > 0 ? widest + 2 : 0;
@@ -645,9 +637,10 @@ type WriteSnapshot = WriteInput & {
   stats: DiffStats | undefined;
 };
 
+// Expects pre-normalized line endings (diffStatsFromContents normalizes once).
 function splitDiffLines(text: string): string[] {
   if (!text) return [];
-  const lines = normalizeLineEndings(text).split("\n");
+  const lines = text.split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
@@ -666,17 +659,20 @@ function boundedLcsLength(a: string[], b: string[]): number {
     for (let j = 1; j <= b.length; j++) {
       current[j] = a[i - 1] === b[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, current[j - 1]!);
     }
+    // No reset after the swap: index 0 is never written (both arrays start zeroed)
+    // and every other cell is overwritten before the next row reads it.
     [previous, current] = [current, previous];
-    current.fill(0);
   }
   return previous[b.length]!;
 }
 
 function diffStatsFromContents(oldContent: string, newContent: string): DiffStats | undefined {
-  if (normalizeLineEndings(oldContent) === normalizeLineEndings(newContent)) return undefined;
+  const oldNormalized = normalizeLineEndings(oldContent);
+  const newNormalized = normalizeLineEndings(newContent);
+  if (oldNormalized === newNormalized) return undefined;
 
-  const oldLines = splitDiffLines(oldContent);
-  const newLines = splitDiffLines(newContent);
+  const oldLines = splitDiffLines(oldNormalized);
+  const newLines = splitDiffLines(newNormalized);
   let start = 0;
   while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) start++;
 
@@ -714,10 +710,9 @@ function readWriteOldContent(input: WriteInput): string {
   }
 }
 
+// Only captureWriteSnapshot ever writes the field, always a full WriteSnapshot.
 function writeSnapshot(comp: any): WriteSnapshot | undefined {
-  const snapshot = comp?.__tracelineWriteSnapshot;
-  if (!snapshot || typeof snapshot !== "object") return undefined;
-  return snapshot as WriteSnapshot;
+  return comp?.__tracelineWriteSnapshot;
 }
 
 function sameWriteInput(a: WriteInput | undefined, b: WriteInput | undefined): boolean {
@@ -768,8 +763,21 @@ function diffStatsFromText(diff: string | undefined): DiffStats | undefined {
   return added > 0 || removed > 0 ? { added, removed } : undefined;
 }
 
+// Parsing a diff is O(its length), and the block's shared fact columns (§12.22) ask
+// every row for stats on every frame — so the parse caches per row against the diff
+// text's identity. A settled row hits the reference-equality fast path; a streaming
+// edit's changing preview text misses and re-parses. The write-snapshot fallback
+// stays uncached: it is a handful of reference compares.
+const diffTextStatsCache = new WeakMap<object, { text: string; stats: DiffStats | undefined }>();
+
 function mutationDiffStats(comp: any): DiffStats | undefined {
-  return diffStatsFromText(diffTextFromComp(comp)) ?? writeDiffStats(comp);
+  const text = diffTextFromComp(comp);
+  if (text === undefined) return writeDiffStats(comp);
+  const cached = diffTextStatsCache.get(comp);
+  if (cached && cached.text === text) return cached.stats ?? writeDiffStats(comp);
+  const stats = diffStatsFromText(text);
+  diffTextStatsCache.set(comp, { text, stats });
+  return stats ?? writeDiffStats(comp);
 }
 
 // Zero sides are dropped (design language §12.13): `+2 -0` → `+2` — the dimmed zero
@@ -780,21 +788,6 @@ function mutationDiffStats(comp: any): DiffStats | undefined {
 // x down the block. Without column widths (a lone row), a cell pads to itself and
 // renders exactly as before.
 type DiffColumns = { plus: number; minus: number; size: number };
-
-function blockDiffColumns(comp: any): DiffColumns {
-  let plus = 0;
-  let minus = 0;
-  let size = 0;
-  for (const row of blockToolRows(comp)) {
-    const stats = mutationDiffStats(row);
-    if (stats) {
-      if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
-      if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
-    }
-    size = Math.max(size, visibleWidth(resultCharSuffix(row)));
-  }
-  return { plus, minus, size };
-}
 
 function formatMutationDiffStats(
   stats: DiffStats,
@@ -990,18 +983,18 @@ function recordSuffix(comp: any, available: number): string {
   return cells.map(inkRecordCell).join(dim(SEP));
 }
 
-function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY): string {
+function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {
   const theme = currentTheme();
   const parts: string[] = [];
   const records = recordSuffix(comp, available);
   if (records) parts.push(records);
   const diff = mutationDiffStats(comp);
-  const chars = resultCharSuffix(comp);
+  const chars = resultCharSuffix(comp, facts);
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`
     // hold one x down the block (§12.22/§12.27).
-    const cols = blockDiffColumns(comp);
+    const cols = facts.diffColumns;
     parts.push(formatMutationDiffStats(diff, theme, cols));
     if (chars) parts.push(" ".repeat(Math.max(0, cols.size - visibleWidth(chars))) + chars);
   } else if (chars) {
@@ -1517,31 +1510,6 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
   return `${verbInk(comp, verb)} ${dim(boring)}${discriminatorInk(comp, tail)}${ink(theme, "warning", range)}`;
 }
 
-// Optional shaded tool surface, borrowed live from the row itself. This used to be the
-// default, but the unbanded edit-tool look is calmer and avoids inconsistent highlighting
-// for self-framing tools. Keep the path behind `toolBackgrounds` / `PI_TRACELINE_TOOL_BACKGROUNDS`
-// so it is one config flip away if we want the old full-width native bands back.
-function rowBackground(comp: any): ((text: string) => string) | undefined {
-  if (!toolBackgroundsEnabled()) return undefined;
-  try {
-    if (typeof comp?.getRenderShell === "function" && comp.getRenderShell() === "self") return undefined;
-    const bgFn = comp?.contentBox?.bgFn;
-    return typeof bgFn === "function" ? bgFn : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-// Full-width band for the opt-in native tool surface: pad to width, then re-assert the
-// background after every full SGR reset (traceline's own ink uses \x1b[0m liberally) so
-// the surface never punches holes.
-function shadeRow(line: string, width: number, bgFn: (text: string) => string): string {
-  const [open = "", close = ""] = bgFn("\u0000").split("\u0000");
-  if (!open) return line;
-  const padded = `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`;
-  return `${open}${padded.split(RESET).join(`${RESET}${open}`)}${close}`;
-}
-
 // The invocation body with family ink applied: bash rows rebuild from plain text, path
 // rows get the dim-directory emphasis, everything else keeps pi's native line with a
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
@@ -1557,6 +1525,19 @@ function invocationInk(comp: any): string {
   return base ? tildify(base) : inkedFallbackLine(comp);
 }
 
+// The body+suffix budget inside the two-sided inset (§12.21): what remains after the
+// rail prefix and the right margin.
+function traceRowAvailable(width: number): number {
+  return Math.max(1, Math.max(1, width) - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
+}
+
+// The one row form shared by single rows and folded read runs: body left, the block's
+// reserved fact-suffix column right (§12.17/§12.21), behind the railed status prefix.
+function fitTraceRow(tone: Tone, body: string, suffix: string, reserve: number, width: number): string {
+  const fitted = rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve);
+  return truncateToWidth(`${toolPrefix(tone)}${fitted}`, Math.max(1, width), ELLIPSIS);
+}
+
 function oneLine(comp: any, width: number): string {
   if (toolLabel(comp?.toolName) === "write" && !comp?.result) {
     try {
@@ -1565,18 +1546,16 @@ function oneLine(comp: any, width: number): string {
       /* keep one-line rendering best-effort */
     }
   }
-  const lineWidth = Math.max(1, width);
-  const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
-  const fitted = rightAlignSuffix(
+  const rows = blockToolRows(comp);
+  const facts = blockFacts(rows);
+  const available = traceRowAvailable(width);
+  return fitTraceRow(
+    statusTone(comp),
     invocationInk(comp),
-    toolFactSuffix(comp, available),
-    available,
-    currentTheme(),
-    blockSuffixReserve(comp, available),
+    toolFactSuffix(comp, available, facts),
+    blockSuffixReserve(rows, facts, available),
+    width,
   );
-  const row = truncateToWidth(`${hiddenToolPrefix(comp)}${fitted}`, lineWidth, ELLIPSIS);
-  const bgFn = rowBackground(comp);
-  return bgFn ? shadeRow(row, Math.max(1, lineWidth - TOOL_RIGHT_MARGIN), bgFn) : row;
 }
 
 // --- repetition folding (issue #14, design language §9/traceline 3+5) -------------------
@@ -1678,24 +1657,20 @@ function readRun(comp: any): { rows: any[]; index: number } | undefined {
   return rows.length > 1 ? { rows, index: selfIndex } : undefined;
 }
 
-function foldedReadSuffix(rows: any[]): string {
-  const last = rows[rows.length - 1];
+function foldedReadSuffix(rows: any[], facts: BlockFacts): string {
   let total: number | undefined;
   for (const row of rows) {
     const chars = resultTextCharCount(row);
     if (chars !== undefined) total = (total ?? 0) + chars;
   }
   const calls = `${rows.length} calls`;
-  const sizeCell = charSuffix(total, blockSizeColumnLive(last));
+  const sizeCell = charSuffix(total, facts.sizeColumnLive);
   return total === undefined || !sizeCell ? dim(calls) : `${dim(`${calls}${SEP}`)}${sizeCell}`;
 }
 
 function foldedReadLine(rows: any[], width: number): string {
-  const lineWidth = Math.max(1, width);
-  const available = Math.max(1, lineWidth - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
   const theme = currentTheme();
   const last = rows[rows.length - 1];
-  const tone = statusTone(last);
   const path = cwdRelativePath(last, String(rows[0]?.args?.path ?? ""));
   const lastSlash = path.lastIndexOf("/");
   const dir = lastSlash >= 0 ? boringPrefix(last, path) : "";
@@ -1707,11 +1682,15 @@ function foldedReadLine(rows: any[], width: number): string {
   const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
   // Call count rides the right-aligned suffix (fact order: what · how many · how big),
   // so middle truncation protects the discriminating basename+ranges tail of the body.
-  const suffix = foldedReadSuffix(rows);
-  const fitted = rightAlignSuffix(body, suffix, available, theme, blockSuffixReserve(last, available));
-  const row = truncateToWidth(`${toolPrefix(tone)}${fitted}`, lineWidth, ELLIPSIS);
-  const bgFn = rowBackground(last);
-  return bgFn ? shadeRow(row, Math.max(1, lineWidth - TOOL_RIGHT_MARGIN), bgFn) : row;
+  const blockRows = blockToolRows(last);
+  const facts = blockFacts(blockRows);
+  return fitTraceRow(
+    statusTone(last),
+    body,
+    foldedReadSuffix(rows, facts),
+    blockSuffixReserve(blockRows, facts, traceRowAvailable(width)),
+    width,
+  );
 }
 
 // An assistant turn that renders nothing (a tool-call-only turn with no visible
@@ -1931,9 +1910,15 @@ function patchAssistantRowPrototype(proto: any): void {
 // --- prototype patch (shared by every current + future tool row, applied once) --------
 
 function currentPatchInstalled(): boolean {
-  return g.__tracelinePatched === true && g.__tracelinePatchVersion === TRACELINE_PATCH_VERSION;
+  return g.__tracelinePatchVersion === TRACELINE_PATCH_VERSION;
 }
 
+// The write pre-image is captured at three seams, deduped by sameWriteInput: on
+// setArgsComplete (streamed args settle — the earliest safe point), on
+// markExecutionStarted (the last hook before the tool replaces the file), and at
+// render time in oneLine for a row that streamed in before this patch landed — the
+// session's first write is what installs the prototype patch, from its own
+// requestRender tick.
 function patchWriteSnapshotHooks(proto: any): void {
   if (!proto || proto.__tracelineWriteSnapshotPatchVersion === TRACELINE_PATCH_VERSION) return;
 
@@ -1972,28 +1957,19 @@ function patchToolRowPrototype(proto: any): void {
   const original = proto.__tracelineOriginalRender ?? proto.render;
   proto.__tracelineOriginalRender = original;
   proto.render = function (width: number) {
-    let mode: ToolDisplayMode = "native";
+    // One guard, one policy: any failure on traceline's path falls back to the
+    // native render — never let pi-traceline break a render.
     try {
-      mode = displayMode();
-    } catch {
-      mode = "native";
-    }
-    if (mode === "native") return original.call(this, width);
-    if (toolIsIndividuallyExpanded(this)) {
-      try {
+      if (displayMode() === "native") return original.call(this, width);
+      if (toolIsIndividuallyExpanded(this)) {
         if (this.expanded !== true && typeof this.setExpanded === "function") this.setExpanded(true);
-      } catch {
-        /* ignore expansion sync failures */
+        return original.call(this, width);
       }
-      return original.call(this, width);
-    }
-    try {
       return renderTraceRow(this, width);
     } catch {
-      return original.call(this, width); // never let pi-traceline break a render
+      return original.call(this, width);
     }
   };
-  g.__tracelinePatched = true;
   g.__tracelinePatchVersion = TRACELINE_PATCH_VERSION;
 }
 
@@ -2021,7 +1997,8 @@ function tryPatch(): void {
 
 // Test-only surface. Pi loads extensions via `jiti.import(path, { default: true })`,
 // so named exports are runtime-inert; this object exists for the repo test suites
-// (see docs/testing.md) and is not a stable public API.
+// (see docs/testing.md) and is not a stable public API. An entry stays only while
+// a test or dev script actually uses it.
 export const internals = {
   // duck-typed pi-internal detection (contract-tested against the installed pi)
   isToolRow,
@@ -2037,13 +2014,10 @@ export const internals = {
   rightAlignSuffix,
   tildify,
   stripTimeoutSuffix,
-  bashInvocationText,
   bashCrownedHeads,
   inkBashBody,
   inkBashRow,
   flattenInvocationLines,
-  rowBackground,
-  shadeRow,
   // row grammar
   formatCharCount,
   charSuffix,
@@ -2052,34 +2026,23 @@ export const internals = {
   captureWriteSnapshot,
   writeDiffStats,
   mutationDiffStats,
-  formatMutationDiffStats,
   toolFactSuffix,
-  recordFacts,
   recordCells,
   recordSuffix,
   configureSizeThresholds,
-  configureToolBackgrounds,
-  toolBackgroundsEnabled,
   lineRange,
   toolStatus,
   blockSizeColumnLive,
-  blockSuffixReserve,
-  blockToolRows,
   boringPrefix,
   cwdRelativePath,
-  fallbackInvocationLine,
   oneLine,
   leadingBlank,
   renderTraceRow,
   // repetition folding + thinking-label preview/dedupe (issue #14)
-  cdPreambleDir,
   repeatsPreviousCdPreamble,
   elideCdPreamble,
   readRun,
-  foldedReadLine,
-  thinkingPreviewLines,
   dedupeThinkingLabels,
-  patchAssistantRowPrototype,
   // Ctrl+T status-line suppression
   isThinkingToggleStatusRow,
   isSpacerRow,
@@ -2143,7 +2106,6 @@ export default function piTraceline(pi: ExtensionAPI) {
       ),
     );
     configureSizeThresholds(config);
-    configureToolBackgrounds(config);
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
       const t = tui as any;
       g.__tracelineTui = t;

@@ -147,7 +147,7 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   assert.equal(traceline.toolStatus(comp), "error");
 });
 
-test("real ToolExecutionComponent: bash multiline render + opt-in tool-surface seams", () => {
+test("real ToolExecutionComponent: bash multiline render seam", () => {
   pi.initTheme(undefined, false);
   const comp = new pi.ToolExecutionComponent(
     "bash",
@@ -169,25 +169,6 @@ test("real ToolExecutionComponent: bash multiline render + opt-in tool-surface s
 
   const flat = traceline.stripAnsi(traceline.oneLine(comp as never, 200));
   assert.ok(flat.includes("echo done"), `flattened bash row lost its tail: ${flat}`);
-
-  // Tool backgrounds are deliberately off by default: the optional path still depends
-  // on Pi's live contentBox.bgFn surface, but normal trace rows stay unbanded.
-  const box = (comp as unknown as { contentBox?: { bgFn?: (text: string) => string } }).contentBox;
-  assert.ok(box && typeof box.bgFn === "function", "contentBox.bgFn gone — traceline cannot opt back into the tool surface");
-  const [open = "", close = ""] = box.bgFn("\u0000").split("\u0000");
-  assert.ok(/^\x1b\[48;/.test(open), `theme.bg open is no longer a bg SGR prefix: ${JSON.stringify(open)}`);
-  assert.equal(close, "\x1b[49m", "theme.bg no longer closes with bg-only reset — shadeRow re-assertion breaks");
-  assert.equal(traceline.toolBackgroundsEnabled(), false, "traceline should render unbanded rows by default");
-  assert.equal(traceline.oneLine(comp as never, 80).startsWith(open), false, "default row should not open on the tool background");
-
-  // Anything other than "self" composes through the bg-painted contentBox; rowBackground
-  // only opts out on "self", so the opt-in invariant to pin is bash not being self-framed.
-  const shell = (comp as unknown as { getRenderShell?: () => string }).getRenderShell?.();
-  assert.ok(typeof shell === "string" && shell !== "self", `bash render shell became self-framed (${shell}) — rows lose the opt-in shade`);
-  traceline.configureToolBackgrounds({ toolBackgrounds: true });
-  const shaded = traceline.oneLine(comp as never, 80);
-  assert.ok(shaded.startsWith(open), "opt-in row did not open on the theme tool background");
-  traceline.configureToolBackgrounds({ toolBackgrounds: false });
 });
 
 test("real AssistantMessageComponent satisfies traceline's assistant duck type", () => {
@@ -339,12 +320,6 @@ test("TUI prototype chain still contains a patchable Container", () => {
 
 // ---------------------------------------------------------------------------------------
 // Settings + ExtensionAPI declaration anchors (source-text tripwires).
-
-test("settings manager still persists hideThinkingBlock in settings.json", () => {
-  const source = readFileSync(join(piRoot, "dist/core/settings-manager.js"), "utf8");
-  assert.ok(source.includes("hideThinkingBlock"), "hideThinkingBlock setting renamed — traceline disk fallback breaks");
-  assert.ok(source.includes('"settings.json"'), "settings filename changed — traceline disk fallback breaks");
-});
 
 test("ExtensionAPI still declares the tool surface contextimate reads", () => {
   const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
