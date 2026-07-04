@@ -774,10 +774,11 @@ function mutationDiffStats(comp: any): DiffStats | undefined {
 
 // Zero sides are dropped (design language §12.13): `+2 -0` → `+2` — the dimmed zero
 // was a half-measure, and every new-file write wore a guaranteed-noise `-0`. But the
-// drop is ink-only: within a block the diff cells form two sign-aligned columns
-// (§12.22), and a dropped side holds its column as blank space so every `+` and every
-// `-` shares one x down the block. Without column widths (a lone row), a cell pads to
-// itself and renders exactly as before.
+// drop is ink-only: within a block the diff cells form two right-aligned columns
+// (§12.22/§12.27) — every cell pads left so units sit under units, and a dropped side
+// holds its column as blank space — so each column's right edge and the `·` share one
+// x down the block. Without column widths (a lone row), a cell pads to itself and
+// renders exactly as before.
 type DiffColumns = { plus: number; minus: number; size: number };
 
 function blockDiffColumns(comp: any): DiffColumns {
@@ -805,8 +806,8 @@ function formatMutationDiffStats(
   const plusW = cols ? cols.plus : plusTok.length;
   const minusW = cols ? cols.minus : minusTok.length;
   const cells: string[] = [];
-  if (plusW > 0) cells.push((plusTok ? ink(theme, "success", plusTok) : "") + " ".repeat(plusW - plusTok.length));
-  if (minusW > 0) cells.push((minusTok ? ink(theme, "error", minusTok) : "") + " ".repeat(minusW - minusTok.length));
+  if (plusW > 0) cells.push(" ".repeat(plusW - plusTok.length) + (plusTok ? ink(theme, "success", plusTok) : ""));
+  if (minusW > 0) cells.push(" ".repeat(minusW - minusTok.length) + (minusTok ? ink(theme, "error", minusTok) : ""));
   return cells.join(" ");
 }
 
@@ -969,8 +970,9 @@ function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY): string
   const diff = mutationDiffStats(comp);
   const chars = resultCharSuffix(comp);
   if (diff) {
-    // The diff cell pads to the block's sign columns, and the size cell pads left to
-    // the block's widest, so `+`, `-`, and `·` each hold one x down the block (§12.22).
+    // The diff cell right-aligns within the block's sign columns, and the size cell
+    // pads left to the block's widest, so each diff column's right edge and the `·`
+    // hold one x down the block (§12.22/§12.27).
     const cols = blockDiffColumns(comp);
     parts.push(formatMutationDiffStats(diff, theme, cols));
     if (chars) parts.push(" ".repeat(Math.max(0, cols.size - visibleWidth(chars))) + chars);

@@ -670,6 +670,21 @@ bolded. And a `↵` inside a quoted inline script re-armed the head, crowning `i
     vocabulary becomes a command census (`git`, `python3`, `rg`, `gh`, `tmux`)
     instead of glue.
 
+Fifteenth follow-up, same date (the units drifted): §22's cells pad on the right,
+so `+2` and `+20` share their sign's x but not their place values; the units digit
+of a small count sits under the tens digit of a big one, and relative materiality
+stops being readable at a glance.
+
+27. **Diff cells align like numbers, not like flags.** §22's block-scoped columns
+    stand, but every cell right-aligns within them: the widest added token still
+    sets the plus column and the widest removed token the minus column, and cells
+    pad *left*, so units sit under units and tens under tens (the family's number
+    treatment: contextimate's unit alignment, the size cell's own left padding).
+    The sign hugs its digits and travels with them; what shares one x down the
+    block is each column's right edge, the blank a dropped zero side holds
+    (§12.13), and the `·` separator after it. Materiality reads as width: a
+    bigger count grows leftward into its column.
+
 ## Suggested implementation order
 
 1. `_lib/style.ts` + `_lib/fmt.ts` additions, with tests (no visible change).

@@ -160,7 +160,7 @@ test("mutation diff stats ride the right suffix for edit rows", () => {
   assert.ok(visible.endsWith("+2 -1"), visible);
 });
 
-test("diff stats are a table: +, -, and · each hold one x down the block (§12.22)", () => {
+test("diff stats are a table: columns right-align so units share one x (§12.22/§12.27)", () => {
   const mut = (toolName: string, path: string, diff: string) =>
     toolComp({
       toolName,
@@ -180,16 +180,25 @@ test("diff stats are a table: +, -, and · each hold one x down the block (§12.
   g.__tracelineChat = { children: [both, minusOnly, plusOnly, read] };
   try {
     const [a, b, c, d] = [both, minusOnly, plusOnly, read].map((row) => stripAnsi(oneLine(row, 80)));
-    // A dropped zero side keeps its column as space; the size cell pads to the
-    // block's widest (`14.2k ch`), so `·` holds still too.
-    assert.ok(a!.endsWith("+4  -9 \u00b7  0.0k ch"), a);
+    // Cells right-align (§12.27): `+4` tucks under `+18`'s units digit, a dropped
+    // zero side keeps its column as space, and the size cell pads to the block's
+    // widest (`14.2k ch`), so `·` holds still too.
+    assert.ok(a!.endsWith(" +4 -9 \u00b7  0.0k ch"), a);
     assert.ok(b!.endsWith("-1 \u00b7  0.0k ch"), b);
     assert.ok(c!.endsWith("+18    \u00b7  0.0k ch"), c);
     assert.ok(d!.endsWith("14.2k ch"), d);
-    // Every row ends at the block edge, and the sign/separator columns align.
+    // Every row ends at the block edge, and each column's right edge aligns.
     assert.ok([a, b, c, d].every((l) => l!.length === 78), JSON.stringify([a, b, c, d].map((l) => l!.length)));
-    assert.equal(a!.indexOf("+4"), c!.indexOf("+18"), `+ column wanders: ${JSON.stringify([a, c])}`);
-    assert.equal(a!.lastIndexOf("-9"), b!.lastIndexOf("-1"), `- column wanders: ${JSON.stringify([a, b])}`);
+    assert.equal(
+      a!.indexOf("+4") + "+4".length,
+      c!.indexOf("+18") + "+18".length,
+      `+ units wander: ${JSON.stringify([a, c])}`,
+    );
+    assert.equal(
+      a!.lastIndexOf("-9") + "-9".length,
+      b!.lastIndexOf("-1") + "-1".length,
+      `- units wander: ${JSON.stringify([a, b])}`,
+    );
     assert.ok(
       [a, b, c].every((l) => l!.lastIndexOf("\u00b7") === a!.lastIndexOf("\u00b7")),
       `· column wanders: ${JSON.stringify([a, b, c])}`,

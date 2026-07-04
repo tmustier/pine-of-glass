@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.16 — 2026-07-04
+
+Diff cells align like numbers, not like flags, in `pi-traceline` (design language
+§12.27):
+
+- §12.22's block-scoped diff columns padded on the right, so `+2` and `+20` shared
+  their sign's x but not their place values: the units digit of a small count sat
+  under the tens digit of a big one, and relative materiality stopped being
+  readable at a glance. Cells now right-align within their sign column (units
+  under units, the sign hugging its digits); what holds one x down the block is
+  each column's right edge, the blank a dropped zero side keeps (§12.13), and the
+  `·` separator. Materiality reads as width: a bigger count grows leftward into
+  its column.
+
 ## 0.5.15 — 2026-07-04
 
 The corpus review: quote-aware sequencing and rationed crowns in `pi-traceline`
