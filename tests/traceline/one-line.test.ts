@@ -38,8 +38,6 @@ const {
   dimUnstyledSpans,
   flattenInvocationLines,
   renderTraceRow,
-  repeatsPreviousCdPreamble,
-  elideCdPreamble,
   readRun,
   dedupeThinkingLabels,
 } = internals;

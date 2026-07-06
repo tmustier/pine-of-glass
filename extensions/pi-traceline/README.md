@@ -71,11 +71,11 @@ A bash row anchors on a bold `$`, then bolds the head word of every command that
 
 The bold is rationed to commands that carry signal (measured over a 51k-invocation corpus; see [`scripts/dev/bash-corpus/`](../../scripts/dev/bash-corpus/)):
 
-- `cd … &&` and `set -…` preambles, and `echo`/`true`/`false`/`printf`/`exit` plumbing (`|| true`, `&& echo done`), stay dim whenever a real command is present; a row that is *nothing but* preamble or plumbing keeps its first head, so `$ cd /tmp` never goes dark
+- `cd … &&` preambles and `echo`/`true`/`false`/`printf`/`exit` plumbing (`|| true`, `&& echo done`) stay dim whenever a real command is present (a leading `set -…` hygiene run drops outright, reclaiming its width; see below); a row that is *nothing but* preamble or plumbing keeps its first head, so `$ cd /tmp` never goes dark
 - `&&`, `||`, `;` and flattened line breaks start new commands whose heads bold; pipes and redirects continue one (`| head -240` is a filter and stays dim)
 - sequencers inside quoted scripts are data (`python3 -c '…'` bolds `python3` once and nothing inside the string), and heredoc bodies stay inert
 
-Multiline commands (heredocs, inline scripts, chained pipelines) flatten into the one trace line with a dim `↵` marking each original break, and the near-constant `(timeout Ns)` suffix is dropped; the full invocation is one `Ctrl+T` away.
+Multiline commands (heredocs, inline scripts, chained pipelines) flatten into the one trace line with a dim `↵` marking each original break. Two kinds of near-constant boilerplate are dropped so the real command keeps the width: the `(timeout Ns)` suffix, and a leading `set -…` hygiene run (`set -euo pipefail`, `set -e`) that never discriminates one row from another. The full invocation is one `Ctrl+T` away.
 
 ## Repetition folds instead of re-printing
 
@@ -83,11 +83,11 @@ The informative diff between adjacent rows is often small while a shared prefix 
 
 ```
   ▏ › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5  1.4k ch
-  ▏ › $ ⋯ && npm run typecheck                                        14.2k ch
+  ▏ › $ ⋯ npm run typecheck                                           14.2k ch
   ▏ › read ~/projects/pine-of…dex.ts:1-200,201-400,401-600  3 calls · 51.1k ch
 ```
 
-- **Repeated `cd <dir> && ` preambles** render as a dim `⋯` when they repeat the previous bash row's (pi's bash tool is stateless per call, so agents re-`cd` on every call). The first occurrence keeps the full path, and a `⋯` never points across visible prose.
+- **Repeated situating preambles** collapse to a dim `⋯`. A bash row's *leading preamble run* is the situating throat-clearing at its head: `cd <dir>`, bare `VAR=…`/`export` assignments, and `set -…` hygiene, across `&&`, `;` or `↵` breaks (pi's bash tool is stateless per call, so agents re-`cd` on every call). The `set -…` part drops outright, and the remaining `cd`/assignment context folds to a `⋯` when it repeats the previous bash row's, whatever separator either row was written with. The `⋯` absorbs the whole run and its separator (`⋯ npm test`, not `⋯ && npm test`), a distinct context prints once, and a `⋯` never points across visible prose.
 - **Paginated reads** of one file fold into a single row with the combined ranges, call count, and total size. Anything visible between the reads breaks the fold; `Ctrl+T`'s native view restores the individual rows.
 - **Collapsed thinking previews** render as `Thinking: <first reasoning line> ... (N lines)`, with adjacent label runs coalesced, and each tool row sits tight under the preview that motivated it, so each thought→action couplet reads as one unit.
 

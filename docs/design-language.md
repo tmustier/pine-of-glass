@@ -295,9 +295,23 @@ are validated against a corpus of 51k real invocations
   first operative head (plumbing before preamble), so no row goes dark.
   Classification reads through parentheses, so a subshell edge cannot smuggle
   glue past the vocabulary
-- a bash row whose `cd <dir> && ` preamble repeats the previous bash row's
-  elides it to a dim `⋯`, which neither crowns nor consumes. The elision is
-  block-scoped: a `⋯` never points across visible prose
+- dim is not enough: a demoted preamble still spends width, and the shared
+  truncation budget (§9.8) then eats the real command behind boilerplate that
+  carries no signal (`set -euo pipefail ↵ cd <dir> ↵` alone runs two-thirds of a
+  row). So a row's *leading preamble run* — the opening sequence of situating
+  segments (`set -…` hygiene, `cd <dir>`, and bare `VAR=…`/`export`
+  assignments) across `&&`, `;` and `↵` breaks — is reclaimed, not just dimmed:
+  - a leading `set -…` hygiene run drops outright, the way the `(timeout Ns)`
+    suffix does (§9.3): errexit/pipefail/nounset never discriminate one row from
+    another, and the status bullet already carries the outcome. The drop is
+    scoped to the *leading* run, so an interior `set` stays
+  - the remaining situating context (`cd`, assignments) folds to a dim `⋯` when
+    it repeats the previous bash row's context, whatever separator either row was
+    written with. The `⋯` stands in for the whole run and its trailing separator
+    (`⋯ npm test`, never `⋯ && npm test`), neither crowns nor consumes. It is
+    block-scoped: a `⋯` never points across visible prose, and never lands on a
+    row with no real command after it — that row keeps its context, so no row
+    goes dark. A distinct context prints once, on its first appearance
 
 ### 9.5 Path rows
 
