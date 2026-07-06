@@ -328,6 +328,12 @@ Read, edit and write rows dim what is boring and bolden what discriminates:
   alone it is a trivial root marker, while `./src/` is a meaningful shared prefix
 - read `:line-range` spans stay warning-coloured, so scoped file reads remain
   visible
+- edit and write rows carry their `+N -M` diff inline on the basename the same
+  way, add-green / remove-red with the zero side dropped (§9.7). The magnitude
+  rides the file it changed instead of drifting to a right column, and both
+  qualifiers survive truncation as the protected tail (§9.8). A mutation therefore
+  carries no size cell (its result is a confirmation, near-noise) and opts out of
+  the block's fact columns (§9.7)
 
 ### 9.6 Native rows
 
@@ -342,19 +348,18 @@ for every tool, not just the hand-rebuilt rows.
 The right-aligned suffix carries facts in columns that align down the block:
 
 - a fact suffix must carry a fact: the char suffix is omitted below 100 ch, and
-  diff stats drop their zero side (`+2 -0` renders `+2`; `+0 -3` renders `-3`)
+  a diff stat drops its zero side (`+2 -0` renders `+2`; `+0 -3` renders `-3`)
 - columns are block-scoped: if any completed row in a block clears the floor,
   the size column is live and every completed row shows its cell, dim `0.0k ch`
   included. Inside a live column a blank is a misalignment, not a calm. A block
   with no row above the floor (a `mkdir`/`rm` cleanup run) shows nothing
-- diff stats are a table, not a phrase: the block's widest added and removed
-  tokens set two sign columns, and every cell right-aligns within them, so units
-  sit under units and the sign hugs its digits. A dropped zero side stays
-  dropped as ink but holds its column as space. The size cell after the diff
-  pads left to the block's widest, so the `·` separator holds one column too.
-  Materiality reads as width: a bigger count grows leftward into its column
-- the size cell keeps the rightmost berth; diff stats and record facts join
-  before it
+- file-mutation diffs are not a suffix column: an edit/write carries `+N -M`
+  inline on the basename (§9.5) and opts out of the size and diff columns, so a
+  mixed read/edit block shows sizes on its reads and inline diffs on its edits,
+  each row ending where its own fact does. A ragged right edge here is a legible
+  asymmetry (reads flooded context, edits did not), not a misalignment. A rare
+  non-mutation tool that reports a diff still right-aligns it in the suffix
+- the size cell keeps the rightmost berth; record facts join before it
 
 ### 9.8 Truncation
 

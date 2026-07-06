@@ -128,7 +128,7 @@ test("one-line read row: rail + emphasized path, range kept, suffix right-aligne
   assert.ok(line.includes("\x1b[33m:1-40\x1b[0m"), "line range must stay warning/yellow");
 });
 
-test("mutation diff stats ride the right suffix for edit rows", () => {
+test("mutation diff stats ride inline on the basename for edit rows (§9.5)", () => {
   const diff = [
     " 10 context before",
     "+11 added one",
@@ -145,15 +145,16 @@ test("mutation diff stats ride the right suffix for edit rows", () => {
 
   assert.deepEqual(diffStatsFromText("--- a/file\n+++ b/file\n+1 real add\n-2 real remove"), { added: 1, removed: 1 });
   assert.deepEqual(mutationDiffStats(comp), { added: 2, removed: 1 });
-  // Result is under the 100 ch fact floor (§9.7): the diff stats stand alone.
-  assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1");
+  // The diff is no longer a right-column fact (§9.5): the suffix is empty and the
+  // magnitude rides the basename it changed instead.
+  assert.equal(stripAnsi(toolFactSuffix(comp)), "");
 
   const visible = stripAnsi(oneLine(comp, 90));
-  assert.ok(visible.includes("edit ~/projects/demo/file.ts"), visible);
+  assert.ok(visible.includes("edit ~/projects/demo/file.ts +2 -1"), visible);
   assert.ok(visible.endsWith("+2 -1"), visible);
 });
 
-test("diff stats are a table: columns right-align so units share one x (§9.7)", () => {
+test("mutations carry +/- inline and drop out of the fact columns (§9.5/§9.7)", () => {
   const mut = (toolName: string, path: string, diff: string) =>
     toolComp({
       toolName,
@@ -173,29 +174,20 @@ test("diff stats are a table: columns right-align so units share one x (§9.7)",
   g.__tracelineChat = { children: [both, minusOnly, plusOnly, read] };
   try {
     const [a, b, c, d] = [both, minusOnly, plusOnly, read].map((row) => stripAnsi(oneLine(row, 80)));
-    // Cells right-align (§9.7): `+4` tucks under `+18`'s units digit, a dropped
-    // zero side keeps its column as space, and the size cell pads to the block's
-    // widest (`14.2k ch`), so `·` holds still too.
-    assert.ok(a!.endsWith(" +4 -9 \u00b7  0.0k ch"), a);
-    assert.ok(b!.endsWith("-1 \u00b7  0.0k ch"), b);
-    assert.ok(c!.endsWith("+18    \u00b7  0.0k ch"), c);
+    // The diff rides the basename (§9.5): adjacent to the file it changed,
+    // add-green / remove-red, zero side dropped.
+    assert.ok(a!.includes("src/a.ts +4 -9"), a);
+    assert.ok(b!.includes("src/b.ts -1"), b);
+    assert.ok(c!.includes("src/c.ts +18"), c);
+    // Mutations spend no right-column ink (§9.5): no size cell, so each row ends at
+    // its inline diff and never prints ` ch`.
+    for (const l of [a, b, c]) assert.ok(!l!.includes(" ch"), `mutation must carry no size cell: ${l}`);
+    assert.ok(a!.endsWith("+4 -9"), a);
+    assert.ok(b!.endsWith("-1"), b);
+    assert.ok(c!.endsWith("+18"), c);
+    // Mutations opting out does not silence a real fact-bearing neighbour: the read
+    // keeps its right-aligned size cell.
     assert.ok(d!.endsWith("14.2k ch"), d);
-    // Every row ends at the block edge, and each column's right edge aligns.
-    assert.ok([a, b, c, d].every((l) => l!.length === 78), JSON.stringify([a, b, c, d].map((l) => l!.length)));
-    assert.equal(
-      a!.indexOf("+4") + "+4".length,
-      c!.indexOf("+18") + "+18".length,
-      `+ units wander: ${JSON.stringify([a, c])}`,
-    );
-    assert.equal(
-      a!.lastIndexOf("-9") + "-9".length,
-      b!.lastIndexOf("-1") + "-1".length,
-      `- units wander: ${JSON.stringify([a, b])}`,
-    );
-    assert.ok(
-      [a, b, c].every((l) => l!.lastIndexOf("\u00b7") === a!.lastIndexOf("\u00b7")),
-      `· column wanders: ${JSON.stringify([a, b, c])}`,
-    );
   } finally {
     g.__tracelineChat = undefined;
   }
@@ -233,11 +225,13 @@ test("write rows use a pre-execution snapshot for +N -M stats", () => {
     assert.deepEqual(diffStatsFromContents("one\ntwo\n", "one\ntwo\nthree\n"), { added: 1, removed: 0 });
     captureWriteSnapshot(comp);
     assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 1 });
-    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2 -1");
+    // The diff rides the basename (§9.5); the suffix stays empty.
+    assert.equal(stripAnsi(toolFactSuffix(comp)), "");
 
     const visible = stripAnsi(oneLine(comp, 100));
     assert.ok(visible.includes("write"), visible);
     assert.ok(visible.endsWith("+2 -1"), visible);
+    assert.ok(!visible.includes(" ch"), visible);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -258,8 +252,12 @@ test("new write rows count all written lines as additions", () => {
 
     captureWriteSnapshot(comp);
     assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 0 });
-    // Zero sides drop (§9.7): a new-file write never wears a `-0`.
-    assert.equal(stripAnsi(toolFactSuffix(comp)), "+2");
+    // Zero sides drop (§9.7): a new-file write never wears a `-0`. The `+2` rides
+    // inline on the basename now (§9.5), so the suffix stays empty.
+    assert.equal(stripAnsi(toolFactSuffix(comp)), "");
+    const visible = stripAnsi(oneLine(comp, 100));
+    assert.ok(visible.endsWith("+2"), visible);
+    assert.ok(!visible.includes(" ch"), visible);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -65,7 +65,8 @@ import {
  * tools demote unstyled spans to dim (§9.6); the boilerplate
  * `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
  * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
- * a dimmed `…` so the tail survives — the basename + `:line-range` for a path, or the
+ * a dimmed `…` so the tail survives — the basename plus its inline qualifier
+ * (`:line-range` for a read, `+N -M` for an edit/write) for a path, or the
  * operative end of a command — because that is where the discriminating information lives;
  * the cut snaps to a nearby `/` or space. Plain file reads, edits, and writes additionally
  * dim the directory so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
@@ -76,9 +77,10 @@ import {
  * tails stop crowding the facts.
  * Results under 100 ch render no char suffix (§9.7) unless a neighbouring row in the
  * same block clears the floor — the column is block-scoped (§9.7), so a live column
- * shows every cell and stays vertically aligned, while an all-tiny block stays clean. File-mutation rows with a real diff also reserve `+N -M` in that suffix
- * (zero sides dropped: `+2 -0` → `+2`), so the collapsed trace shows how much the
- * model changed without expanding the row.
+ * shows every cell and stays vertically aligned, while an all-tiny block stays clean. File-mutation rows carry `+N -M` inline
+ * on the basename instead (§9.5), the way a read carries its `:line-range`: the near-noise size cell
+ * (a confirmation's length, not the file's) is dropped, so a mutation's suffix stays empty and the
+ * magnitude rides the file it changed (zero sides dropped: `+2 -0` → `+2`).
  * All ink is theme-derived (style.ts ink()), with raw-ANSI fallbacks before a theme exists.
  *
  * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
@@ -313,6 +315,19 @@ function resultCharSuffix(comp: any, facts: BlockFacts): string {
   return charSuffix(resultTextCharCount(comp), facts.sizeColumnLive);
 }
 
+const MUTATION_VERBS = new Set(["edit", "write"]);
+
+// An edit/write row that carries a filesystem path renders its diff inline on the
+// basename (§9.5), the way a read carries its `:line-range`, not as a right-column
+// fact. Such a row opts out of the block's size and diff columns (§9.7): it shows no
+// size cell (a mutation's result is a confirmation, near-noise) and its suffix stays
+// empty, so the magnitude rides the file it changed.
+function inlineMutationRow(comp: any): boolean {
+  if (!MUTATION_VERBS.has(toolLabel(comp?.toolName))) return false;
+  const path = comp?.args?.path ?? comp?.args?.file_path;
+  return typeof path === "string" && path.length > 0;
+}
+
 // The row's contiguous visual block — the rail-fused run. Boundaries mirror the
 // *rendered* rail: tool rows fuse across invisible empty connectors; visible prose
 // breaks the block, and so does a collapsed thinking preview — it renders with a
@@ -348,7 +363,10 @@ function blockFacts(rows: any[]): BlockFacts {
   // Columns are block-scoped (design language §9.7): the size column lights up for
   // a whole contiguous trace block when any of its completed rows clears the fact
   // floor. An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
+  // Inline-diff mutations (§9.5) carry no right-column fact, so they neither light the
+  // size column nor set its width — their magnitude lives on the basename instead.
   const sizeColumnLive = rows.some((c) => {
+    if (inlineMutationRow(c)) return false;
     const chars = resultTextCharCount(c);
     return chars !== undefined && chars >= CHAR_SUFFIX_FLOOR;
   });
@@ -356,6 +374,7 @@ function blockFacts(rows: any[]): BlockFacts {
   let minus = 0;
   let size = 0;
   for (const row of rows) {
+    if (inlineMutationRow(row)) continue;
     const stats = mutationDiffStats(row);
     if (stats) {
       if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
@@ -567,6 +586,17 @@ function formatMutationDiffStats(
   return cells.join(" ");
 }
 
+// A file mutation wears its diff inline on the basename (§9.5), the way a read wears
+// its `:line-range`: the magnitude rides the file it changed instead of drifting to a
+// right column, so no gap opens between the path and how much it moved. add-green /
+// remove-red, zero side dropped, per-row (no block sign columns — an inline cell can
+// never align down a column of ragged-length paths, and does not try).
+function mutationInlineDiffInk(comp: any): string {
+  const stats = mutationDiffStats(comp);
+  if (!stats) return "";
+  return ` ${formatMutationDiffStats(stats, currentTheme())}`;
+}
+
 // --- records of consequence (design language §9.10) -----------------------------------
 
 // Some bash rows change shared state beyond the working tree — a commit, a push, a PR
@@ -751,8 +781,11 @@ function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY, facts: 
   const parts: string[] = [];
   const records = recordSuffix(comp, available);
   if (records) parts.push(records);
-  const diff = mutationDiffStats(comp);
-  const chars = resultCharSuffix(comp, facts);
+  // Inline-diff mutations (§9.5) spend no right-column ink: the diff rides the
+  // basename and the confirmation-size cell is dropped, so the suffix stays empty.
+  const inline = inlineMutationRow(comp);
+  const diff = inline ? undefined : mutationDiffStats(comp);
+  const chars = inline ? "" : resultCharSuffix(comp, facts);
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`
@@ -1269,8 +1302,11 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
   const shown = cwdRelativePath(comp, path);
   const boring = boringPrefix(comp, shown);
   const tail = shown.slice(boring.length);
-  const range = verb === "read" ? lineRange(comp?.args) : "";
-  return `${verbInk(comp, verb)} ${dim(boring)}${discriminatorInk(comp, tail)}${ink(theme, "warning", range)}`;
+  // The basename carries one inline qualifier (§9.5): a read's warning `:line-range`,
+  // or an edit/write's `+N -M` diff. Both survive truncation as the protected tail.
+  const qualifier =
+    verb === "read" ? ink(theme, "warning", lineRange(comp?.args)) : mutationInlineDiffInk(comp);
+  return `${verbInk(comp, verb)} ${dim(boring)}${discriminatorInk(comp, tail)}${qualifier}`;
 }
 
 // The invocation body with family ink applied: bash rows rebuild from plain text, path
