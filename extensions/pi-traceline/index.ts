@@ -11,6 +11,7 @@ import {
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
+import { positiveNumberValue, isJsonObject } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer, isAssistantRow, isToolRow } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
@@ -265,19 +266,23 @@ function formatCharCount(value: number): string {
 let sizeThresholds: SizeThresholds = SIZE_THRESHOLDS;
 
 type TracelineConfig = {
-  sizeWarningChars?: unknown;
-  sizeErrorChars?: unknown;
+  sizeWarningChars?: number;
+  sizeErrorChars?: number;
 };
 
+function parseTracelineConfig(value: unknown): TracelineConfig {
+  if (!isJsonObject(value)) return {};
+  const sizeWarningChars = positiveNumberValue(value.sizeWarningChars);
+  const sizeErrorChars = positiveNumberValue(value.sizeErrorChars);
+  return {
+    ...(sizeWarningChars !== undefined ? { sizeWarningChars: Math.floor(sizeWarningChars) } : {}),
+    ...(sizeErrorChars !== undefined ? { sizeErrorChars: Math.floor(sizeErrorChars) } : {}),
+  };
+}
+
 function configureSizeThresholds(config: TracelineConfig | undefined): void {
-  const warning =
-    typeof config?.sizeWarningChars === "number" && config.sizeWarningChars > 0
-      ? Math.floor(config.sizeWarningChars)
-      : SIZE_THRESHOLDS.warning;
-  const error =
-    typeof config?.sizeErrorChars === "number" && config.sizeErrorChars > 0
-      ? Math.floor(config.sizeErrorChars)
-      : SIZE_THRESHOLDS.error;
+  const warning = config?.sizeWarningChars ?? SIZE_THRESHOLDS.warning;
+  const error = config?.sizeErrorChars ?? SIZE_THRESHOLDS.error;
   sizeThresholds = { warning, error: Math.max(error, warning) };
 }
 
@@ -1818,7 +1823,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     const config = Object.assign(
       {},
       ...configPaths("pi-traceline", process.cwd()).map(
-        (path) => readJsonConfig<Record<string, unknown>>(path) ?? {},
+        (path) => readJsonConfig(path, parseTracelineConfig) ?? {},
       ),
     );
     configureSizeThresholds(config);

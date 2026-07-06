@@ -4,6 +4,7 @@ import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-c
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
+import { isJsonObject, positiveNumberValue, stringValue, type JsonValue } from "../_lib/boundary.ts";
 import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE } from "../_lib/chat.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
@@ -455,6 +456,66 @@ function mergeContextimateConfig(base: ContextimateConfig, next?: ContextimateCo
   };
 }
 
+function parseHeuristicProfile(value: unknown): HeuristicProfile {
+  if (!isJsonObject(value)) return {};
+  const profile: HeuristicProfile = {};
+  const label = stringValue(value.label);
+  const textDenominator = positiveNumberValue(value.textDenominator);
+  const sessionDenominator = positiveNumberValue(value.sessionDenominator);
+  const toolDenominator = positiveNumberValue(value.toolDenominator);
+  const toolNumerator = stringValue(value.toolNumerator);
+  if (label) profile.label = label;
+  if (textDenominator) profile.textDenominator = textDenominator;
+  if (sessionDenominator) profile.sessionDenominator = sessionDenominator;
+  if (toolDenominator) profile.toolDenominator = toolDenominator;
+  if (toolNumerator) profile.toolNumerator = toolNumerator;
+  return profile;
+}
+
+function parseHeuristicRule(value: unknown): HeuristicRule | undefined {
+  if (!isJsonObject(value)) return undefined;
+  const rule: HeuristicRule = parseHeuristicProfile(value);
+  const profile = stringValue(value.profile);
+  if (profile) rule.profile = profile;
+  if (isJsonObject(value.match)) {
+    const match: NonNullable<HeuristicRule["match"]> = {};
+    const provider = stringValue(value.match.provider);
+    const model = stringValue(value.match.model);
+    const id = stringValue(value.match.id);
+    const api = stringValue(value.match.api);
+    if (provider) match.provider = provider;
+    if (model) match.model = model;
+    if (id) match.id = id;
+    if (api) match.api = api;
+    if (Object.keys(match).length > 0) rule.match = match;
+  }
+  return Object.keys(rule).length > 0 ? rule : undefined;
+}
+
+function parseContextimateConfig(value: unknown): ContextimateConfig {
+  if (!isJsonObject(value)) return {};
+  const config: ContextimateConfig = {};
+  if (isJsonObject(value.defaults)) {
+    const defaults: NonNullable<ContextimateConfig["defaults"]> = parseHeuristicProfile(value.defaults);
+    const profile = stringValue(value.defaults.profile);
+    if (profile) defaults.profile = profile;
+    if (Object.keys(defaults).length > 0) config.defaults = defaults;
+  }
+  if (isJsonObject(value.profiles)) {
+    const profiles: Record<string, HeuristicProfile> = {};
+    for (const [name, entry] of Object.entries(value.profiles)) {
+      const profile = parseHeuristicProfile(entry);
+      if (Object.keys(profile).length > 0) profiles[name] = profile;
+    }
+    if (Object.keys(profiles).length > 0) config.profiles = profiles;
+  }
+  if (Array.isArray(value.rules)) {
+    const rules = value.rules.map(parseHeuristicRule).filter((rule): rule is HeuristicRule => !!rule);
+    if (rules.length > 0) config.rules = rules;
+  }
+  return config;
+}
+
 function splitConfigPaths(value: string | undefined): string[] {
   return (value ?? "").split(":").map((entry) => expandHomePath(entry.trim())).filter(Boolean);
 }
@@ -462,7 +523,7 @@ function splitConfigPaths(value: string | undefined): string[] {
 function loadContextimateConfig(cwd: string): ContextimateConfig {
   const paths = [...configPaths("pi-contextimate", cwd), ...splitConfigPaths(process.env.PI_CONTEXTIMATE_CONFIG)];
   return paths.reduce<ContextimateConfig>(
-    (config, filePath) => mergeContextimateConfig(config, readJsonConfig<ContextimateConfig>(filePath)),
+    (config, filePath) => mergeContextimateConfig(config, readJsonConfig(filePath, parseContextimateConfig)),
     {},
   );
 }
@@ -787,50 +848,42 @@ function trimFinalPeriod(text: string): string {
 }
 
 function getSchemaProperties(schema: unknown): Record<string, unknown> {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return {};
-  const properties = (schema as { properties?: unknown }).properties;
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return {};
-  return properties as Record<string, unknown>;
+  if (!isJsonObject(schema) || !isJsonObject(schema.properties)) return {};
+  return schema.properties;
 }
 
 function schemaPropertyType(property: unknown): string {
-  if (!property || typeof property !== "object" || Array.isArray(property)) return "object";
-  const typed = property as { type?: unknown; anyOf?: unknown; oneOf?: unknown; allOf?: unknown };
-  if (typeof typed.type === "string") return typed.type;
-  if (Array.isArray(typed.type)) return typed.type.join("|");
-  if (typed.anyOf) return "anyOf";
-  if (typed.oneOf) return "oneOf";
-  if (typed.allOf) return "allOf";
+  if (!isJsonObject(property)) return "object";
+  if (typeof property.type === "string") return property.type;
+  if (Array.isArray(property.type)) return property.type.filter((entry): entry is string => typeof entry === "string").join("|");
+  if (property.anyOf) return "anyOf";
+  if (property.oneOf) return "oneOf";
+  if (property.allOf) return "allOf";
   return "object";
 }
 
 function schemaPropertyDescription(property: unknown): string {
-  if (!property || typeof property !== "object" || Array.isArray(property)) return "";
-  const description = (property as { description?: unknown }).description;
-  return typeof description === "string" ? trimFinalPeriod(description) : "";
+  if (!isJsonObject(property)) return "";
+  return typeof property.description === "string" ? trimFinalPeriod(property.description) : "";
 }
 
-function schemaPropertyEnum(property: unknown): unknown[] {
-  if (!property || typeof property !== "object" || Array.isArray(property)) return [];
-  const enumValues = (property as { enum?: unknown }).enum;
-  return Array.isArray(enumValues) ? enumValues : [];
+function schemaPropertyEnum(property: unknown): JsonValue[] {
+  if (!isJsonObject(property) || !Array.isArray(property.enum)) return [];
+  return property.enum;
 }
 
 function schemaArrayItemProperties(property: unknown): Record<string, unknown> {
-  if (!property || typeof property !== "object" || Array.isArray(property)) return {};
-  const items = (property as { items?: unknown }).items;
-  return getSchemaProperties(items);
+  if (!isJsonObject(property)) return {};
+  return getSchemaProperties(property.items);
 }
 
 function getSchemaRequired(schema: unknown): string[] {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
-  const required = (schema as { required?: unknown }).required;
-  return Array.isArray(required) ? required.filter((entry): entry is string => typeof entry === "string") : [];
+  if (!isJsonObject(schema) || !Array.isArray(schema.required)) return [];
+  return schema.required.filter((entry): entry is string => typeof entry === "string");
 }
 
 function arrayItemsSchema(property: unknown): unknown {
-  if (!property || typeof property !== "object" || Array.isArray(property)) return undefined;
-  return (property as { items?: unknown }).items;
+  return isJsonObject(property) ? property.items : undefined;
 }
 
 function collectToolFields(name: string, property: unknown, depth: number, required: boolean, out: ToolField[], maxDepth = 3): void {

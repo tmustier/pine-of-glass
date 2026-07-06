@@ -44,8 +44,10 @@ Deliberately **not** tested:
   same file) into an exported `internals` object consumed by tests. Pi imports only the
   default export (`jiti.import(path, { default: true })`), so named exports are
   runtime-inert. No file split until the code itself needs one.
-- **Scripts:** `npm run typecheck`, `npm test` (unit + render + contract),
-  `npm run test:smoke` (tmux startup smoke, local-only).
+- **Scripts:** `npm run lint` (agent coding-standard source checks),
+  `npm run typecheck`, `npm test` (unit + render + contract),
+  `npm run check` (lint + typecheck + tests), and `npm run test:smoke`
+  (tmux startup smoke, local-only).
 
 Layout:
 
