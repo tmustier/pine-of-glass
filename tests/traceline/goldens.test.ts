@@ -1,6 +1,7 @@
 // Visual regression net for the one-line trace grammar (design language §10):
-// a realistic scripted sequence — repeated cd preambles, a paginated read run, healthy
-// and ballooned outputs, a flattened multiline command — rendered at 80 and 120 columns.
+// a realistic scripted sequence — repeated cd preambles, a dropped set-hygiene run, a
+// newline-preamble context fold, a paginated read run, healthy and ballooned outputs, a
+// flattened multiline command — rendered at 80 and 120 columns.
 // Colour is not under test (see docs/testing.md); structure, alignment, folding, and
 // wording are. Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
 import { test, beforeEach } from "node:test";
@@ -87,6 +88,15 @@ test("one-line trace goldens at 80 and 120 columns", () => {
     read(`${repo}/extensions/pi-cachemire/index.ts`, 201, 200, 18_400),
     read(`${repo}/extensions/pi-cachemire/index.ts`, 401, 200, 14_300),
     bash(`cd ${repo} && rm -f /tmp/pog-scratch.txt`, { chars: 0 }),
+    prose("Measuring the bash-corpus census before and after the rule change."),
+    bash(`set -euo pipefail\ncd ${repo}\nuv run scripts/dev/bash-corpus/report.ts --census out/before.json`, {
+      rendered: ["$ set -euo pipefail", `cd ${repo}`, "uv run scripts/dev/bash-corpus/report.ts --census out/before.json (timeout 120s)"],
+      chars: 2_100,
+    }),
+    bash(`set -euo pipefail\ncd ${repo}\nuv run scripts/dev/bash-corpus/report.ts --census out/after.json`, {
+      rendered: ["$ set -euo pipefail", `cd ${repo}`, "uv run scripts/dev/bash-corpus/report.ts --census out/after.json (timeout 120s)"],
+      chars: 2_050,
+    }),
     prose("The typecheck output looks wrong — checking the runner script."),
     bash("python3 -c '...'", {
       rendered: ["$ python3 -c '", "  import json", "  print(json.dumps(cfg))", "  ' | tail -2 (timeout 70s)"],

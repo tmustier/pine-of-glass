@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.19 — 2026-07-05
+
+`pi-traceline` reclaims the width that leading shell preambles used to spend.
+Dimming a `set -euo pipefail ↵ cd <dir> ↵` preamble was only half the job: dim
+ink still consumes the shared truncation budget (§9.8), so the real command was
+middle-truncated behind boilerplate that carries no signal. Measured on a
+script-heavy session, 82% of bash rows opened with a preamble eating a median of
+61 columns (two-thirds of the row); the old `cd <dir> && ` fold fired on 1 of 49
+rows because it missed `set`-first, `↵`-separated forms. Design language §9.4.
+
+- A bash row's *leading preamble run* — `set -…` hygiene, `cd <dir>`, and bare
+  `VAR=…`/`export` assignments, across `&&`, `;` and `↵` breaks — is now
+  reclaimed, not just dimmed. A leading `set -…` run drops outright the way the
+  `(timeout Ns)` suffix does; the remaining `cd`/assignment context folds to a
+  dim `⋯` when it repeats the previous bash row's, whatever separator either row
+  used to write it.
+- The `⋯` now absorbs the whole run and its trailing separator (`⋯ npm test`,
+  not `⋯ && npm test`); it still never points across visible prose, and never
+  lands on a row with no real command after it (that row keeps its context, so no
+  row goes dark). A distinct context prints once, on its first appearance.
+- The narrow `cd <dir> && ` detector (`CD_PREAMBLE`/`repeatsPreviousCdPreamble`/
+  `elideCdPreamble`) is replaced by a quote/substitution-aware segment splitter
+  (`bashPreambleRun`/`foldBashPreamble`). Validated across the 51k-invocation
+  bash corpus: zero exceptions, and the crown census is byte-identical (the crown
+  grammar is untouched; 2.38 crowns/row holds). Goldens regenerated to gain a
+  `set`-drop + newline-preamble-fold scene mirroring the reported case.
+
 ## 0.5.18 — 2026-07-04
 
 Click-to-expand is removed from `pi-traceline`. It shipped behind careful

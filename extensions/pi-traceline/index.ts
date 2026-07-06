@@ -1275,8 +1275,7 @@ function invocationInk(comp: any): string {
   if (toolLabel(comp?.toolName) === "bash") {
     const plain = bashInvocationText(comp);
     if (plain === undefined) return inkedFallbackLine(comp);
-    const tilded = tildify(plain);
-    return inkBashRow(comp, repeatsPreviousCdPreamble(comp) ? elideCdPreamble(tilded) : tilded);
+    return inkBashRow(comp, foldBashPreamble(comp, tildify(plain)));
   }
   const native = nativeInvocationLine(comp);
   const base = (native && pathEmphasisLine(comp, native)) ?? native;
@@ -1316,20 +1315,138 @@ function oneLine(comp: any, width: number): string {
   );
 }
 
-// --- repetition folding (issue #14, design language §9.9) -------------------
+// --- repetition folding + preamble reclaim (issue #14, design language §9.4/§9.9) ---
 
-// pi's bash tool is stateless per call, so agents working outside the session cwd re-`cd`
-// on every call — measured at 90% of bash rows in a live session. When a row's
-// `cd <dir> && ` preamble repeats the previous bash row's, the repeated head carries no
-// information and its ~half-row width starves middle truncation of the part that
-// *differs*; render it as a dim `⋯` instead.
-const CD_PREAMBLE = /^cd\s+("[^"]*"|'[^']*'|\S+)\s*&&\s/;
+// A demoted preamble still spends width: dim ink alone leaves `set -euo pipefail ↵ cd
+// <dir> ↵` eating two-thirds of a row, and the shared truncation budget (§9.8) then
+// cuts the real command behind it. So a bash row's *leading preamble run* — the opening
+// sequence of situating segments (`set -…` hygiene, `cd <dir>`, bare `VAR=…`/`export`
+// assignments) across `&&`, `;` and `↵` breaks — is reclaimed, not just dimmed: the
+// `set -…` hygiene drops like the `(timeout Ns)` suffix, and the `cd`/assignment context
+// folds to a dim `⋯` when it repeats the previous bash row's (§9.4).
 
-function cdPreambleDir(comp: any): string | undefined {
-  if (toolLabel(comp?.toolName) !== "bash") return undefined;
-  const command = comp?.args?.command;
-  if (typeof command !== "string") return undefined;
-  return CD_PREAMBLE.exec(command)?.[1];
+// Top-level segments of a flattened bash body, split on `&&`/`||`/`;`/`↵` outside
+// quotes, command substitutions and backticks. Only the leading preamble run is read
+// (the walk stops at the first real command), so heredoc bodies — which live only in
+// real segments — need no handling here.
+function bashTopLevelSegments(body: string): { start: number; text: string }[] {
+  const segs: { start: number; text: string }[] = [];
+  let quote: "'" | '"' | undefined;
+  let paren = 0;
+  let backtick = false;
+  let segStart = 0;
+  const push = (end: number) => {
+    const raw = body.slice(segStart, end);
+    const lead = raw.length - raw.replace(/^\s+/, "").length;
+    const text = raw.trim();
+    if (text.length > 0) segs.push({ start: segStart + lead, text });
+  };
+  let i = 0;
+  while (i < body.length) {
+    const ch = body[i]!;
+    if (quote === "'") {
+      if (ch === "'") quote = undefined;
+      i++;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === "\\") { i += 2; continue; }
+      if (ch === '"') quote = undefined;
+      i++;
+      continue;
+    }
+    if (backtick) {
+      if (ch === "`") backtick = false;
+      i++;
+      continue;
+    }
+    if (ch === "'") { quote = "'"; i++; continue; }
+    if (ch === '"') { quote = '"'; i++; continue; }
+    if (ch === "`") { backtick = true; i++; continue; }
+    if (ch === "\\") { i += 2; continue; }
+    if (ch === "(") { paren++; i++; continue; }
+    if (ch === ")") { if (paren > 0) paren--; i++; continue; }
+    if (paren === 0) {
+      if (body.startsWith("&&", i) || body.startsWith("||", i)) { push(i); i += 2; segStart = i; continue; }
+      if (ch === ";" || ch === LINE_BREAK_MARK) { push(i); i += 1; segStart = i; continue; }
+    }
+    i++;
+  }
+  push(body.length);
+  return segs;
+}
+
+// One env-assignment-only segment (`WORK=$(cat x)`, `A=1 B=2`) is setup, not a command,
+// so it situates; `FOO=bar cmd` is the command `cmd` and does not. Consumes each
+// `VAR=value` token quote/substitution-aware, then checks nothing but assignments remain.
+function isEnvAssignmentOnly(text: string): boolean {
+  let i = 0;
+  while (i < text.length) {
+    while (i < text.length && /\s/.test(text[i]!)) i++;
+    if (i >= text.length) return true;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(text.slice(i))) return false;
+    let quote: "'" | '"' | undefined;
+    let paren = 0;
+    let backtick = false;
+    while (i < text.length) {
+      const ch = text[i]!;
+      if (quote === "'") { if (ch === "'") quote = undefined; i++; continue; }
+      if (quote === '"') { if (ch === "\\") { i += 2; continue; } if (ch === '"') quote = undefined; i++; continue; }
+      if (backtick) { if (ch === "`") backtick = false; i++; continue; }
+      if (ch === "'") { quote = "'"; i++; continue; }
+      if (ch === '"') { quote = '"'; i++; continue; }
+      if (ch === "`") { backtick = true; i++; continue; }
+      if (ch === "\\") { i += 2; continue; }
+      if (ch === "(") { paren++; i++; continue; }
+      if (ch === ")") { if (paren > 0) paren--; i++; continue; }
+      if (paren === 0 && /\s/.test(ch)) break;
+      i++;
+    }
+  }
+  return true;
+}
+
+type BashSegmentClass = "hygiene" | "context" | "real";
+
+// `set -…` is hygiene (drop-always); `cd`, `export …` and bare assignments situate
+// (fold-on-repeat); everything else is the reason the row exists and stops the run.
+function classifyBashSegment(text: string): BashSegmentClass {
+  if (/^set(\s|$)/.test(text)) return "hygiene";
+  if (/^cd(\s|$)/.test(text)) return "context";
+  if (/^export\s+[A-Za-z_]/.test(text)) return "context";
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(text)) return isEnvAssignmentOnly(text) ? "context" : "real";
+  return "real";
+}
+
+type BashPreambleRun = {
+  contextText: string; // situating context, joined; "" when the run has none
+  firstRealStart?: number; // body index of the first real command, if any
+  dropStart?: number; // body index just past a leading `set -…` run, when a drop applies
+};
+
+// The leading preamble run of a flattened bash body. contextText compares context
+// across rows (both computed from tildified bodies, so `cd ~/x` matches `cd ~/x`);
+// firstRealStart is where the `⋯` fold would point; dropStart marks where a leading
+// `set -…` run ends. dropStart stays undefined when the whole body is hygiene, so a
+// `set -e`-only row keeps its head and no row goes dark (§9.4).
+function bashPreambleRun(body: string): BashPreambleRun {
+  const contextParts: string[] = [];
+  let firstRealStart: number | undefined;
+  let dropStart: number | undefined;
+  for (const seg of bashTopLevelSegments(body)) {
+    const cls = classifyBashSegment(seg.text);
+    if (cls === "real") {
+      firstRealStart = seg.start;
+      if (dropStart === undefined) dropStart = seg.start;
+      break;
+    }
+    if (cls === "context") {
+      contextParts.push(seg.text);
+      if (dropStart === undefined) dropStart = seg.start;
+    }
+    // a leading hygiene (`set`) segment leaves dropStart pointing just past it
+  }
+  return { contextText: contextParts.join("\n"), firstRealStart, dropStart };
 }
 
 // The previous bash row within the same visual group: reads and other tools interleave
@@ -1349,24 +1466,38 @@ function previousBashRow(comp: any): any | undefined {
   return undefined;
 }
 
-function repeatsPreviousCdPreamble(comp: any): boolean {
-  const dir = cdPreambleDir(comp);
-  if (dir === undefined) return false;
-  return cdPreambleDir(previousBashRow(comp)) === dir;
+// The preamble run of a rendered bash comp, read from the same tildified body the row
+// shows, so context keys compare like-for-like across rows.
+function bashPreambleRunOf(comp: any): BashPreambleRun | undefined {
+  if (!comp || toolLabel(comp?.toolName) !== "bash") return undefined;
+  const plain = bashInvocationText(comp);
+  if (plain === undefined || !plain.startsWith("$ ")) return undefined;
+  return bashPreambleRun(tildify(plain).slice(2));
 }
 
-// Operates on the plain-text invocation (see bashInvocationText); inkBashBody later
-// dims the ⋯ with the rest of the shell apparatus.
-function elideCdPreamble(line: string): string {
+// Reclaim the leading preamble of a `$ …` line (§9.4): fold the situating context to a
+// dim `⋯` when it repeats the previous bash row's, else drop a leading `set -…` run.
+// Operates on plain text (see bashInvocationText); inkBashBody later dims the `⋯` and
+// the surviving `cd`/assignment context with the rest of the shell apparatus.
+function foldBashPreamble(comp: any, line: string): string {
   if (!line.startsWith("$ ")) return line;
-  // Find the separator with the same quote-aware parse used to detect the repeat: a
-  // plain indexOf(" && ") would cut inside a quoted directory (`cd "/tmp/a && b" && …`)
-  // and corrupt the command. The match tail is `\s*&&\s`, so its last `&&` *is* the
-  // separator, after any quoted segment.
-  const preamble = CD_PREAMBLE.exec(line.slice(2));
-  if (!preamble) return line;
-  const ampIndex = 2 + preamble[0].lastIndexOf("&&");
-  return `$ ${PREAMBLE_MARK} ${line.slice(ampIndex)}`;
+  const body = line.slice(2);
+  const run = bashPreambleRun(body);
+  // A: the context folds only when a real command follows it (a `⋯` must point at
+  // something) and it repeats the previous bash row's — the `⋯` absorbs the whole run
+  // and its trailing separator.
+  if (run.firstRealStart !== undefined && run.contextText !== "") {
+    const prev = bashPreambleRunOf(previousBashRow(comp));
+    if (prev && prev.contextText === run.contextText) {
+      return `$ ${PREAMBLE_MARK} ${body.slice(run.firstRealStart)}`;
+    }
+  }
+  // B: otherwise drop a leading `set -…` hygiene run outright (dropStart > 0 means a
+  // set ran ahead of surviving context or a real command).
+  if (run.dropStart !== undefined && run.dropStart > 0) {
+    return `$ ${body.slice(run.dropStart)}`;
+  }
+  return line;
 }
 
 // Consecutive reads paging through one file (read → truncation notice → read with offset)
@@ -1792,9 +1923,11 @@ export const internals = {
   oneLine,
   leadingBlank,
   renderTraceRow,
-  // repetition folding + thinking-label preview/dedupe (issue #14)
-  repeatsPreviousCdPreamble,
-  elideCdPreamble,
+  // repetition folding + preamble reclaim + thinking-label preview/dedupe (issue #14)
+  bashPreambleRun,
+  bashPreambleRunOf,
+  foldBashPreamble,
+  previousBashRow,
   readRun,
   dedupeThinkingLabels,
   // Ctrl+T status-line suppression
