@@ -11,13 +11,13 @@ export function expandHomePath(filePath: string): string {
   return filePath;
 }
 
-/** Read and parse a JSON object file; undefined on absence or any error. */
-export function readJsonConfig<T extends object>(filePath: string): T | undefined {
+/** Read JSON config through a domain parser; undefined on absence or any parse error. */
+export function readJsonConfig<T>(filePath: string, parse: (value: unknown) => T): T | undefined {
   try {
     const expanded = expandHomePath(filePath);
     if (!existsSync(expanded)) return undefined;
-    const parsed = JSON.parse(readFileSync(expanded, "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as T) : undefined;
+    const parsed: unknown = JSON.parse(readFileSync(expanded, "utf8"));
+    return parse(parsed);
   } catch {
     return undefined;
   }

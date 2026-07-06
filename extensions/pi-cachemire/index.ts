@@ -3,6 +3,7 @@ import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { createHash } from "node:crypto";
 import { stripAnsi } from "../_lib/ansi.ts";
+import { booleanValue, isJsonObject, positiveNumberValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { findChatContainer, type ContainerLike } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
@@ -235,15 +236,13 @@ const MISS_RATIO = 0.2;
 // mutated" at the previous breakpoint.
 function stripCacheControl(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripCacheControl);
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      if (key === "cache_control") continue;
-      out[key] = stripCacheControl(entry);
-    }
-    return out;
+  if (!isJsonObject(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === "cache_control") continue;
+    out[key] = stripCacheControl(entry);
   }
-  return value;
+  return out;
 }
 
 function hashOf(value: unknown): string {
@@ -270,7 +269,7 @@ function findTtlMs(payload: Record<string, unknown>): number | undefined {
 }
 
 function fingerprintPayload(payload: unknown): RequestFingerprint {
-  const body = (payload ?? {}) as Record<string, unknown>;
+  const body = isJsonObject(payload) ? payload : {};
   if (Array.isArray(body.input) || typeof body.instructions === "string") {
     const tools = Array.isArray(body.tools) ? body.tools : [];
     return {
@@ -827,9 +826,27 @@ function restoreFromMessages(messages: Array<Record<string, unknown>>): CallReco
 
 // --- config ----------------------------------------------------------------------------
 
+function parseCachemireConfig(value: unknown): Partial<CachemireConfig> {
+  if (!isJsonObject(value)) return {};
+  const config: Partial<CachemireConfig> = {};
+  const widget = booleanValue(value.widget);
+  const turnSummary = booleanValue(value.turnSummary);
+  const turnSummaryMinCalls = positiveNumberValue(value.turnSummaryMinCalls);
+  const missWarnings = booleanValue(value.missWarnings);
+  const missWarnUsd = positiveNumberValue(value.missWarnUsd);
+  const missWarnTokens = positiveNumberValue(value.missWarnTokens);
+  if (widget !== undefined) config.widget = widget;
+  if (turnSummary !== undefined) config.turnSummary = turnSummary;
+  if (turnSummaryMinCalls !== undefined) config.turnSummaryMinCalls = Math.floor(turnSummaryMinCalls);
+  if (missWarnings !== undefined) config.missWarnings = missWarnings;
+  if (missWarnUsd !== undefined) config.missWarnUsd = missWarnUsd;
+  if (missWarnTokens !== undefined) config.missWarnTokens = Math.floor(missWarnTokens);
+  return config;
+}
+
 function loadConfig(cwd: string): CachemireConfig {
   return configPaths("pi-cachemire", cwd).reduce(
-    (config, filePath) => ({ ...config, ...readJsonConfig<Partial<CachemireConfig>>(filePath) }),
+    (config, filePath) => ({ ...config, ...readJsonConfig(filePath, parseCachemireConfig) }),
     { ...DEFAULT_CONFIG },
   );
 }

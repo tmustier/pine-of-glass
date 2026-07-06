@@ -8,8 +8,10 @@ language. TypeScript, zero runtime dependencies, tests on `node:test`.
 ```bash
 npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests); run first on a fresh clone
 npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
+npm run lint            # deterministic agent coding-standard checks
 npm run typecheck       # tsc against the real installed pi
 npm test                # unit + golden + pi contract tests (zero deps, node:test)
+npm run check           # lint + typecheck + tests
 npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)
 ```
 
@@ -34,6 +36,11 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   [`scripts/dev/screenshots/`](./scripts/dev/screenshots/): real pi TUI in an isolated
   tmux/HOME; see its README for the recipe. The `cachemire` scenario makes live model
   calls (costs cents).
+- Agent coding standards live in [`docs/agent-coding-standard.md`](./docs/agent-coding-standard.md)
+  and are enforced by `scripts/dev/agent-lint.mjs`. Boundary uncertainty belongs at
+  Pi, JSON, config, provider-payload, and catch seams only. Do not add generic
+  `isRecord` or `isObject` helpers. Parse or refine at the edge, pass typed values
+  inward, and document real escape hatches with `SAFETY:` comments.
 
 ## Style
 
