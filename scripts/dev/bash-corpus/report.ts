@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { internals } from "../../../extensions/pi-traceline/index.ts";
 
-const { inkBashRow, flattenInvocationLines, stripAnsi } = internals;
+const { inkBashRow, flattenInvocationLines, stripAnsi, setTracelineThemeGetter } = internals;
 
 const args = process.argv.slice(2);
 function argValue(flag: string, fallback?: string): string | undefined {
@@ -36,11 +36,11 @@ const seed = Number(argValue("--seed", "7"));
 // Marker theme (same shape as the test suite's): text=255 makes crowns parseable
 // out of rendered ANSI regardless of which renderer version produced them.
 const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };
-(globalThis as any).__tracelineGetTheme = () => ({
+setTracelineThemeGetter(() => ({
   fg: (color: string, text: string) => `\x1b[38;5;${THEME_CODES[color] ?? 250}m${text}\x1b[39m`,
   bold: (text: string) => text,
   bg: (_color: string, text: string) => text,
-});
+}));
 
 const CROWN = /\x1b\[38;5;255m\x1b\[1m([^\x1b]*)\x1b\[22m/g;
 

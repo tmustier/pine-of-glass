@@ -135,7 +135,7 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
 
   // ≥100 ch so the result-size suffix appears (traceline omits it below the fact floor).
   comp.updateResult({ content: [{ type: "text", text: "hello world ".repeat(20) }], isError: false }, false);
-  assert.equal(traceline.toolStatus(comp), "success", "result/isPartial fields drifted — status colours break");
+  assert.equal(traceline.toolStatus(comp as never), "success", "result/isPartial fields drifted — status colours break");
 
   const line = traceline.oneLine(comp as never, 80);
   const visible = traceline.stripAnsi(line);
@@ -144,7 +144,7 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
 
   // Error path drives the red status colour.
   comp.updateResult({ content: [{ type: "text", text: "boom" }], isError: true }, false);
-  assert.equal(traceline.toolStatus(comp), "error");
+  assert.equal(traceline.toolStatus(comp as never), "error");
 });
 
 test("real ToolExecutionComponent: bash multiline render seam", () => {
@@ -199,7 +199,7 @@ test("adjacent thinking blocks double the collapsed label natively; traceline co
   // If this drops to 1, pi fixed it upstream — retire dedupeThinkingLabels.
   assert.equal(labelCount(native), 2, "adjacent thinking blocks no longer double the label — dedupe may be retirable");
 
-  const deduped = traceline.dedupeThinkingLabels(component, native, 80);
+  const deduped = traceline.dedupeThinkingLabels(component as never, native, 80);
   assert.equal(labelCount(deduped), 0, "dedupe should replace native placeholders with trace previews");
   assert.equal(
     deduped.filter((line) => traceline.stripAnsi(line).trim() === "Thinking: first reasoning segment").length,
@@ -299,14 +299,13 @@ test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", () =
   container.addChild(keep);
   container.addChild(spacer);
   container.addChild(text);
-  const g = globalThis as Record<string, unknown>;
-  const previousChat = g.__tracelineChat;
-  g.__tracelineChat = container;
+  const previousChat = traceline.getTracelineChat();
+  traceline.setTracelineChat(container as never);
   try {
     traceline.suppressThinkingToggleStatus();
     assert.deepEqual(container.children, [keep], "trailing Spacer + Text status pair must be removed");
   } finally {
-    g.__tracelineChat = previousChat;
+    traceline.setTracelineChat(previousChat);
   }
 });
 

@@ -9,9 +9,7 @@ import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 
-const { isThinkingToggleStatusRow, isSpacerRow, suppressThinkingToggleStatus } = internals;
-
-const g = globalThis as Record<string, unknown>;
+const { isThinkingToggleStatusRow, isSpacerRow, suppressThinkingToggleStatus, setTracelineChat } = internals;
 
 function statusText(text: string) {
   return { text: `\x1b[90m${text}\x1b[0m`, setText: () => {}, render: () => [] };
@@ -26,7 +24,7 @@ function prose() {
 }
 
 beforeEach(() => {
-  g.__tracelineChat = undefined;
+  setTracelineChat(undefined);
 });
 
 test("duck types: pi's status Text and Spacer match; neighbours do not", () => {
@@ -47,7 +45,7 @@ test("duck types: pi's status Text and Spacer match; neighbours do not", () => {
 test("drops the trailing Spacer + Text pair pi's toggle appends", () => {
   const keep = prose();
   const children = [keep, spacer(), statusText("Thinking blocks: hidden")];
-  g.__tracelineChat = { children };
+  setTracelineChat({ children });
   suppressThinkingToggleStatus();
   assert.deepEqual(children, [keep], "status pair must be removed from the chat tail");
 });
@@ -55,25 +53,26 @@ test("drops the trailing Spacer + Text pair pi's toggle appends", () => {
 test("removes only its own Spacer: a non-spacer neighbour survives", () => {
   const keep = prose();
   const children = [keep, statusText("Thinking blocks: visible")];
-  g.__tracelineChat = { children };
+  setTracelineChat({ children });
   suppressThinkingToggleStatus();
   assert.deepEqual(children, [keep], "status text removed; the prose before it must not be eaten as a spacer");
 });
 
 test("leaves other statuses and non-tail matches alone", () => {
   const other = [prose(), spacer(), statusText("Forked to new session")];
-  g.__tracelineChat = { children: [...other] };
+  const otherChildren = [...other];
+  setTracelineChat({ children: otherChildren });
   suppressThinkingToggleStatus();
-  assert.equal((g.__tracelineChat as { children: unknown[] }).children.length, 3, "other statuses pass through");
+  assert.equal(otherChildren.length, 3, "other statuses pass through");
 
   // A stale match not at the tail is history, not the fresh announcement.
-  const buried = [spacer(), statusText("Thinking blocks: hidden"), prose()];
-  g.__tracelineChat = { children: [...buried] };
+  const buriedChildren = [spacer(), statusText("Thinking blocks: hidden"), prose()];
+  setTracelineChat({ children: buriedChildren });
   suppressThinkingToggleStatus();
-  assert.equal((g.__tracelineChat as { children: unknown[] }).children.length, 3, "non-tail matches untouched");
+  assert.equal(buriedChildren.length, 3, "non-tail matches untouched");
 
-  g.__tracelineChat = { children: [] };
+  setTracelineChat({ children: [] });
   suppressThinkingToggleStatus(); // empty chat: no throw
-  g.__tracelineChat = undefined;
+  setTracelineChat(undefined);
   suppressThinkingToggleStatus(); // no chat container yet: no throw
 });

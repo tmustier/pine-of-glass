@@ -6,9 +6,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
+import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
 const {
   oneLine,
@@ -40,9 +42,9 @@ const {
   renderTraceRow,
   readRun,
   dedupeThinkingLabels,
+  setTracelineChat,
+  setTracelineThemeGetter,
 } = internals;
-
-const g = globalThis as Record<string, unknown>;
 
 // Without a theme handle, all family ink falls back to basic raw ANSI (style.ts):
 const DIM = "\x1b[90m";
@@ -51,17 +53,17 @@ const DIM = "\x1b[90m";
 // codes per role (real escape sequences, so width math stays honest).
 const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };
 const T = Object.fromEntries(Object.entries(THEME_CODES).map(([role, n]) => [role, `\x1b[38;5;${n}m`])) as Record<string, string>;
-function themed() {
+function themed(): Theme {
   return {
     fg: (color: string, text: string) => `\x1b[38;5;${THEME_CODES[color] ?? 250}m${text}\x1b[39m`,
     bold: (text: string) => text,
     bg: (_color: string, text: string) => text,
-  };
+  } as Theme;
 }
 
-type SyntheticComp = Record<string, unknown>;
+type SyntheticComp = Partial<ToolRowLike>;
 
-function toolComp(overrides: SyntheticComp = {}): SyntheticComp {
+function toolComp(overrides: SyntheticComp = {}): ToolRowLike {
   return {
     toolName: "read",
     args: { path: `${homedir()}/projects/demo/file.ts`, offset: 1, limit: 40 },
@@ -71,12 +73,12 @@ function toolComp(overrides: SyntheticComp = {}): SyntheticComp {
     setExpanded: () => {},
     callRendererComponent: { render: () => [`read ~/projects/demo/file.ts:1-40`] },
     ...overrides,
-  };
+  } as ToolRowLike;
 }
 
 beforeEach(() => {
-  g.__tracelineChat = undefined;
-  g.__tracelineGetTheme = undefined;
+  setTracelineChat(undefined);
+  setTracelineThemeGetter(undefined);
   configureSizeThresholds(undefined);
 });
 
@@ -171,7 +173,7 @@ test("mutations carry +/- inline and drop out of the fact columns (§9.5/§9.7)"
     callRendererComponent: { render: () => ["read ~/projects/demo/src/d.ts"] },
     result: { content: [{ type: "text", text: "y".repeat(14200) }], isError: false },
   });
-  g.__tracelineChat = { children: [both, minusOnly, plusOnly, read] };
+  setTracelineChat({ children: [both, minusOnly, plusOnly, read] });
   try {
     const [a, b, c, d] = [both, minusOnly, plusOnly, read].map((row) => stripAnsi(oneLine(row, 80)));
     // The diff rides the basename (§9.5): adjacent to the file it changed,
@@ -189,7 +191,7 @@ test("mutations carry +/- inline and drop out of the fact columns (§9.5/§9.7)"
     // keeps its right-aligned size cell.
     assert.ok(d!.endsWith("14.2k ch"), d);
   } finally {
-    g.__tracelineChat = undefined;
+    setTracelineChat(undefined);
   }
 });
 
@@ -284,7 +286,7 @@ test("result-size suffix severity: dim while healthy, warning ≥10k ch, error �
 });
 
 test("ink derives from the theme when one is active", () => {
-  g.__tracelineGetTheme = () => themed();
+  setTracelineThemeGetter(() => themed());
   const line = oneLine(toolComp(), 80);
   assert.ok(line.includes(`${T.dim}~/projects/demo/`), `directory must use theme dim: ${JSON.stringify(line)}`);
   assert.ok(line.includes(`${T.success}›`), "bullet ink must use the theme success role");
@@ -324,7 +326,7 @@ test("the cut is a column: a block shares one body budget so ellipses and tails 
     "git log --oneline --graph --decorate --all --color=never --since='2 weeks ago' -n 50 | head -30",
     { result: { content: [{ type: "text", text: "w".repeat(200) }], isError: false } },
   );
-  g.__tracelineChat = { children: [a, b, c] };
+  setTracelineChat({ children: [a, b, c] });
   const lines = [a, c].map((row) => stripAnsi(oneLine(row, 80)));
   const cuts = lines.map((l) => l.indexOf("…"));
   assert.ok(cuts[0]! > 0, `expected truncation: ${JSON.stringify(lines[0])}`);
@@ -332,7 +334,7 @@ test("the cut is a column: a block shares one body budget so ellipses and tails 
   // Tails end flush at one column: the body ends where the block's widest suffix begins.
   const bodyEnds = lines.map((l) => l.slice(0, l.lastIndexOf(" ch") - 4).trimEnd().length);
   assert.equal(bodyEnds[0], bodyEnds[1], `tail-end columns differ: ${JSON.stringify(lines)}`);
-  g.__tracelineChat = undefined;
+  setTracelineChat(undefined);
 });
 
 test("reserve holds a body to the shared block budget (§9.8)", () => {
@@ -374,14 +376,14 @@ test("size column is block-scoped: one row over the floor lights every cell (§9
   // Isolated all-tiny block: no size suffixes at all — the right edge stays clean.
   const a = tiny();
   const b = tiny();
-  g.__tracelineChat = { children: [a, b] };
+  setTracelineChat({ children: [a, b] });
   assert.equal(stripAnsi(toolFactSuffix(a)), "");
   assert.equal(stripAnsi(toolFactSuffix(b)), "");
 
   // Mixed block: the 1.4k row lights the column; tiny neighbours render their cells.
   const c = tiny();
   const d = tiny();
-  g.__tracelineChat = { children: [c, big, d] };
+  setTracelineChat({ children: [c, big, d] });
   assert.equal(blockSizeColumnLive(c), true);
   assert.equal(stripAnsi(toolFactSuffix(c)), "0.0k ch");
   assert.equal(stripAnsi(toolFactSuffix(d)), "0.0k ch");
@@ -393,9 +395,9 @@ test("size column is block-scoped: one row over the floor lights every cell (§9
     hideThinkingBlock: false,
     lastMessage: { content: [{ type: "text", text: "done reading" }] },
   };
-  g.__tracelineChat = { children: [big, prose, e] };
+  setTracelineChat({ children: [big, prose, e] });
   assert.equal(stripAnsi(toolFactSuffix(e)), "");
-  g.__tracelineChat = undefined;
+  setTracelineChat(undefined);
 });
 
 test("path emphasis dims the boring prefix: block-common directory or cwd, tail bold (§9.5)", () => {
@@ -412,8 +414,8 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   const p1 = edit(`${home}/projects/site/src/pages/product.astro`);
   const p2 = edit(`${home}/projects/site/src/data/site.ts`);
   const p3 = edit(`${home}/projects/site/src/components/Cta.astro`);
-  g.__tracelineChat = { children: [p1, p2, p3] };
-  assert.equal(boringPrefix(p1, tildify(String(p1.args && (p1.args as any).path))), "~/projects/site/src/");
+  setTracelineChat({ children: [p1, p2, p3] });
+  assert.equal(boringPrefix(p1, tildify(String(p1.args?.path))), "~/projects/site/src/");
   const line = oneLine(p1, 100);
   assert.ok(line.includes(`${DIM}~/projects/site/src/\x1b[0m`), `common prefix dims: ${JSON.stringify(line)}`);
   assert.ok(line.includes("\x1b[1mpages/product.astro\x1b[22m"), `divergent tail bold: ${JSON.stringify(line)}`);
@@ -422,8 +424,8 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   // cwd-relative behind a dim ./ while the out-of-cwd neighbour keeps its absolute form.
   const inRepo = edit(`${home}/projects/site/src/lib/util.ts`, `${home}/projects/site`);
   const inTmp = edit("/tmp/scratch-note.md", `${home}/projects/site`);
-  g.__tracelineChat = { children: [inRepo, inTmp] };
-  assert.equal(cwdRelativePath(inRepo, String((inRepo.args as any).path)), "./src/lib/util.ts");
+  setTracelineChat({ children: [inRepo, inTmp] });
+  assert.equal(cwdRelativePath(inRepo, String(inRepo.args?.path)), "./src/lib/util.ts");
   assert.equal(boringPrefix(inRepo, "./src/lib/util.ts"), "./");
   assert.equal(boringPrefix(inTmp, "/tmp/scratch-note.md"), "/tmp/");
   const repoLine = oneLine(inRepo, 100);
@@ -431,7 +433,7 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   assert.ok(repoLine.includes("\x1b[1msrc/lib/util.ts\x1b[22m"), `sub-cwd tail bold: ${JSON.stringify(repoLine)}`);
 
   // A lone row (no block siblings) keeps the classic basename-only emphasis.
-  g.__tracelineChat = undefined;
+  setTracelineChat(undefined);
   const lone = edit(`${home}/projects/site/src/pages/product.astro`);
   assert.equal(boringPrefix(lone, "~/projects/site/src/pages/product.astro"), "~/projects/site/src/pages/");
 });
@@ -443,7 +445,7 @@ test("cwd collapses to ./: two columns of ambient context instead of thirty (§9
     toolComp({ args: { path }, cwd, callRendererComponent: { render: () => [`read ${tildify(path)}`] } });
 
   // Lone in-repo row: dim ./dir/, bold basename — calm, short, unambiguous.
-  g.__tracelineChat = undefined;
+  setTracelineChat(undefined);
   const lone = read(`${cwd}/src/pages/product.astro`);
   const line = oneLine(lone, 100);
   assert.ok(stripAnsi(line).includes("read ./src/pages/product.astro"), JSON.stringify(stripAnsi(line)));
@@ -457,19 +459,19 @@ test("cwd collapses to ./: two columns of ambient context instead of thirty (§9
   // A block diverging at the repo root brightens whole relative paths past the dim ./.
   const a = read(`${cwd}/README.md`);
   const b = read(`${cwd}/src/data/site.ts`);
-  g.__tracelineChat = { children: [a, b] };
+  setTracelineChat({ children: [a, b] });
   assert.ok(oneLine(a, 100).includes("\x1b[1mREADME.md\x1b[22m"));
   assert.ok(oneLine(b, 100).includes("\x1b[1msrc/data/site.ts\x1b[22m"));
 
   // But ./ counts like ~: a block diverging under one src/ dims ./src/ as shared.
   const c = read(`${cwd}/src/pages/product.astro`);
   const d = read(`${cwd}/src/data/site.ts`);
-  g.__tracelineChat = { children: [c, d] };
+  setTracelineChat({ children: [c, d] });
   assert.equal(boringPrefix(c, "./src/pages/product.astro"), "./src/");
   const lineC = oneLine(c, 100);
   assert.ok(lineC.includes(`${DIM}./src/\x1b[0m`), JSON.stringify(lineC));
   assert.ok(lineC.includes("\x1b[1mpages/product.astro\x1b[22m"), JSON.stringify(lineC));
-  g.__tracelineChat = undefined;
+  setTracelineChat(undefined);
 });
 
 test("status lives in the bullet: red error, blue running, green success; verbs neutral", () => {
@@ -487,8 +489,7 @@ test("status lives in the bullet: red error, blue running, green success; verbs 
 });
 
 test("errors tint the discriminators: basename and bash head go error-bold on failed rows (§9.2)", () => {
-  const g = globalThis as any;
-  g.__tracelineGetTheme = () => themed();
+  setTracelineThemeGetter(() => themed());
   try {
     const failedRead = oneLine(toolComp({ result: { content: [], isError: true } }), 80);
     assert.ok(failedRead.includes(`${T.error}\x1b[1mread\x1b[22m`), `failed verb error-bold: ${JSON.stringify(failedRead)}`);
@@ -511,13 +512,12 @@ test("errors tint the discriminators: basename and bash head go error-bold on fa
     const healthy = oneLine(toolComp(), 80);
     assert.ok(healthy.includes(`${T.text}\x1b[1mfile.ts\x1b[22m`), `healthy basename text-bold: ${JSON.stringify(healthy)}`);
   } finally {
-    g.__tracelineGetTheme = undefined;
+    setTracelineThemeGetter(undefined);
   }
 });
 
 test("no plain ink in native rows: unstyled spans demote to dim, accents and bold survive (§9.6)", () => {
-  const g = globalThis as any;
-  g.__tracelineGetTheme = () => themed();
+  setTracelineThemeGetter(() => themed());
   try {
     const comp = toolComp({
       toolName: "grep",
@@ -535,7 +535,7 @@ test("no plain ink in native rows: unstyled spans demote to dim, accents and bol
     assert.ok(out.includes("\x1b]8;;https://x.test\x1b\\"), `OSC preserved: ${JSON.stringify(out)}`);
     assert.ok(out.includes(`${T.dim} tail`) || out.includes(`${T.dim}tail`), `trailing plain text dims: ${JSON.stringify(out)}`);
   } finally {
-    g.__tracelineGetTheme = undefined;
+    setTracelineThemeGetter(undefined);
   }
 });
 
@@ -567,7 +567,7 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   // With a theme (design language §2/§9.3/§9.4): one supporting grey — each
   // command's head word renders L0-bold, the bash row's basename; arguments and
   // plumbing all sit at L3-dim. No muted level anywhere in a trace row.
-  g.__tracelineGetTheme = () => themed();
+  setTracelineThemeGetter(() => themed());
   const body = inkBashBody("pwd && git remote -v 2>/dev/null");
   assert.ok(body.startsWith(`${T.text}\x1b[1mpwd\x1b[22m`), `head command must be bold text: ${JSON.stringify(body)}`);
   assert.ok(body.includes(`${T.dim} && `), `operators must be dim: ${JSON.stringify(body)}`);
@@ -586,7 +586,7 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.ok(stripAnsi(elided).startsWith("\u22ef && npm"), stripAnsi(elided));
   assert.ok(elided.includes(`${T.text}\x1b[1mnpm\x1b[22m`), `head after ⋯ must be bold text: ${JSON.stringify(elided)}`);
   assert.ok(elided.includes(`${T.dim} run typecheck`), `tail arguments dim: ${JSON.stringify(elided)}`);
-  g.__tracelineGetTheme = undefined;
+  setTracelineThemeGetter(undefined);
 
   // Unit edges: heredoc markers dim; quoted near-misses stay data.
   assert.ok(inkBashBody("cat <<'EOF'").includes(`${DIM} <<'EOF'\x1b[0m`));
@@ -597,8 +597,7 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
 });
 
 test("real command heads are bold: sequencers re-arm, filters stay dim, crowns are rationed (§9.4)", () => {
-  const g = globalThis as any;
-  g.__tracelineGetTheme = () => themed();
+  setTracelineThemeGetter(() => themed());
   try {
     const bold = (word: string) => `${T.text}\x1b[1m${word}\x1b[22m`;
 
@@ -655,12 +654,12 @@ test("real command heads are bold: sequencers re-arm, filters stay dim, crowns a
     assert.ok(red.includes(`${T.error}\x1b[1mpwd\x1b[22m`), JSON.stringify(red));
     assert.ok(red.includes(`${T.error}\x1b[1mgit\x1b[22m`), JSON.stringify(red));
   } finally {
-    g.__tracelineGetTheme = undefined;
+    setTracelineThemeGetter(undefined);
   }
 });
 
 test("crown selection over real shell shapes: attached ;, quote state, preambles, plumbing (§9.4)", () => {
-  const crowns = (body: string) => bashCrownedHeads(body).map((head: any) => body.slice(head.start, head.end));
+  const crowns = (body: string) => bashCrownedHeads(body).map((head) => body.slice(head.start, head.end));
 
   // The corpus poster child: an attached `;` sequences like the space-delimited form,
   // so the informative ps/tmux crown while echo fallbacks and `|| true` stay glue.
@@ -778,7 +777,7 @@ test("tool-group spacing: blank before a group, tight within it, connectors skip
   assert.equal(isToolRow(toolA), true);
   assert.equal(isAssistantRow(visibleAssistant), true);
 
-  g.__tracelineChat = { children: [visibleAssistant, toolA, connector, toolB, visibleAssistant, toolC] };
+  setTracelineChat({ children: [visibleAssistant, toolA, connector, toolB, visibleAssistant, toolC] });
   assert.equal(leadingBlank(toolA), true, "blank after visible assistant content");
   assert.equal(leadingBlank(toolB), false, "tight through an invisible connector turn");
   assert.equal(leadingBlank(toolC), true, "new group after visible content");
@@ -801,8 +800,8 @@ test("thought→action couplet: tight under a collapsed Thinking... line", () =>
       ],
     },
   };
-  g.__tracelineChat = { children: [collapsedThinking, tool] };
+  setTracelineChat({ children: [collapsedThinking, tool] });
   assert.equal(leadingBlank(tool), false, "reasoning-only turn reads as this call's thought");
-  g.__tracelineChat = { children: [thinkingWithProse, tool] };
+  setTracelineChat({ children: [thinkingWithProse, tool] });
   assert.equal(leadingBlank(tool), true, "visible prose still opens a new paragraph");
 });

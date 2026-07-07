@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { positiveNumberValue, isJsonObject } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
-import { findChatContainer, isAssistantRow, isToolRow } from "../_lib/chat.ts";
+import { findChatContainer, isAssistantRow, isToolRow, type AssistantRowDataLike, type AssistantRowLike, type AssistantRowPrototypeLike, type ContainerLike, type ToolArgsLike, type ToolRowDataLike, type ToolRowLike, type ToolRowPrototypeLike, type TracelineTuiLike } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import {
@@ -98,15 +98,12 @@ import {
 
 type ToolDisplayMode = "native" | "oneLine";
 
-type TracelineGlobal = typeof globalThis & {
-  __tracelinePatchVersion?: number;
-  __tracelineTui?: any;
-  __tracelineChat?: any;
-  __tracelineInputUnsubscribe?: () => void;
-  __tracelineGetTheme?: () => Theme | undefined;
-  __tracelineAssistantPatchVersion?: number;
-};
+type TracelineGlobal = typeof globalThis & { __tracelinePatchVersion?: number; __tracelineTui?: TracelineTuiLike; __tracelineChat?: ContainerLike; __tracelineInputUnsubscribe?: () => void; __tracelineGetTheme?: () => Theme | undefined; __tracelineAssistantPatchVersion?: number };
 const g = globalThis as TracelineGlobal;
+type ExtensionUiWithTheme = { theme?: Theme };
+function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
+function getTracelineChat(): ContainerLike | undefined { return g.__tracelineChat; }
+function setTracelineThemeGetter(getTheme: (() => Theme | undefined) | undefined): void { g.__tracelineGetTheme = getTheme; }
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
@@ -142,7 +139,7 @@ function dim(text: string): string {
 // Structural detection (isToolRow / isAssistantRow / findChatContainer) lives in _lib
 // and is shared across the extension family.
 
-function chatChildren(): any[] | undefined {
+function chatChildren(): unknown[] | undefined {
   let chat = g.__tracelineChat;
   if (!chat || !Array.isArray(chat.children)) {
     chat = g.__tracelineTui ? findChatContainer(g.__tracelineTui) : undefined;
@@ -161,7 +158,8 @@ function thinkingHidden(): boolean {
   const sibs = chatChildren();
   if (sibs) {
     for (let i = sibs.length - 1; i >= 0; i--) {
-      if (isAssistantRow(sibs[i])) return sibs[i].hideThinkingBlock;
+      const row = sibs[i];
+      if (isAssistantRow(row)) return row.hideThinkingBlock;
     }
   }
   return false;
@@ -182,19 +180,18 @@ function displayMode(): ToolDisplayMode {
 // pass through untouched.
 const THINKING_TOGGLE_STATUS = /^Thinking blocks: (?:hidden|visible)$/;
 
-function isThinkingToggleStatusRow(comp: any): boolean {
-  return (
-    !!comp &&
-    typeof comp.text === "string" &&
-    typeof comp.setText === "function" &&
-    THINKING_TOGGLE_STATUS.test(stripAnsi(comp.text).trim())
-  );
+function isThinkingToggleStatusRow(comp: unknown): boolean {
+  if (!comp || typeof comp !== "object") return false;
+  const row = comp as { text?: unknown; setText?: unknown };
+  return typeof row.text === "string" && typeof row.setText === "function" && THINKING_TOGGLE_STATUS.test(stripAnsi(row.text).trim());
 }
 
 // pi's showStatus pairs the Text with a one-line Spacer; drop that too so no stray
 // blank line accumulates at the chat tail.
-function isSpacerRow(comp: any): boolean {
-  return !!comp && typeof comp.setLines === "function" && typeof comp.lines === "number" && !("text" in comp);
+function isSpacerRow(comp: unknown): boolean {
+  if (!comp || typeof comp !== "object") return false;
+  const row = comp as { lines?: unknown; setLines?: unknown };
+  return typeof row.setLines === "function" && typeof row.lines === "number" && !("text" in comp);
 }
 
 function suppressThinkingToggleStatus(): void {
@@ -213,18 +210,15 @@ function toolLabel(name: unknown): string {
 
 type ToolStatus = "success" | "running" | "error";
 
-type DiffStats = {
-  added: number;
-  removed: number;
-};
+type DiffStats = { added: number; removed: number };
 
-function toolStatus(comp: any): ToolStatus {
+function toolStatus(comp: ToolRowDataLike | undefined): ToolStatus {
   if (comp?.result?.isError) return "error";
   if (comp?.result && comp?.isPartial !== true) return "success";
   return "running";
 }
 
-function statusTone(comp: any): Tone {
+function statusTone(comp: ToolRowDataLike | undefined): Tone {
   const status = toolStatus(comp);
   if (status === "error") return "error";
   if (status === "success") return "success";
@@ -234,11 +228,11 @@ function statusTone(comp: any): Tone {
 // Verb ink (design language §2/§9.2): identity is neutral bold — status lives in the ›
 // bullet — so a healthy column of read/edit/$ verbs stays calm while assistant prose
 // owns full brightness. Only a real anomaly (a failed call) tints its verb.
-function verbTone(comp: any): Tone {
+function verbTone(comp: ToolRowDataLike | undefined): Tone {
   return toolStatus(comp) === "error" ? "error" : "text";
 }
 
-function verbInk(comp: any, verb: string): string {
+function verbInk(comp: ToolRowDataLike | undefined, verb: string): string {
   return ink(currentTheme(), verbTone(comp), `${BOLD}${verb}${BOLD_OFF}`);
 }
 
@@ -247,7 +241,7 @@ function verbInk(comp: any, verb: string): string {
 // treatment — bold `text` on healthy rows, bold `error` on failed rows — so plain
 // prose-weight white never appears inside a trace row and a failed call is more than
 // one red glyph in a dim wall.
-function discriminatorInk(comp: any, text: string): string {
+function discriminatorInk(comp: ToolRowDataLike | undefined, text: string): string {
   return verbInk(comp, text);
 }
 
@@ -301,17 +295,18 @@ function charSuffix(chars: number | undefined, columnLive = false): string {
   return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
 }
 
-function resultTextCharCount(comp: any): number | undefined {
+function resultTextCharCount(comp: ToolRowDataLike | undefined): number | undefined {
   const content = comp?.result?.content;
   if (!Array.isArray(content)) return undefined;
-  return content.reduce((sum: number, block: any) => {
+  return content.reduce((sum: number, block: unknown) => {
     if (!block || typeof block !== "object") return sum;
-    if (block.type === "text" && typeof block.text === "string") return sum + block.text.length;
+    const textBlock = block as { type?: unknown; text?: unknown };
+    if (textBlock.type === "text" && typeof textBlock.text === "string") return sum + textBlock.text.length;
     return sum;
   }, 0);
 }
 
-function resultCharSuffix(comp: any, facts: BlockFacts): string {
+function resultCharSuffix(comp: ToolRowDataLike | undefined, facts: BlockFacts): string {
   return charSuffix(resultTextCharCount(comp), facts.sizeColumnLive);
 }
 
@@ -322,7 +317,7 @@ const MUTATION_VERBS = new Set(["edit", "write"]);
 // fact. Such a row opts out of the block's size and diff columns (§9.7): it shows no
 // size cell (a mutation's result is a confirmation, near-noise) and its suffix stays
 // empty, so the magnitude rides the file it changed.
-function inlineMutationRow(comp: any): boolean {
+function inlineMutationRow(comp: ToolRowDataLike | undefined): boolean {
   if (!MUTATION_VERBS.has(toolLabel(comp?.toolName))) return false;
   const path = comp?.args?.path ?? comp?.args?.file_path;
   return typeof path === "string" && path.length > 0;
@@ -334,16 +329,16 @@ function inlineMutationRow(comp: any): boolean {
 // blank line above it, which breaks the rail and starts a new block. §9.7
 // (block-scoped columns), §9.5 (boring-prefix path emphasis) and §9.8 (shared
 // cut columns) all scope their facts to this run.
-function blockToolRows(comp: any): any[] {
+function blockToolRows(comp: ToolRowLike): ToolRowLike[] {
   const found = componentLocation(comp);
   if (!found) return [comp];
-  const breaksBlock = (c: any) => !isToolRow(c) && !isEmptyConnector(c);
+  const breaksBlock = (c: unknown) => !isToolRow(c) && !isEmptyConnector(c);
   let start = found.index;
   for (let j = found.index - 1; j >= 0; j--) {
     if (breaksBlock(found.sibs[j])) break;
     start = j;
   }
-  const rows: any[] = [];
+  const rows: ToolRowLike[] = [];
   for (let j = start; j < found.sibs.length; j++) {
     const c = found.sibs[j];
     if (breaksBlock(c)) break;
@@ -359,7 +354,7 @@ function blockToolRows(comp: any): any[] {
 // in diff parses.
 type BlockFacts = { sizeColumnLive: boolean; diffColumns: DiffColumns };
 
-function blockFacts(rows: any[]): BlockFacts {
+function blockFacts(rows: ToolRowLike[]): BlockFacts {
   // Columns are block-scoped (design language §9.7): the size column lights up for
   // a whole contiguous trace block when any of its completed rows clears the fact
   // floor. An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
@@ -385,11 +380,11 @@ function blockFacts(rows: any[]): BlockFacts {
   return { sizeColumnLive, diffColumns: { plus, minus, size } };
 }
 
-function blockFactsOf(comp: any): BlockFacts {
+function blockFactsOf(comp: ToolRowLike): BlockFacts {
   return blockFacts(blockToolRows(comp));
 }
 
-function blockSizeColumnLive(comp: any): boolean {
+function blockSizeColumnLive(comp: ToolRowLike): boolean {
   return blockFactsOf(comp).sizeColumnLive;
 }
 
@@ -397,7 +392,7 @@ function blockSizeColumnLive(comp: any): boolean {
 // widest rendered fact suffix — folded read runs count as their single `N calls · size`
 // cell — plus the two-space gap (§9.1), so every truncated row in the block cuts at
 // the same columns and its tail ends flush where the suffix column begins.
-function blockSuffixReserve(rows: any[], facts: BlockFacts, available: number): number {
+function blockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: number): number {
   let widest = 0;
   for (const row of rows) {
     const run = readRun(row);
@@ -409,15 +404,8 @@ function blockSuffixReserve(rows: any[], facts: BlockFacts, available: number): 
 
 const LCS_CELL_LIMIT = 200_000;
 
-type WriteInput = {
-  path: string;
-  content: string;
-  cwd: string;
-};
-
-type WriteSnapshot = WriteInput & {
-  stats: DiffStats | undefined;
-};
+type WriteInput = { path: string; content: string; cwd: string };
+type WriteSnapshot = WriteInput & { stats: DiffStats | undefined };
 
 // Expects pre-normalized line endings (diffStatsFromContents normalizes once).
 function splitDiffLines(text: string): string[] {
@@ -475,7 +463,7 @@ function diffStatsFromContents(oldContent: string, newContent: string): DiffStat
   return stats.added > 0 || stats.removed > 0 ? stats : undefined;
 }
 
-function writeInput(comp: any): WriteInput | undefined {
+function writeInput(comp: ToolRowDataLike | undefined): WriteInput | undefined {
   if (toolLabel(comp?.toolName) !== "write") return undefined;
   const path = comp?.args?.path ?? comp?.args?.file_path;
   const content = comp?.args?.content;
@@ -493,15 +481,15 @@ function readWriteOldContent(input: WriteInput): string {
 }
 
 // Only captureWriteSnapshot ever writes the field, always a full WriteSnapshot.
-function writeSnapshot(comp: any): WriteSnapshot | undefined {
-  return comp?.__tracelineWriteSnapshot;
+function writeSnapshot(comp: ToolRowDataLike | undefined): WriteSnapshot | undefined {
+  return comp?.__tracelineWriteSnapshot as WriteSnapshot | undefined;
 }
 
 function sameWriteInput(a: WriteInput | undefined, b: WriteInput | undefined): boolean {
   return !!a && !!b && a.path === b.path && a.cwd === b.cwd && a.content === b.content;
 }
 
-function captureWriteSnapshot(comp: any): void {
+function captureWriteSnapshot(comp: ToolRowDataLike): void {
   const input = writeInput(comp);
   if (!input) return;
   const previous = writeSnapshot(comp);
@@ -510,14 +498,14 @@ function captureWriteSnapshot(comp: any): void {
   comp.__tracelineWriteSnapshot = { ...input, stats: diffStatsFromContents(oldContent, input.content) } satisfies WriteSnapshot;
 }
 
-function writeDiffStats(comp: any): DiffStats | undefined {
+function writeDiffStats(comp: ToolRowDataLike | undefined): DiffStats | undefined {
   const input = writeInput(comp);
   const snapshot = writeSnapshot(comp);
   if (!sameWriteInput(snapshot, input)) return undefined;
   return snapshot?.stats;
 }
 
-function diffTextFromComp(comp: any): string | undefined {
+function diffTextFromComp(comp: ToolRowDataLike | undefined): string | undefined {
   const details = comp?.result?.details;
   if (typeof details?.diff === "string") return details.diff;
   if (typeof details?.patch === "string") return details.patch;
@@ -552,7 +540,7 @@ function diffStatsFromText(diff: string | undefined): DiffStats | undefined {
 // stays uncached: it is a handful of reference compares.
 const diffTextStatsCache = new WeakMap<object, { text: string; stats: DiffStats | undefined }>();
 
-function mutationDiffStats(comp: any): DiffStats | undefined {
+function mutationDiffStats(comp: ToolRowDataLike): DiffStats | undefined {
   const text = diffTextFromComp(comp);
   if (text === undefined) return writeDiffStats(comp);
   const cached = diffTextStatsCache.get(comp);
@@ -591,7 +579,7 @@ function formatMutationDiffStats(
 // right column, so no gap opens between the path and how much it moved. add-green /
 // remove-red, zero side dropped, per-row (no block sign columns — an inline cell can
 // never align down a column of ragged-length paths, and does not try).
-function mutationInlineDiffInk(comp: any): string {
+function mutationInlineDiffInk(comp: ToolRowDataLike): string {
   const stats = mutationDiffStats(comp);
   if (!stats) return "";
   return ` ${formatMutationDiffStats(stats, currentTheme())}`;
@@ -688,7 +676,7 @@ const RECORD_RULES: RecordRule[] = [
   },
 ];
 
-function resultText(comp: any): string {
+function resultText(comp: ToolRowDataLike | undefined): string {
   const content = comp?.result?.content;
   if (!Array.isArray(content)) return "";
   let out = "";
@@ -702,7 +690,7 @@ function resultText(comp: any): string {
 // object identity (rows re-render every frame; porcelain never changes once settled).
 const recordFactCache = new WeakMap<object, { result: unknown; facts: RecordFact[] }>();
 
-function recordFacts(comp: any): RecordFact[] {
+function recordFacts(comp: ToolRowDataLike): RecordFact[] {
   if (toolLabel(comp?.toolName) !== "bash") return [];
   const command = comp?.args?.command;
   if (typeof command !== "string" || !comp?.result || typeof comp.result !== "object") return [];
@@ -725,7 +713,7 @@ function recordFacts(comp: any): RecordFact[] {
 // tones to agree (§9.10): a forced push never hides inside a routine one.
 type RecordCellData = { verb: string; data: string[]; tone: RecordTone; opaque: boolean };
 
-function recordCellData(comp: any): RecordCellData[] {
+function recordCellData(comp: ToolRowDataLike): RecordCellData[] {
   const merged: RecordCellData[] = [];
   for (const fact of recordFacts(comp)) {
     const last = merged[merged.length - 1];
@@ -742,7 +730,7 @@ function recordCellText(cell: RecordCellData): string {
   return `${cell.verb} ${cell.data.join(", ")}`;
 }
 
-function recordCells(comp: any): string[] {
+function recordCells(comp: ToolRowDataLike): string[] {
   return recordCellData(comp).map(recordCellText);
 }
 
@@ -768,7 +756,7 @@ function inkRecordCell(cell: RecordCellData): string {
   return ink(theme, cell.tone, `${BOLD}${recordCellText(cell)}${BOLD_OFF}`);
 }
 
-function recordSuffix(comp: any, available: number): string {
+function recordSuffix(comp: ToolRowDataLike, available: number): string {
   const cells = recordCellData(comp);
   if (!cells.length) return "";
   const cap = Math.floor(available * RECORD_SUFFIX_SHARE);
@@ -776,7 +764,7 @@ function recordSuffix(comp: any, available: number): string {
   return cells.map(inkRecordCell).join(dim(SEP));
 }
 
-function toolFactSuffix(comp: any, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {
+function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {
   const theme = currentTheme();
   const parts: string[] = [];
   const records = recordSuffix(comp, available);
@@ -806,9 +794,11 @@ function displayPath(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function lineRange(args: any): string {
-  const offset = Number.isFinite(args?.offset) ? Math.max(1, Math.floor(args.offset)) : undefined;
-  const limit = Number.isFinite(args?.limit) ? Math.max(1, Math.floor(args.limit)) : undefined;
+function lineRange(args: ToolArgsLike | undefined): string {
+  const rawOffset = args?.offset;
+  const rawLimit = args?.limit;
+  const offset = typeof rawOffset === "number" && Number.isFinite(rawOffset) ? Math.max(1, Math.floor(rawOffset)) : undefined;
+  const limit = typeof rawLimit === "number" && Number.isFinite(rawLimit) ? Math.max(1, Math.floor(rawLimit)) : undefined;
   if (offset !== undefined && limit !== undefined) return `:${offset}-${offset + limit - 1}`;
   if (offset !== undefined) return `:${offset}`;
   if (limit !== undefined) return `:1-${limit}`;
@@ -970,7 +960,7 @@ function stripTimeoutSuffix(text: string): string {
 // The rendered bash invocation as plain text: every visible line flattened into one,
 // leading bullet and timeout boilerplate dropped. All later transforms (tildify, cd
 // elision) stay in plain text; inkBashRow applies the family ink last.
-function bashInvocationText(comp: any): string | undefined {
+function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
   const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
@@ -1136,7 +1126,7 @@ function bashCrownedHeads(body: string): BashHead[] {
 // (middleTruncate replays the active ink after a cut, §5, so a long dim run
 // survives truncation), and each crowned word takes the discriminator ink (§9.3;
 // §9.2's error tint on failed rows). The visible text is untouched.
-function inkBashBody(body: string, comp?: any): string {
+function inkBashBody(body: string, comp?: ToolRowDataLike): string {
   let out = "";
   let cursor = 0;
   for (const crown of bashCrownedHeads(body)) {
@@ -1148,12 +1138,12 @@ function inkBashBody(body: string, comp?: any): string {
   return out;
 }
 
-function inkBashRow(comp: any, text: string): string {
+function inkBashRow(comp: ToolRowDataLike | undefined, text: string): string {
   if (!text.startsWith("$ ")) return dim(text);
   return `${verbInk(comp, "$")} ${inkBashBody(text.slice(2), comp)}`;
 }
 
-function commandPrefixLength(comp: any, line: string): number {
+function commandPrefixLength(comp: ToolRowDataLike | undefined, line: string): number {
   const visible = stripAnsi(line).trimStart();
   const name = toolLabel(comp?.toolName);
   if (visible.startsWith(name)) return name.length;
@@ -1168,7 +1158,7 @@ function stripLeadingVisibleBullet(line: string): string {
   return trimmed.slice(rawIndexAtVisibleIndex(trimmed, bullet.length));
 }
 
-function colourCommandPrefix(comp: any, line: string): string {
+function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): string {
   const trimmed = stripLeadingVisibleBullet(line);
   const prefixLen = commandPrefixLength(comp, trimmed);
   if (prefixLen <= 0) return trimmed;
@@ -1182,7 +1172,7 @@ function colourCommandPrefix(comp: any, line: string): string {
 // the native visual grammar (paths/backticks, warning line ranges, custom-tool
 // renderers) and only suppresses result/output lines by taking the first visible call
 // line. The verb is re-inked neutral bold (error rows error) per the family hierarchy.
-function nativeInvocationLine(comp: any): string | undefined {
+function nativeInvocationLine(comp: ToolRowDataLike | undefined): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
   const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
@@ -1198,7 +1188,7 @@ function nativeInvocationLine(comp: any): string | undefined {
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
 // built-in and well-behaved custom tools should use nativeInvocationLine().
-function fallbackInvocationLine(comp: any): string {
+function fallbackInvocationLine(comp: ToolRowDataLike | undefined): string {
   const verb = toolLabel(comp?.toolName);
   const args = comp?.args ?? {};
   const path = displayPath(args.path);
@@ -1211,7 +1201,7 @@ function fallbackInvocationLine(comp: any): string {
   return body.replace(/\s+/g, " ").trim() || verb;
 }
 
-function inkedFallbackLine(comp: any): string {
+function inkedFallbackLine(comp: ToolRowDataLike | undefined): string {
   const body = tildify(fallbackInvocationLine(comp));
   const verb = toolLabel(comp?.toolName);
   if (body === verb) return verbInk(comp, verb);
@@ -1229,7 +1219,7 @@ function inkedFallbackLine(comp: any): string {
 // [skill] labels, inline diff hints) keep pi's own rendering.
 const PATH_VERBS = new Set(["read", "edit", "write"]);
 
-function toolPathArg(c: any): string | undefined {
+function toolPathArg(c: ToolRowDataLike): string | undefined {
   if (!PATH_VERBS.has(toolLabel(c?.toolName))) return undefined;
   const path = c?.args?.path ?? c?.args?.file_path;
   return typeof path === "string" && path.length > 0 ? cwdRelativePath(c, path) : undefined;
@@ -1238,7 +1228,7 @@ function toolPathArg(c: any): string | undefined {
 // cwd collapses to `./` (design language §9.5): a path under the row's cwd renders
 // as the shell's own notation for "here" — two columns instead of thirty. Paths
 // outside cwd keep their tildified absolute form; the asymmetry is the information.
-function cwdRelativePath(comp: any, rawPath: string): string {
+function cwdRelativePath(comp: ToolRowDataLike | undefined, rawPath: string): string {
   const tilde = tildify(rawPath);
   const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : undefined;
   if (!cwd) return tilde;
@@ -1266,7 +1256,7 @@ function commonDirSegments(paths: string[]): string[] {
 // cwd prefix (session-ambient context is boring by default). Everything past it —
 // divergent directories included — is the discriminator. Falls back to the whole
 // directory, i.e. the classic basename-only emphasis.
-function boringPrefix(comp: any, tildePath: string): string {
+function boringPrefix(comp: ToolRowLike, tildePath: string): string {
   const dir = tildePath.slice(0, tildePath.lastIndexOf("/") + 1);
   const candidates: string[] = [];
   const blockPaths = blockToolRows(comp)
@@ -1284,7 +1274,7 @@ function boringPrefix(comp: any, tildePath: string): string {
   return boring !== undefined && boring.length <= dir.length ? boring : dir;
 }
 
-function pathEmphasisLine(comp: any, nativeColored: string): string | undefined {
+function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | undefined {
   const verb = toolLabel(comp?.toolName);
   if (!PATH_VERBS.has(verb)) return undefined;
   const path = comp?.args?.path ?? comp?.args?.file_path;
@@ -1312,7 +1302,7 @@ function pathEmphasisLine(comp: any, nativeColored: string): string | undefined 
 // The invocation body with family ink applied: bash rows rebuild from plain text, path
 // rows get the dim-directory emphasis, everything else keeps pi's native line with a
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
-function invocationInk(comp: any): string {
+function invocationInk(comp: ToolRowLike): string {
   if (toolLabel(comp?.toolName) === "bash") {
     const plain = bashInvocationText(comp);
     if (plain === undefined) return inkedFallbackLine(comp);
@@ -1336,7 +1326,7 @@ function fitTraceRow(tone: Tone, body: string, suffix: string, reserve: number, 
   return truncateToWidth(`${toolPrefix(tone)}${fitted}`, Math.max(1, width), ELLIPSIS);
 }
 
-function oneLine(comp: any, width: number): string {
+function oneLine(comp: ToolRowLike, width: number): string {
   if (toolLabel(comp?.toolName) === "write" && !comp?.result) {
     try {
       captureWriteSnapshot(comp);
@@ -1492,7 +1482,7 @@ function bashPreambleRun(body: string): BashPreambleRun {
 
 // The previous bash row within the same visual group: reads and other tools interleave
 // freely, but visible prose opens a new paragraph — a `⋯` must never point across one.
-function previousBashRow(comp: any): any | undefined {
+function previousBashRow(comp: ToolRowDataLike): ToolRowLike | undefined {
   const found = componentLocation(comp);
   if (!found) return undefined;
   for (let j = found.index - 1; j >= 0; j--) {
@@ -1509,7 +1499,7 @@ function previousBashRow(comp: any): any | undefined {
 
 // The preamble run of a rendered bash comp, read from the same tildified body the row
 // shows, so context keys compare like-for-like across rows.
-function bashPreambleRunOf(comp: any): BashPreambleRun | undefined {
+function bashPreambleRunOf(comp: ToolRowDataLike | undefined): BashPreambleRun | undefined {
   if (!comp || toolLabel(comp?.toolName) !== "bash") return undefined;
   const plain = bashInvocationText(comp);
   if (plain === undefined || !plain.startsWith("$ ")) return undefined;
@@ -1520,7 +1510,7 @@ function bashPreambleRunOf(comp: any): BashPreambleRun | undefined {
 // dim `⋯` when it repeats the previous bash row's, else drop a leading `set -…` run.
 // Operates on plain text (see bashInvocationText); inkBashBody later dims the `⋯` and
 // the surviving `cd`/assignment context with the rest of the shell apparatus.
-function foldBashPreamble(comp: any, line: string): string {
+function foldBashPreamble(comp: ToolRowDataLike, line: string): string {
   if (!line.startsWith("$ ")) return line;
   const body = line.slice(2);
   const run = bashPreambleRun(body);
@@ -1548,7 +1538,7 @@ function foldBashPreamble(comp: any, line: string): string {
 // visible between the reads (prose, a collapsed Thinking… line, another tool), so the
 // fold never reorders what the transcript shows; Ctrl+T's native view restores the
 // individual rows.
-function readPath(comp: any): string | undefined {
+function readPath(comp: ToolRowDataLike): string | undefined {
   if (toolLabel(comp?.toolName) !== "read") return undefined;
   const path = comp?.args?.path;
   return typeof path === "string" && path.length > 0 ? path : undefined;
@@ -1557,37 +1547,37 @@ function readPath(comp: any): string | undefined {
 // A read row that may participate in a fold: error rows never fold — a failed page must
 // keep its own red row, not vanish into a folded one whose tone reflects only the last
 // call. An error therefore also breaks the run on both sides.
-function foldableReadPath(comp: any): string | undefined {
+function foldableReadPath(comp: ToolRowDataLike): string | undefined {
   const path = readPath(comp);
   if (path === undefined) return undefined;
   return toolStatus(comp) === "error" ? undefined : path;
 }
 
-function readRun(comp: any): { rows: any[]; index: number } | undefined {
+function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
   const path = foldableReadPath(comp);
   if (path === undefined) return undefined;
   const found = componentLocation(comp);
   if (!found) return undefined;
   const { sibs, index } = found;
-  const rows: any[] = [comp];
+  const rows: ToolRowLike[] = [comp];
   let selfIndex = 0;
   for (let j = index - 1; j >= 0; j--) {
     const prev = sibs[j];
     if (isEmptyConnector(prev)) continue;
-    if (foldableReadPath(prev) !== path) break;
+    if (!isToolRow(prev) || foldableReadPath(prev) !== path) break;
     rows.unshift(prev);
     selfIndex++;
   }
   for (let j = index + 1; j < sibs.length; j++) {
     const next = sibs[j];
     if (isEmptyConnector(next)) continue;
-    if (foldableReadPath(next) !== path) break;
+    if (!isToolRow(next) || foldableReadPath(next) !== path) break;
     rows.push(next);
   }
   return rows.length > 1 ? { rows, index: selfIndex } : undefined;
 }
 
-function foldedReadSuffix(rows: any[], facts: BlockFacts): string {
+function foldedReadSuffix(rows: ToolRowDataLike[], facts: BlockFacts): string {
   let total: number | undefined;
   for (const row of rows) {
     const chars = resultTextCharCount(row);
@@ -1598,7 +1588,7 @@ function foldedReadSuffix(rows: any[], facts: BlockFacts): string {
   return total === undefined || !sizeCell ? dim(calls) : `${dim(`${calls}${SEP}`)}${sizeCell}`;
 }
 
-function foldedReadLine(rows: any[], width: number): string {
+function foldedReadLine(rows: ToolRowLike[], width: number): string {
   const theme = currentTheme();
   const last = rows[rows.length - 1];
   const path = cwdRelativePath(last, String(rows[0]?.args?.path ?? ""));
@@ -1626,17 +1616,19 @@ function foldedReadLine(rows: any[], width: number): string {
 // An assistant turn that renders nothing (a tool-call-only turn with no visible
 // text/thinking) — these sit *between* sequential tool rows and must be skipped so a
 // run of tool calls groups tightly.
-function isEmptyConnector(c: any): boolean {
+function isEmptyConnector(c: unknown): boolean {
   if (!isAssistantRow(c)) return false;
   const content = c.lastMessage?.content;
   if (!Array.isArray(content)) return true;
-  return !content.some(
-    (b: any) =>
-      (b?.type === "text" && b.text?.trim()) || (b?.type === "thinking" && b.thinking?.trim()),
-  );
+  return !content.some((block: unknown) => {
+    if (!block || typeof block !== "object") return false;
+    const b = block as { type?: unknown; text?: unknown; thinking?: unknown };
+    return (b.type === "text" && typeof b.text === "string" && b.text.trim()) ||
+      (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim());
+  });
 }
 
-function componentLocation(comp: any): { sibs: any[]; index: number } | undefined {
+function componentLocation(comp: ToolRowDataLike): { sibs: unknown[]; index: number } | undefined {
   let sibs = chatChildren();
   let index = Array.isArray(sibs) ? sibs.indexOf(comp) : -1;
   if (index === -1) {
@@ -1650,7 +1642,7 @@ function componentLocation(comp: any): { sibs: any[]; index: number } | undefine
 // A reasoning-only turn while thinking is hidden: pi collapses it to a single dim
 // thinking-label line. The tool row that follows is that thought's action, so the two
 // should read as one thought→action couplet rather than separate paragraphs.
-function isCollapsedThinkingRow(c: any): boolean {
+function isCollapsedThinkingRow(c: unknown): boolean {
   if (!isAssistantRow(c) || c.hideThinkingBlock !== true) return false;
   const content = c.lastMessage?.content;
   if (!Array.isArray(content)) return false;
@@ -1665,7 +1657,7 @@ function isCollapsedThinkingRow(c: any): boolean {
 // One blank line before a tool *group*, none within it: walk back past invisible
 // connector turns; tight if the nearest visible sibling is another collapsed tool row
 // or the collapsed thinking-label line that motivated this call.
-function leadingBlank(comp: any): boolean {
+function leadingBlank(comp: ToolRowDataLike): boolean {
   const found = componentLocation(comp);
   if (!found || found.index <= 0) return true;
   const { sibs, index } = found;
@@ -1681,7 +1673,7 @@ function leadingBlank(comp: any): boolean {
 
 // One row's worth of one-line output: folded-run handling plus the group-spacing rule.
 // Shared by the prototype patch and the test suites.
-function renderTraceRow(comp: any, width: number): string[] {
+function renderTraceRow(comp: ToolRowLike, width: number): string[] {
   const run = readRun(comp);
   if (run) {
     if (run.index > 0) return []; // a later page: the run's first row carries the fold
@@ -1704,7 +1696,7 @@ function oscSequences(line: string): string {
   return (line.match(OSC_SEQUENCE) ?? []).join("");
 }
 
-function nativeHiddenThinkingLabel(comp: any): string {
+function nativeHiddenThinkingLabel(comp: AssistantRowDataLike): string {
   return typeof comp?.hiddenThinkingLabel === "string" && comp.hiddenThinkingLabel.length > 0
     ? comp.hiddenThinkingLabel
     : "Thinking...";
@@ -1763,7 +1755,7 @@ function formatThinkingPreview(preview: ThinkingPreview): string {
   return `${preview.line}${suffix}`;
 }
 
-function thinkingPreviewLines(comp: any): string[] {
+function thinkingPreviewLines(comp: AssistantRowDataLike): string[] {
   const content = comp?.lastMessage?.content;
   if (!Array.isArray(content)) return [];
   const previews: string[] = [];
@@ -1788,7 +1780,7 @@ function replaceVisibleThinkingLabel(line: string, displayLabel: string, width?:
   return width && width > 0 ? truncateToWidth(replaced, Math.max(1, width), ELLIPSIS) : replaced;
 }
 
-function dedupeThinkingLabels(comp: any, lines: string[], width?: number): string[] {
+function dedupeThinkingLabels(comp: AssistantRowDataLike, lines: string[], width?: number): string[] {
   const label = nativeHiddenThinkingLabel(comp);
   const previews = thinkingPreviewLines(comp);
   const out: string[] = [];
@@ -1817,12 +1809,12 @@ function dedupeThinkingLabels(comp: any, lines: string[], width?: number): strin
   return out;
 }
 
-function patchAssistantRowPrototype(proto: any): void {
+function patchAssistantRowPrototype(proto: AssistantRowPrototypeLike): void {
   if (!proto || typeof proto.render !== "function") return;
   if (proto.__tracelineAssistantPatchVersion === TRACELINE_ASSISTANT_PATCH_VERSION) return;
   const original = proto.__tracelineOriginalAssistantRender ?? proto.render;
   proto.__tracelineOriginalAssistantRender = original;
-  proto.render = function (width: number) {
+  proto.render = function (this: AssistantRowDataLike, width: number) {
     const lines = original.call(this, width);
     try {
       if (this.hideThinkingBlock === true && Array.isArray(lines)) {
@@ -1849,13 +1841,13 @@ function currentPatchInstalled(): boolean {
 // render time in oneLine for a row that streamed in before this patch landed — the
 // session's first write is what installs the prototype patch, from its own
 // requestRender tick.
-function patchWriteSnapshotHooks(proto: any): void {
+function patchWriteSnapshotHooks(proto: ToolRowPrototypeLike): void {
   if (!proto || proto.__tracelineWriteSnapshotPatchVersion === TRACELINE_PATCH_VERSION) return;
 
   const originalSetArgsComplete = proto.__tracelineOriginalSetArgsComplete ?? proto.setArgsComplete;
   if (typeof originalSetArgsComplete === "function") {
     proto.__tracelineOriginalSetArgsComplete = originalSetArgsComplete;
-    proto.setArgsComplete = function (...args: any[]) {
+    proto.setArgsComplete = function (this: ToolRowDataLike, ...args: unknown[]) {
       try {
         captureWriteSnapshot(this);
       } catch {
@@ -1868,7 +1860,7 @@ function patchWriteSnapshotHooks(proto: any): void {
   const originalMarkExecutionStarted = proto.__tracelineOriginalMarkExecutionStarted ?? proto.markExecutionStarted;
   if (typeof originalMarkExecutionStarted === "function") {
     proto.__tracelineOriginalMarkExecutionStarted = originalMarkExecutionStarted;
-    proto.markExecutionStarted = function (...args: any[]) {
+    proto.markExecutionStarted = function (this: ToolRowDataLike, ...args: unknown[]) {
       try {
         captureWriteSnapshot(this);
       } catch {
@@ -1881,12 +1873,12 @@ function patchWriteSnapshotHooks(proto: any): void {
   proto.__tracelineWriteSnapshotPatchVersion = TRACELINE_PATCH_VERSION;
 }
 
-function patchToolRowPrototype(proto: any): void {
+function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
   if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
   patchWriteSnapshotHooks(proto);
   const original = proto.__tracelineOriginalRender ?? proto.render;
   proto.__tracelineOriginalRender = original;
-  proto.render = function (width: number) {
+  proto.render = function (this: ToolRowLike, width: number) {
     // One guard, one policy: any failure on traceline's path falls back to the
     // native render — never let pi-traceline break a render.
     try {
@@ -1971,6 +1963,10 @@ export const internals = {
   previousBashRow,
   readRun,
   dedupeThinkingLabels,
+  // typed test/dev accessors for traceline's Pi seam globals
+  setTracelineChat,
+  getTracelineChat,
+  setTracelineThemeGetter,
   // Ctrl+T status-line suppression
   isThinkingToggleStatusRow,
   isSpacerRow,
@@ -1984,7 +1980,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     // terminal input for Ctrl+T key-release/repeat handling.
     g.__tracelineGetTheme = () => {
       try {
-        return (ctx.ui as any).theme;
+        return (ctx.ui as ExtensionUiWithTheme).theme;
       } catch {
         return undefined;
       }
@@ -1997,7 +1993,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     );
     configureSizeThresholds(config);
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
-      const t = tui as any;
+      const t = tui as TracelineTuiLike;
       g.__tracelineTui = t;
       if (t.__tracelineRRWrapVersion !== TRACELINE_PATCH_VERSION) {
         const orig = t.__tracelineOriginalRequestRender ?? t.requestRender.bind(t);

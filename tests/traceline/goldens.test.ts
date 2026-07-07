@@ -9,13 +9,12 @@ import assert from "node:assert/strict";
 import { homedir } from "node:os";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
+import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { expectGolden } from "../helpers.ts";
 
-const { renderTraceRow, stripAnsi, isToolRow, dedupeThinkingLabels } = internals;
+const { renderTraceRow, stripAnsi, isToolRow, dedupeThinkingLabels, setTracelineChat, setTracelineThemeGetter } = internals;
 
-const g = globalThis as Record<string, unknown>;
-
-function bash(command: string, options: { rendered?: string[]; chars?: number; text?: string; error?: boolean; running?: boolean } = {}) {
+function bash(command: string, options: { rendered?: string[]; chars?: number; text?: string; error?: boolean; running?: boolean } = {}): ToolRowLike {
   return {
     toolName: "bash",
     args: { command },
@@ -26,10 +25,10 @@ function bash(command: string, options: { rendered?: string[]; chars?: number; t
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => options.rendered ?? [`$ ${command} (timeout 30s)`] },
-  };
+  } as ToolRowLike;
 }
 
-function read(path: string, offset: number, limit: number, chars: number) {
+function read(path: string, offset: number, limit: number, chars: number): ToolRowLike {
   return {
     toolName: "read",
     args: { path, offset, limit },
@@ -38,10 +37,10 @@ function read(path: string, offset: number, limit: number, chars: number) {
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`read ${path}:${offset}-${offset + limit - 1}`] },
-  };
+  } as ToolRowLike;
 }
 
-function mutation(toolName: string, path: string, diff: string, chars: number) {
+function mutation(toolName: string, path: string, diff: string, chars: number): ToolRowLike {
   return {
     toolName,
     args: { path },
@@ -50,7 +49,7 @@ function mutation(toolName: string, path: string, diff: string, chars: number) {
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`${toolName} ${path}`] },
-  };
+  } as ToolRowLike;
 }
 
 function prose(text: string) {
@@ -73,8 +72,8 @@ function thinking(text: string) {
 }
 
 beforeEach(() => {
-  g.__tracelineChat = undefined;
-  g.__tracelineGetTheme = undefined;
+  setTracelineChat(undefined);
+  setTracelineThemeGetter(undefined);
 });
 
 test("one-line trace goldens at 80 and 120 columns", () => {
@@ -116,7 +115,7 @@ test("one-line trace goldens at 80 and 120 columns", () => {
     }),
     bash("git status --short", { running: true }),
   ];
-  g.__tracelineChat = { children };
+  setTracelineChat({ children });
 
   const renderAt = (width: number): string => {
     const lines: string[] = [];
