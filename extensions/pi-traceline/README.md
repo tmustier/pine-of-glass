@@ -4,7 +4,7 @@
 
 ![One tool call per trace line, with a result-size suffix on the right](../../docs/img/pi-traceline-collapsed.png)
 
-Each row leads with its verb and target, file mutations carry a `+N -M` diff inline on the basename (the way a read carries its `:line-range`), commands that changed shared state carry a record of what they did, and completed rows end in a result-size cell on a shared right edge:
+Each row leads with its verb and target, file mutations carry a `+N -M` diff inline on the basename (the way a read carries its `:line-range`), commands that landed shared state lead with a record of what they did, and completed rows end in a result-size cell on a shared right edge:
 
 ```
   ▏ › read resource .pi/agent/AGENTS.md:1-20                 1.4k ch
@@ -13,6 +13,7 @@ Each row leads with its verb and target, file mutations carry a `+N -M` diff inl
   ▏ › edit ~/projects/demo/index.ts +3 -1
   ▏ › write /tmp/pi-extension-test-...-elephant.txt +5
   ▏ › $ rm /tmp/pi-extension-test-...-elephant.txt ...       0.0k ch
+  ▏ › pushed main $ git push
 ```
 
 ## Install
@@ -57,7 +58,7 @@ Size thresholds are overridable via the family config convention (`~/.pi/agent/p
 - **A dim `▏` rail** opens every row, and the block indents one gutter under the prose margin, so consecutive calls fuse into one visible block: block identity from indentation and one character of layout, not painted backgrounds.
 - **The result-size cell** (`1.4k ch`, in the family number grammar) is severity-tinted: dim while healthy, warning-coloured at ≥10k ch, error-coloured at ≥50k ch, so an over-large output jumps out of the column. Results under 100 ch show no cell, but the floor is block-scoped: if any row in a contiguous block clears it, every completed row in the block shows its cell, keeping the right edge aligned.
 - **Diff stats** on `edit` and `write` rows show `+N -M` with zero sides dropped (`+5`, not `+5 -0`), inline on the basename (§9.5) the way a read shows its `:line-range` (add-green / remove-red). The magnitude rides the file it changed rather than a right column, so no gap opens between path and change, and the near-noise size cell is dropped (a mutation opts out of the block's fact columns). `write` stats come from a pre-execution snapshot; restored rows not seen live may show no diff.
-- **Record facts** appear on bash rows that changed shared state beyond the working tree (`git commit`/`push`, `gh pr merge`/`close`/`create`, `gh issue close`, `gh release create`, `npm publish`): verb-first cells like `committed a4f21c9 · pushed main`, parsed from the success output the tool actually *reported*, never from the command's arguments. Each fact wears the ink of what it states (success-toned bold; a sha stays dim as audit data; a forced push tints warning), per fact rather than per row: a failed push after a good commit shows a green `committed` on a red row. On narrow rows whole facts drop oldest-first; the size cell keeps the rightmost column.
+- **Record facts** lead bash rows that changed shared state beyond the working tree (`git commit`/`push`, `gh pr merge`/`close`/`create`, `gh issue close`, `gh release create`, `npm publish`): the row graduates to a verb-led outcome (`pushed main $ git push`, `merged PR #87 $ gh pr merge 87 --squash`), with the command trailing as provenance behind its `$`. Facts are parsed from the success output the tool actually *reported*, never from the command's arguments, so a row leads with an outcome exactly when there demonstrably was one. Each fact wears the ink of what it states (success-toned bold; a sha stays dim as audit data; a forced push tints warning), per fact rather than per row: a failed push after a good commit shows a green `committed` on a red row. On narrow rows whole facts drop oldest-first, and the headline survives truncation: the middle cut lands in the command. A record row's size cell is suppressed as noise unless the output reaches warning severity.
 
 Rendering reuses Pi's own tool-call renderer for most tools, so accented paths, warning line ranges, and custom-tool renderers track Pi's defaults; traceline's own ink is theme-derived and its unstyled spans demote to one dim supporting grey. The full visual grammar is the family design language: see [`docs/design-language.md`](../../docs/design-language.md) §9.
 

@@ -94,6 +94,10 @@ import {
  * on the basename instead (§9.5), the way a read carries its `:line-range`: the near-noise size cell
  * (a confirmation's length, not the file's) is dropped, so a mutation's suffix stays empty and the
  * magnitude rides the file it changed (zero sides dropped: `+2 -0` → `+2`).
+ * Bash rows whose output proves they landed shared state graduate to verb-led outcome
+ * rows (§9.10): the record leads and the command trails behind its `$` —
+ * `pushed main $ git push` — and the size cell is suppressed below warning severity,
+ * because the record is the row's story and a confirmation's length is not.
  * All ink is theme-derived (style.ts ink()), with raw-ANSI fallbacks before a theme exists.
  *
  * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
@@ -383,7 +387,11 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
   const sizeColumnLive = rows.some((c) => {
     if (inlineMutationRow(c)) return false;
     const chars = resultTextCharCount(c);
-    return chars !== undefined && chars >= CHAR_SUFFIX_FLOOR;
+    if (chars === undefined) return false;
+    // Record rows (§9.10) suppress their size cell below warning severity, so only
+    // a ballooning record output lights the column.
+    if (recordRow(c)) return chars >= sizeThresholds.warning;
+    return chars >= CHAR_SUFFIX_FLOOR;
   });
   let plus = 0;
   let minus = 0;
@@ -395,7 +403,10 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
       if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
       if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
     }
-    size = Math.max(size, visibleWidth(charSuffix(resultTextCharCount(row), sizeColumnLive)));
+    size = Math.max(
+      size,
+      visibleWidth(recordRow(row) ? recordCharSuffix(row) : charSuffix(resultTextCharCount(row), sizeColumnLive)),
+    );
   }
   return { sizeColumnLive, diffColumns: { plus, minus, size } };
 }
@@ -610,12 +621,12 @@ function mutationInlineDiffInk(comp: ToolRowDataLike): string {
 // Some bash rows change shared state beyond the working tree — a commit, a push, a PR
 // merged or closed, an issue closed, a release or package published. The invocation
 // says only what was *attempted*, and truncation may eat even that; the proof is
-// porcelain in the result, which one-line mode hides. These rows earn verb-first
-// record facts in the suffix — `committed a4f21c9 · pushed main · 0.3k ch` — stated
+// porcelain in the result, which one-line mode hides. Such a row graduates to a
+// verb-led outcome row (§9.10): the record leads — `pushed main $ git push` — stated
 // only from what the output reported: the command must name the operation *and* its
-// success porcelain must appear. A failed push after a good commit therefore shows
-// `committed a4f21c9` on a red row — committed, demonstrably not landed. `git tag`
-// earns nothing: its success porcelain is silence.
+// success porcelain must appear. A failed push after a good commit therefore still
+// headlines `committed a4f21c9` on a red row — committed, demonstrably not landed.
+// `git tag` earns nothing: its success porcelain is silence.
 type RecordTone = "success" | "warning";
 type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean };
 
@@ -754,10 +765,10 @@ function recordCells(comp: ToolRowDataLike): string[] {
   return recordCellData(comp).map(recordCellText);
 }
 
-// Records may take at most roughly a third of the row (§9.10): overflow drops whole
-// facts oldest first — terminal state wins, a mangled sha is worse than none, and the
-// full output stays one Ctrl+T away.
-const RECORD_SUFFIX_SHARE = 1 / 3;
+// Records may take at most roughly a third of the row (§9.10), so the command keeps
+// its width: overflow drops whole facts oldest first — terminal state wins, a mangled
+// sha is worse than none, and the full output stays one Ctrl+T away.
+const RECORD_HEADLINE_SHARE = 1 / 3;
 
 // Records wear the ink of what they state (§9.10): the cell renders bold in its
 // fact's tone — success for landed state, warning for a forced push — verb and datum
@@ -776,24 +787,45 @@ function inkRecordCell(cell: RecordCellData): string {
   return ink(theme, cell.tone, `${BOLD}${recordCellText(cell)}${BOLD_OFF}`);
 }
 
-function recordSuffix(comp: ToolRowDataLike, available: number): string {
+// A bash row that landed real shared state graduates to a verb-led outcome row
+// (§9.10): the record leads — `pushed main $ git push` — joining the verb-first
+// family (read, edit, write, `$`), and the command trails as provenance behind its
+// `$`, which keeps its promise that what follows ran in a shell (a record never sits
+// between `$` and the command). Records exist only when success porcelain appeared,
+// so a row leads with an outcome exactly when there demonstrably was one; a partial
+// success on a red row still headlines what landed. The headline survives truncation:
+// the middle cut (§9.8) lands in the command, never in the record.
+function recordHeadline(comp: ToolRowDataLike, available: number): string {
   const cells = recordCellData(comp);
   if (!cells.length) return "";
-  const cap = Math.floor(available * RECORD_SUFFIX_SHARE);
+  const cap = Math.floor(available * RECORD_HEADLINE_SHARE);
   while (cells.length && cells.map(recordCellText).join(SEP).length > cap) cells.shift();
   return cells.map(inkRecordCell).join(dim(SEP));
+}
+
+function recordRow(comp: ToolRowDataLike): boolean {
+  return recordCellData(comp).length > 0;
+}
+
+// A record row's size cell is suppressed as noise (§9.10/§9.7): its result is
+// porcelain about the event, not pulled context. At warning severity (§6) the cell
+// re-earns its berth — an output that balloons is a story of its own.
+function recordCharSuffix(comp: ToolRowDataLike): string {
+  const chars = resultTextCharCount(comp);
+  if (chars === undefined || chars < sizeThresholds.warning) return "";
+  return charSuffix(chars);
 }
 
 function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {
   const theme = currentTheme();
   const parts: string[] = [];
-  const records = recordSuffix(comp, available);
-  if (records) parts.push(records);
   // Inline-diff mutations (§9.5) spend no right-column ink: the diff rides the
   // basename and the confirmation-size cell is dropped, so the suffix stays empty.
+  // Record rows (§9.10) headline their facts on the left and suppress the size cell
+  // below warning severity.
   const inline = inlineMutationRow(comp);
   const diff = inline ? undefined : mutationDiffStats(comp);
-  const chars = inline ? "" : resultCharSuffix(comp, facts);
+  const chars = inline ? "" : recordRow(comp) ? recordCharSuffix(comp) : resultCharSuffix(comp, facts);
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`
@@ -1322,11 +1354,13 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
 // The invocation body with family ink applied: bash rows rebuild from plain text, path
 // rows get the dim-directory emphasis, everything else keeps pi's native line with a
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
-function invocationInk(comp: ToolRowLike): string {
+function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY): string {
   if (toolLabel(comp?.toolName) === "bash") {
     const plain = bashInvocationText(comp);
     if (plain === undefined) return inkedFallbackLine(comp);
-    return inkBashRow(comp, foldBashPreamble(comp, tildify(plain)));
+    const body = inkBashRow(comp, foldBashPreamble(comp, tildify(plain)));
+    const headline = recordHeadline(comp, available);
+    return headline ? `${headline} ${body}` : body;
   }
   const native = nativeInvocationLine(comp);
   const base = (native && pathEmphasisLine(comp, native)) ?? native;
@@ -1359,7 +1393,7 @@ function oneLine(comp: ToolRowLike, width: number): string {
   const available = traceRowAvailable(width);
   return fitTraceRow(
     statusTone(comp),
-    invocationInk(comp),
+    invocationInk(comp, available),
     toolFactSuffix(comp, available, facts),
     blockSuffixReserve(rows, facts, available),
     width,
@@ -1966,7 +2000,7 @@ export const internals = {
   mutationDiffStats,
   toolFactSuffix,
   recordCells,
-  recordSuffix,
+  recordHeadline,
   configureSizeThresholds,
   lineRange,
   toolStatus,

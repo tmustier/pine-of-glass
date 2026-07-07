@@ -359,7 +359,10 @@ The right-aligned suffix carries facts in columns that align down the block:
   each row ending where its own fact does. A ragged right edge here is a legible
   asymmetry (reads flooded context, edits did not), not a misalignment. A rare
   non-mutation tool that reports a diff still right-aligns it in the suffix
-- the size cell keeps the rightmost berth; record facts join before it
+- the size cell keeps the rightmost berth. A record row (§9.10) suppresses its
+  size cell as noise unless the output reaches warning severity (§6): its result
+  is porcelain about the event, not pulled context, but an output that balloons
+  is a story of its own and re-earns the cell
 
 ### 9.8 Truncation
 
@@ -382,20 +385,34 @@ suffix in the block's reserve (§9.8).
 Some bash rows change shared state beyond the working tree: a commit, a push, a
 PR merged or closed, a release or package published. Their invocation says only
 what was attempted; the proof lives in the result, which one-line mode hides.
-These rows earn record facts in the suffix, stated verb-first from the porcelain
-the tool actually reported, never from the command's arguments:
-`committed a4f21c9 · pushed main · 0.3k ch`, `merged PR #87 · 0.1k ch`.
+A row whose output carries that proof graduates to a verb-led outcome row: the
+record leads, stated verb-first from the porcelain the tool actually reported,
+never from the command's arguments, and the command trails as provenance behind
+its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87 --squash`.
 
+- the record is the headline because, once landed, the outcome is the row's
+  identity: it joins the verb-first family (`read`, `edit`, `write`, `$`), so
+  the left column scans as what happened. The `$` keeps its promise that what
+  follows ran in a shell, which is why a record may never sit between `$` and
+  the command (`$ pushed main git push` reads as a command named `pushed`)
+- the headline survives truncation: the middle cut (§9.8) lands in the command,
+  never in the record
+- a record row's size cell is suppressed (§9.7): the record is the row's story,
+  and a confirmation's length is not. At warning severity (§6) the cell
+  re-earns its berth
+- a bash row with no record keeps `$ command` at the left edge: rows lead with
+  an outcome exactly when there demonstrably was one
 - output-only honesty: a fact appears only when the command names the operation
   and its success porcelain appears in the output (`[main a4f21c9]`,
   `main -> main`, `Merged pull request #87`). A failed push after a good commit
-  shows `committed a4f21c9` on a red row: committed, demonstrably not landed.
+  still headlines `committed a4f21c9` on a red row: committed, demonstrably
+  not landed.
   `git tag` earns nothing; its success porcelain is silence
 - facts chain in output order with the `·` separator; consecutive same-verb
   facts merge their data (`pushed main, v0.5.9`) only when their tones agree,
   so a forced push never hides inside a routine one
 - overflow drops whole facts, oldest first. Records take at most about a third
-  of the row; a mangled sha is worse than none
+  of the row, so the command keeps its width; a mangled sha is worse than none
 - records wear the ink of what they state: the cell renders success-toned bold,
   verb and datum together (`pushed main`, `released v0.5.9`), because a refname,
   tag or PR number is the event's identity. A commit sha stays dim beside its
