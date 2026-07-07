@@ -13,7 +13,20 @@ import { resolve } from "node:path";
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { positiveNumberValue, isJsonObject } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
-import { findChatContainer, isAssistantRow, isToolRow, type AssistantRowDataLike, type AssistantRowLike, type AssistantRowPrototypeLike, type ContainerLike, type ToolArgsLike, type ToolRowDataLike, type ToolRowLike, type ToolRowPrototypeLike, type TracelineTuiLike } from "../_lib/chat.ts";
+import {
+  findChatContainer,
+  isAssistantRow,
+  isToolRow,
+  type AssistantRowDataLike,
+  type AssistantRowLike,
+  type AssistantRowPrototypeLike,
+  type ContainerLike,
+  type ToolArgsLike,
+  type ToolRowDataLike,
+  type ToolRowLike,
+  type ToolRowPrototypeLike,
+  type TracelineTuiLike,
+} from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import {
@@ -98,7 +111,14 @@ import {
 
 type ToolDisplayMode = "native" | "oneLine";
 
-type TracelineGlobal = typeof globalThis & { __tracelinePatchVersion?: number; __tracelineTui?: TracelineTuiLike; __tracelineChat?: ContainerLike; __tracelineInputUnsubscribe?: () => void; __tracelineGetTheme?: () => Theme | undefined; __tracelineAssistantPatchVersion?: number };
+type TracelineGlobal = typeof globalThis & {
+  __tracelinePatchVersion?: number;
+  __tracelineTui?: TracelineTuiLike;
+  __tracelineChat?: ContainerLike;
+  __tracelineInputUnsubscribe?: () => void;
+  __tracelineGetTheme?: () => Theme | undefined;
+  __tracelineAssistantPatchVersion?: number;
+};
 const g = globalThis as TracelineGlobal;
 type ExtensionUiWithTheme = { theme?: Theme };
 function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
