@@ -71,6 +71,10 @@ function walk(dir, out = []) {
       if ([".git", "node_modules", ".pi-subagents", "out", "coverage"].includes(entry.name)) continue;
       walk(path, out);
     } else {
+      // *.local.md is the repo's gitignored local-scratch convention (.gitignore):
+      // those files never reach a clean checkout, so linting them only makes local
+      // runs diverge from CI.
+      if (entry.name.endsWith(".local.md")) continue;
       out.push(path);
     }
   }
