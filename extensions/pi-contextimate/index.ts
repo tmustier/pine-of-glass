@@ -5,7 +5,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { isJsonObject, positiveNumberValue, stringValue, type JsonValue } from "../_lib/boundary.ts";
-import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE } from "../_lib/chat.ts";
+import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
@@ -151,9 +151,14 @@ type PrefixSnapshot = {
   contextUsage?: ContextUsage;
 };
 
+type ContextimateTui = {
+  children?: unknown[];
+  requestRender?: (force?: boolean) => void;
+};
+
 type ContextimateGlobal = typeof globalThis & {
-  __piContextimateTui?: any;
-  __piContextimateChat?: any;
+  __piContextimateTui?: ContextimateTui;
+  __piContextimateChat?: ContainerLike;
   __piContextimateBlock?: StartupContextComponent;
   __piContextimateMode?: ViewMode;
   __piContextimateInstallTimer?: ReturnType<typeof setTimeout>;
@@ -1742,16 +1747,16 @@ function isBlankComponent(component: Component): boolean {
   return text.trim().length === 0;
 }
 
-function findResourceChatContainer(node: unknown) {
+function findResourceChatContainer(node: unknown): ContainerLike | undefined {
   return findContainerBy(node, (children) => children.some((child) => isResourceComponent(child)));
 }
 
-function removeExistingPrefixBlocks(chat: any): void {
+function removeExistingPrefixBlocks(chat: ContainerLike): void {
   if (!Array.isArray(chat.children)) return;
-  chat.children = chat.children.filter((child: Component) => !isPrefixBlock(child));
+  chat.children = chat.children.filter((child) => !isPrefixBlock(child));
 }
 
-function insertionIndexAfterResourceList(chat: any): number {
+function insertionIndexAfterResourceList(chat: ContainerLike): number {
   if (!Array.isArray(chat.children)) return -1;
   let index = -1;
   for (let i = 0; i < chat.children.length; i++) {
@@ -1906,7 +1911,7 @@ export default function piContextimate(pi: ExtensionAPI) {
     );
     g.__piContextimateBlock = block;
 
-    ctx.ui.setWidget("__pi_contextimate_capture", (tui: any) => {
+    ctx.ui.setWidget("__pi_contextimate_capture", (tui: ContextimateTui) => {
       g.__piContextimateTui = tui;
       return {
         render: () => {
