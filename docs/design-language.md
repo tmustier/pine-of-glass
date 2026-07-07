@@ -298,9 +298,9 @@ are validated against a corpus of 51k real invocations
 - dim is not enough: a demoted preamble still spends width, and the shared
   truncation budget (§9.8) then eats the real command behind boilerplate that
   carries no signal (`set -euo pipefail ↵ cd <dir> ↵` alone runs two-thirds of a
-  row). So a row's *leading preamble run* — the opening sequence of situating
-  segments (`set -…` hygiene, `cd <dir>`, and bare `VAR=…`/`export`
-  assignments) across `&&`, `;` and `↵` breaks — is reclaimed, not just dimmed:
+  row). So a row's *leading preamble run* (the opening sequence of situating
+  segments, `set -…` hygiene, `cd <dir>`, and bare `VAR=…`/`export`
+  assignments, across `&&`, `;` and `↵` breaks) is reclaimed, not just dimmed:
   - a leading `set -…` hygiene run drops outright, the way the `(timeout Ns)`
     suffix does (§9.3): errexit/pipefail/nounset never discriminate one row from
     another, and the status bullet already carries the outcome. The drop is
@@ -310,7 +310,7 @@ are validated against a corpus of 51k real invocations
     written with. The `⋯` stands in for the whole run and its trailing separator
     (`⋯ npm test`, never `⋯ && npm test`), neither crowns nor consumes. It is
     block-scoped: a `⋯` never points across visible prose, and never lands on a
-    row with no real command after it — that row keeps its context, so no row
+    row with no real command after it; that row keeps its context, so no row
     goes dark. A distinct context prints once, on its first appearance
 
 ### 9.5 Path rows

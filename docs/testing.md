@@ -3,15 +3,15 @@
 Tests in this repo exist to catch three specific kinds of breakage, in order of real-world
 likelihood. Anything that does not map to one of these failure modes does not get a test.
 
-1. **Pi drift** — both extensions reach into Pi internals (prototype patching, duck-typed
+1. **Pi drift**: both extensions reach into Pi internals (prototype patching, duck-typed
    component detection, system-prompt regex parsing, `buildSessionContext`/`convertToLlm`
    imports). `pi update` can silently invalidate any of these assumptions. This is the #1
    failure mode and it is *not* catchable by conventional unit tests.
-2. **Silent regression of subtle pure logic** — ANSI-aware truncation, SGR filtering, token
+2. **Silent regression of subtle pure logic**: ANSI-aware truncation, SGR filtering, token
    formula constants, heuristic precedence, alignment layout. These encode hard-won
    behaviour (several were the subject of past fix commits) and a wrong answer renders as
    plausible-looking output, so a human won't notice.
-3. **Render regressions** — alignment, row order, and labels in the estimator views.
+3. **Render regressions**: alignment, row order, and labels in the estimator views.
    These change as a side effect of unrelated edits (e.g. the Total-row reorder) and are
    only verifiable today by eyeballing a live TUI.
 
@@ -39,7 +39,7 @@ Deliberately **not** tested:
 - **Pi runtime linkage:** `scripts/dev/link-pi-runtime.sh` symlinks the globally installed
   Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) into the repo's
   gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
-  runtime — so a `pi update` followed by `npm test` is the drift detector.
+  runtime, so a `pi update` followed by `npm test` is the drift detector.
 - **Testability route:** the extensions stay single-file. Pure functions move (within the
   same file) into an exported `internals` object consumed by tests. Pi imports only the
   default export (`jiti.import(path, { default: true })`), so named exports are
@@ -60,7 +60,7 @@ tests/
 scripts/dev/link-pi-runtime.sh
 ```
 
-## Layer 1 — contract tests against the installed Pi (drift)
+## Layer 1: contract tests against the installed Pi (drift)
 
 `tests/contract/pi-internals.test.ts` imports the real installed Pi and asserts every
 structural assumption the extensions make. Each assertion names the extension code that
@@ -70,17 +70,17 @@ moved.
 | Assumption | Depended on by |
 |---|---|
 | `buildSessionContext`, `convertToLlm`, `keyText` are exported with compatible shapes (callable; `convertToLlm` yields messages with `role`, `content`; thinking blocks expose `thinking`/`thinkingSignature`; toolCall blocks expose `id`/`name`/`arguments`) | contextimate `buildSessionBreakdown` |
-| A real Pi-built system prompt (constructed via Pi's own prompt assembly against a fixture project dir with an AGENTS.md and one skill) matches `PROJECT_INSTRUCTIONS_RE`, `AVAILABLE_SKILLS_RE`, `SKILL_RE`, and `getPromptRemainder` strips both blocks | contextimate section parsing — silently renders wrong buckets if the prompt format drifts |
+| A real Pi-built system prompt (constructed via Pi's own prompt assembly against a fixture project dir with an AGENTS.md and one skill) matches `PROJECT_INSTRUCTIONS_RE`, `AVAILABLE_SKILLS_RE`, `SKILL_RE`, and `getPromptRemainder` strips both blocks | contextimate section parsing; it silently renders wrong buckets if the prompt format drifts |
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 
 Where instantiating real components is impractical, the contract test asserts on the
-class/prototype from Pi's modules rather than a live TUI — still the real artifact, not a
-mock. Anything requiring a live terminal goes to the smoke layer instead.
+class/prototype from Pi's modules rather than a live TUI; that is still the real artifact,
+not a mock. Anything requiring a live terminal goes to the smoke layer instead.
 
-## Layer 2 — pure-logic unit tests
+## Layer 2: pure-logic unit tests
 
 ### traceline
 
@@ -90,7 +90,7 @@ mock. Anything requiring a live terminal goes to the smoke layer instead.
   sequence (strip-then-rebuild round-trips); falls back to tail-truncation below
   `MIN_HEAD_COLS`.
 - **`rawIndexAtVisibleIndex` / `rawIndexBeforeVisibleIndex`** against strings mixing SGR,
-  OSC-8 links, and plain text — off-by-one here corrupts every truncated row.
+  OSC-8 links, and plain text; off-by-one here corrupts every truncated row.
 - **`stripSgrBackgrounds` / `stripSgrForegrounds`**: parameterised over `38;2;r;g;b`,
   `38;5;n`, `48;…`, basic 30–37/90–97, mixed multi-param sequences (`\x1b[1;31;48;5;2m`);
   asserts non-colour params (bold) survive.
@@ -106,8 +106,8 @@ mock. Anything requiring a live terminal goes to the smoke layer instead.
 - **Heuristic resolution precedence** (`resolveHeuristic`): fallback < default profile <
   flat defaults < built-in model rule < config rules in order, later rules override
   earlier; `cleanDenominator` rejects 0/negative/NaN and keeps the prior value. This is
-  user-configurable surface — precedence bugs misprice every row.
-- **Built-in rule matching**: boundary table — `claude-opus-4-8` → 4.7+ rule;
+  user-configurable surface; precedence bugs misprice every row.
+- **Built-in rule matching**: boundary table: `claude-opus-4-8` → 4.7+ rule;
   `claude-sonnet-4-5` → 4.5/4.6 rule; other anthropic → generic; `openai-codex` vs
   `openai` vs `mistral` vs `gemini` vs `bedrock` routing by provider/api.
 - **Tool payload shaping**: for one frozen `ToolSummary` fixture, the exact JSON emitted
@@ -115,7 +115,7 @@ mock. Anything requiring a live terminal goes to the smoke layer instead.
   the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to
   the OpenAI Responses payload.
   Consistency invariant: `buildToolDisplayEstimate` counts the same payload shape that
-  `buildToolNumerator` counts (per-tool vs aggregate) — this is also the invariant the
+  `buildToolNumerator` counts (per-tool vs aggregate); this is also the invariant the
   issue-#8 checker must preserve.
 - **OpenAI cookbook formula** (`estimateOpenAIFunctionToolTokens`): frozen multi-tool
   fixture (nested objects, arrays, enums) → exact expected token number, computed once by
@@ -131,11 +131,11 @@ mock. Anything requiring a live terminal goes to the smoke layer instead.
   thinking chars counted from `thinkingSignature` when present else `thinking` text.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
-  `~`/exact variants align — the invariant behind the recent column-alignment commits.
+  `~`/exact variants align; this is the invariant behind the recent column-alignment commits.
 - **Snapshot signature**: identical inputs → identical signature; changing the active tool
   set, model, config, or session chars each changes it (render-cache invalidation).
 
-## Layer 3 — render goldens
+## Layer 3: render goldens
 
 `tests/contextimate/render-golden.test.ts` builds one synthetic `PrefixSnapshot` (fixture:
 2 context files, 3 skills, 4 tools incl. one inactive, session breakdown + contextUsage)
@@ -149,19 +149,19 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
   PR like any code change. The golden diff *is* the review surface for issues #9's relabel.
 - Traceline gets a narrow golden: `oneLine()` output (ANSI stripped) for a table of
   synthetic comps (read with range, bash with `cd …`, MCP tool, error status, missing
-  renderer fallback) at width 80 — this pins the row grammar without touching Pi's
+  renderer fallback) at width 80; this pins the row grammar without touching Pi's
   renderer (comps are synthetic stand-ins satisfying the duck type, which the contract
   suite separately proves matches real Pi).
 - Cachemire gets one combined golden (`tests/cachemire/goldens.test.ts` →
   `cachemire-lines.txt`): the `/cache` ledger panel over a cold/hit/partial/miss
-  session plus every one-line `◍` surface — clock states, break notices, resolutions,
-  and the turn summary — pinning wording, glyphs, and fact order (colour excluded as
+  session plus every one-line `◍` surface (clock states, break notices, resolutions,
+  and the turn summary), pinning wording, glyphs, and fact order (colour excluded as
   everywhere).
 
-## Layer 4 — startup smoke (tmux, local-only)
+## Layer 4: startup smoke (tmux, local-only)
 
 `npm run test:smoke` formalises `scripts/contextimate/render-snapshot.mjs`: launch real
-`pi` in tmux in a fixture cwd, then assert on captured panes (no model call required —
+`pi` in tmux in a fixture cwd, then assert on captured panes (no model call required;
 the estimator renders at startup):
 
 - `[Contextimate]` block present after startup; `/contextimate compact` and
@@ -181,7 +181,7 @@ Designed now so the features land with their proofs:
 - **#8 (provider token check):** the checker is a script (`scripts/contextimate/
   check-provider-tokens.mjs`) whose *request-building* is pure and unit-tested: given the
   snapshot fixture, the exact Anthropic `count_tokens` body and OpenAI Responses body it
-  would send — asserting the counted payload equals the displayed payload (shared shaping
+  would send, asserting the counted payload equals the displayed payload (shared shaping
   code, not a re-implementation). Network execution is manual; tests never call providers.
 - **#7 (click UX decision):** resolved by removal; click-to-expand shipped, proved
   unusable in practice, and was deleted (v0.5.18). Ctrl+T is the whole surface.
@@ -191,5 +191,5 @@ Designed now so the features land with their proofs:
 `npm test` green on a machine with the current Pi installed means: our assumptions about
 Pi still hold (layer 1), our logic still computes what it computed when last verified
 against live providers (layer 2), and the views render what a human last approved
-(layer 3). It does **not** mean live-provider token accuracy — that claim only comes from
+(layer 3). It does **not** mean live-provider token accuracy; that claim only comes from
 the manual probes, and the docs/READMEs must keep saying so.

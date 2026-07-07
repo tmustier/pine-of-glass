@@ -3,6 +3,13 @@
   "generatedBy": "node scripts/dev/agent-lint.mjs --update-baseline",
   "knownFindings": {
     "POG003": {
+      "extensions/pi-contextimate/index.ts": {
+        "__piContextimateChat?: any;": 1,
+        "__piContextimateTui?: any;": 1,
+        "ctx.ui.setWidget(\"__pi_contextimate_capture\", (tui: any) => {": 1,
+        "function insertionIndexAfterResourceList(chat: any): number {": 1,
+        "function removeExistingPrefixBlocks(chat: any): void {": 1
+      },
       "extensions/pi-traceline/index.ts": {
         "(b: any) =>": 1,
         "__tracelineChat?: any;": 1,
@@ -93,6 +100,12 @@
       }
     },
     "POG004": {
+      "extensions/pi-cachemire/index.ts": {
+        "ensureChatClearHook(chat as unknown as Record<string, unknown>);": 1
+      },
+      "tests/cachemire/forensics.test.ts": {
+        "const stripped = stripCacheControl(anthropicPayload()) as Record<string, unknown>;": 1
+      },
       "tests/contract/pi-internals.test.ts": {
         "const g = globalThis as Record<string, unknown>;": 1
       },
@@ -111,105 +124,13 @@
       "tests/traceline/status-suppression.test.ts": {
         "const g = globalThis as Record<string, unknown>;": 1
       }
-    },
-    "POG007": {
-      "AGENTS.md": {
-        "(Quoted UI output is exempt: cachemire's ledger genuinely prints — for absent values.)": 1,
-        "- No em dashes (—) in markdown docs. Use commas, colons, semicolons, or parentheses.": 1
-      },
-      "CHANGELOG.md": {
-        "## 0.4.0 — 2026-06-18": 1,
-        "## 0.4.1 — 2026-06-20": 1,
-        "## 0.4.2 — 2026-06-26": 1,
-        "## 0.4.3 — 2026-07-01": 1,
-        "## 0.5.0 — 2026-07-01": 1,
-        "## 0.5.1 — 2026-07-01": 1,
-        "## 0.5.10 — 2026-07-02": 1,
-        "## 0.5.11 — 2026-07-02": 1,
-        "## 0.5.12 — 2026-07-02": 1,
-        "## 0.5.13 — 2026-07-02": 1,
-        "## 0.5.14 — 2026-07-04": 1,
-        "## 0.5.15 — 2026-07-04": 1,
-        "## 0.5.16 — 2026-07-04": 1,
-        "## 0.5.17 — 2026-07-04": 1,
-        "## 0.5.18 — 2026-07-04": 1,
-        "## 0.5.19 — 2026-07-05": 1,
-        "## 0.5.2 — 2026-07-01": 1,
-        "## 0.5.3 — 2026-07-01": 1,
-        "## 0.5.4 — 2026-07-02": 1,
-        "## 0.5.5 — 2026-07-02": 1,
-        "## 0.5.6 — 2026-07-02": 1,
-        "## 0.5.7 — 2026-07-02": 1,
-        "## 0.5.8 — 2026-07-02": 1,
-        "## 0.5.9 — 2026-07-02": 1,
-        "(Spacer + Text) to the chat tail — a holdover from when the toggle's only visible": 1,
-        "- A bash row's *leading preamble run* — `set -…` hygiene, `cd <dir>`, and bare": 1,
-        "- A path under the row's cwd renders as a dim `./` plus the cwd-relative tail — the": 1,
-        "- The cut is a column: middle truncation now cuts at exact positions — the tail is a": 1,
-        "Deliberately conservative — under-brightening is the family's bias.": 1,
-        "`-e`/`-c` script string — `↵ '` rendered a bold white quote. A candidate head": 1,
-        "`VAR=…`/`export` assignments, across `&&`, `;` and `↵` breaks — is now": 1,
-        "assigned them — bold `text`, the same treatment as the verb — instead of the": 1,
-        "basename in bold error ink — a failure is more than one red glyph in a dim wall.": 1,
-        "bash-body level dissolved. Bash rows now speak the path-row grammar — bold `$`": 1,
-        "bold — the trace row's white — so it pops from the dim right edge the way a bash": 1,
-        "column as blank space, and the size cell pads left to the block's widest — so a": 1,
-        "longer. Divergent tails — directories included — render bold, so successive edits": 1,
-        "marker (yet always boring), while `./src/` is a meaningful shared prefix — blocks": 1,
-        "middle truncation — one frame now covers folded reads, size tints, dim pipes,": 1,
-        "terminal default — the old \"accepted quirk\", fixed family-wide.": 1,
-        "time — the countdown rolls back to the last billed request instead of counting a": 1,
-        "two sign-aligned columns — a dropped zero side (still dropped as ink) holds its": 1
-      },
-      "docs/design-language.md": {
-        "assignments) across `&&`, `;` and `↵` breaks — is reclaimed, not just dimmed:": 1,
-        "row with no real command after it — that row keeps its context, so no row": 1,
-        "row). So a row's *leading preamble run* — the opening sequence of situating": 1
-      },
-      "docs/testing.md": {
-        "## Layer 1 — contract tests against the installed Pi (drift)": 1,
-        "## Layer 2 — pure-logic unit tests": 1,
-        "## Layer 3 — render goldens": 1,
-        "## Layer 4 — startup smoke (tmux, local-only)": 1,
-        "(layer 3). It does **not** mean live-provider token accuracy — that claim only comes from": 1,
-        "- **Built-in rule matching**: boundary table — `claude-opus-4-8` → 4.7+ rule;": 1,
-        "1. **Pi drift** — both extensions reach into Pi internals (prototype patching, duck-typed": 1,
-        "2. **Silent regression of subtle pure logic** — ANSI-aware truncation, SGR filtering, token": 1,
-        "3. **Render regressions** — alignment, row order, and labels in the estimator views.": 1,
-        "OSC-8 links, and plain text — off-by-one here corrupts every truncated row.": 1,
-        "`buildToolNumerator` counts (per-tool vs aggregate) — this is also the invariant the": 1,
-        "`pi` in tmux in a fixture cwd, then assert on captured panes (no model call required —": 1,
-        "`~`/exact variants align — the invariant behind the recent column-alignment commits.": 1,
-        "and the turn summary — pinning wording, glyphs, and fact order (colour excluded as": 1,
-        "class/prototype from Pi's modules rather than a live TUI — still the real artifact, not a": 1,
-        "renderer fallback) at width 80 — this pins the row grammar without touching Pi's": 1,
-        "runtime — so a `pi update` followed by `npm test` is the drift detector.": 1,
-        "session plus every one-line `◍` surface — clock states, break notices, resolutions,": 1,
-        "user-configurable surface — precedence bugs misprice every row.": 1,
-        "would send — asserting the counted payload equals the displayed payload (shared shaping": 1,
-        "| A real Pi-built system prompt (constructed via Pi's own prompt assembly against a fixture project dir with an AGENTS.md and one skill) matches `PROJECT_INSTRUCTIONS_RE`, `AVAILABLE_SKILLS_RE`, `SKILL_RE`, and `getPromptRemainder` strips both blocks | contextimate section parsing — silently renders wrong buckets if the prompt format drifts |": 1
-      },
-      "docs/upstream-candidates.md": {
-        "# Upstream candidates — potential pi issues": 1,
-        "(`dist/modes/interactive/components/assistant-message.js` — the content loop emits a": 1,
-        "1. **Request side** — `convertTools` emits only name/description/schema/cache_control;": 1,
-        "2. **Response side** — the stream parser handles only `text` / `thinking` /": 1,
-        "3. **Beta headers** — only fine-grained-tool-streaming and interleaved-thinking are": 1,
-        "Entries pin the pi version inspected — internals drift, so re-verify before filing.": 1,
-        "cache-preserving alternative for sessions carrying large MCP catalogs — the prefix": 1,
-        "discovered on demand and appended inline as `tool_reference` blocks — documented to": 1,
-        "message is silently dropped — including **pi's own `showStatus` lines** (`/model`": 1,
-        "messages — so the doubling is intra-message block adjacency (models emitting multiple": 1,
-        "persistent non-message line into the scrollback — this repo's cachemire now carries its": 1,
-        "— not yet decided whether this is worth raising; it may be intended behaviour.": 1
-      }
     }
   },
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
-      "extensions/pi-cachemire/index.ts": 1419,
-      "extensions/pi-contextimate/index.ts": 1959,
+      "extensions/pi-cachemire/index.ts": 1409,
+      "extensions/pi-contextimate/index.ts": 1954,
       "extensions/pi-traceline/index.ts": 2035,
       "tests/cachemire/economics-and-render.test.ts": 352,
       "tests/traceline/one-line.test.ts": 809
