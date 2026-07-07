@@ -25,6 +25,6 @@ The runner mangles the config — patching it and logging the pass.
 
 Fixed — committing and shipping the release.
 
-  ▏ › $ cd ~/projects/pine-of-glass &…: records of consequence" && git push  committed a4f21c9 · pushed main · 0.2k ch
-  ▏ › $ gh pr merge 87 --squash --delete-branch                                                merged PR #87 · 0.1k ch
+  ▏ › committed a4f21c9 · pushed main $ cd ~/projects/pi…com commit -m "traceline: records of consequence" && git push
+  ▏ › merged PR #87 $ gh pr merge 87 --squash --delete-branch
   ▏ › $ git status --short

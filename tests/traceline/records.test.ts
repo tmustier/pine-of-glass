@@ -1,15 +1,16 @@
 // Records of consequence (design language §9.10): bash rows that change shared
-// state — commit, push, PR merge/close/create, issue close, release/publish — earn
-// verb-first record facts in the suffix, parsed from the *success porcelain the tool
-// reported*, never from the command's arguments. These tests pin the exact porcelain
-// shapes and the fact-toned ink.
+// state — commit, push, PR merge/close/create, issue close, release/publish —
+// graduate to verb-led outcome rows: the record leads and the command trails as
+// provenance behind its `$`, parsed from the *success porcelain the tool reported*,
+// never from the command's arguments. These tests pin the exact porcelain shapes,
+// the headline placement, and the fact-toned ink.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { recordCells, recordSuffix, toolFactSuffix, stripAnsi, setTracelineChat, setTracelineThemeGetter } = internals;
+const { recordCells, recordHeadline, toolFactSuffix, oneLine, stripAnsi, setTracelineChat, setTracelineThemeGetter } = internals;
 
 beforeEach(() => {
   setTracelineChat(undefined);
@@ -119,22 +120,45 @@ test("overflow drops whole facts oldest first, never mangles", () => {
     `[main a4f21c9] x\n${PUSH_OK}`,
   );
   // Plenty of room: both facts.
-  assert.equal(stripAnsi(recordSuffix(comp, 120)), "committed a4f21c9 · pushed main");
+  assert.equal(stripAnsi(recordHeadline(comp, 120)), "committed a4f21c9 · pushed main");
   // Tight row (~76 available at 80 cols → cap 25): the oldest fact drops whole.
-  assert.equal(stripAnsi(recordSuffix(comp, 76)), "pushed main");
+  assert.equal(stripAnsi(recordHeadline(comp, 76)), "pushed main");
   // Too tight for anything: no half-facts.
-  assert.equal(stripAnsi(recordSuffix(comp, 20)), "");
+  assert.equal(stripAnsi(recordHeadline(comp, 20)), "");
 });
 
-test("records join the fact suffix before the size cell", () => {
+test("records lead the row; the command trails behind its `$` (§9.10)", () => {
   const output = `[main a4f21c9] x\n${PUSH_OK}${"x".repeat(300)}`;
   const comp = bash("git commit -m x && git push", output);
-  assert.equal(stripAnsi(toolFactSuffix(comp, 200)), "committed a4f21c9 · pushed main · 0.4k ch");
+  // No record in the suffix, and a 0.4k confirmation earns no size cell (§9.7).
+  assert.equal(stripAnsi(toolFactSuffix(comp, 200)), "");
+  const line = stripAnsi(oneLine(comp, 120));
+  assert.ok(line.includes("committed a4f21c9 · pushed main $ git commit -m x && git push"), line);
+  assert.ok(!line.includes(" ch"), line);
+  // On a tighter row the cap (about a third, §9.10) drops the oldest fact whole,
+  // and the command keeps its width.
+  const tight = stripAnsi(oneLine(comp, 100));
+  assert.ok(tight.includes("pushed main $ git commit -m x && git push"), tight);
+  assert.ok(!tight.includes("committed"), tight);
+});
+
+test("a ballooning record output re-earns its size cell at warning severity (§9.10)", () => {
+  const comp = bash("git push", `${PUSH_OK}${"y".repeat(12_000)}`);
+  assert.match(stripAnsi(toolFactSuffix(comp, 200)), /^12\.[01]k ch$/);
+  const line = stripAnsi(oneLine(comp, 100));
+  assert.ok(line.includes("pushed main $ git push"), line);
+  assert.ok(/12\.[01]k ch$/.test(line.trimEnd()), line);
+});
+
+test("a record-less bash row keeps `$ command` at the left edge", () => {
+  const comp = bash("git status --short", " M index.ts\n");
+  const line = stripAnsi(oneLine(comp, 100));
+  assert.match(line, /› \$ git status --short/);
 });
 
 test("records wear the ink of what they state (§9.10)", () => {
   const comp = bash("git commit -m x && git push", `[main a4f21c9] x\n${PUSH_OK}`);
-  const raw = recordSuffix(comp, 200);
+  const raw = recordHeadline(comp, 200);
   // No theme in tests, so ink resolves to raw ANSI: success 32, warning 33, dim 90.
   // The committed verb is success-toned bold; the sha is opaque audit data — dim,
   // outside both the tone and the bold span.
@@ -147,7 +171,7 @@ test("records wear the ink of what they state (§9.10)", () => {
 
 test("a forced push tints warning; tones never merge across (§9.10)", () => {
   const forced = bash("git push --force", "To github.com:o/r.git\n + 1c75c2a...50cf33f main -> main (forced update)\n");
-  assert.match(recordSuffix(forced, 200), /\x1b\[33m\x1b\[1mpushed main\x1b\[22m\x1b\[0m/);
+  assert.match(recordHeadline(forced, 200), /\x1b\[33m\x1b\[1mpushed main\x1b\[22m\x1b\[0m/);
   // A forced ref and a routine tag in one push stay separate cells: a forced push
   // never hides inside a routine one.
   const mixed = bash(
@@ -160,7 +184,7 @@ test("a forced push tints warning; tones never merge across (§9.10)", () => {
 test("the tone is per-fact, not per-row: failed rows keep surviving facts green (§9.10)", () => {
   // Committed, demonstrably not landed: red discriminators, green fact.
   const failed = bash("git commit -m x && git push", "[main a4f21c9] x\n ! [rejected] main -> main\n", { error: true });
-  assert.match(recordSuffix(failed, 200), /\x1b\[32m\x1b\[1mcommitted\x1b\[22m/);
+  assert.match(recordHeadline(failed, 200), /\x1b\[32m\x1b\[1mcommitted\x1b\[22m/);
 });
 
 test("facts cache against result identity", () => {
