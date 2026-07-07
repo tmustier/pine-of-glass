@@ -52,8 +52,8 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   changing a suffix or column, keep related rows sharing one aligned edge; never
   let a new cell wander the right margin row by row.
 
-- No em dashes (—) in markdown docs. Use commas, colons, semicolons, or parentheses.
-  (Quoted UI output is exempt: cachemire's ledger genuinely prints — for absent values.)
+- No em dashes (—) in markdown docs. Use commas, colons, semicolons, or parentheses. <!-- agent-lint-disable-line POG007 -->
+  (Quoted UI output is exempt: cachemire's ledger genuinely prints — for absent values.) <!-- agent-lint-disable-line POG007 -->
 
 ## Releasing
 

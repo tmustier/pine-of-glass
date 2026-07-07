@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { homedir } from "node:os";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
+import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
 const {
   stripAnsi,
@@ -17,9 +18,9 @@ const {
   foldBashPreamble,
   readRun,
   dedupeThinkingLabels,
+  setTracelineChat,
+  setTracelineThemeGetter,
 } = internals;
-
-const g = globalThis as Record<string, unknown>;
 
 const DIM = "\x1b[90m"; // raw-ANSI fallback for the family dim tone (no theme in tests)
 const FOLD_MARK = "\u22ef";
@@ -28,7 +29,7 @@ const NL = "\u21b5"; // the flattened line-break mark
 // pi's bash renderer returns one array element per visual line; traceline flattens them
 // with a dim ↵. A synthetic command with `\n` reproduces that multi-line render, so
 // preamble runs written across real breaks (`set …\ncd …\ncmd`) exercise the flatten.
-function bashComp(command: string, rendered?: string): Record<string, unknown> {
+function bashComp(command: string, rendered?: string): ToolRowLike {
   const lines = command.split("\n");
   const renderedLines = rendered !== undefined ? [rendered] : lines.map((l, i) => (i === 0 ? `$ ${l}` : l));
   return {
@@ -39,10 +40,10 @@ function bashComp(command: string, rendered?: string): Record<string, unknown> {
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => renderedLines },
-  };
+  } as ToolRowLike;
 }
 
-function readComp(path: string, offset: number, limit: number, resultChars = 1_000): Record<string, unknown> {
+function readComp(path: string, offset: number, limit: number, resultChars = 1_000): ToolRowLike {
   return {
     toolName: "read",
     args: { path, offset, limit },
@@ -51,7 +52,7 @@ function readComp(path: string, offset: number, limit: number, resultChars = 1_0
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`read ${path}:${offset}-${offset + limit - 1}`] },
-  };
+  } as ToolRowLike;
 }
 
 const prose = {
@@ -73,14 +74,14 @@ const connector = {
 };
 
 beforeEach(() => {
-  g.__tracelineChat = undefined;
-  g.__tracelineGetTheme = undefined;
+  setTracelineChat(undefined);
+  setTracelineThemeGetter(undefined);
 });
 
 test("leading set drops on first appearance; repeated context folds to a dim ⋯", () => {
   const first = bashComp("set -euo pipefail\ncd /tmp/pog-demo\nnpm test");
   const second = bashComp("set -euo pipefail\ncd /tmp/pog-demo\nnpm run typecheck");
-  g.__tracelineChat = { children: [prose, first, second] };
+  setTracelineChat({ children: [prose, first, second] });
 
   const firstVisible = stripAnsi(oneLine(first, 120));
   const secondVisible = stripAnsi(oneLine(second, 120));
@@ -101,7 +102,7 @@ test("the ⋯ absorbs its trailing separator, and context folds across separator
   // Inline `cd … && cmd` first, newline-form second: both establish `cd /tmp/z`.
   const a = bashComp("cd /tmp/z && ls");
   const b = bashComp("set -e\ncd /tmp/z\nnpm test");
-  g.__tracelineChat = { children: [a, b] };
+  setTracelineChat({ children: [a, b] });
 
   const av = stripAnsi(oneLine(a, 120));
   const bv = stripAnsi(oneLine(b, 120));
@@ -116,7 +117,7 @@ test("folding scans past interleaved reads but never across visible prose", () =
   const read = readComp(`${homedir()}/projects/demo/file.ts`, 1, 40);
   const b = bashComp("cd /tmp/pog-demo && cat out.txt");
   const c = bashComp("cd /tmp/pog-demo && rm out.txt");
-  g.__tracelineChat = { children: [a, read, b, prose, c] };
+  setTracelineChat({ children: [a, read, b, prose, c] });
 
   assert.ok(stripAnsi(oneLine(b, 120)).includes(`$ ${FOLD_MARK} cat out.txt`), "a read between bash rows keeps the group");
   const cv = stripAnsi(oneLine(c, 120));
@@ -126,21 +127,21 @@ test("folding scans past interleaved reads but never across visible prose", () =
   // A collapsed Thinking... line keeps the couplet in-group (it is not prose).
   const d = bashComp("cd /tmp/one && ls");
   const e = bashComp("cd /tmp/one && pwd");
-  g.__tracelineChat = { children: [d, collapsedThinking, e] };
+  setTracelineChat({ children: [d, collapsedThinking, e] });
   assert.ok(stripAnsi(oneLine(e, 120)).includes(`$ ${FOLD_MARK} pwd`), "a collapsed Thinking... line does not break the fold");
 });
 
 test("a different directory prints; an all-hygiene row keeps its head", () => {
   const a = bashComp("cd /tmp/one && ls");
   const b = bashComp("cd /tmp/two && ls");
-  g.__tracelineChat = { children: [a, b] };
+  setTracelineChat({ children: [a, b] });
   const bv = stripAnsi(oneLine(b, 120));
   assert.ok(bv.includes("cd /tmp/two"), `a different directory is information, not repetition: ${bv}`);
   assert.ok(!bv.includes(FOLD_MARK), bv);
 
   // A row that is nothing but hygiene keeps its head — no row goes dark (§9.4).
   const setOnly = bashComp("set -e");
-  g.__tracelineChat = { children: [setOnly] };
+  setTracelineChat({ children: [setOnly] });
   assert.ok(stripAnsi(oneLine(setOnly, 120)).includes("set -e"), "an all-hygiene row keeps its head");
 });
 
@@ -181,7 +182,7 @@ test("segment splitting is quote-aware: an && inside a quoted directory never sp
   const quotedDir = '"/tmp/a && b"';
   const a = bashComp(`cd ${quotedDir} && ls`);
   const b = bashComp(`cd ${quotedDir} && npm test`);
-  g.__tracelineChat = { children: [a, b] };
+  setTracelineChat({ children: [a, b] });
 
   const visible = stripAnsi(oneLine(b, 120));
   assert.ok(visible.includes(`$ ${FOLD_MARK} npm test`), visible);
@@ -196,7 +197,7 @@ test("consecutive reads of one file fold into a single row with combined ranges 
   const r1 = readComp(path, 1, 200, 12_000);
   const r2 = readComp(path, 201, 200, 12_000);
   const r3 = readComp(path, 401, 200, 13_000);
-  g.__tracelineChat = { children: [prose, r1, connector, r2, r3] };
+  setTracelineChat({ children: [prose, r1, connector, r2, r3] });
 
   const run = readRun(r2);
   assert.ok(run, "middle page must see the run");
@@ -219,7 +220,7 @@ test("a running last page keeps the fold live: running bullet, no premature size
   const path = `${homedir()}/projects/demo/big-file.ts`;
   const r1 = readComp(path, 1, 200, 9_000);
   const r2 = { ...readComp(path, 201, 200), result: undefined, isPartial: true };
-  g.__tracelineChat = { children: [r1, r2] };
+  setTracelineChat({ children: [r1, r2] });
 
   const folded = renderTraceRow(r1, 120);
   const line = folded[folded.length - 1]!;
@@ -238,7 +239,7 @@ test("error pages never fold: the red row survives and breaks the run on both si
   const r1 = readComp(path, 1, 200);
   const r3 = readComp(path, 201, 200);
   const r4 = readComp(path, 401, 200);
-  g.__tracelineChat = { children: [r1, err, r3, r4] };
+  setTracelineChat({ children: [r1, err, r3, r4] });
 
   assert.equal(readRun(r1), undefined, "an error after a single ok page leaves it unfolded");
   assert.equal(readRun(err), undefined, "the error row itself never folds");
@@ -254,19 +255,21 @@ test("runs break on anything visible between the reads — and on a different fi
   const path = `${homedir()}/projects/demo/big-file.ts`;
   const other = `${homedir()}/projects/demo/other.ts`;
 
-  g.__tracelineChat = { children: [readComp(path, 1, 200), collapsedThinking, readComp(path, 201, 200)] };
-  const [r1, , r2] = (g.__tracelineChat as { children: unknown[] }).children;
+  const firstChildren = [readComp(path, 1, 200), collapsedThinking, readComp(path, 201, 200)] as const;
+  setTracelineChat({ children: [...firstChildren] });
+  const [r1, , r2] = firstChildren;
   assert.equal(readRun(r1), undefined, "a visible Thinking... line breaks the run");
   assert.equal(readRun(r2), undefined);
 
-  g.__tracelineChat = { children: [readComp(path, 1, 200), readComp(other, 1, 200)] };
-  const [p1, p2] = (g.__tracelineChat as { children: unknown[] }).children;
+  const differentFileChildren = [readComp(path, 1, 200), readComp(other, 1, 200)] as const;
+  setTracelineChat({ children: [...differentFileChildren] });
+  const [p1, p2] = differentFileChildren;
   assert.equal(readRun(p1), undefined, "different files never fold");
   assert.equal(readRun(p2), undefined);
 
   // A single read renders exactly as before — folding is strictly n>1.
-  g.__tracelineChat = { children: [readComp(path, 1, 200)] };
-  const single = (g.__tracelineChat as { children: unknown[] }).children[0];
+  const single = readComp(path, 1, 200);
+  setTracelineChat({ children: [single] });
   assert.equal(readRun(single), undefined);
   const visible = stripAnsi(renderTraceRow(single, 120).at(-1)!);
   assert.ok(visible.includes("read ~/projects/demo/big-file.ts:1-200"), visible);

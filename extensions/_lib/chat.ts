@@ -4,16 +4,101 @@
 // pi internals — that is what lets the family survive `pi update`.
 import { stripAnsi } from "./ansi.ts";
 
+export interface ToolArgsLike {
+  [key: string]: unknown;
+  path?: unknown;
+  file_path?: unknown;
+  content?: unknown;
+  command?: unknown;
+  offset?: unknown;
+  limit?: unknown;
+}
+
+export interface ToolResultDetailsLike {
+  diff?: unknown;
+  patch?: unknown;
+}
+
+export interface ToolResultLike {
+  isError?: unknown;
+  content?: unknown;
+  details?: ToolResultDetailsLike;
+}
+
+export interface ToolCallPreviewLike {
+  [key: string]: unknown;
+  error?: unknown;
+  diff?: unknown;
+}
+
+export interface ToolCallRendererLike {
+  render?: (width: number) => unknown;
+  preview?: ToolCallPreviewLike;
+}
+
+export interface ToolRowDataLike {
+  toolName?: unknown;
+  args?: ToolArgsLike;
+  result?: ToolResultLike;
+  isPartial?: unknown;
+  cwd?: unknown;
+  callRendererComponent?: ToolCallRendererLike;
+  __tracelineWriteSnapshot?: unknown;
+}
+
+export interface ToolRowLike extends ToolRowDataLike {
+  render: (width: number) => unknown;
+  setExpanded: (...args: unknown[]) => unknown;
+}
+
+export interface AssistantMessageLike {
+  content?: unknown;
+  role?: unknown;
+  timestamp?: unknown;
+}
+
+export interface AssistantRowDataLike {
+  hideThinkingBlock?: unknown;
+  lastMessage?: AssistantMessageLike;
+  hiddenThinkingLabel?: unknown;
+  render?: (width: number) => unknown;
+}
+
+export interface AssistantRowLike extends AssistantRowDataLike {
+  hideThinkingBlock: boolean;
+  setHideThinkingBlock: (...args: unknown[]) => unknown;
+}
+
+export interface ToolRowPrototypeLike extends Partial<ToolRowLike> {
+  __tracelineWriteSnapshotPatchVersion?: number;
+  __tracelineOriginalSetArgsComplete?: (...args: unknown[]) => unknown;
+  setArgsComplete?: (...args: unknown[]) => unknown;
+  __tracelineOriginalMarkExecutionStarted?: (...args: unknown[]) => unknown;
+  markExecutionStarted?: (...args: unknown[]) => unknown;
+  __tracelineOriginalRender?: (width: number) => unknown;
+}
+
+export interface AssistantRowPrototypeLike extends Partial<AssistantRowLike> {
+  __tracelineAssistantPatchVersion?: number;
+  __tracelineOriginalAssistantRender?: (width: number) => unknown;
+}
+
+export interface TracelineTuiLike {
+  requestRender: (force?: boolean) => unknown;
+  __tracelineRRWrapVersion?: number;
+  __tracelineOriginalRequestRender?: (force?: boolean) => unknown;
+}
+
 /** A tool execution row: has setExpanded() and a toolName property. */
-export function isToolRow(component: unknown): boolean {
+export function isToolRow(component: unknown): component is ToolRowLike {
   if (!component || typeof component !== "object") return false;
-  const c = component as { render?: unknown; setExpanded?: unknown };
+  const c = component as { constructor?: { name?: string }; render?: unknown; setExpanded?: unknown };
   if (c.constructor?.name === "ToolExecutionComponent") return true;
   return typeof c.render === "function" && typeof c.setExpanded === "function" && "toolName" in c;
 }
 
 /** An assistant message row: carries the hideThinkingBlock toggle. */
-export function isAssistantRow(component: unknown): boolean {
+export function isAssistantRow(component: unknown): component is AssistantRowLike {
   const c = component as { setHideThinkingBlock?: unknown; hideThinkingBlock?: unknown };
   return !!c && typeof c.setHideThinkingBlock === "function" && typeof c.hideThinkingBlock === "boolean";
 }

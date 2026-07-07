@@ -1031,21 +1031,31 @@ function updateWidget(now = Date.now()): void {
 
 const CHAT_CLEAR_HOOK_VERSION = 1;
 
+type CachemireChatContainer = ContainerLike & {
+  clear?: () => unknown;
+  __piCachemireClearVersion?: number;
+  __piCachemireOriginalClear?: () => unknown;
+};
+
+function isCachemireChatContainer(value: unknown): value is CachemireChatContainer {
+  return isJsonObject(value) && Array.isArray(value.children);
+}
+
 // Wrap the chat container's clear() (instance-level, original preserved) so every
 // rebuild is followed by a re-attach. The rebuild that follows clear() is synchronous;
 // a microtask runs after it completes — including pi's own trailing status line — so
 // anchors are matched against the final rebuilt children.
-function ensureChatClearHook(chat: Record<string, unknown>): void {
+function ensureChatClearHook(chat: unknown): void {
+  if (!isCachemireChatContainer(chat)) return;
   if (typeof chat.clear !== "function" || chat.__piCachemireClearVersion === CHAT_CLEAR_HOOK_VERSION) return;
-  const original = (chat.__piCachemireOriginalClear as (() => unknown) | undefined) ??
-    (chat.clear as () => unknown).bind(chat);
+  const original = chat.__piCachemireOriginalClear ?? chat.clear.bind(chat);
   chat.__piCachemireOriginalClear = original;
   chat.clear = () => {
     const result = original();
     queueMicrotask(() => {
       const s = state();
-      const children = (chat as { children?: unknown[] }).children;
-      if (!Array.isArray(children) || s.anchored.length === 0) return;
+      const children = chat.children;
+      if (s.anchored.length === 0) return;
       s.anchored = reattachAnchored(children, s.anchored);
       s.tui?.requestRender?.(true);
     });
@@ -1066,7 +1076,7 @@ function appendChatLine(text: string): Text | undefined {
       chat.addChild(spacer);
       chat.addChild(line);
       s.anchored.push({ spacer, text: line, ...anchor });
-      ensureChatClearHook(chat as unknown as Record<string, unknown>);
+      ensureChatClearHook(chat);
       s.tui?.requestRender?.(true);
       return line;
     } catch {

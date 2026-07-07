@@ -7,17 +7,16 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
+import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { recordCells, recordSuffix, toolFactSuffix, stripAnsi } = internals;
-
-const g = globalThis as Record<string, unknown>;
+const { recordCells, recordSuffix, toolFactSuffix, stripAnsi, setTracelineChat, setTracelineThemeGetter } = internals;
 
 beforeEach(() => {
-  g.__tracelineChat = undefined;
-  g.__tracelineGetTheme = undefined;
+  setTracelineChat(undefined);
+  setTracelineThemeGetter(undefined);
 });
 
-function bash(command: string, output: string, options: { error?: boolean } = {}) {
+function bash(command: string, output: string, options: { error?: boolean } = {}): ToolRowLike {
   return {
     toolName: "bash",
     args: { command },
@@ -26,7 +25,7 @@ function bash(command: string, output: string, options: { error?: boolean } = {}
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`$ ${command}`] },
-  };
+  } as ToolRowLike;
 }
 
 const PUSH_OK = `To https://github.com/tmustier/pine-of-glass.git\n   1c75c2a..50cf33f  main -> main\n`;
@@ -171,6 +170,6 @@ test("facts cache against result identity", () => {
   // transition pi performs; identity is the honest cache key).
   assert.deepEqual(recordCells(comp), ["committed a4f21c9"]);
   // New result object: recomputed.
-  (comp as any).result = { content: [{ type: "text", text: "[main b5e32d0] y\n" }], isError: false };
+  comp.result = { content: [{ type: "text", text: "[main b5e32d0] y\n" }], isError: false };
   assert.deepEqual(recordCells(comp), ["committed b5e32d0"]);
 });
