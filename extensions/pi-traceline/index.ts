@@ -42,6 +42,7 @@ import {
   type SizeThresholds,
   type Tone,
 } from "../_lib/style.ts";
+import { recordFacts, type RecordTone } from "./records.ts";
 
 /**
  * pi-traceline — collapse each tool call to one scannable trace line so the full arc of
@@ -618,126 +619,8 @@ function mutationInlineDiffInk(comp: ToolRowDataLike): string {
 
 // --- records of consequence (design language §9.10) -----------------------------------
 
-// Some bash rows change shared state beyond the working tree — a commit, a push, a PR
-// merged or closed, an issue closed, a release or package published. The invocation
-// says only what was *attempted*, and truncation may eat even that; the proof is
-// porcelain in the result, which one-line mode hides. Such a row graduates to a
-// verb-led outcome row (§9.10): the record leads — `pushed main $ git push` — stated
-// only from what the output reported: the command must name the operation *and* its
-// success porcelain must appear. A failed push after a good commit therefore still
-// headlines `committed a4f21c9` on a red row — committed, demonstrably not landed.
-// `git tag` earns nothing: its success porcelain is silence.
-type RecordTone = "success" | "warning";
-type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean };
-
-type RecordRule = { gate: RegExp; parse: (out: string) => RecordFact[] };
-
-function factsFrom(
-  out: string,
-  pattern: RegExp,
-  verb: string,
-  datum: (m: RegExpMatchArray) => string,
-  options: { opaque?: boolean; tone?: (m: RegExpMatchArray) => RecordTone } = {},
-): RecordFact[] {
-  const facts: RecordFact[] = [];
-  for (const m of out.matchAll(pattern))
-    facts.push({ verb, datum: datum(m), at: m.index ?? 0, tone: options.tone?.(m) ?? "success", opaque: options.opaque === true });
-  return facts;
-}
-
-function decodedTag(raw: string): string {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
-// Success porcelain only. Push failures (`! [rejected] main -> main`) have neither a
-// hex range nor a `[new …]` head, so they never match; `Everything up-to-date`
-// contributes nothing. Gates scan the raw command within one shell segment (`[^|;&]*`),
-// so `git -c user.email=… commit` gates like `git commit`; a record phrase quoted
-// inside a commit message can pass a gate, but then finds no porcelain in the output.
-const RECORD_RULES: RecordRule[] = [
-  {
-    // `[main a4f21c9]`, `[main (root-commit) a4f21c9]`, `[detached HEAD a4f21c9]`
-    gate: /\bgit\b[^|;&]*\bcommit\b/,
-    // The sha is opaque audit data (§9.10): the verb wears the ink, the sha stays dim.
-    parse: (out) => factsFrom(out, /^\[[^\n\]]*?([0-9a-f]{7,40})\]/gm, "committed", (m) => m[1]!, { opaque: true }),
-  },
-  {
-    // `   1c75c2a..50cf33f  main -> main`, ` + … (forced update)`, ` * [new tag] …`
-    gate: /\bgit\b[^|;&]*\bpush\b/,
-    parse: (out) =>
-      factsFrom(
-        out,
-        /^\s*(?:\+?\s?[0-9a-f]+\.\.\.?[0-9a-f]+|\* \[new (?:branch|tag)\])\s+\S+\s+->\s+(\S+)/gm,
-        "pushed",
-        (m) => m[1]!,
-        // git's `+` flag column is its forced-update porcelain — a riskier real
-        // state, so the fact tints warning instead of success (§9.10).
-        { tone: (m) => (m[0].trimStart().startsWith("+") ? "warning" : "success") },
-      ),
-  },
-  {
-    gate: /\bgh\s+pr\s+merge\b/,
-    parse: (out) =>
-      factsFrom(out, /(?:Merged|Squashed and merged|Rebased and merged) pull request \S*?#(\d+)/g, "merged", (m) => `PR #${m[1]}`),
-  },
-  {
-    gate: /\bgh\s+pr\s+close\b/,
-    parse: (out) => factsFrom(out, /Closed pull request \S*?#(\d+)/g, "closed", (m) => `PR #${m[1]}`),
-  },
-  {
-    gate: /\bgh\s+pr\s+create\b/,
-    parse: (out) => factsFrom(out, /\/pull\/(\d+)\b/g, "opened", (m) => `PR #${m[1]}`),
-  },
-  {
-    gate: /\bgh\s+issue\s+close\b/,
-    parse: (out) => factsFrom(out, /Closed issue \S*?#(\d+)/g, "closed", (m) => `#${m[1]}`),
-  },
-  {
-    gate: /\bgh\s+release\s+create\b/,
-    parse: (out) => factsFrom(out, /\/releases\/tag\/([^\s/]+)/g, "released", (m) => decodedTag(m[1]!)),
-  },
-  {
-    // npm's publish porcelain: `+ pine-of-glass@0.5.10`
-    gate: /\bnpm\s+publish\b/,
-    parse: (out) => factsFrom(out, /^\+ \S+@([^\s@]+)\s*$/gm, "published", (m) => m[1]!),
-  },
-];
-
-function resultText(comp: ToolRowDataLike | undefined): string {
-  const content = comp?.result?.content;
-  if (!Array.isArray(content)) return "";
-  let out = "";
-  for (const block of content) {
-    if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") out += `${block.text}\n`;
-  }
-  return out;
-}
-
-// Facts depend only on the row's own command+result, so they cache against the result
-// object identity (rows re-render every frame; porcelain never changes once settled).
-const recordFactCache = new WeakMap<object, { result: unknown; facts: RecordFact[] }>();
-
-function recordFacts(comp: ToolRowDataLike): RecordFact[] {
-  if (toolLabel(comp?.toolName) !== "bash") return [];
-  const command = comp?.args?.command;
-  if (typeof command !== "string" || !comp?.result || typeof comp.result !== "object") return [];
-  const cached = recordFactCache.get(comp);
-  if (cached && cached.result === comp.result) return cached.facts;
-  const out = stripAnsi(resultText(comp));
-  const facts: RecordFact[] = [];
-  if (out) {
-    for (const rule of RECORD_RULES) {
-      if (rule.gate.test(command)) facts.push(...rule.parse(out));
-    }
-    facts.sort((a, b) => a.at - b.at);
-  }
-  recordFactCache.set(comp, { result: comp.result, facts });
-  return facts;
-}
+// Parsing lives in records.ts; rendering stays here because it depends on the live
+// theme, record headline fitting, and row suffix policy.
 
 // Facts chain in output order; consecutive same-verb facts merge their data
 // (`pushed main, v0.5.9`) and exact duplicates collapse. Merging also requires the

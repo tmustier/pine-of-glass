@@ -386,8 +386,11 @@ Some bash rows change shared state beyond the working tree: a commit, a push, a
 PR merged or closed, a release or package published. Their invocation says only
 what was attempted; the proof lives in the result, which one-line mode hides.
 A row whose output carries that proof graduates to a verb-led outcome row: the
-record leads, stated verb-first from the porcelain the tool actually reported,
-never from the command's arguments, and the command trails as provenance behind
+record leads, stated verb-first from the success evidence the tool actually
+reported. The command may identify an explicit target only when the output's
+success evidence is targetless and the same row includes an explicit verification
+command, such as `gh pr view 826 --json state` returning `MERGED`; the outcome
+still never comes from arguments alone. The command trails as provenance behind
 its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87 --squash`.
 
 - the record is the headline because, once landed, the outcome is the row's
@@ -402,12 +405,12 @@ its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87 --squash`.
   re-earns its berth
 - a bash row with no record keeps `$ command` at the left edge: rows lead with
   an outcome exactly when there demonstrably was one
-- output-only honesty: a fact appears only when the command names the operation
-  and its success porcelain appears in the output (`[main a4f21c9]`,
-  `main -> main`, `Merged pull request #87`). A failed push after a good commit
-  still headlines `committed a4f21c9` on a red row: committed, demonstrably
-  not landed.
-  `git tag` earns nothing; its success porcelain is silence
+- output-first honesty: a fact appears only when the command names the operation
+  and success evidence appears in the output (`[main a4f21c9]`, `main -> main`,
+  `Merged pull request #87`, or a verified `MERGED` PR state). A failed push
+  after a good commit still headlines `committed a4f21c9` on a red row:
+  committed, demonstrably not landed. `git tag` earns nothing; its success
+  porcelain is silence
 - facts chain in output order with the `·` separator; consecutive same-verb
   facts merge their data (`pushed main, v0.5.9`) only when their tones agree,
   so a forced push never hides inside a routine one

@@ -1,9 +1,10 @@
 // Records of consequence (design language §9.10): bash rows that change shared
 // state — commit, push, PR merge/close/create, issue close, release/publish —
 // graduate to verb-led outcome rows: the record leads and the command trails as
-// provenance behind its `$`, parsed from the *success porcelain the tool reported*,
-// never from the command's arguments. These tests pin the exact porcelain shapes,
-// the headline placement, and the fact-toned ink.
+// provenance behind its `$`, parsed from the *success evidence the tool reported*.
+// The explicit command target may fill in only targetless verified state output.
+// These tests pin the exact porcelain shapes, the headline placement, and the
+// fact-toned ink.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
@@ -84,6 +85,21 @@ test("failed push after good commit keeps only the committed fact", () => {
 test("gh porcelain: merge, close, create, issue close, release", () => {
   const merged = bash("gh pr merge 87 --squash --delete-branch", "✓ Squashed and merged pull request tmustier/pine-of-glass#87 (traceline: records)\n✓ Deleted branch git-records\n");
   assert.deepEqual(recordCells(merged), ["merged PR #87"]);
+  const stateChecked = bash(
+    'gh pr merge 826 --squash --subject "stills: reorder investor logos (#826)" 2>&1 | tail -1; sleep 5; gh pr view 826 --json state -q .state',
+    "MERGED\n",
+  );
+  assert.deepEqual(recordCells(stateChecked), ["merged PR #826"]);
+  const stateCheckedWithSha = bash(
+    'gh pr merge 89 --squash --subject "Reorder investor logos (#89)" 2>&1 | tail -1; sleep 5; gh pr view 89 --json state,mergeCommit -q \'.state + " " + .mergeCommit.oid\'',
+    "MERGED 4bc400a9e5f3449df65ff96c32d008de0e89d011\n",
+  );
+  assert.deepEqual(recordCells(stateCheckedWithSha), ["merged PR #89"]);
+  const stateCheckedWithJsonEquals = bash("gh pr merge 90 --squash && gh pr view 90 --json=state -q .state", "MERGED\n");
+  assert.deepEqual(recordCells(stateCheckedWithJsonEquals), ["merged PR #90"]);
+  const prUrl = "https://github.com/tmustier/pine-of-glass/pull/91";
+  const stateCheckedWithUrl = bash(`gh pr merge ${prUrl} --squash && gh pr view ${prUrl} --json state -q .state`, "MERGED\n");
+  assert.deepEqual(recordCells(stateCheckedWithUrl), ["merged PR #91"]);
   const closedPr = bash("gh pr close 12", "✓ Closed pull request tmustier/pine-of-glass#12 (stale)\n");
   assert.deepEqual(recordCells(closedPr), ["closed PR #12"]);
   const opened = bash("gh pr create --fill", "https://github.com/tmustier/pine-of-glass/pull/88\n");
@@ -106,6 +122,26 @@ test("facts require both the gate and the porcelain", () => {
   // Command without porcelain (quoted phrase in a message): no facts.
   const quoted = bash('git commit -m "mention git push here"', "nothing committed\n");
   assert.deepEqual(recordCells(quoted), []);
+  // A targetless state word is only proof when the same row explicitly checked PR state.
+  const mergeWithoutStateCheck = bash("gh pr merge 826 --squash", "MERGED\n");
+  assert.deepEqual(recordCells(mergeWithoutStateCheck), []);
+  const mergeTargetOnlyInSubject = bash(
+    'gh pr merge --squash --subject "stills: reorder investor logos (#826)"; gh pr view 826 --json state -q .state',
+    "MERGED\n",
+  );
+  assert.deepEqual(recordCells(mergeTargetOnlyInSubject), []);
+  const mismatchedStateCheck = bash("gh pr merge 826 --squash; gh pr view 827 --json state -q .state", "MERGED\n");
+  assert.deepEqual(recordCells(mismatchedStateCheck), []);
+  const stateCheckBeforeMerge = bash("gh pr view 826 --json state -q .state; gh pr merge 826 --squash", "MERGED\n");
+  assert.deepEqual(recordCells(stateCheckBeforeMerge), []);
+  const failureBranchStateCheck = bash("gh pr merge 826 --squash || gh pr view 826 --json state -q .state", "MERGED\n");
+  assert.deepEqual(recordCells(failureBranchStateCheck), []);
+  const noisyStateOutput = bash("gh pr merge 826 --squash; gh pr view 826 --json state -q .state", "warning: already merged\nMERGED\n");
+  assert.deepEqual(recordCells(noisyStateOutput), []);
+  const branchTarget = bash("gh pr merge feature/logos --squash; gh pr view feature/logos --json state -q .state", "MERGED\n");
+  assert.deepEqual(recordCells(branchTarget), []);
+  const jqNoise = bash("gh pr merge 826 --squash; gh pr view 826 --json state -q '.state + \" #827\"'", "MERGED #827\n");
+  assert.deepEqual(recordCells(jqNoise), []);
   // git tag success porcelain is silence: no facts.
   const tag = bash("git tag v9.9.9", "");
   assert.deepEqual(recordCells(tag), []);
