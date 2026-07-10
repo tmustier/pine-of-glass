@@ -223,14 +223,14 @@ test("adjacent thinking blocks get native labels; traceline groups their preview
   assert.equal(zoneMarks(deduped), zoneMarks(native), "OSC 133 zone marks must survive the dedupe");
 });
 
-test("chat-rebuild surface cachemire's line persistence depends on", () => {
+test("chat-rebuild surface family line persistence depends on", () => {
   // Ctrl+T (and compaction/navigation) rebuild the chat container from session messages:
-  // clear() + re-render drops raw appended children. Cachemire re-attaches its lines
+  // clear() + re-render drops raw appended children. Cachemire and meantime re-attach their lines
   // after every clear(), anchored on durable component identity.
   const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
   assert.ok(
     /toggleThinkingBlockVisibility\(\)\s*\{[^}]*this\.chatContainer\.clear\(\)/s.test(source),
-    "Ctrl+T no longer clears the chat container — re-verify whether cachemire's clear hook is still needed/sufficient",
+    "Ctrl+T no longer clears the chat container — re-verify whether the family clear hook is still needed/sufficient",
   );
   assert.ok(source.includes("rebuildChatFromMessages"), "rebuildChatFromMessages gone — rebuild path renamed");
 

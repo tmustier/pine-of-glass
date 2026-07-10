@@ -1,7 +1,7 @@
 # The pine-of-glass design language
 
 One visual grammar for the extension family: `pi-contextimate`, `pi-traceline`,
-`pi-cachemire`, and anything added later. This document is the contract and
+`pi-cachemire`, `pi-meantime`, and anything added later. This document is the contract and
 `extensions/_lib` is its implementation. When a renderer and this document disagree,
 one of them is wrong: decide which, then fix it.
 
@@ -11,15 +11,16 @@ Code and tests cite sections here as `§N` or `§N.M`.
 
 ## The family
 
-The three extensions answer adjacent questions about the same agent loop:
+The extensions answer adjacent questions about the same agent loop:
 
 | | granularity | currency | question |
 |---|---|---|---|
 | contextimate | static prefix | estimated tokens | what am I carrying? |
 | traceline | per tool call | exact chars | what did tools do? |
 | cachemire | per model call or turn | exact provider tokens and dollars | what did the loop cost, and why? |
+| meantime | per stream segment | exact wall-clock ms | what happened in the meantime? |
 
-They should read as one instrument panel, not three apps that happen to share a repo.
+They should read as one instrument panel, not four apps that happen to share a repo.
 
 ## Principles
 
@@ -49,7 +50,7 @@ neutral.
 | glyph | meaning | used by |
 |---|---|---|
 | `›` | a tool action (one trace row) | traceline |
-| `◍` | a loop-economics fact (clock, notice, ledger line) | cachemire |
+| `◍` | a loop-economics fact (clock, notice, ledger line) | cachemire, meantime |
 | `▸` | an expandable or summarizable section header | contextimate (all modes) |
 | `▏` | tool-block rail: the dim left edge of a run of trace rows | traceline |
 
@@ -72,7 +73,9 @@ Rules:
   mark of an indented trace block (§9.1), never a status carrier. A railed line
   still carries exactly one kind-glyph (`  ▏ › body`)
 - new line kinds reuse an existing glyph when the kind matches; a new glyph is a
-  design decision recorded here first
+  design decision recorded here first. Meantime's tempo lines reuse `◍` under this
+  rule: a where-did-the-time-go fact is a loop-economics fact in the time currency,
+  spoken in the same instrument-panel voice as cachemire's clock and notices
 
 ## 2. Ink
 
@@ -129,6 +132,8 @@ One formatter family in `_lib/fmt.ts`, used by everyone.
 | tokens, provider-reported | count, no `~` | `64.1k tokens` |
 | money | `$` two decimals (three below $0.10, where the third digit is significant); `~` when projected | `$0.052`, `$17.03`, `~$2.67` |
 | duration | compact mixed units, no spaces | `14s`, `4m30s`, `9h50m` |
+| latency, sub-10s | one-decimal seconds; the decimal is significant at first-token scale | `1.9s`, `9.6s` |
+| rate | integer + ` tok/s`; `~` when estimated from streamed chars, none when derived from provider usage | `~55 tok/s`, `48 tok/s` |
 | share | integer percent in parens; one decimal only for context-window usage | `(97%)`, `32.2% / 200k ctx` |
 
 Rules:
@@ -461,7 +466,75 @@ to a trace line or expands back. So traceline suppresses pi's
 suppression is surgical: only that exact text at the chat tail matches. Every
 other status message announces an otherwise invisible action and passes through.
 
-## 10. Changing the language
+## 10. Tempo facts
+
+Meantime decomposes the loop's wall-clock: where the time went, and why. Its lines
+are loop-economics facts (`◍`, §1) in one currency, milliseconds measured at event
+boundaries, and the honesty rules (§4, §7) apply with full force because time is the
+surface users feel most and can verify least.
+
+### 10.1 Measurement honesty
+
+- every duration is an event-boundary observation from this process: request sent,
+  first typed content event, stream segment starts and ends, tool execution starts
+  and ends. Nothing comes from provider-reported timing (none exists), and nothing is
+  reconstructed from session history: message timestamps cannot yield first-token
+  latency or segment splits, so a resumed session's earlier calls are simply not
+  timed. The panel hint says so once
+- time to first token is measured at the harness boundary (request sent to first
+  typed content event) and bundles network, queue, and prefill. It is one number on
+  purpose: the split is not observable, so no split is claimed. Prefill work is
+  still nameable as a cause from usage evidence (uncached prompt tokens)
+- rates wear the §4 grammar: a live rate is estimated from streamed chars through a
+  chars-per-token ratio and wears `~` in progressive tense; a resolved rate is
+  provider output tokens over the observed stream span, exact, past tense. The live
+  ratio self-calibrates: each resolved call's streamed chars over output tokens
+  replaces the default for that model. Calls with silent reasoning are excluded from
+  calibration and show no resolved rate: their streamed chars undercount output and
+  their hidden generation has no observable start boundary
+- a silent pre-text gap is `waiting`, never `thinking`, until usage confirms
+  reasoning tokens (§7: no definite words on soft evidence). A resolved call whose
+  usage reports reasoning tokens but whose stream carried no thinking blocks marks
+  its wait as including silent reasoning rather than inventing a thinking span
+- parallel tools report wall-clock (the interval union), never a sum of durations;
+  overlap is noted, not double-counted. Live tool time uses the same interval union,
+  excluding harness gaps before and between executions
+
+### 10.2 Segments
+
+A model call decomposes into wait (request to first content), thinking (streamed
+thinking spans), and writing (streamed text and tool-argument spans; both are the
+model emitting output tokens). After the call come the tool phase (wall-clock across
+the executions that follow it) and the harness gap (call end to next request, minus
+tool wall-clock): the invisible tax of pi plus extensions. Segment spans run from
+typed stream events; stalls inside a segment belong to that segment. The columns do
+not claim to sum to the call's total: unattributed stream stalls exist and are not
+invented into a bucket.
+
+Out-of-run time is idle (agent settled to next agent start). Idle is a first-class
+bucket, not noise; it is often the session's punchline.
+
+### 10.3 Surfaces
+
+- the live widget is one `◍` line above the editor showing the current phase and its
+  elapsed time: `waiting · 12s`, `thinking · 42s · ~55 tok/s`,
+  `writing · 8s · ~48 tok/s`, `tools · 31s · 2 running`. It renders in running ink,
+  turning warning once the wait passes the slow-start bar, and hides when the loop
+  is idle (principle 6: pi's footer already counts elapsed time; the widget exists
+  to decompose an active wait, not to be a clock)
+- anomaly notices are chat lines appended at resolution: past tense, exact numbers,
+  cause last and dim (§5), `cause unknown` when unknown (§7):
+  `slow start · first token 14s (median 1.9s) · cause: prefill 138.2k uncached prompt tokens`
+- baselines are relative and per model: the rolling median of this session's
+  resolved values. Absolute thresholds lie across models and prompt sizes; a notice
+  needs a minimum number of resolved samples plus an absolute floor, so short
+  sessions and ordinary variance stay silent
+- `/pace` renders the panel (§8): one aligned row per call (ttft, think, write,
+  tools, total, out, tok/s; absent facts render `—`), a totals row, and one session <!-- agent-lint-disable-line POG007 -->
+  line with a `█▒` share bar of active (accent) against idle (dim). A mixed-model
+  ledger says how many models it contains and marks each model transition on its row
+
+## 11. Changing the language
 
 - design changes are decisions: record them here first, then implement
 - goldens are the visual regression net. Regenerate with `UPDATE_GOLDENS=1
@@ -474,7 +547,10 @@ other status message announces an otherwise invisible action and passes through.
 ## Appendix: old section numbers
 
 This document was rewritten on 2026-07-04 from a layered amendment log into the
-current-state rules above. Sections 1 to 7 kept their numbers. The changelog and
+current-state rules above. Sections 1 to 7 kept their numbers. On 2026-07-10 the
+tempo-facts section (meantime) took the §10 slot and "Changing the language" moved
+from §10 to §11; citations of "§10 (goldens/design changes)" written before that
+date mean today's §11. The changelog and
 old commit messages cite the retired sections; they map as follows:
 
 | old | new |
