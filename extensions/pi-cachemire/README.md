@@ -1,21 +1,26 @@
 # pi-cachemire
 
-> **Status: experimental.** Included in the `pine-of-glass` package as of `0.4.0`,
-> but the UX is still settling: wording, thresholds, and states may change without
-> notice. Track [#6](https://github.com/tmustier/pine-of-glass/issues/6).
+> **Status: experimental.** Cachemire has been part of the `pine-of-glass`
+> package since `0.4.0`. Its wording, thresholds and states may change without
+> notice. Follow [Cachemire tracking issue 6](https://github.com/tmustier/pine-of-glass/issues/6)
+> for updates.
 
-Explains the cache and agent-loop economics of a pi session. pi's footer *counts*
-(input/output/cache read/write/cost); cachemire *explains*: when the cache will go
-cold, why it broke, and what the loop actually cost.
+Use Cachemire to understand the cache and agent-loop costs of a pi session.
+pi's footer counts input, output, cache reads, cache writes and cost. Cachemire
+explains when the cache will go cold, why it broke and what the loop cost.
 
 ![Turn ledger lines in the transcript, a resolved break notice naming its cause (thinking changed), and the cache clock above the editor](../../docs/img/pi-cachemire-clock.png)
 
-**A cache clock above the input box** counts down provider cache freshness from the
-last request, so you know *before* you hit Enter whether the send is cheap or re-bills
-the whole prefix. Anthropic gets a contract-TTL countdown (read from the observed
-`cache_control`, not from config), OpenAI a documented three-zone band, unknown
-providers soft wording; the promised re-write size is provider-exact usage, never an
-estimate:
+## Check cache freshness before you send
+
+A cache clock above the input box counts down the provider's cache freshness from
+the last request. Check it before you press Enter to see whether the next send will
+be cheap or will re-bill the whole prefix.
+
+For Anthropic, the clock shows a contract-TTL countdown. It reads the observed
+`cache_control`, not config. For OpenAI, it shows a documented three-zone band. For
+unknown providers, it uses softer wording. The promised re-write size always uses
+provider-exact usage. It is never an estimate.
 
 ```
 ◍ cache 4m30s                                    (green → yellow under 60s)
@@ -23,12 +28,19 @@ estimate:
 ◍ cache cold · next send re-writes ~142.3k (~$2.67)
 ```
 
-**Break notices name the culprit.** Every request is fingerprinted (system prompt,
-each tool, each history message), so when a call's `cacheRead` collapses, the notice
-says why: exact bytes, not vibes. It appears at send time, where the causality lives,
-and updates in place when usage arrives (progressive + `~` = in-flight expectation,
-past tense = exact actuals). Silence when healthy: notices only appear above a
-materiality threshold (default $0.05 or 20k re-written tokens):
+## Find out why the cache broke
+
+Cachemire fingerprints every request, including the system prompt, each tool and
+each history message. If a call's `cacheRead` collapses, the break notice names the
+cause from exact byte-level differences.
+
+The notice appears at send time, where Cachemire can tie it to the request. It
+updates in place when usage arrives. Progressive wording and `~` show an in-flight
+expectation. Past-tense
+wording shows exact actuals.
+
+Healthy caches stay quiet. Notices appear only above a materiality threshold. The
+default threshold is $0.05 or 20k re-written tokens.
 
 ```
 ◍ cache breaking · re-writing ~138.2k (~$2.59) · cause: idle 9h50m > 5m TTL   (in flight)
@@ -37,9 +49,14 @@ materiality threshold (default $0.05 or 20k re-written tokens):
 ◍ cache held · read 76.0k of 77.7k expected · prefix stayed warm              (prediction wrong, good news)
 ```
 
-**A turn ledger** prints one line after every user turn, and `/cache` renders the full
-per-call table (below: live capture on an OpenAI band cache: a cold start, two hits,
-then a miss with a named cause after a thinking-level change re-keyed the cache):
+## See the cost of each turn
+
+Cachemire prints a turn ledger line after every user turn. Run `/cache` to see the
+full per-call table.
+
+The example below is a live capture on an OpenAI band cache. It shows a cold start,
+two hits and then a miss. The notice names a thinking-level change as the cause
+because it re-keyed the cache.
 
 ```
 ◍ turn: 7 calls · 2m41s · read 940.1k (99.6% cached) · wrote 11.2k · out 4.2k · $0.09
@@ -47,8 +64,8 @@ then a miss with a named cause after a thinking-level change re-keyed the cache)
 
 ![Cachemire /cache ledger table](../../docs/img/pi-cachemire-ledger.png)
 
-The savings line compares actual spend against the counterfactual where every token
-was billed at base input rates: the honest answer to "is caching working?".
+The savings line compares actual spend with the cost if every token had been billed
+at base input rates. Use it to answer the question: "Is caching working?"
 
 ## Install
 
@@ -70,14 +87,14 @@ For local development from a clone:
 pi -e ./extensions/pi-cachemire
 ```
 
-## Use
+## Use Cachemire
 
-Nothing to press: the clock ticks above the editor, notices arrive on their own, the
-turn line follows each turn. `/cache` prints the per-call ledger table.
+You do not need to press anything. The clock ticks above the editor, notices appear
+automatically and the turn line follows each turn. Run `/cache` to print the per-call
+ledger table.
 
-Config lives at `~/.pi/agent/pi-cachemire.json` or `<project>/.pi/pi-cachemire.json`
-(`turnSummaryMinCalls` raises the bar if you want a ledger line only for multi-call
-turns):
+Config lives at `~/.pi/agent/pi-cachemire.json` or `<project>/.pi/pi-cachemire.json`.
+Set `turnSummaryMinCalls` higher if you only want a ledger line for multi-call turns.
 
 ```json
 {
@@ -90,34 +107,42 @@ turns):
 }
 ```
 
-Honesty rules:
+## Understand reporting and data handling
 
-- All token/cost numbers are provider-reported usage from assistant messages, never
-  estimated. Forensic causes come from observed payload diffs, never inferred.
-- Everything cachemire draws is UI-only: nothing enters LLM context, session entries,
-  or exports.
-- Freshness wording always matches the strength of what is known: contract TTL →
-  definite countdown, documented band → fading/cap wording, nothing → "likely".
-  Savings are flagged as notional under subscription auth.
-- `--continue`d sessions restore the ledger from session usage; restored rows are
-  marked and excluded from savings (their pricing context is unknown).
+Cachemire follows these rules:
 
-## The model behind the wording
+- All token and cost numbers come from provider-reported usage in assistant messages.
+  Cachemire does not estimate them. Forensic causes come from observed payload diffs.
+  Cachemire does not infer them.
+- Everything Cachemire draws is UI-only. It does not enter LLM context, session
+  entries or exports.
+- Freshness wording reflects how much is known. A contract TTL gets a definite
+  countdown. A documented band gets fading or cap wording. When nothing is known,
+  Cachemire says "likely". Under subscription auth, it marks savings as notional.
+- Sessions restored with `--continue` rebuild the ledger from session usage. Cachemire
+  marks restored rows and excludes them from savings because their pricing context is
+  unknown.
 
-Everything above is four provider-general rules: the freshness **anchor** is request
-processing (generation time burns the window); the cache **scope** is (provider,
-model, byte-exact prefix), so any model switch means definite cold before you send
-anything; the **window**'s strength varies by provider (Anthropic contract TTL, OpenAI
-documented band, otherwise unknown) and the wording always matches that strength; and
-the **currency** rule shows tokens and $ only in the tokenizer and price card that
-billed them.
+## Understand the model behind the wording
 
-[`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) carries the full model and its
-evidence: clock-anchor and aborted-send semantics, thinking-level cache keys verified
-on the wire, OpenAI's per-machine replica arithmetic (512-token entry matching), the
-cause ladder, and the state/lifecycle trade-offs.
+Cachemire uses 4 provider-general rules:
 
-## How it sits in the family
+- The freshness **anchor** is request processing. Generation time uses up the window.
+- The cache **scope** is the provider, model and byte-exact prefix. Any model switch
+  therefore means the cache will definitely be cold before you send anything.
+- The **window** has different strengths for each provider. Anthropic has a contract
+  TTL, OpenAI has a documented band and the window is unknown for other providers.
+  The wording
+  reflects that strength.
+- The **currency** rule shows tokens and $ only in the tokenizer and price card that
+  billed them.
+
+Read [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for the full model and its
+evidence. It covers clock-anchor and aborted-send semantics, thinking-level cache
+keys verified on the wire, OpenAI's per-machine replica arithmetic (512-token entry
+matching), the cause ladder and the state and lifecycle trade-offs.
+
+## Compare Cachemire with the other extensions
 
 | | granularity | currency | question |
 |---|---|---|---|
@@ -125,15 +150,20 @@ cause ladder, and the state/lifecycle trade-offs.
 | traceline | per tool call | exact chars | what did tools do? |
 | **cachemire** | per model call / turn | exact provider tokens & $ | what did the loop cost, and why? |
 
-The ledger opens with the family panel header (`[Cachemire]` in the theme accent);
-tones are theme-derived through the shared `ink()` helper, and the `◍` / `○ ● ◑ ◌`
-glyphs come from the family vocabulary (see
-[`docs/design-language.md`](../../docs/design-language.md)).
+The ledger starts with the family panel header (`[Cachemire]` in the theme accent).
+The shared `ink()` helper provides theme-derived tones. The `◍` / `○ ● ◑ ◌` glyphs
+come from the family vocabulary. Read
+[`docs/design-language.md`](../../docs/design-language.md) for details.
 
-Scrollback lines are appended to pi's chat container directly (found structurally,
-like traceline) and **persist across pi's chat rebuilds**: each line is tracked with a
-durable anchor and re-attached in place after Ctrl+T, compaction, or tree navigation
-rebuilds the chat; when a rebuild no longer contains the anchor, the line is dropped
-rather than re-attached somewhere misleading. If the internal seam ever drifts,
-cachemire degrades to plain `notify` lines and the contract test suite names the
-break. Nothing in pi's `node_modules` is modified, so it survives `pi update`.
+## Keep scrollback lines across chat rebuilds
+
+Cachemire appends scrollback lines directly to pi's chat container, which it finds
+structurally like Traceline. The lines persist across pi's chat rebuilds.
+
+Each line has a durable anchor. Cachemire re-attaches it in place after Ctrl+T,
+compaction or tree navigation rebuilds the chat. If a rebuild no longer contains the
+anchor, Cachemire drops the line instead of attaching it somewhere misleading.
+
+If this internal seam drifts, Cachemire falls back to plain `notify` lines. The
+contract test suite names the break. Cachemire does not modify anything in pi's
+`node_modules`, so it survives `pi update`.
