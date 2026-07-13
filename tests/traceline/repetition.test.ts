@@ -1,7 +1,7 @@
 // Repetition folding + preamble reclaim (issue #14, design language §9.4): a leading
 // `set -…` hygiene run drops, the surviving `cd`/assignment context folds to a dim ⋯
 // when it repeats the previous bash row's, consecutive same-file reads fold into one
-// row, and doubled collapsed Thinking... labels coalesce. Comps are synthetic duck-type
+// row, and collapsed Thinking... labels preserve reasoning lines. Comps are synthetic duck-type
 // stand-ins; the contract suite proves the duck types against the real installed pi.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -276,29 +276,55 @@ test("runs break on anything visible between the reads — and on a different fi
   assert.ok(!visible.includes("calls"), visible);
 });
 
-test("collapsed Thinking labels show the first reasoning line and coalesce adjacent runs", () => {
+test("collapsed Thinking labels preserve reasoning lines and paragraph breaks", () => {
   const comp = {
     hiddenThinkingLabel: "Thinking...",
     lastMessage: { content: [{ type: "thinking", thinking: "\n  **first reasoning line**\nsecond reasoning line" }] },
   };
+  const paragraphComp = {
+    hiddenThinkingLabel: "Thinking...",
+    lastMessage: { content: [{ type: "thinking", thinking: "first paragraph\n\nsecond paragraph" }] },
+  };
+  const adjacentBlocks = {
+    hiddenThinkingLabel: "Thinking...",
+    lastMessage: { content: [
+      { type: "thinking", thinking: "first reasoning block" },
+      { type: "thinking", thinking: "second reasoning block" },
+    ] },
+  };
   const noPreview = { hiddenThinkingLabel: "Thinking..." };
   const L = "\x1b[3mThinking...\x1b[23m";
-  const P = "\x1b[3mThinking: first reasoning line ... (2 lines)\x1b[23m";
+  const P1 = "\x1b[3mThinking: first reasoning line\x1b[23m";
+  const P2 = "\x1b[3mThinking: second reasoning line\x1b[23m";
 
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L]), ["", P]);
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L, "", L]), ["", P]);
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", "prose", "", L]), ["", P, "", "prose", "", P]);
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L, "", L, "", "prose"]), ["", P, "", "prose"]);
-  assert.deepEqual(dedupeThinkingLabels(noPreview, ["", L, "", L]), ["", L], "missing traces fall back to Pi's native label");
+  assert.deepEqual(dedupeThinkingLabels(comp, ["", L]), ["", P1, P2]);
+  assert.deepEqual(
+    dedupeThinkingLabels(paragraphComp, ["", L]),
+    ["", "\x1b[3mThinking: first paragraph\x1b[23m", "", "\x1b[3mThinking: second paragraph\x1b[23m"],
+    "two source newlines preserve one blank display line",
+  );
+  assert.deepEqual(
+    dedupeThinkingLabels(
+      { hiddenThinkingLabel: "Thinking...", lastMessage: { content: [{ type: "thinking", thinking: "first\n\n\nsecond" }] } },
+      [L],
+    ),
+    ["\x1b[3mThinking: first\x1b[23m", "", "\x1b[3mThinking: second\x1b[23m"],
+    "long blank runs collapse to one display line",
+  );
+  assert.deepEqual(
+    dedupeThinkingLabels(adjacentBlocks, ["", L, "", L]),
+    ["", "\x1b[3mThinking: first reasoning block\x1b[23m", "", "\x1b[3mThinking: second reasoning block\x1b[23m"],
+    "distinct adjacent thinking blocks keep both previews",
+  );
+  assert.deepEqual(dedupeThinkingLabels(noPreview, ["", L, "", L]), ["", L], "missing traces still fold Pi's duplicate labels");
   assert.deepEqual(dedupeThinkingLabels(comp, ["just prose"]), ["just prose"]);
 
-  // OSC sequences on dropped lines (pi's zone marks live on the message's last line)
-  // are transplanted, never lost.
+  // Synthetic continuation lines inherit style but not OSC zone marks.
   const marked = `\x1b]133;C\x07${L}`;
-  const out = dedupeThinkingLabels(comp, ["", L, "", marked]);
+  const out = dedupeThinkingLabels(comp, [marked]);
   assert.equal(out.length, 2);
-  assert.ok(out[1]!.startsWith("\x1b]133;C\x07"), `zone mark must survive the dedupe: ${JSON.stringify(out)}`);
-  assert.equal(stripAnsi(out[1]!).trim(), "Thinking: first reasoning line ... (2 lines)");
+  assert.ok(out[0]!.startsWith("\x1b]133;C\x07"), `native zone mark must survive: ${JSON.stringify(out)}`);
+  assert.equal((out.join("").match(/\x1b\]133;C\x07/g) ?? []).length, 1, "synthetic rows must not duplicate OSC marks");
 
   // A custom hiddenThinkingLabel is respected.
   const custom = { hiddenThinkingLabel: "Pondering…" };

@@ -432,7 +432,14 @@ its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87 --squash`.
 Rarity keeps records on the right side of principle 3: a handful of green events
 punctuate the wall; ambient green stays purged.
 
-### 9.11 The thinking toggle
+### 9.11 Collapsed thinking
+
+A collapsed thinking block stays compact without hiding its sequence. Each
+non-empty source line renders as `Thinking: <line>`. One or more consecutive
+empty source lines render as one blank line, preserving paragraph boundaries
+without reproducing arbitrary vertical whitespace. Distinct adjacent thinking
+blocks keep distinct previews. Only native `Thinking...` labels that have no
+matching reasoning payload fold as duplicates.
 
 With traceline loaded, Ctrl+T's effect is self-evident: every tool row collapses
 to a trace line or expands back. So traceline suppresses pi's

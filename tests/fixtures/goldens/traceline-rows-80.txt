@@ -3,7 +3,9 @@ Let me look at the failing suite.
 
   ▏ › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5  1.4k ch
 
-Thinking: Checking the typecheck before the next command. ... (2 lines)
+Thinking: Checking the typecheck before the next command.
+
+Thinking: The previous test output was noisy.
   ▏ › $ ⋯ npm run typecheck                                           14.2k ch
   ▏ › read ~/projects/pine-of…dex.ts:1-200,201-400,401-600  3 calls · 51.1k ch
   ▏ › $ ⋯ rm -f /tmp/pog-scratch.txt                                   0.0k ch

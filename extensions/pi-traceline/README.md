@@ -99,7 +99,7 @@ Traceline folds adjacent rows when repetition would hide the useful difference:
 
 - repeated `cd`, environment assignment and setup prefixes become `⋯`
 - paginated reads of one file become one row with all ranges, the call count and total size
-- adjacent collapsed thinking labels become one preview
+- collapsed thinking keeps each reasoning line and paragraph break visible
 
 Visible prose between calls stops a fold. Pi's full view always keeps the original rows.
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `pi-traceline` now keeps every reasoning line visible in collapsed thinking
+  previews instead of replacing multiline reasoning with a first-line summary
+  and line count. A blank source line remains one blank display line, including
+  the common two-newline paragraph boundary; longer blank runs collapse to one.
+
 ## 0.6.1 (2026-07-13)
 
 `pi-traceline` now renders Pi's compact documentation and resource reads like

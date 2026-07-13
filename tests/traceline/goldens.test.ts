@@ -81,7 +81,7 @@ test("one-line trace goldens at 80 and 120 columns", () => {
   const children = [
     prose("Let me look at the failing suite."),
     bash(`cd ${repo} && npm test 2>/dev/null | tail -5`, { chars: 1_437 }),
-    thinking("Checking the typecheck before the next command.\nThe previous test output was noisy."),
+    thinking("Checking the typecheck before the next command.\n\nThe previous test output was noisy."),
     bash(`cd ${repo} && npm run typecheck`, { chars: 14_200 }),
     read(`${repo}/extensions/pi-cachemire/index.ts`, 1, 200, 18_400),
     read(`${repo}/extensions/pi-cachemire/index.ts`, 201, 200, 18_400),
@@ -125,8 +125,12 @@ test("one-line trace goldens at 80 and 120 columns", () => {
         continue;
       }
       const meta = child as { __prose?: string; __thinking?: boolean };
-      const marker = meta.__prose ?? stripAnsi(dedupeThinkingLabels(child, ["Thinking..."], width)[0] ?? "Thinking...");
-      lines.push("", marker);
+      if (meta.__prose !== undefined) {
+        lines.push("", meta.__prose);
+        continue;
+      }
+      const previews = dedupeThinkingLabels(child, ["Thinking..."], width).map(stripAnsi);
+      lines.push("", ...(previews.length > 0 ? previews : ["Thinking..."]));
     }
     return `${lines.join("\n")}\n`;
   };
