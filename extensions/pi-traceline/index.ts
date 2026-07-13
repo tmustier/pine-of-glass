@@ -42,6 +42,7 @@ import {
   type SizeThresholds,
   type Tone,
 } from "../_lib/style.ts";
+import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 
 /**
@@ -145,7 +146,7 @@ const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 26;
+const TRACELINE_PATCH_VERSION = 27;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 2;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
@@ -729,17 +730,6 @@ function displayPath(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function lineRange(args: ToolArgsLike | undefined): string {
-  const rawOffset = args?.offset;
-  const rawLimit = args?.limit;
-  const offset = typeof rawOffset === "number" && Number.isFinite(rawOffset) ? Math.max(1, Math.floor(rawOffset)) : undefined;
-  const limit = typeof rawLimit === "number" && Number.isFinite(rawLimit) ? Math.max(1, Math.floor(rawLimit)) : undefined;
-  if (offset !== undefined && limit !== undefined) return `:${offset}-${offset + limit - 1}`;
-  if (offset !== undefined) return `:${offset}`;
-  if (limit !== undefined) return `:1-${limit}`;
-  return "";
-}
-
 function compactJson(value: unknown): string {
   try {
     return JSON.stringify(value) ?? "";
@@ -1160,31 +1150,6 @@ function toolPathArg(c: ToolRowDataLike): string | undefined {
   return typeof path === "string" && path.length > 0 ? cwdRelativePath(c, path) : undefined;
 }
 
-// cwd collapses to `./` (design language §9.5): a path under the row's cwd renders
-// as the shell's own notation for "here" — two columns instead of thirty. Paths
-// outside cwd keep their tildified absolute form; the asymmetry is the information.
-function cwdRelativePath(comp: ToolRowDataLike | undefined, rawPath: string): string {
-  const tilde = tildify(rawPath);
-  const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : undefined;
-  if (!cwd) return tilde;
-  const cwdPrefix = `${tildify(cwd).replace(/\/+$/, "")}/`;
-  return tilde.startsWith(cwdPrefix) ? `./${tilde.slice(cwdPrefix.length)}` : tilde;
-}
-
-// Shared leading directory segments across a set of tildified paths ("~" is a
-// segment; the absolute-root "" is not). For a single path this is its whole
-// directory — which is what keeps lone rows at basename-only emphasis.
-function commonDirSegments(paths: string[]): string[] {
-  const split = paths.map((p) => p.slice(0, p.lastIndexOf("/") + 1).split("/").slice(0, -1));
-  let common = split[0] ?? [];
-  for (const segs of split.slice(1)) {
-    let i = 0;
-    while (i < common.length && i < segs.length && common[i] === segs[i]) i++;
-    common = common.slice(0, i);
-  }
-  return common;
-}
-
 // Dim the boring prefix, not the directory (design language §9.5): the dim zone is
 // the longest of the block's common directory prefix (when at least two meaningful
 // segments deep — a shared bare `/` or `~/` carries no information) and the row's
@@ -1218,6 +1183,13 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
   const lastSlash = tildePath.lastIndexOf("/");
   if (lastSlash < 0) return undefined;
   const visible = stripAnsi(nativeColored).trim();
+  const range = lineRange(comp?.args);
+  const compact = verb === "read" ? compactReadDisplay(visible, range) : undefined;
+  if (compact) {
+    const boring = boringPrefix(comp, compact.path);
+    const tail = compact.path.slice(boring.length);
+    return `${verbInk(comp, verb)} ${dim(`${compact.classification} ${boring}`)}${discriminatorInk(comp, tail)}${ink(currentTheme(), "warning", range)}`;
+  }
   const matches =
     verb === "read"
       ? visible.startsWith(`${verb} ${tildePath}`) || visible.startsWith(`${verb} ${path}`)
@@ -1246,7 +1218,7 @@ function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY):
     return headline ? `${headline} ${body}` : body;
   }
   const native = nativeInvocationLine(comp);
-  const base = (native && pathEmphasisLine(comp, native)) ?? native;
+  const base = native ? pathEmphasisLine(comp, native) ?? native : undefined;
   return base ? tildify(base) : inkedFallbackLine(comp);
 }
 

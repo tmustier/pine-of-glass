@@ -326,6 +326,11 @@ Read, edit and write rows dim what is boring and bolden what discriminates:
   Paths outside cwd keep their tildified absolute form; the asymmetry is itself
   information (in-repo against out-of-repo). `./` counts like `~` for emphasis:
   alone it is a trivial root marker, while `./src/` is a meaningful shared prefix
+- Pi's compact `read docs <path>` and `read resource <path>` forms keep their
+  useful classification word as dim apparatus, but the displayed path follows the
+  same dim-prefix and bold-discriminator grammar as every other file read. A compact
+  classification must not make one filename accent-coloured while its neighbours are
+  neutral
 - read `:line-range` spans stay warning-coloured, so scoped file reads remain
   visible
 - edit and write rows carry their `+N -M` diff inline on the basename the same

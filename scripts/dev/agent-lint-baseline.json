@@ -7,7 +7,7 @@
     "files": {
       "extensions/pi-cachemire/index.ts": 1419,
       "extensions/pi-contextimate/index.ts": 1959,
-      "extensions/pi-traceline/index.ts": 1968,
+      "extensions/pi-traceline/index.ts": 1940,
       "tests/cachemire/economics-and-render.test.ts": 352,
       "tests/traceline/one-line.test.ts": 808
     }
