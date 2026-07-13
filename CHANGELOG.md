@@ -2,10 +2,15 @@
 
 ## Unreleased
 
-- `pi-traceline` now renders Pi's compact docs and resource read paths with the
-  same dim-prefix and neutral-bold filename grammar as ordinary file reads. The
-  useful `docs` or `resource` classification remains visible, but no longer makes
-  the whole filename cyan.
+## 0.6.1 (2026-07-13)
+
+`pi-traceline` now renders Pi's compact documentation and resource reads like
+ordinary file reads.
+
+- Paths use the same dim directory and neutral-bold filename grammar as other
+  read rows, instead of colouring the whole path cyan.
+- The useful `docs` or `resource` classification remains visible as dim
+  apparatus, and line ranges keep their warning colour.
 
 ## 0.6.0 (2026-07-13)
 
