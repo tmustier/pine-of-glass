@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.0 (2026-07-13)
+
+`pi-traceline` now makes changed files and completed operations easier to scan.
+This release also adds stricter checks for contributors and rewrites the
+Traceline and Cachemire guides in plain English.
+
+Changes include:
+
+- edit and write rows now put `+N -M` next to the file name. They no longer show
+  a result-size cell, because that measured the confirmation message rather than
+  the changed file. Line counts and file names stay together when rows truncate.
+- commands that prove they changed shared state now lead with the outcome, such
+  as `pushed main $ git push`. The command remains visible so you can see what
+  ran. These rows hide routine result sizes unless the output is unusually large.
+- support for successful PR merges where `gh pr merge` produces no useful output
+  but a same-row `gh pr view --json state` check returns `MERGED`. Traceline only
+  records the merge when both commands name the same PR.
+- an agent coding standard and deterministic lint checks. `npm run check` runs
+  the linter, TypeScript checks and all tests. No existing lint findings are
+  ignored.
+- shorter Traceline and Cachemire READMEs, organised around common tasks. The
+  Traceline screenshot now shows inline diffs and outcome-led records.
+
 ## 0.5.19 (2026-07-05)
 
 `pi-traceline` reclaims the width that leading shell preambles used to spend.
