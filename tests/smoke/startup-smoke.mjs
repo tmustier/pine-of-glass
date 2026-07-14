@@ -191,7 +191,7 @@ try {
   );
   check("cachemire ledger survives the Ctrl+T chat rebuild", pane.includes("cache & loop ledger"));
 } finally {
-  run(["tmux", "send-keys", "-t", session, "/exit", "Enter"]);
+  run(["tmux", "send-keys", "-t", session, "/quit", "Enter"]);
   sleep(1000);
   run(["tmux", "kill-session", "-t", session]);
   rmSync(fixtureDir, { recursive: true, force: true });

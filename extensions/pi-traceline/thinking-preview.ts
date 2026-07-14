@@ -86,6 +86,9 @@ function thinkingPreviewBlocks(comp: AssistantRowDataLike): ThinkingPreview[][] 
   const previews: ThinkingPreview[][] = [];
   for (const block of content) {
     if (block?.type !== "thinking" || typeof block.thinking !== "string") continue;
+    // Pi does not render a collapsed label for empty or whitespace-only thinking. Skip
+    // those blocks here too, so the next native label stays paired with its real trace.
+    if (block.thinking.trim().length === 0) continue;
     previews.push(thinkingPreviewForTrace(block.thinking));
   }
   return previews;

@@ -302,17 +302,6 @@ test("collapsed Thinking labels preserve reasoning lines and paragraph breaks", 
     "distinct adjacent thinking blocks keep both previews",
   );
   assert.deepEqual(dedupeThinkingLabels(noPreview, ["", L, "", L]), ["", L], "missing traces still fold Pi's duplicate labels");
-  for (const thinking of ["", "\n \t\n"]) {
-    const emptyPreview = {
-      hiddenThinkingLabel: "Thinking...",
-      lastMessage: { content: [{ type: "thinking", thinking }] },
-    };
-    assert.deepEqual(
-      dedupeThinkingLabels(emptyPreview, ["", L]),
-      ["", L],
-      "empty thinking payloads keep Pi's fallback label without hanging",
-    );
-  }
   assert.deepEqual(dedupeThinkingLabels(comp, ["just prose"]), ["just prose"]);
 
   // Synthetic continuation lines inherit style but not OSC zone marks.

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2 (2026-07-14)
 
 - Fix a `pi-traceline` startup hang when a resumed session contains an empty or
   whitespace-only thinking block.

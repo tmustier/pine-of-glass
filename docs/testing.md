@@ -163,16 +163,22 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 
 ## Layer 4: startup smoke (tmux, local-only)
 
-`npm run test:smoke` formalises `scripts/contextimate/render-snapshot.mjs`: launch real
-`pi` in tmux in a fixture cwd, then assert on captured panes (no model call required;
-the estimator renders at startup):
+`npm run test:smoke` launches real `pi` processes in isolated tmux sessions with no
+model call required:
 
-- `[Contextimate]` block present after startup; `/contextimate compact` and
-  `expanded` change the rendered mode line; `/reload` keeps exactly one block.
-- Exits non-zero on assertion failure so it can gate publishes; not run in CI (needs a
-  TTY + installed pi). A "live turn" variant (real model, one bash call, assert a trace
-  line appears and Ctrl+T restores native rows) stays a documented manual step in the
-  publish checklist, not a script dependency on provider auth.
+- `test:smoke:traceline` resumes a crafted session with collapsed empty,
+  whitespace-only and informative thinking blocks. It requires the informative preview
+  and prompt to render, then proves Pi still handles `/quit`. A 45-second hard watchdog
+  kills only the uniquely launched fixture process if rendering blocks, so the regression
+  cannot leave a hot orphan behind.
+- The full startup smoke checks that the `[Contextimate]` block renders, that
+  `/contextimate compact` and `expanded` change the rendered mode line, and that `/reload`
+  keeps exactly one block.
+- Both exit non-zero on assertion failure so they can gate publishes. They do not run in
+  CI because they need a TTY and an installed Pi. A "live turn" variant (real model, one
+  bash call, assert a trace line appears and Ctrl+T restores native rows) stays a
+  documented manual step in the publish checklist, not a script dependency on provider
+  auth.
 
 ## Acceptance tests for the queued work
 
