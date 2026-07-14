@@ -23,7 +23,7 @@ The runner mangles the config — patching it and logging the pass.
 
   ▏ › edit ~/projects/pine-of-glass/scripts/dev/screenshots/rig.mjs +4 -9
   ▏ › edit ~/projects/pine-of-glass/scripts/dev/screenshots/ansi2html.mjs -1
-  ▏ › write ~/projects/pine-of-glass/worklog/2026-07-02-rig-fix.md +18
+  ▏ › write worklog/2026-07-02-rig-fix.md +18
 
 Fixed — committing and shipping the release.
 

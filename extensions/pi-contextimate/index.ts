@@ -1807,9 +1807,8 @@ function setMode(mode: ViewMode): void {
   g.__piContextimateTui?.requestRender?.(true);
 }
 
-// Test-only surface. Pi loads extensions via `jiti.import(path, { default: true })`,
-// so named exports are runtime-inert; this object exists for the repo test suites
-// (see docs/testing.md) and is not a stable public API.
+// Test-only surface. Named exports are runtime-inert under Pi's jiti loader; this object
+// exists for the repo test suites (see docs/testing.md) and is not a stable public API.
 export const internals = {
   // system-prompt parsing
   PROJECT_CONTEXT_RE,
@@ -1822,6 +1821,7 @@ export const internals = {
   parseContextSections,
   buildSkillsSection,
   // heuristic resolution
+  parseContextimateConfig,
   cleanDenominator,
   resolveHeuristic,
   // provider payload shaping

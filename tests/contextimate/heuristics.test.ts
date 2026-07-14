@@ -7,7 +7,7 @@ import { internals } from "../../extensions/pi-contextimate/index.ts";
 import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
 
-const { resolveHeuristic, cleanDenominator } = internals;
+const { parseContextimateConfig, resolveHeuristic, cleanDenominator } = internals;
 
 function model(provider: string, id: string, api: string): ModelSummary {
   return { provider, id, api };
@@ -114,7 +114,10 @@ test("cleanDenominator rejects non-finite/non-positive values", () => {
   assert.equal(cleanDenominator(3.3, 2.6), 3.3);
 });
 
-test("invalid config denominators fall back instead of poisoning estimates", () => {
-  const h = resolveHeuristic(anthropicModel, { rules: [{ match: { provider: "anthropic" }, textDenominator: 0 }] });
-  assert.equal(h.textDenominator, 2.6); // keeps the built-in value
+test("runtime config parsing drops invalid denominators before heuristic resolution", () => {
+  const config = parseContextimateConfig({
+    rules: [{ match: { provider: "anthropic" }, textDenominator: 0 }],
+  });
+  assert.deepEqual(config, { rules: [{ match: { provider: "anthropic" } }] });
+  assert.equal(resolveHeuristic(anthropicModel, config).textDenominator, 2.6);
 });

@@ -12,13 +12,15 @@ import type { AnchoredLine } from "../../extensions/pi-cachemire/index.ts";
 const { childAnchorKey, anchorForAppend, reattachAnchored } = internals;
 
 const tool = (id: string) => ({ toolCallId: id, render: () => [] });
-const assistant = (ts: string) => ({ lastMessage: { role: "assistant", timestamp: ts }, render: () => [] });
+const assistant = (timestamp: number) => ({ lastMessage: { role: "assistant", timestamp }, render: () => [] });
 const spacer = () => ({ kind: "spacer" });
 const user = () => ({ kind: "user-message" }); // UserMessageComponent exposes no durable identity
+const TS_0 = Date.UTC(2026, 5, 10, 22);
+const TS_9 = TS_0 + 9;
 
 test("childAnchorKey: durable identities only", () => {
   assert.equal(childAnchorKey(tool("t1")), "tool#t1");
-  assert.equal(childAnchorKey(assistant("2026-06-10T22:00:00.000Z")), "assistant#2026-06-10T22:00:00.000Z");
+  assert.equal(childAnchorKey(assistant(TS_0)), `assistant#${TS_0}`);
   assert.equal(childAnchorKey(spacer()), undefined);
   assert.equal(childAnchorKey(user()), undefined);
   assert.equal(childAnchorKey(undefined), undefined);
@@ -27,7 +29,7 @@ test("childAnchorKey: durable identities only", () => {
 test("anchorForAppend: nearest keyed predecessor, counting only unkeyed non-cachemire children", () => {
   const t1 = tool("t1");
   // [assistant, spacer, tool, spacer, user] → anchor = tool, gap = 2 (spacer + user)
-  const children: unknown[] = [assistant("T0"), spacer(), t1, spacer(), user()];
+  const children: unknown[] = [assistant(TS_0), spacer(), t1, spacer(), user()];
   assert.deepEqual(anchorForAppend(children, []), { anchorKey: "tool#t1", gap: 2 });
 
   // Lines of ours already appended after the anchor are not part of the gap.
@@ -46,7 +48,7 @@ test("reattachAnchored: a Ctrl+T-style rebuild restores lines in place", () => {
 
   // pi rebuilds from session messages: same sequence, new component objects, no our lines,
   // plus pi's trailing status line pair.
-  const rebuilt: unknown[] = [assistant("T0"), tool("t1"), spacer(), user(), spacer(), { status: true }];
+  const rebuilt: unknown[] = [assistant(TS_0), tool("t1"), spacer(), user(), spacer(), { status: true }];
   const survivors = reattachAnchored(rebuilt, [missLine, notice]);
 
   assert.equal(survivors.length, 2);
@@ -62,7 +64,7 @@ test("reattachAnchored: a Ctrl+T-style rebuild restores lines in place", () => {
 
 test("reattachAnchored: vanished anchors drop their lines; start-anchored lines survive", () => {
   const line: AnchoredLine = { spacer: spacer(), text: { line: "old" }, anchorKey: "tool#gone", gap: 0 };
-  const rebuilt: unknown[] = [assistant("T9")];
+  const rebuilt: unknown[] = [assistant(TS_9)];
   assert.equal(reattachAnchored(rebuilt, [line]).length, 0, "compaction/navigation removed the anchor — line drops");
   assert.equal(rebuilt.length, 1, "children untouched for dropped lines");
 

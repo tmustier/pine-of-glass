@@ -11,6 +11,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
+import { assistantBefore, completedWriteRow, nativeBashLines } from "./runtime-fixtures.ts";
 
 const {
   oneLine,
@@ -19,7 +20,6 @@ const {
   charSuffix,
   diffStatsFromText,
   diffStatsFromContents,
-  captureWriteSnapshot,
   writeDiffStats,
   mutationDiffStats,
   toolFactSuffix,
@@ -157,24 +157,25 @@ test("mutation diff stats ride inline on the basename for edit rows (§9.5)", ()
 });
 
 test("mutations carry +/- inline and drop out of the fact columns (§9.5/§9.7)", () => {
-  const mut = (toolName: string, path: string, diff: string) =>
-    toolComp({
-      toolName,
-      args: { path: `${homedir()}/projects/demo/${path}` },
-      callRendererComponent: { render: () => [`${toolName} ~/projects/demo/${path}`] },
-      result: { content: [{ type: "text", text: "ok." }], isError: false, details: { diff } },
-    });
-  const both = mut("edit", "src/a.ts", "+x\n".repeat(4) + "-x\n".repeat(9));
-  const minusOnly = mut("edit", "src/b.ts", "-x\n");
-  const plusOnly = mut("write", "src/c.ts", "+x\n".repeat(18));
-  const read = toolComp({
-    toolName: "read",
-    args: { path: `${homedir()}/projects/demo/src/d.ts` },
-    callRendererComponent: { render: () => ["read ~/projects/demo/src/d.ts"] },
-    result: { content: [{ type: "text", text: "y".repeat(14200) }], isError: false },
-  });
-  setTracelineChat({ children: [both, minusOnly, plusOnly, read] });
+  const writeCwd = mkdtempSync(join(tmpdir(), "traceline-write-block-"));
   try {
+    const edit = (path: string, diff: string) =>
+      toolComp({
+        toolName: "edit",
+        args: { path: `${homedir()}/projects/demo/${path}` },
+        callRendererComponent: { render: () => [`edit ~/projects/demo/${path}`] },
+        result: { content: [{ type: "text", text: "ok." }], isError: false, details: { diff } },
+      });
+    const both = edit("src/a.ts", "+x\n".repeat(4) + "-x\n".repeat(9));
+    const minusOnly = edit("src/b.ts", "-x\n");
+    const plusOnly = completedWriteRow(writeCwd, "src/c.ts", "x\n".repeat(18));
+    const read = toolComp({
+      toolName: "read",
+      args: { path: `${homedir()}/projects/demo/src/d.ts` },
+      callRendererComponent: { render: () => ["read ~/projects/demo/src/d.ts"] },
+      result: { content: [{ type: "text", text: "y".repeat(14200) }], isError: false },
+    });
+    setTracelineChat({ children: [both, minusOnly, plusOnly, read] });
     const [a, b, c, d] = [both, minusOnly, plusOnly, read].map((row) => stripAnsi(oneLine(row, 80)));
     // The diff rides the basename (§9.5): adjacent to the file it changed,
     // add-green / remove-red, zero side dropped.
@@ -192,6 +193,7 @@ test("mutations carry +/- inline and drop out of the fact columns (§9.5/§9.7)"
     assert.ok(d!.endsWith("14.2k ch"), d);
   } finally {
     setTracelineChat(undefined);
+    rmSync(writeCwd, { recursive: true, force: true });
   }
 });
 
@@ -216,16 +218,9 @@ test("write rows use a pre-execution snapshot for +N -M stats", () => {
   try {
     const path = join(dir, "fixture.txt");
     writeFileSync(path, "one\ntwo\nthree\n", "utf8");
-    const comp = toolComp({
-      toolName: "write",
-      args: { path, content: "one\nTWO\nthree\nfour\n" },
-      cwd: dir,
-      result: { content: [{ type: "text", text: "Successfully wrote bytes." }], isError: false },
-      callRendererComponent: { render: () => [`write ${path}`] },
-    });
-
+    const content = "one\nTWO\nthree\nfour\n";
     assert.deepEqual(diffStatsFromContents("one\ntwo\n", "one\ntwo\nthree\n"), { added: 1, removed: 0 });
-    captureWriteSnapshot(comp);
+    const comp = completedWriteRow(dir, path, content);
     assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 1 });
     // The diff rides the basename (§9.5); the suffix stays empty.
     assert.equal(stripAnsi(toolFactSuffix(comp)), "");
@@ -243,16 +238,7 @@ test("new write rows count all written lines as additions", () => {
   const dir = mkdtempSync(join(tmpdir(), "traceline-write-new-"));
   try {
     const path = join(dir, "new.txt");
-    const comp = toolComp({
-      toolName: "write",
-      args: { path, content: "alpha\nbeta\n" },
-      cwd: dir,
-      result: undefined,
-      isPartial: true,
-      callRendererComponent: { render: () => [`write ${path}`] },
-    });
-
-    captureWriteSnapshot(comp);
+    const comp = completedWriteRow(dir, path, "alpha\nbeta\n");
     assert.deepEqual(writeDiffStats(comp), { added: 2, removed: 0 });
     // Zero sides drop (§9.7): a new-file write never wears a `-0`. The `+2` rides
     // inline on the basename now (§9.5), so the suffix stays empty.
@@ -352,10 +338,11 @@ test("reserve holds a body to the shared block budget (§9.8)", () => {
 test("the right edge breathes: 2-col inset and a ≥2-space body↔suffix gap (§9.1)", () => {
   // A truncated row with a suffix: the suffix column ends 2 columns short of the
   // terminal edge, and the body tail sits ≥2 spaces before the suffix.
+  const command = `grep -rni 'pattern' ${"src/a src/b ".repeat(12)}-l`;
   const comp = toolComp({
     toolName: "bash",
-    args: { command: "x" },
-    callRendererComponent: { render: () => [`$ grep -rni 'pattern' ${"src/a src/b ".repeat(12)}-l`] },
+    args: { command },
+    callRendererComponent: { render: () => [`$ ${command}`] },
     result: { content: [{ type: "text", text: "y".repeat(200) }], isError: false },
   });
   const line = stripAnsi(oneLine(comp, 80));
@@ -390,11 +377,7 @@ test("size column is block-scoped: one row over the floor lights every cell (§9
 
   // Visible prose breaks the block: across it, a tiny row stays clean.
   const e = tiny();
-  const prose = {
-    setHideThinkingBlock: () => {},
-    hideThinkingBlock: false,
-    lastMessage: { content: [{ type: "text", text: "done reading" }] },
-  };
+  const prose = assistantBefore([e], [{ type: "text", text: "done reading" }]);
   setTracelineChat({ children: [big, prose, e] });
   assert.equal(stripAnsi(toolFactSuffix(e)), "");
   setTracelineChat(undefined);
@@ -546,11 +529,12 @@ test("fallback rendering when a tool has no native call renderer", () => {
 });
 
 test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest one dim grey", () => {
+  const command = "pwd && git remote -v 2>/dev/null | head -5";
   const comp = toolComp({
     toolName: "bash",
-    args: { command: "pwd && git remote -v" },
+    args: { command, timeout: 10 },
     callRendererComponent: {
-      render: () => ["$ pwd && git remote -v 2>/dev/null | head -5 (timeout 10s)"],
+      render: () => [`$ ${command} (timeout 10s)`],
     },
   });
   const line = oneLine(comp, 120);
@@ -702,17 +686,16 @@ test("crown selection over real shell shapes: attached ;, quote state, preambles
 test("multiline bash flattens to one line: tail survives, breaks marked, timeout stripped (#10)", () => {
   // The issue #10 shape: an inline python heredoc-ish command plus chained tmux checks,
   // where the first rendered line alone (`$ python3 -c "`) says nothing.
+  const command = [
+    'python3 -c "',
+    "  import json",
+    "  d=json.load(open(p))",
+    '  " && tmux send-keys -t pog-th BTab && tmux capture-pane -p | tail -4',
+  ].join("\n");
   const comp = toolComp({
     toolName: "bash",
-    args: { command: "python3 ...", timeout: 70 },
-    callRendererComponent: {
-      render: () => [
-        '$ python3 -c "',
-        "  import json",
-        "  d=json.load(open(p))",
-        '  " && tmux send-keys -t pog-th BTab && tmux capture-pane -p | tail -4 (timeout 70s)',
-      ],
-    },
+    args: { command, timeout: 70 },
+    callRendererComponent: { render: () => nativeBashLines(command, 70) },
   });
   const line = oneLine(comp, 160);
   const visible = stripAnsi(line);
@@ -764,20 +747,13 @@ test("tool-group spacing: blank before a group, tight within it, connectors skip
   const toolA = toolComp();
   const toolB = toolComp();
   const toolC = toolComp();
-  const visibleAssistant = {
-    setHideThinkingBlock: () => {},
-    hideThinkingBlock: false,
-    lastMessage: { content: [{ type: "text", text: "let me look" }] },
-  };
-  const connector = {
-    setHideThinkingBlock: () => {},
-    hideThinkingBlock: false,
-    lastMessage: { content: [{ type: "toolCall" }] },
-  };
+  const visibleAssistantA = assistantBefore([toolA], [{ type: "text", text: "let me look" }]);
+  const connector = assistantBefore([toolB]);
+  const visibleAssistantC = assistantBefore([toolC], [{ type: "text", text: "let me look again" }]);
   assert.equal(isToolRow(toolA), true);
-  assert.equal(isAssistantRow(visibleAssistant), true);
+  assert.equal(isAssistantRow(visibleAssistantA), true);
 
-  setTracelineChat({ children: [visibleAssistant, toolA, connector, toolB, visibleAssistant, toolC] });
+  setTracelineChat({ children: [visibleAssistantA, toolA, connector, toolB, visibleAssistantC, toolC] });
   assert.equal(leadingBlank(toolA), true, "blank after visible assistant content");
   assert.equal(leadingBlank(toolB), false, "tight through an invisible connector turn");
   assert.equal(leadingBlank(toolC), true, "new group after visible content");
@@ -785,21 +761,12 @@ test("tool-group spacing: blank before a group, tight within it, connectors skip
 
 test("thought→action couplet: tight under a collapsed Thinking... line", () => {
   const tool = toolComp();
-  const collapsedThinking = {
-    setHideThinkingBlock: () => {},
-    hideThinkingBlock: true,
-    lastMessage: { content: [{ type: "thinking", thinking: "let me check the repo" }] },
-  };
-  const thinkingWithProse = {
-    setHideThinkingBlock: () => {},
-    hideThinkingBlock: true,
-    lastMessage: {
-      content: [
-        { type: "thinking", thinking: "hmm" },
-        { type: "text", text: "Here is what I found." },
-      ],
-    },
-  };
+  const collapsedThinking = assistantBefore([tool], [{ type: "thinking", thinking: "let me check the repo" }], true);
+  const thinkingWithProse = assistantBefore(
+    [tool],
+    [{ type: "thinking", thinking: "hmm" }, { type: "text", text: "Here is what I found." }],
+    true,
+  );
   setTracelineChat({ children: [collapsedThinking, tool] });
   assert.equal(leadingBlank(tool), false, "reasoning-only turn reads as this call's thought");
   setTracelineChat({ children: [thinkingWithProse, tool] });

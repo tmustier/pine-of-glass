@@ -105,8 +105,9 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
 
 - **Heuristic resolution precedence** (`resolveHeuristic`): fallback < default profile <
   flat defaults < built-in model rule < config rules in order, later rules override
-  earlier; `cleanDenominator` rejects 0/negative/NaN and keeps the prior value. This is
-  user-configurable surface; precedence bugs misprice every row.
+  earlier. `parseContextimateConfig` drops non-positive JSON denominators before
+  resolution; `cleanDenominator` remains the defensive pure boundary for direct patches.
+  This is user-configurable surface; precedence bugs misprice every row.
 - **Built-in rule matching**: boundary table: `claude-opus-4-8` → 4.7+ rule;
   `claude-sonnet-4-5` → 4.5/4.6 rule; other anthropic → generic; `openai-codex` vs
   `openai` vs `mistral` vs `gemini` vs `bedrock` routing by provider/api.
@@ -150,8 +151,10 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 - Traceline gets a narrow golden: `oneLine()` output (ANSI stripped) for a table of
   synthetic comps (read with range, bash with `cd …`, MCP tool, error status, missing
   renderer fallback) at width 80; this pins the row grammar without touching Pi's
-  renderer (comps are synthetic stand-ins satisfying the duck type, which the contract
-  suite separately proves matches real Pi).
+  renderer. The stand-ins preserve causal runtime invariants: native renderer text derives
+  from the same arguments, following tool rows have matching assistant `toolCall` blocks,
+  and write results follow a pre-execution snapshot. The contract suite separately proves
+  that the duck types match real Pi.
 - Cachemire gets one combined golden (`tests/cachemire/goldens.test.ts` →
   `cachemire-lines.txt`): the `/cache` ledger panel over a cold/hit/partial/miss
   session plus every one-line `◍` surface (clock states, break notices, resolutions,

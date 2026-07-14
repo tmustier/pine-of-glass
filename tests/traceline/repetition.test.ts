@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
+import { assistantBefore, nativeBashLines } from "./runtime-fixtures.ts";
 
 const {
   stripAnsi,
@@ -29,9 +30,7 @@ const NL = "\u21b5"; // the flattened line-break mark
 // pi's bash renderer returns one array element per visual line; traceline flattens them
 // with a dim ↵. A synthetic command with `\n` reproduces that multi-line render, so
 // preamble runs written across real breaks (`set …\ncd …\ncmd`) exercise the flatten.
-function bashComp(command: string, rendered?: string): ToolRowLike {
-  const lines = command.split("\n");
-  const renderedLines = rendered !== undefined ? [rendered] : lines.map((l, i) => (i === 0 ? `$ ${l}` : l));
+function bashComp(command: string): ToolRowLike {
   return {
     toolName: "bash",
     args: { command },
@@ -39,7 +38,7 @@ function bashComp(command: string, rendered?: string): ToolRowLike {
     isPartial: false,
     render: () => [],
     setExpanded: () => {},
-    callRendererComponent: { render: () => renderedLines },
+    callRendererComponent: { render: () => nativeBashLines(command) },
   } as ToolRowLike;
 }
 
@@ -55,23 +54,9 @@ function readComp(path: string, offset: number, limit: number, resultChars = 1_0
   } as ToolRowLike;
 }
 
-const prose = {
-  setHideThinkingBlock: () => {},
-  hideThinkingBlock: false,
-  lastMessage: { content: [{ type: "text", text: "now let me check" }] },
-};
-
-const collapsedThinking = {
-  setHideThinkingBlock: () => {},
-  hideThinkingBlock: true,
-  lastMessage: { content: [{ type: "thinking", thinking: "hmm" }] },
-};
-
-const connector = {
-  setHideThinkingBlock: () => {},
-  hideThinkingBlock: false,
-  lastMessage: { content: [{ type: "toolCall" }] },
-};
+const proseBefore = (rows: ToolRowLike[]) => assistantBefore(rows, [{ type: "text", text: "now let me check" }]);
+const collapsedThinkingBefore = (row: ToolRowLike) => assistantBefore([row], [{ type: "thinking", thinking: "hmm" }], true);
+const connectorBefore = (rows: ToolRowLike[]) => assistantBefore(rows);
 
 beforeEach(() => {
   setTracelineChat(undefined);
@@ -81,7 +66,7 @@ beforeEach(() => {
 test("leading set drops on first appearance; repeated context folds to a dim ⋯", () => {
   const first = bashComp("set -euo pipefail\ncd /tmp/pog-demo\nnpm test");
   const second = bashComp("set -euo pipefail\ncd /tmp/pog-demo\nnpm run typecheck");
-  setTracelineChat({ children: [prose, first, second] });
+  setTracelineChat({ children: [proseBefore([first, second]), first, second] });
 
   const firstVisible = stripAnsi(oneLine(first, 120));
   const secondVisible = stripAnsi(oneLine(second, 120));
@@ -117,7 +102,7 @@ test("folding scans past interleaved reads but never across visible prose", () =
   const read = readComp(`${homedir()}/projects/demo/file.ts`, 1, 40);
   const b = bashComp("cd /tmp/pog-demo && cat out.txt");
   const c = bashComp("cd /tmp/pog-demo && rm out.txt");
-  setTracelineChat({ children: [a, read, b, prose, c] });
+  setTracelineChat({ children: [a, read, b, proseBefore([c]), c] });
 
   assert.ok(stripAnsi(oneLine(b, 120)).includes(`$ ${FOLD_MARK} cat out.txt`), "a read between bash rows keeps the group");
   const cv = stripAnsi(oneLine(c, 120));
@@ -127,7 +112,7 @@ test("folding scans past interleaved reads but never across visible prose", () =
   // A collapsed Thinking... line keeps the couplet in-group (it is not prose).
   const d = bashComp("cd /tmp/one && ls");
   const e = bashComp("cd /tmp/one && pwd");
-  setTracelineChat({ children: [d, collapsedThinking, e] });
+  setTracelineChat({ children: [d, collapsedThinkingBefore(e), e] });
   assert.ok(stripAnsi(oneLine(e, 120)).includes(`$ ${FOLD_MARK} pwd`), "a collapsed Thinking... line does not break the fold");
 });
 
@@ -197,7 +182,7 @@ test("consecutive reads of one file fold into a single row with combined ranges 
   const r1 = readComp(path, 1, 200, 12_000);
   const r2 = readComp(path, 201, 200, 12_000);
   const r3 = readComp(path, 401, 200, 13_000);
-  setTracelineChat({ children: [prose, r1, connector, r2, r3] });
+  setTracelineChat({ children: [proseBefore([r1]), r1, connectorBefore([r2, r3]), r2, r3] });
 
   const run = readRun(r2);
   assert.ok(run, "middle page must see the run");
@@ -255,9 +240,9 @@ test("runs break on anything visible between the reads — and on a different fi
   const path = `${homedir()}/projects/demo/big-file.ts`;
   const other = `${homedir()}/projects/demo/other.ts`;
 
-  const firstChildren = [readComp(path, 1, 200), collapsedThinking, readComp(path, 201, 200)] as const;
-  setTracelineChat({ children: [...firstChildren] });
-  const [r1, , r2] = firstChildren;
+  const r1 = readComp(path, 1, 200);
+  const r2 = readComp(path, 201, 200);
+  setTracelineChat({ children: [r1, collapsedThinkingBefore(r2), r2] });
   assert.equal(readRun(r1), undefined, "a visible Thinking... line breaks the run");
   assert.equal(readRun(r2), undefined);
 

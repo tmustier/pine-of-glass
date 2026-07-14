@@ -11,11 +11,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import * as pi from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import * as piTui from "@earendil-works/pi-tui";
 
 import { internals as cachemire } from "../../extensions/pi-cachemire/index.ts";
 import { internals as contextimate } from "../../extensions/pi-contextimate/index.ts";
 import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
+import { assistantMessage } from "../helpers.ts";
 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
 
@@ -30,27 +32,28 @@ test("pi exports the session/message machinery contextimate imports", () => {
 });
 
 test("convertToLlm message shape: roles and content blocks contextimate counts", () => {
-  // Build a minimal real session via SessionManager in-memory mode if available;
-  // otherwise convert a hand-built message list. We use convertToLlm directly on a
-  // message in Pi's internal shape, mirroring buildSessionContext output structure.
-  const messages = [
-    { role: "user", content: [{ type: "text", text: "hi" }], timestamp: new Date().toISOString() },
-    {
-      role: "assistant",
-      content: [
-        { type: "thinking", thinking: "pondering", thinkingSignature: undefined },
+  // Use Pi's current AgentMessage contract rather than the surrounding session-entry
+  // shape: entry timestamps are ISO strings, but nested message timestamps are numbers.
+  const timestamp = Date.UTC(2026, 5, 10, 22);
+  const messages: AgentMessage[] = [
+    { role: "user", content: [{ type: "text", text: "hi" }], timestamp },
+    assistantMessage(
+      [
+        { type: "thinking", thinking: "pondering" },
         { type: "toolCall", id: "t1", name: "read", arguments: { path: "/tmp/x" } },
       ],
-      timestamp: new Date().toISOString(),
-      api: "anthropic-messages",
-      provider: "anthropic",
-      model: "claude-opus-4-8",
-      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
-      stopReason: "toolUse",
+      { timestamp: timestamp + 1, stopReason: "toolUse" },
+    ),
+    {
+      role: "toolResult",
+      toolCallId: "t1",
+      toolName: "read",
+      content: [{ type: "text", text: "result text" }],
+      isError: false,
+      timestamp: timestamp + 2,
     },
-    { role: "toolResult", toolCallId: "t1", toolName: "read", content: [{ type: "text", text: "result text" }], isError: false, timestamp: new Date().toISOString() },
   ];
-  const converted = pi.convertToLlm(messages as never);
+  const converted = pi.convertToLlm(messages);
   assert.ok(Array.isArray(converted) && converted.length === 3, "convertToLlm must return the converted message list");
   const roles = converted.map((message: { role: string }) => message.role);
   assert.deepEqual(roles, ["user", "assistant", "toolResult"], "role names contextimate switches on");
@@ -142,9 +145,19 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   assert.ok(visible.includes("read"), `one-line render lost the invocation: ${JSON.stringify(visible)}`);
   assert.ok(/\b0\.2k ch$/.test(visible.trimEnd()), `result-size suffix missing: ${JSON.stringify(visible)}`);
 
-  // Error path drives the red status colour.
-  comp.updateResult({ content: [{ type: "text", text: "boom" }], isError: true }, false);
-  assert.equal(traceline.toolStatus(comp as never), "error");
+  // A distinct execution reaches the error state; a settled successful component is
+  // never updated to a second final result by Pi's event stream.
+  const errorComp = new pi.ToolExecutionComponent(
+    "read",
+    "tool-error",
+    { path: "/tmp/contract-fixture.txt" },
+    undefined,
+    undefined,
+    {} as never,
+    tmpdir(),
+  );
+  errorComp.updateResult({ content: [{ type: "text", text: "boom" }], isError: true }, false);
+  assert.equal(traceline.toolStatus(errorComp as never), "error");
 });
 
 test("real ToolExecutionComponent: bash multiline render seam", () => {
@@ -172,7 +185,7 @@ test("real ToolExecutionComponent: bash multiline render seam", () => {
 });
 
 test("real AssistantMessageComponent satisfies traceline's assistant duck type", () => {
-  const component = new pi.AssistantMessageComponent({ role: "assistant", content: [{ type: "text", text: "hi" }] } as never);
+  const component = new pi.AssistantMessageComponent(assistantMessage([{ type: "text", text: "hi" }]));
   assert.equal(traceline.isAssistantRow(component), true, "AssistantMessageComponent no longer matches isAssistantRow");
   // hideThinkingBlock is declared private but traceline reads it duck-typed at runtime.
   const peek = component as unknown as { hideThinkingBlock: boolean };
@@ -183,13 +196,10 @@ test("real AssistantMessageComponent satisfies traceline's assistant duck type",
 
 test("adjacent thinking blocks double the collapsed label natively; traceline gives each a preview", () => {
   pi.initTheme(undefined, false);
-  const component = new pi.AssistantMessageComponent({
-    role: "assistant",
-    content: [
-      { type: "thinking", thinking: "first reasoning segment" },
-      { type: "thinking", thinking: "second reasoning segment" },
-    ],
-  } as never);
+  const component = new pi.AssistantMessageComponent(assistantMessage([
+    { type: "thinking", thinking: "first reasoning segment" },
+    { type: "thinking", thinking: "second reasoning segment" },
+  ]));
   component.setHideThinkingBlock(true);
 
   const native = component.render(80);
@@ -229,9 +239,9 @@ test("chat-rebuild surface cachemire's line persistence depends on", () => {
   const toolComp = new pi.ToolExecutionComponent("read", "tool-9", { path: "/tmp/x" }, undefined, undefined, {} as never, tmpdir());
   assert.equal(cachemire.childAnchorKey(toolComp), "tool#tool-9", "toolCallId drifted — tool-row anchors break");
 
-  const ts = "2026-06-10T22:00:00.000Z";
+  const ts = Date.UTC(2026, 5, 10, 22);
   const assistantComp = new pi.AssistantMessageComponent(
-    { role: "assistant", content: [{ type: "text", text: "hi" }], timestamp: ts } as never,
+    assistantMessage([{ type: "text", text: "hi" }], { timestamp: ts }),
   );
   assert.equal(
     cachemire.childAnchorKey(assistantComp),

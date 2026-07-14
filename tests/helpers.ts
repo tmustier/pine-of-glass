@@ -5,11 +5,36 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import type { Theme, ExtensionAPI, ToolInfo, ContextUsage } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import type { ModelSummary, SessionBreakdown } from "../extensions/pi-contextimate/index.ts";
 
 export const testsDir = dirname(fileURLToPath(import.meta.url));
 export const goldensDir = join(testsDir, "fixtures", "goldens");
+
+export function assistantMessage(
+  content: AssistantMessage["content"],
+  overrides: Partial<Omit<AssistantMessage, "role" | "content">> = {},
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content,
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: "claude-opus-4-8",
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+    ...overrides,
+  };
+}
 
 // ---------------------------------------------------------------------------------------
 // Theme stub: pass-through styling so golden files contain plain text. Colour correctness
