@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Resume a real Pi session whose assistant message contains empty and whitespace-only
-// thinking blocks before a real collapsed trace. A past Traceline implementation entered
-// a synchronous loop while preparing previews for the empty block. Every subprocess call
-// is bounded, and the uniquely launched Pi is killed on timeout so the smoke cannot leave
-// a hot orphan behind.
+// Resume a real Pi session whose assistant message contains three adjacent thinking
+// blocks with empty and whitespace-only fragments interleaved. The collapsed preview must
+// stay tight and aligned. A past Traceline implementation entered a synchronous loop on
+// an empty block, so every subprocess call is bounded and the uniquely launched Pi is
+// killed on timeout.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,8 +13,12 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const extensionPath = join(repoRoot, "extensions", "pi-traceline", "index.ts");
 const tmuxSession = `pog-empty-thinking-${process.pid}`;
-const sentinel = "EMPTY_THINKING_RESUME_SENTINEL";
-const preview = "Thinking: informative reasoning survives";
+const sentinel = "GROUPED_THINKING_RESUME_SENTINEL";
+const previews = [
+  "Thinking: first adjacent reasoning step",
+  "Thinking: second adjacent reasoning step",
+  "Thinking: third adjacent reasoning step",
+];
 const hardDeadline = Date.now() + 45_000;
 let launchedPid;
 let fixtureHome;
@@ -80,9 +84,11 @@ function sessionEntries(cwd) {
       message: {
         role: "assistant",
         content: [
+          { type: "thinking", thinking: "first adjacent reasoning step" },
           { type: "thinking", thinking: "" },
           { type: "thinking", thinking: " \n\t\n " },
-          { type: "thinking", thinking: "informative reasoning survives" },
+          { type: "thinking", thinking: "second adjacent reasoning step" },
+          { type: "thinking", thinking: "third adjacent reasoning step" },
           { type: "text", text: sentinel },
         ],
         api: "anthropic-messages",
@@ -172,14 +178,19 @@ try {
 
   while (Date.now() < hardDeadline && hasTmuxSession()) {
     lastPane = capturePane();
-    if (lastPane.includes(sentinel) && lastPane.includes(preview)) break;
+    if (lastPane.includes(sentinel) && previews.every((preview) => lastPane.includes(preview))) break;
     sleep(250);
   }
   if (!lastPane.includes(sentinel)) {
     throw new Error(`resumed session did not render before the hard watchdog\n${lastPane}`);
   }
-  if (!lastPane.includes(preview)) {
-    throw new Error(`collapsed preview lost alignment after empty thinking blocks\n${lastPane}`);
+  if (!previews.every((preview) => lastPane.includes(preview))) {
+    throw new Error(`collapsed preview lost adjacent thinking content\n${lastPane}`);
+  }
+  const paneLines = lastPane.split("\n").map((line) => line.trim());
+  const previewRows = previews.map((preview) => paneLines.indexOf(preview));
+  if (!previewRows.every((row, index) => index === 0 || row === previewRows[index - 1] + 1)) {
+    throw new Error(`adjacent thinking previews were separated by native spacers\n${lastPane}`);
   }
 
   run(["tmux", "send-keys", "-t", tmuxSession, "/quit", "Enter"], { timeoutMs: 2_000 });
@@ -187,7 +198,7 @@ try {
   while (Date.now() < exitDeadline && hasTmuxSession()) sleep(100);
   if (hasTmuxSession()) throw new Error("resumed Pi rendered but did not respond to /quit");
 
-  console.log("real-Pi empty-thinking resume smoke passed");
+  console.log("real-Pi grouped-thinking resume smoke passed");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

@@ -434,12 +434,21 @@ punctuate the wall; ambient green stays purged.
 
 ### 9.11 Collapsed thinking
 
-A collapsed thinking block stays compact without hiding its sequence. Each
+A collapsed thinking run stays compact without hiding its sequence. Each
 non-empty source line renders as `Thinking: <line>`. One or more consecutive
-empty source lines render as one blank line, preserving paragraph boundaries
-without reproducing arbitrary vertical whitespace. Distinct adjacent thinking
-blocks keep distinct previews. Only native `Thinking...` labels that have no
-matching reasoning payload fold as duplicates.
+empty source lines within a thinking block render as one blank line, preserving
+paragraph boundaries without reproducing arbitrary vertical whitespace.
+
+Adjacent thinking blocks form one logical multiline preview. The first native
+label expands to every preview line in the run; later labels and the native
+spacers between them disappear. Empty or whitespace-only thinking fragments do
+not render and do not break the run. Any non-thinking content entry, including
+text, a tool call or another semantic block, ends the run and keeps the native
+boundary before the next preview. A single thinking block renders exactly as it
+does outside a run. A non-empty payload that cannot yield a sanitized preview
+keeps one native label inside the run; consecutive such blocks fold. Native
+`Thinking...` labels with no matching content metadata retain the safe
+duplicate-label fallback.
 
 With traceline loaded, Ctrl+T's effect is self-evident: every tool row collapses
 to a trace line or expands back. So traceline suppresses pi's

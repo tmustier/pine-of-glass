@@ -6,15 +6,25 @@ import { ELLIPSIS } from "../_lib/style.ts";
 
 const PREVIEW_RENDER_WIDTH = 10_000;
 
-// pi renders one collapsed label per thinking *block*. Traceline replaces each label
-// with the block's reasoning lines: every non-empty source line gets an informative
-// `Thinking: …` preview, while one or more consecutive empty source lines become one
-// blank display line. This preserves thought steps and paragraph boundaries without
-// reproducing arbitrary vertical whitespace. If Pi emits labels without corresponding
-// reasoning payloads, the old duplicate-label fold remains as a safe fallback. OSC 133
-// zone marks on dropped fallback labels are transplanted onto the last kept line.
+// pi renders one collapsed label per non-empty thinking block. Traceline replaces a
+// contiguous run of those labels with one logical multiline preview: every non-empty
+// source line gets an informative `Thinking: …` row, source paragraph breaks survive,
+// and Pi's spacers between provider-split adjacent blocks disappear. Any non-thinking
+// content entry ends the run, even when Pi does not render that entry here (a tool call,
+// for example). Empty thinking fragments neither render nor break adjacency. Payloads
+// that cannot yield a safe preview keep one native label; labels without corresponding
+// payloads retain the duplicate-label fallback. OSC marks move to the last kept run line.
 function oscSequences(line: string): string {
   return (line.match(OSC_SEQUENCE) ?? []).join("");
+}
+
+function insertAfterLeadingOsc(line: string, marks: string): string {
+  let end = 0;
+  OSC_SEQUENCE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = OSC_SEQUENCE.exec(line)) && match.index === end) end = OSC_SEQUENCE.lastIndex;
+  OSC_SEQUENCE.lastIndex = 0;
+  return `${line.slice(0, end)}${marks}${line.slice(end)}`;
 }
 
 function nativeHiddenThinkingLabel(comp: AssistantRowDataLike): string {
@@ -80,18 +90,53 @@ function thinkingPreviewForTrace(text: string): ThinkingPreview[] {
   return previews;
 }
 
-function thinkingPreviewBlocks(comp: AssistantRowDataLike): ThinkingPreview[][] {
+const FALLBACK_LABEL = Symbol("fallback-label");
+type ThinkingPreviewRow = ThinkingPreview | typeof FALLBACK_LABEL;
+
+type ThinkingLabelPlan = {
+  rows: ThinkingPreviewRow[];
+  emitsGroup: boolean;
+};
+
+function thinkingLabelPlans(comp: AssistantRowDataLike): ThinkingLabelPlan[] {
   const content = comp.lastMessage?.content;
   if (!Array.isArray(content)) return [];
-  const previews: ThinkingPreview[][] = [];
+
+  const plans: ThinkingLabelPlan[] = [];
+  let blocks: ThinkingPreview[][] = [];
+  const flush = () => {
+    if (blocks.length === 0) return;
+    const rows: ThinkingPreviewRow[] = [];
+    for (const previews of blocks) {
+      if (previews.some((preview) => preview !== undefined)) {
+        rows.push(...previews);
+      } else if (rows.at(-1) !== FALLBACK_LABEL) {
+        // A non-empty payload that sanitizes to nothing still needs one native label.
+        // Consecutive such blocks keep the old duplicate-label fold inside the run.
+        rows.push(FALLBACK_LABEL);
+      }
+    }
+    for (let i = 0; i < blocks.length; i++) {
+      plans.push({ rows, emitsGroup: i === 0 });
+    }
+    blocks = [];
+  };
+
   for (const block of content) {
-    if (block?.type !== "thinking" || typeof block.thinking !== "string") continue;
-    // Pi does not render a collapsed label for empty or whitespace-only thinking. Skip
-    // those blocks here too, so the next native label stays paired with its real trace.
-    if (block.thinking.trim().length === 0) continue;
-    previews.push(thinkingPreviewForTrace(block.thinking));
+    if (block?.type === "thinking") {
+      if (typeof block.thinking === "string" && block.thinking.trim().length > 0) {
+        // Pi skips empty thinking blocks, so only rendered blocks receive a label plan.
+        // Empty fragments still leave `blocks` open and therefore preserve adjacency.
+        blocks.push(thinkingPreviewForTrace(block.thinking));
+      }
+      continue;
+    }
+    // Content order is the semantic authority. In particular, an invisible toolCall
+    // separates runs even though native assistant rendering may show only a blank spacer.
+    flush();
   }
-  return previews;
+  flush();
+  return plans;
 }
 
 function replaceVisibleThinkingLabel(line: string, displayLabel: string, width?: number): string {
@@ -109,43 +154,87 @@ function replaceVisibleThinkingLabel(line: string, displayLabel: string, width?:
 
 export function dedupeThinkingLabels(comp: AssistantRowDataLike, lines: string[], width?: number): string[] {
   const label = nativeHiddenThinkingLabel(comp);
-  const previewBlocks = thinkingPreviewBlocks(comp);
+  const labelPlans = thinkingLabelPlans(comp);
   const out: string[] = [];
-  let previewIndex = 0;
+  let planIndex = 0;
   let lastFallbackLabelAt = -1; // index in `out`, with only blanks after it
-  let salvaged = "";
+  let activePreviewLineAt = -1;
+  let pendingMarksAt = -1;
+  let pendingMarks = "";
+  const flushPendingMarks = () => {
+    if (pendingMarks && pendingMarksAt >= 0 && pendingMarksAt < out.length) {
+      // Keep marks already carried by the retained native row first, then transplant
+      // later dropped marks before its styling/text. Reversing OSC 133 A/B order can
+      // produce malformed terminal zones.
+      out[pendingMarksAt] = insertAfterLeadingOsc(out[pendingMarksAt]!, pendingMarks);
+    }
+    pendingMarksAt = -1;
+    pendingMarks = "";
+  };
+  const queueMarks = (target: number, marks: string) => {
+    if (!marks || target < 0) return;
+    if (pendingMarksAt !== target) flushPendingMarks();
+    pendingMarksAt = target;
+    pendingMarks += marks;
+  };
+
   for (const line of lines) {
     const visible = stripAnsi(line).trim();
     if (visible === label) {
-      const previews = previewBlocks[previewIndex++];
-      if (previews?.some((preview) => preview !== undefined)) {
+      const plan = labelPlans[planIndex++];
+      if (plan) {
         lastFallbackLabelAt = -1;
-        let firstPreview = true;
-        for (const preview of previews) {
-          if (preview === undefined) {
+        if (!plan.emitsGroup) {
+          // Pi inserts a spacer between visible thinking blocks. The first label already
+          // emitted this whole adjacent group, so remove only the blanks immediately
+          // before its now-redundant continuation label. Transplant dropped OSC marks to
+          // the group's last preview now, never across a later semantic boundary.
+          let spacerMarks = "";
+          while (out.length > 0 && stripAnsi(out.at(-1)!).trim().length === 0) {
+            spacerMarks = `${oscSequences(out.pop()!)}${spacerMarks}`;
+          }
+          queueMarks(activePreviewLineAt, spacerMarks + oscSequences(line));
+          continue;
+        }
+
+        flushPendingMarks();
+        let firstRow = true;
+        for (const row of plan.rows) {
+          if (row === undefined) {
             out.push("");
             continue;
           }
           // Only the first replacement inherits the native row's OSC zone marks.
           // Synthetic continuation rows keep its SGR styling but must not duplicate OSC.
-          const template = firstPreview ? line : line.replace(OSC_SEQUENCE, "");
-          out.push(replaceVisibleThinkingLabel(template, `Thinking: ${preview}`, width));
-          firstPreview = false;
+          const template = firstRow ? line : line.replace(OSC_SEQUENCE, "");
+          out.push(row === FALLBACK_LABEL ? template : replaceVisibleThinkingLabel(template, `Thinking: ${row}`, width));
+          firstRow = false;
         }
+        activePreviewLineAt = out.length - 1;
         continue;
       }
+
       if (lastFallbackLabelAt >= 0) {
-        while (out.length > lastFallbackLabelAt + 1) salvaged += oscSequences(out.pop()!);
-        salvaged += oscSequences(line);
+        let spacerMarks = "";
+        while (out.length > lastFallbackLabelAt + 1) {
+          spacerMarks = `${oscSequences(out.pop()!)}${spacerMarks}`;
+        }
+        queueMarks(lastFallbackLabelAt, spacerMarks + oscSequences(line));
         continue;
       }
+      flushPendingMarks();
+      activePreviewLineAt = -1;
       lastFallbackLabelAt = out.length;
       out.push(line);
       continue;
     }
-    if (visible.length > 0) lastFallbackLabelAt = -1;
+    if (visible.length > 0) {
+      flushPendingMarks();
+      activePreviewLineAt = -1;
+      lastFallbackLabelAt = -1;
+    }
     out.push(line);
   }
-  if (salvaged && out.length > 0) out[out.length - 1] = `${salvaged}${out[out.length - 1]}`;
+  flushPendingMarks();
   return out;
 }
