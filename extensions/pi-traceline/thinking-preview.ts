@@ -76,7 +76,7 @@ function thinkingPreviewForTrace(text: string): ThinkingPreview[] {
       previousWasBlank = false;
     }
   }
-  while (previews.at(-1) === undefined) previews.pop();
+  while (previews.length > 0 && previews.at(-1) === undefined) previews.pop();
   return previews;
 }
 

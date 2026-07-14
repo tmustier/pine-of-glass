@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix a `pi-traceline` startup hang when a resumed session contains an empty or
+  whitespace-only thinking block.
 - `pi-traceline` now keeps every reasoning line visible in collapsed thinking
   previews instead of replacing multiline reasoning with a first-line summary
   and line count. A blank source line remains one blank display line, including
