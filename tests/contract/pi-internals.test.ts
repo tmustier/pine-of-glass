@@ -194,7 +194,7 @@ test("real AssistantMessageComponent satisfies traceline's assistant duck type",
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
 });
 
-test("adjacent thinking blocks double the collapsed label natively; traceline gives each a preview", () => {
+test("adjacent thinking blocks get native labels; traceline groups their previews", () => {
   pi.initTheme(undefined, false);
   const component = new pi.AssistantMessageComponent(assistantMessage([
     { type: "thinking", thinking: "first reasoning segment" },
@@ -205,16 +205,16 @@ test("adjacent thinking blocks double the collapsed label natively; traceline gi
   const native = component.render(80);
   const labelCount = (lines: string[]) =>
     lines.filter((line) => traceline.stripAnsi(line).trim() === "Thinking...").length;
-  // The seam itself (issue #14 №3): pi renders one collapsed label per thinking *block*.
-  // If this drops to 1, pi fixed it upstream — retire dedupeThinkingLabels.
-  assert.equal(labelCount(native), 2, "adjacent thinking blocks no longer double the label — dedupe may be retirable");
+  // The seam itself (issue #14 №3): pi renders one collapsed label per non-empty
+  // thinking block. A change here requires re-checking preview-to-label alignment.
+  assert.equal(labelCount(native), 2, "Pi's collapsed-label cardinality changed");
 
   const deduped = traceline.dedupeThinkingLabels(component as never, native, 80);
-  assert.equal(labelCount(deduped), 0, "dedupe should replace native placeholders with trace previews");
+  assert.equal(labelCount(deduped), 0, "native placeholders should become trace previews");
   assert.deepEqual(
-    deduped.map((line) => traceline.stripAnsi(line).trim()).filter(Boolean),
-    ["Thinking: first reasoning segment", "Thinking: second reasoning segment"],
-    "each source thinking block must remain visible",
+    deduped.map((line) => traceline.stripAnsi(line).trim()),
+    ["", "Thinking: first reasoning segment", "Thinking: second reasoning segment"],
+    "adjacent source blocks remain visible without Pi's inter-label spacer",
   );
 
   // pi marks the message's first and last lines with OSC 133 zone marks; the dedupe must

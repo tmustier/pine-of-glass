@@ -1,8 +1,8 @@
 // Repetition folding + preamble reclaim (issue #14, design language §9.4): a leading
 // `set -…` hygiene run drops, the surviving `cd`/assignment context folds to a dim ⋯
-// when it repeats the previous bash row's, consecutive same-file reads fold into one
-// row, and collapsed Thinking... labels preserve reasoning lines. Comps are synthetic duck-type
-// stand-ins; the contract suite proves the duck types against the real installed pi.
+// when it repeats the previous bash row's, and consecutive same-file reads fold into one
+// row. Comps are synthetic duck-type stand-ins; the contract suite proves the duck types
+// against the real installed pi.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
@@ -18,7 +18,6 @@ const {
   bashPreambleRun,
   foldBashPreamble,
   readRun,
-  dedupeThinkingLabels,
   setTracelineChat,
   setTracelineThemeGetter,
 } = internals;
@@ -259,73 +258,4 @@ test("runs break on anything visible between the reads — and on a different fi
   const visible = stripAnsi(renderTraceRow(single, 120).at(-1)!);
   assert.ok(visible.includes("read ~/projects/demo/big-file.ts:1-200"), visible);
   assert.ok(!visible.includes("calls"), visible);
-});
-
-test("collapsed Thinking labels preserve reasoning lines and paragraph breaks", () => {
-  const comp = {
-    hiddenThinkingLabel: "Thinking...",
-    lastMessage: { content: [{ type: "thinking", thinking: "\n  **first reasoning line**\nsecond reasoning line" }] },
-  };
-  const paragraphComp = {
-    hiddenThinkingLabel: "Thinking...",
-    lastMessage: { content: [{ type: "thinking", thinking: "first paragraph\n\nsecond paragraph" }] },
-  };
-  const adjacentBlocks = {
-    hiddenThinkingLabel: "Thinking...",
-    lastMessage: { content: [
-      { type: "thinking", thinking: "first reasoning block" },
-      { type: "thinking", thinking: "second reasoning block" },
-    ] },
-  };
-  const noPreview = { hiddenThinkingLabel: "Thinking..." };
-  const L = "\x1b[3mThinking...\x1b[23m";
-  const P1 = "\x1b[3mThinking: first reasoning line\x1b[23m";
-  const P2 = "\x1b[3mThinking: second reasoning line\x1b[23m";
-
-  assert.deepEqual(dedupeThinkingLabels(comp, ["", L]), ["", P1, P2]);
-  assert.deepEqual(
-    dedupeThinkingLabels(paragraphComp, ["", L]),
-    ["", "\x1b[3mThinking: first paragraph\x1b[23m", "", "\x1b[3mThinking: second paragraph\x1b[23m"],
-    "two source newlines preserve one blank display line",
-  );
-  assert.deepEqual(
-    dedupeThinkingLabels(
-      { hiddenThinkingLabel: "Thinking...", lastMessage: { content: [{ type: "thinking", thinking: "first\n\n\nsecond" }] } },
-      [L],
-    ),
-    ["\x1b[3mThinking: first\x1b[23m", "", "\x1b[3mThinking: second\x1b[23m"],
-    "long blank runs collapse to one display line",
-  );
-  assert.deepEqual(
-    dedupeThinkingLabels(adjacentBlocks, ["", L, "", L]),
-    ["", "\x1b[3mThinking: first reasoning block\x1b[23m", "", "\x1b[3mThinking: second reasoning block\x1b[23m"],
-    "distinct adjacent thinking blocks keep both previews",
-  );
-  assert.deepEqual(dedupeThinkingLabels(noPreview, ["", L, "", L]), ["", L], "missing traces still fold Pi's duplicate labels");
-  assert.deepEqual(dedupeThinkingLabels(comp, ["just prose"]), ["just prose"]);
-
-  // Synthetic continuation lines inherit style but not OSC zone marks.
-  const marked = `\x1b]133;C\x07${L}`;
-  const out = dedupeThinkingLabels(comp, [marked]);
-  assert.equal(out.length, 2);
-  assert.ok(out[0]!.startsWith("\x1b]133;C\x07"), `native zone mark must survive: ${JSON.stringify(out)}`);
-  assert.equal((out.join("").match(/\x1b\]133;C\x07/g) ?? []).length, 1, "synthetic rows must not duplicate OSC marks");
-
-  // A custom hiddenThinkingLabel is respected.
-  const custom = { hiddenThinkingLabel: "Pondering…" };
-  assert.deepEqual(dedupeThinkingLabels(custom, ["Pondering…", "", "Pondering…"]), ["Pondering…"]);
-
-  const literalStar = dedupeThinkingLabels(
-    { hiddenThinkingLabel: "Thinking...", lastMessage: { content: [{ type: "thinking", thinking: "2 * 3 = 6" }] } },
-    [L],
-  )[0]!;
-  assert.equal(stripAnsi(literalStar).trim(), "Thinking: 2 * 3 = 6", "markdown rendering must preserve genuine stars");
-
-  const long = dedupeThinkingLabels(
-    { hiddenThinkingLabel: "Thinking...", lastMessage: { content: [{ type: "thinking", thinking: "a very long reasoning preview" }] } },
-    [L],
-    18,
-  )[0]!;
-  assert.ok(stripAnsi(long).length <= 18, `preview must respect row width: ${stripAnsi(long)}`);
-  assert.ok(stripAnsi(long).startsWith("Thinking:"), stripAnsi(long));
 });

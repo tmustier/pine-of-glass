@@ -1,7 +1,8 @@
 // Visual regression net for the one-line trace grammar (design language §10):
 // a realistic scripted sequence — repeated cd preambles, a dropped set-hygiene run, a
-// newline-preamble context fold, a paginated read run, healthy and ballooned outputs, a
-// flattened multiline command — rendered at 80 and 120 columns.
+// newline-preamble context fold, a grouped multiline thinking preview, a paginated read
+// run, healthy and ballooned outputs, and a flattened multiline command, rendered at 80
+// and 120 columns.
 // Colour is not under test (see docs/testing.md); structure, alignment, folding, and
 // wording are. Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
 import { test, beforeEach } from "node:test";
@@ -70,8 +71,11 @@ function prose(text: string, rows: ToolRowLike[]) {
   return { ...assistantBefore(rows, [{ type: "text", text }]), __prose: text };
 }
 
-function thinking(text: string, rows: ToolRowLike[]) {
-  return { ...assistantBefore(rows, [{ type: "thinking", thinking: text }], true), __thinking: true };
+function thinking(blocks: string[], rows: ToolRowLike[]) {
+  return {
+    ...assistantBefore(rows, blocks.map((text) => ({ type: "thinking", thinking: text })), true),
+    __thinkingBlocks: blocks.length,
+  };
 }
 
 beforeEach(() => {
@@ -113,7 +117,11 @@ test("one-line trace goldens at 80 and 120 columns", () => {
     const children = [
       prose("Let me look at the failing suite.", [testRun]),
       testRun,
-      thinking("Checking the typecheck before the next command.\n\nThe previous test output was noisy.", [typecheck, read1, read2, read3, cleanup]),
+      thinking([
+        "Checking the typecheck before the next command.",
+        "The previous test output was noisy.",
+        "Reading the paginated file next.",
+      ], [typecheck, read1, read2, read3, cleanup]),
       typecheck,
       read1,
       read2,
@@ -142,12 +150,15 @@ test("one-line trace goldens at 80 and 120 columns", () => {
           for (const line of renderTraceRow(child, width)) lines.push(stripAnsi(line));
           continue;
         }
-        const meta = child as { __prose?: string; __thinking?: boolean };
+        const meta = child as { __prose?: string; __thinkingBlocks?: number };
         if (meta.__prose !== undefined) {
           lines.push("", meta.__prose);
           continue;
         }
-        const previews = dedupeThinkingLabels(child, ["Thinking..."], width).map(stripAnsi);
+        const nativeLabels = Array.from({ length: meta.__thinkingBlocks ?? 1 }, (_, index) =>
+          index === 0 ? ["Thinking..."] : ["", "Thinking..."]
+        ).flat();
+        const previews = dedupeThinkingLabels(child, nativeLabels, width).map(stripAnsi);
         lines.push("", ...(previews.length > 0 ? previews : ["Thinking..."]));
       }
       return `${lines.join("\n")}\n`;

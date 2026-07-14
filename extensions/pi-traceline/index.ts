@@ -104,10 +104,10 @@ import { dedupeThinkingLabels } from "./thinking-preview.ts";
  * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
  * whose `cd <dir> && ` preamble repeats the previous bash row's renders it as a dim `⋯`,
  * giving the width back to the part of the command that differs; consecutive reads paging
- * through one file collapse into a single `read path:1-200,201-400 · 2 calls` row; and an
- * collapsed thinking blocks become informative `Thinking: <reasoning line>` previews.
- * Multiline reasoning keeps each non-empty source line, and a source blank line remains
- * one blank display line, so distinct thought steps do not disappear into a line count.
+ * through one file collapse into a single `read path:1-200,201-400 · 2 calls` row; and
+ * adjacent collapsed thinking blocks become one informative multiline preview.
+ * Multiline reasoning keeps each non-empty source line and source blank lines, while
+ * text, tool calls and other semantic content keep separate thinking runs separate.
  *
  * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
  * between consecutive tools.
@@ -147,7 +147,7 @@ const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
 const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
 const TRACELINE_PATCH_VERSION = 27;
-const TRACELINE_ASSISTANT_PATCH_VERSION = 3;
+const TRACELINE_ASSISTANT_PATCH_VERSION = 4;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
 // The live Theme handle is captured at session_start; before that (and in unit tests

@@ -99,9 +99,9 @@ Traceline folds adjacent rows when repetition would hide the useful difference:
 
 - repeated `cd`, environment assignment and setup prefixes become `⋯`
 - paginated reads of one file become one row with all ranges, the call count and total size
-- collapsed thinking keeps each reasoning line and paragraph break visible
+- adjacent collapsed thinking blocks become one multiline preview, with each reasoning line and paragraph break kept visible
 
-Visible prose between calls stops a fold. Pi's full view always keeps the original rows.
+Text, tool calls and other content separate thinking previews. Visible prose between tool calls stops a row fold. Pi's full view always keeps the original rows.
 
 ## Keep the useful part visible
 

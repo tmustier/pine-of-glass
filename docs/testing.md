@@ -74,6 +74,7 @@ moved.
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
+| A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per non-empty block, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 
 Where instantiating real components is impractical, the contract test asserts on the
@@ -100,6 +101,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   are user-facing grammar).
 - **`toolStatus`**: result+`isError` → error; result+complete → success; partial/none →
   running.
+- **Collapsed thinking previews**: three adjacent non-empty blocks form one tight
+  multiline run; empty thinking fragments do not consume labels or break adjacency;
+  text, tools and other semantic content do; single-block rendering, fallback labels,
+  OSC marks, paragraph breaks and width bounds remain unchanged.
 
 ### contextimate
 
@@ -150,8 +155,9 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
   PR like any code change. The golden diff *is* the review surface for issues #9's relabel.
 - Traceline gets a narrow golden: `oneLine()` output (ANSI stripped) for a table of
   synthetic comps (read with range, bash with `cd …`, MCP tool, error status, missing
-  renderer fallback) at width 80; this pins the row grammar without touching Pi's
-  renderer. The stand-ins preserve causal runtime invariants: native renderer text derives
+  renderer fallback) and one three-block collapsed thinking run at width 80; this pins
+  the row grammar without touching Pi's renderer. The stand-ins preserve causal runtime
+  invariants: native renderer text derives
   from the same arguments, following tool rows have matching assistant `toolCall` blocks,
   and write results follow a pre-execution snapshot. The contract suite separately proves
   that the duck types match real Pi.
@@ -166,9 +172,10 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 `npm run test:smoke` launches real `pi` processes in isolated tmux sessions with no
 model call required:
 
-- `test:smoke:traceline` resumes a crafted session with collapsed empty,
-  whitespace-only and informative thinking blocks. It requires the informative preview
-  and prompt to render, then proves Pi still handles `/quit`. A 45-second hard watchdog
+- `test:smoke:traceline` resumes a crafted session with three adjacent collapsed
+  thinking blocks and empty or whitespace-only fragments interleaved. It requires all
+  three preview rows to render consecutively, then proves Pi still handles `/quit`. A
+  45-second hard watchdog
   kills only the uniquely launched fixture process if rendering blocks, so the regression
   cannot leave a hot orphan behind.
 - The full startup smoke checks that the `[Contextimate]` block renders, that

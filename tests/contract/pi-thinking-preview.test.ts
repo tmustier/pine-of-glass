@@ -1,5 +1,5 @@
-// Contract test against Pi's installed AssistantMessageComponent. Empty thinking blocks
-// are intentionally real payloads here, not a mock of how Pi might render them.
+// Contract tests against Pi's installed AssistantMessageComponent. These use real
+// payloads and native spacing, not a mock of how Pi might render thinking blocks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -7,6 +7,16 @@ import * as pi from "@earendil-works/pi-coding-agent";
 
 import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
 import { assistantMessage } from "../helpers.ts";
+
+function collapsedLines(content: Parameters<typeof assistantMessage>[0]): { native: string[]; preview: string[] } {
+  pi.initTheme(undefined, false);
+  const component = new pi.AssistantMessageComponent(assistantMessage(content));
+  component.setHideThinkingBlock(true);
+  const native = component.render(80);
+  const preview = traceline.dedupeThinkingLabels(component as never, native, 80);
+  const normalize = (lines: string[]) => lines.map((line) => traceline.stripAnsi(line).trim());
+  return { native: normalize(native), preview: normalize(preview) };
+}
 
 test("empty thinking blocks are skipped natively and do not shift Traceline previews", () => {
   pi.initTheme(undefined, false);
@@ -32,4 +42,58 @@ test("empty thinking blocks are skipped natively and do not shift Traceline prev
     visibleDeduped.includes("Thinking: informative reasoning survives"),
     `empty blocks consumed the informative preview: ${JSON.stringify(visibleDeduped)}`,
   );
+});
+
+test("three adjacent native blocks become one multiline preview across empty fragments", () => {
+  const { native, preview } = collapsedLines([
+    { type: "thinking", thinking: "first adjacent step" },
+    { type: "thinking", thinking: "" },
+    { type: "thinking", thinking: " \n\t " },
+    { type: "thinking", thinking: "second adjacent step" },
+    { type: "thinking", thinking: "third adjacent step" },
+  ]);
+
+  assert.equal(
+    native.filter((line) => line === "Thinking...").length,
+    3,
+    "Pi's label-per-non-empty-block contract changed: re-check grouping",
+  );
+  assert.deepEqual(preview, [
+    "",
+    "Thinking: first adjacent step",
+    "Thinking: second adjacent step",
+    "Thinking: third adjacent step",
+  ]);
+});
+
+test("tool calls and text keep native boundaries between thinking runs", () => {
+  const { preview } = collapsedLines([
+    { type: "thinking", thinking: "before tool" },
+    { type: "toolCall", id: "contract-call", name: "read", arguments: {} },
+    { type: "thinking", thinking: "after tool" },
+    { type: "text", text: "visible bridge" },
+    { type: "thinking", thinking: "after text" },
+  ]);
+
+  assert.deepEqual(preview, [
+    "",
+    "Thinking: before tool",
+    "",
+    "Thinking: after tool",
+    "",
+    "visible bridge",
+    "Thinking: after text",
+  ]);
+});
+
+test("a single collapsed block keeps multiline and paragraph rendering", () => {
+  const { preview } = collapsedLines([
+    { type: "thinking", thinking: "single first line\n\nsingle second line" },
+  ]);
+  assert.deepEqual(preview, [
+    "",
+    "Thinking: single first line",
+    "",
+    "Thinking: single second line",
+  ]);
 });
