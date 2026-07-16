@@ -6,8 +6,6 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { positiveNumberValue, isJsonObject } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
@@ -40,8 +38,16 @@ import {
   type SizeThresholds,
   type Tone,
 } from "../_lib/style.ts";
-import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange } from "./path-rows.ts";
+import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
+import {
+  captureWriteSnapshot,
+  diffStatsFromContents,
+  diffStatsFromText,
+  mutationDiffStats,
+  writeDiffStats,
+  type DiffStats,
+} from "./write-diff.ts";
 import { dedupeThinkingLabels } from "./thinking-preview.ts";
 
 /**
@@ -104,8 +110,11 @@ import { dedupeThinkingLabels } from "./thinking-preview.ts";
  * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
  * whose `cd <dir> && ` preamble repeats the previous bash row's renders it as a dim `⋯`,
  * giving the width back to the part of the command that differs; consecutive reads paging
- * through one file collapse into a single `read path:1-200,201-400 · 2 calls` row; and
- * adjacent collapsed thinking blocks become one informative multiline preview.
+ * through one file collapse into a single `read path:1-200,201-400 · 2 calls` row;
+ * consecutive reads of sibling files fold into a dir row that prints the shared
+ * directory once and lists the basenames, wrapping at file boundaries when long
+ * (§9.9) while a file whose combined result reaches warning severity keeps its own
+ * row; and adjacent collapsed thinking blocks become one informative multiline preview.
  * Multiline reasoning keeps each non-empty source line and source blank lines, while
  * text, tool calls and other semantic content keep separate thinking runs separate.
  *
@@ -235,8 +244,6 @@ function toolLabel(name: unknown): string {
 }
 
 type ToolStatus = "success" | "running" | "error";
-
-type DiffStats = { added: number; removed: number };
 
 function toolStatus(comp: ToolRowDataLike | undefined): ToolStatus {
   if (comp?.result?.isError) return "error";
@@ -433,154 +440,6 @@ function blockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: n
     widest = Math.max(widest, visibleWidth(suffix));
   }
   return widest > 0 ? widest + 2 : 0;
-}
-
-const LCS_CELL_LIMIT = 200_000;
-
-type WriteInput = { path: string; content: string; cwd: string };
-type WriteSnapshot = WriteInput & { stats: DiffStats | undefined };
-
-// Expects pre-normalized line endings (diffStatsFromContents normalizes once).
-function splitDiffLines(text: string): string[] {
-  if (!text) return [];
-  const lines = text.split("\n");
-  if (lines[lines.length - 1] === "") lines.pop();
-  return lines;
-}
-
-function normalizeLineEndings(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-function boundedLcsLength(a: string[], b: string[]): number {
-  if (a.length === 0 || b.length === 0) return 0;
-  if (a.length * b.length > LCS_CELL_LIMIT) return 0;
-
-  let previous = new Array<number>(b.length + 1).fill(0);
-  let current = new Array<number>(b.length + 1).fill(0);
-  for (let i = 1; i <= a.length; i++) {
-    for (let j = 1; j <= b.length; j++) {
-      current[j] = a[i - 1] === b[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, current[j - 1]!);
-    }
-    // No reset after the swap: index 0 is never written (both arrays start zeroed)
-    // and every other cell is overwritten before the next row reads it.
-    [previous, current] = [current, previous];
-  }
-  return previous[b.length]!;
-}
-
-function diffStatsFromContents(oldContent: string, newContent: string): DiffStats | undefined {
-  const oldNormalized = normalizeLineEndings(oldContent);
-  const newNormalized = normalizeLineEndings(newContent);
-  if (oldNormalized === newNormalized) return undefined;
-
-  const oldLines = splitDiffLines(oldNormalized);
-  const newLines = splitDiffLines(newNormalized);
-  let start = 0;
-  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) start++;
-
-  let oldEnd = oldLines.length;
-  let newEnd = newLines.length;
-  while (oldEnd > start && newEnd > start && oldLines[oldEnd - 1] === newLines[newEnd - 1]) {
-    oldEnd--;
-    newEnd--;
-  }
-
-  const oldMiddle = oldLines.slice(start, oldEnd);
-  const newMiddle = newLines.slice(start, newEnd);
-  const unchangedMiddle = boundedLcsLength(oldMiddle, newMiddle);
-  const stats = {
-    added: Math.max(0, newMiddle.length - unchangedMiddle),
-    removed: Math.max(0, oldMiddle.length - unchangedMiddle),
-  };
-  return stats.added > 0 || stats.removed > 0 ? stats : undefined;
-}
-
-function writeInput(comp: ToolRowDataLike | undefined): WriteInput | undefined {
-  if (toolLabel(comp?.toolName) !== "write") return undefined;
-  const path = comp?.args?.path ?? comp?.args?.file_path;
-  const content = comp?.args?.content;
-  if (typeof path !== "string" || typeof content !== "string") return undefined;
-  const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : process.cwd();
-  return { path, content, cwd };
-}
-
-function readWriteOldContent(input: WriteInput): string {
-  try {
-    return readFileSync(resolve(input.cwd, input.path), "utf8");
-  } catch {
-    return "";
-  }
-}
-
-// Only captureWriteSnapshot ever writes the field, always a full WriteSnapshot.
-function writeSnapshot(comp: ToolRowDataLike | undefined): WriteSnapshot | undefined {
-  return comp?.__tracelineWriteSnapshot as WriteSnapshot | undefined;
-}
-
-function sameWriteInput(a: WriteInput | undefined, b: WriteInput | undefined): boolean {
-  return !!a && !!b && a.path === b.path && a.cwd === b.cwd && a.content === b.content;
-}
-
-function captureWriteSnapshot(comp: ToolRowDataLike): void {
-  const input = writeInput(comp);
-  if (!input) return;
-  const previous = writeSnapshot(comp);
-  if (sameWriteInput(previous, input)) return;
-  const oldContent = readWriteOldContent(input);
-  comp.__tracelineWriteSnapshot = { ...input, stats: diffStatsFromContents(oldContent, input.content) } satisfies WriteSnapshot;
-}
-
-function writeDiffStats(comp: ToolRowDataLike | undefined): DiffStats | undefined {
-  const input = writeInput(comp);
-  const snapshot = writeSnapshot(comp);
-  if (!sameWriteInput(snapshot, input)) return undefined;
-  return snapshot?.stats;
-}
-
-function diffTextFromComp(comp: ToolRowDataLike | undefined): string | undefined {
-  const details = comp?.result?.details;
-  if (typeof details?.diff === "string") return details.diff;
-  if (typeof details?.patch === "string") return details.patch;
-
-  // Pi's edit renderer computes a diff preview before the tool has settled. The preview
-  // lives on the call renderer component, so collapsed rows can show `+N -M` while the
-  // mutation is still pending, then switch to the result-backed diff once available.
-  const preview = comp?.callRendererComponent?.preview;
-  if (preview && typeof preview === "object" && !("error" in preview) && typeof preview.diff === "string") {
-    return preview.diff;
-  }
-  return undefined;
-}
-
-function diffStatsFromText(diff: string | undefined): DiffStats | undefined {
-  if (!diff) return undefined;
-  let added = 0;
-  let removed = 0;
-  for (const rawLine of diff.split(/\r?\n/)) {
-    const line = stripAnsi(rawLine);
-    if (line.startsWith("+++") || line.startsWith("---")) continue; // unified-patch file headers
-    if (line.startsWith("+")) added++;
-    else if (line.startsWith("-")) removed++;
-  }
-  return added > 0 || removed > 0 ? { added, removed } : undefined;
-}
-
-// Parsing a diff is O(its length), and the block's shared fact columns (§9.7) ask
-// every row for stats on every frame — so the parse caches per row against the diff
-// text's identity. A settled row hits the reference-equality fast path; a streaming
-// edit's changing preview text misses and re-parses. The write-snapshot fallback
-// stays uncached: it is a handful of reference compares.
-const diffTextStatsCache = new WeakMap<object, { text: string; stats: DiffStats | undefined }>();
-
-function mutationDiffStats(comp: ToolRowDataLike): DiffStats | undefined {
-  const text = diffTextFromComp(comp);
-  if (text === undefined) return writeDiffStats(comp);
-  const cached = diffTextStatsCache.get(comp);
-  if (cached && cached.text === text) return cached.stats ?? writeDiffStats(comp);
-  const stats = diffStatsFromText(text);
-  diffTextStatsCache.set(comp, { text, stats });
-  return stats ?? writeDiffStats(comp);
 }
 
 // Zero sides are dropped (design language §9.7): `+2 -0` → `+2` — the dimmed zero
@@ -1440,13 +1299,21 @@ function foldBashPreamble(comp: ToolRowDataLike, line: string): string {
   return line;
 }
 
-// Consecutive reads paging through one file (read → truncation notice → read with offset)
-// differ only in the range; fold the run into one row —
-// `read path:1-200,201-400 · 2 calls` with the combined result size — carried by the
-// run's first row while the later rows render nothing. Runs are broken by anything
-// visible between the reads (prose, a collapsed Thinking… line, another tool), so the
-// fold never reorders what the transcript shows; Ctrl+T's native view restores the
-// individual rows.
+// Consecutive reads fold into one entity (issue #14, design language §9.9), at two
+// granularities sharing one grammar: reads paging through one file merge their ranges
+// (`read path:1-200,201-400 · 2 calls`), and consecutive reads of sibling files (the
+// same exact directory) fold into a dir row (`read dir/ a.ts, b.ts · 2 calls`) whose
+// shared directory prints once, with adjacent same-file calls merging ranges first.
+// The fold compresses only the boring: an error row never folds (a failed page keeps
+// its own red row) and a file whose combined landed result reaches warning severity
+// keeps its own row (itself a pagination fold when paged); both split the run, so
+// what balloons stays visible in the size column. Runs are broken by anything visible
+// between the reads (prose, a collapsed Thinking… line, another tool), so the fold
+// never reorders what the transcript shows; Ctrl+T's native view restores the
+// individual rows. The folded unit is carried by its first row while the later rows
+// render nothing; a dir fold that overflows the block's body budget wraps at file
+// boundaries onto rail-only continuation lines (§9.9) instead of truncating
+// basenames away.
 function readPath(comp: ToolRowDataLike): string | undefined {
   if (toolLabel(comp?.toolName) !== "read") return undefined;
   const path = comp?.args?.path;
@@ -1455,35 +1322,87 @@ function readPath(comp: ToolRowDataLike): string | undefined {
 
 // A read row that may participate in a fold: error rows never fold — a failed page must
 // keep its own red row, not vanish into a folded one whose tone reflects only the last
-// call. An error therefore also breaks the run on both sides.
+// call. An error therefore also breaks the run on both sides. Warning-size breakout is
+// per file, not per call, and lives in readRun's unit scan.
 function foldableReadPath(comp: ToolRowDataLike): string | undefined {
   const path = readPath(comp);
   if (path === undefined) return undefined;
   return toolStatus(comp) === "error" ? undefined : path;
 }
 
-function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
+// The maximal run of consecutive foldable reads sharing comp's directory, walked
+// through invisible connectors in both directions. Every member sees the same run,
+// so the unit segmentation below is consistent whichever row renders first.
+function sameDirReadRows(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
   const path = foldableReadPath(comp);
   if (path === undefined) return undefined;
+  const dir = readDirKey(path);
   const found = componentLocation(comp);
   if (!found) return undefined;
   const { sibs, index } = found;
+  const inRun = (c: unknown): c is ToolRowLike => {
+    if (!isToolRow(c)) return false;
+    const p = foldableReadPath(c);
+    return p !== undefined && readDirKey(p) === dir;
+  };
   const rows: ToolRowLike[] = [comp];
   let selfIndex = 0;
   for (let j = index - 1; j >= 0; j--) {
     const prev = sibs[j];
     if (isEmptyConnector(prev)) continue;
-    if (!isToolRow(prev) || foldableReadPath(prev) !== path) break;
+    if (!inRun(prev)) break;
     rows.unshift(prev);
     selfIndex++;
   }
   for (let j = index + 1; j < sibs.length; j++) {
     const next = sibs[j];
     if (isEmptyConnector(next)) continue;
-    if (!isToolRow(next) || foldableReadPath(next) !== path) break;
+    if (!inRun(next)) break;
     rows.push(next);
   }
-  return rows.length > 1 ? { rows, index: selfIndex } : undefined;
+  return { rows, index: selfIndex };
+}
+
+// One file inside a run: the maximal sequence of adjacent same-path calls. A file
+// whose combined landed result reaches warning severity is a breakout (§9.9): it
+// keeps its own row — a pagination fold when paged — rather than melting into the
+// dir fold. Running calls (no result yet) count nothing; when the result lands, the
+// per-render recompute pops a ballooning file out of the fold on its own.
+type ReadFileGroup = { rows: ToolRowLike[]; breakout: boolean };
+
+function readFileGroups(rows: ToolRowLike[]): ReadFileGroup[] {
+  const grouped: { path: string; rows: ToolRowLike[] }[] = [];
+  for (const row of rows) {
+    const path = String(row?.args?.path ?? "");
+    const last = grouped[grouped.length - 1];
+    if (last && last.path === path) last.rows.push(row);
+    else grouped.push({ path, rows: [row] });
+  }
+  return grouped.map((group) => {
+    let combined = 0;
+    for (const row of group.rows) combined += resultTextCharCount(row) ?? 0;
+    return { rows: group.rows, breakout: combined >= sizeThresholds.warning };
+  });
+}
+
+// comp's fold unit: a breakout file is a unit of its own; maximal sequences of
+// adjacent sub-warning files merge into one dir-fold unit. A unit folds only when it
+// spans more than one call — a lone sub-warning read beside breakouts renders alone,
+// and a single unpaged read renders exactly as before.
+function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
+  const run = sameDirReadRows(comp);
+  if (!run) return undefined;
+  const units: { rows: ToolRowLike[]; start: number; breakout: boolean }[] = [];
+  let offset = 0;
+  for (const group of readFileGroups(run.rows)) {
+    const open = units[units.length - 1];
+    if (!group.breakout && open && !open.breakout) open.rows.push(...group.rows);
+    else units.push({ rows: [...group.rows], start: offset, breakout: group.breakout });
+    offset += group.rows.length;
+  }
+  const unit = units.find((u) => run.index >= u.start && run.index < u.start + u.rows.length);
+  if (!unit || unit.rows.length < 2) return undefined;
+  return { rows: unit.rows, index: run.index - unit.start };
 }
 
 function foldedReadSuffix(rows: ToolRowDataLike[], facts: BlockFacts): string {
@@ -1497,28 +1416,107 @@ function foldedReadSuffix(rows: ToolRowDataLike[], facts: BlockFacts): string {
   return total === undefined || !sizeCell ? dim(calls) : `${dim(`${calls}${SEP}`)}${sizeCell}`;
 }
 
-function foldedReadLine(rows: ToolRowLike[], width: number): string {
+// Continuation lines of a wrapped dir fold indent to the directory cell's column
+// (the width of the `read ` verb cell), so the file list shares one left edge.
+const FOLD_CONT_INDENT = "read ".length;
+
+function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   const theme = currentTheme();
-  const last = rows[rows.length - 1];
-  const path = cwdRelativePath(last, String(rows[0]?.args?.path ?? ""));
-  const lastSlash = path.lastIndexOf("/");
-  const dir = lastSlash >= 0 ? boringPrefix(last, path) : "";
-  const base = path.slice(dir.length);
-  const ranges = rows
-    .map((row) => lineRange(row?.args).slice(1))
-    .filter(Boolean)
-    .join(",");
-  const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
-  // Call count rides the right-aligned suffix (fact order: what · how many · how big),
-  // so middle truncation protects the discriminating basename+ranges tail of the body.
+  const last = rows[rows.length - 1]!;
+  const tone = rows.some((row) => toolStatus(row) === "running") ? "running" : statusTone(last);
   const blockRows = blockToolRows(last);
   const facts = blockFacts(blockRows);
-  return fitTraceRow(
-    statusTone(last),
-    body,
-    foldedReadSuffix(rows, facts),
-    blockSuffixReserve(blockRows, facts, traceRowAvailable(width)),
-    width,
+  const available = traceRowAvailable(width);
+  const reserve = blockSuffixReserve(blockRows, facts, available);
+  // Call count rides the right-aligned suffix (fact order: what · how many · how big),
+  // so middle truncation protects the discriminating basename+ranges tail of the body.
+  const suffix = foldedReadSuffix(rows, facts);
+  const paths = rows.map((row) => String(row?.args?.path ?? ""));
+
+  if (new Set(paths).size === 1) {
+    // One paged file: §9.9's original form, and the breakout unit for a ballooned one.
+    const path = cwdRelativePath(last, paths[0]!);
+    const lastSlash = path.lastIndexOf("/");
+    const dir = lastSlash >= 0 ? boringPrefix(last, path) : "";
+    const base = path.slice(dir.length);
+    const ranges = rows
+      .map((row) => lineRange(row?.args).slice(1))
+      .filter(Boolean)
+      .join(",");
+    const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
+    return [fitTraceRow(tone, body, suffix, reserve, width)];
+  }
+
+  // Sibling files fold into one dir row (§9.9): the shared directory prints once
+  // (§9.5's grammar: block-scoped boring prefix dim, divergent dir tail bold), then
+  // the basenames follow as a bold list with dim commas, each wearing its own
+  // warning `:ranges` with adjacent same-file calls' ranges already merged.
+  const shown = cwdRelativePath(last, paths[0]!);
+  const dirEnd = shown.lastIndexOf("/") + 1;
+  const shownDir = shown.slice(0, dirEnd);
+  const boring = dirEnd > 0 ? boringPrefix(last, shown) : "";
+  const headPlain = dirEnd > 0 ? `read ${shownDir}` : "read";
+  const headInk =
+    dirEnd > 0
+      ? `${verbInk(last, "read")} ${dim(boring)}${discriminatorInk(last, shownDir.slice(boring.length))}`
+      : verbInk(last, "read");
+
+  type FoldCell = { ink: string; plain: string };
+  const cells: FoldCell[] = readFileGroups(rows).map((group) => {
+    const groupPath = String(group.rows[0]?.args?.path ?? "");
+    const base = groupPath.slice(groupPath.lastIndexOf("/") + 1);
+    const ranges = group.rows
+      .map((row) => lineRange(row?.args).slice(1))
+      .filter(Boolean)
+      .join(",");
+    const rangeText = ranges ? `:${ranges}` : "";
+    return {
+      ink: `${discriminatorInk(last, base)}${ink(theme, "warning", rangeText)}`,
+      plain: `${base}${rangeText}`,
+    };
+  });
+
+  // Pack cells into lines: the fold wraps at file boundaries rather than truncating
+  // basenames away — a fold must not be lossier than the rows it replaced (§9.9).
+  // Every line shares the block's body budget (§9.8); continuation lines start at
+  // the directory cell's column, so their budget shrinks by that indent. A wrapped
+  // line keeps its trailing dim comma: the entity visibly continues. Acceptance
+  // reserves one column for that comma on every non-final cell.
+  const bodyBudget = Math.max(1, available - Math.max(visibleWidth(suffix) + 2, reserve));
+  const contBudget = Math.max(1, bodyBudget - FOLD_CONT_INDENT);
+  type FoldLine = { ink: string; plain: string; continuation: boolean; hasCell: boolean };
+  const lines: FoldLine[] = [];
+  let cur: FoldLine = { ink: headInk, plain: headPlain, continuation: false, hasCell: false };
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i]!;
+    const sepPlain = cur.hasCell ? ", " : " ";
+    const budget = cur.continuation ? contBudget : bodyBudget;
+    const commaRoom = i < cells.length - 1 ? 1 : 0;
+    const fits = visibleWidth(cur.plain) + sepPlain.length + visibleWidth(cell.plain) + commaRoom <= budget;
+    // A lone cell longer than a fresh continuation line stays put and middle-truncates
+    // below; wrapping never emits an empty line.
+    if (fits || (cur.continuation && !cur.hasCell)) {
+      cur.ink += `${cur.hasCell ? dim(", ") : " "}${cell.ink}`;
+      cur.plain += `${sepPlain}${cell.plain}`;
+      cur.hasCell = true;
+      continue;
+    }
+    if (cur.hasCell) {
+      cur.ink += dim(",");
+      cur.plain += ",";
+    }
+    lines.push(cur);
+    cur = { ink: cell.ink, plain: cell.plain, continuation: true, hasCell: true };
+  }
+  lines.push(cur);
+
+  // The bullet line carries the suffix (§9.9), so the block's fact column stays
+  // aligned against bullets; continuation lines keep the rail but not the bullet.
+  const contPrefix = `${TOOL_INDENT}${dim(TOOL_RAIL)}${" ".repeat(TOOL_PREFIX_VISIBLE_WIDTH - TOOL_INDENT.length - 1 + FOLD_CONT_INDENT)}`;
+  return lines.map((line) =>
+    line.continuation
+      ? truncateToWidth(`${contPrefix}${middleTruncate(line.ink, contBudget, theme)}`, Math.max(1, width), ELLIPSIS)
+      : fitTraceRow(tone, line.ink, suffix, reserve, width),
   );
 }
 
@@ -1585,9 +1583,9 @@ function leadingBlank(comp: ToolRowDataLike): boolean {
 function renderTraceRow(comp: ToolRowLike, width: number): string[] {
   const run = readRun(comp);
   if (run) {
-    if (run.index > 0) return []; // a later page: the run's first row carries the fold
-    const line = foldedReadLine(run.rows, width);
-    return leadingBlank(comp) ? ["", line] : [line];
+    if (run.index > 0) return []; // a later call: the unit's first row carries the fold
+    const lines = foldedReadLines(run.rows, width);
+    return leadingBlank(comp) ? ["", ...lines] : lines;
   }
   const line = oneLine(comp, width);
   return leadingBlank(comp) ? ["", line] : [line];

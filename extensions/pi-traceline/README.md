@@ -99,6 +99,10 @@ Traceline folds adjacent rows when repetition would hide the useful difference:
 
 - repeated `cd`, environment assignment and setup prefixes become `⋯`
 - paginated reads of one file become one row with all ranges, the call count and total size
+- consecutive reads of sibling files become one row: the shared directory prints once,
+  then the basenames follow with their ranges. A long list wraps at file boundaries
+  instead of truncating, and a file whose combined result grows past the warning
+  threshold keeps its own row so the size column stays honest
 - adjacent collapsed thinking blocks become one multiline preview, with each reasoning line and paragraph break kept visible
 
 Text, tool calls and other content separate thinking previews. Visible prose between tool calls stops a row fold. Pi's full view always keeps the original rows.
