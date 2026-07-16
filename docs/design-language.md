@@ -470,25 +470,20 @@ punctuate the wall; ambient green stays purged.
 
 ### 9.11 Collapsed thinking
 
-A collapsed thinking run stays compact without hiding its sequence. Each
-non-empty source line renders as `Thinking: <line>`. One or more consecutive
-empty source lines within ordinary prose render as one blank line, preserving
-real paragraph boundaries without reproducing arbitrary vertical whitespace.
-A blank run between consecutive standalone strong-emphasis summaries such as
-`**Planning the change**` disappears. Providers serialize adjacent terse
-summaries as separate Markdown paragraphs; the collapsed preview strips their
-emphasis, so retaining that paragraph spacing would turn a compact sequence into
-a ladder of artificial gaps.
+A collapsed thinking run is exactly one display line. Every non-empty source
+line from every adjacent thinking block is converted to plain inline text and
+appended after `Thinking:`, separated by ` · `. Source newlines and Markdown
+paragraph boundaries never become display rows. Empty or whitespace-only
+thinking fragments do not render and do not break the run.
 
-Adjacent thinking blocks form one logical multiline preview. Pi's one native
-label for the run expands to every preview line; extra labels and spacers from
-older label-per-block Pi versions also disappear. Empty or whitespace-only
-thinking fragments do not render and do not break the run. Any non-thinking
-content entry, including text, a tool call or another semantic block, ends the
-run and keeps the native boundary before the next preview. A non-empty payload
-that cannot yield a sanitized preview keeps one native label inside the run;
-consecutive such blocks fold. Native `Thinking...` labels with no matching
-content metadata retain the safe duplicate-label fallback.
+The line middle-truncates at the terminal width, preserving both its opening
+context and the newest appended thought. Pi's native run label becomes that one
+preview; extra labels and spacers from older label-per-block Pi versions also
+disappear. Any non-thinking content entry, including text, a tool call or
+another semantic block, ends the run and keeps the native boundary before the
+next one-line preview. A non-empty run that cannot yield sanitized text keeps
+one native label. Native `Thinking...` labels with no matching content metadata
+retain the safe duplicate-label fallback.
 
 With traceline loaded, Ctrl+T's effect is self-evident: every tool row collapses
 to a trace line or expands back. So traceline suppresses pi's

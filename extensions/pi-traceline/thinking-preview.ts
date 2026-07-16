@@ -1,20 +1,19 @@
-import { Markdown, truncateToWidth, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import type { AssistantRowDataLike } from "../_lib/chat.ts";
-import { ELLIPSIS } from "../_lib/style.ts";
+import { middleTruncate } from "../_lib/style.ts";
 
 const PREVIEW_RENDER_WIDTH = 10_000;
 
 // Pi renders one collapsed label per adjacent thinking run; older versions rendered one
-// per non-empty block. Traceline accepts both shapes and expands the run into one logical
-// multiline preview: every non-empty source line gets an informative `Thinking: …` row,
-// genuine prose paragraph breaks survive, provider summary paragraphs stay tight, and
-// native spacers between provider-split adjacent blocks disappear. Any non-thinking
-// content entry ends the run, even when Pi does not render that entry here (a tool call,
-// for example). Empty thinking fragments neither render nor break adjacency. Payloads
-// that cannot yield a safe preview keep one native label; labels without corresponding
-// payloads retain the duplicate-label fallback. OSC marks move to the last kept run line.
+// per non-empty block. Traceline accepts both shapes and replaces the whole run with one
+// `Thinking: …` line. Every non-empty source line appends with a middle-dot separator;
+// source newlines never become display rows. Any non-thinking content entry ends the run,
+// even when Pi does not render that entry here (a tool call, for example). Empty thinking
+// fragments neither render nor break adjacency. Runs that cannot yield a safe preview
+// keep one native label; labels without corresponding payloads retain the duplicate-label
+// fallback. OSC marks move to the one retained run line.
 function oscSequences(line: string): string {
   return (line.match(OSC_SEQUENCE) ?? []).join("");
 }
@@ -51,8 +50,6 @@ const plainMarkdownTheme: MarkdownTheme = {
   underline: (text) => text,
 };
 
-type ThinkingPreview = string | undefined;
-
 function sanitizeThinkingLine(rawLine: string): string {
   return stripAnsi(rawLine)
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
@@ -71,63 +68,22 @@ function markdownToPlainInline(markdown: string): string {
   return sanitizeThinkingLine(markdown);
 }
 
-type ThinkingSourceLine = {
-  sanitized: string;
-  standaloneSummary: boolean;
-};
-
-function isStandaloneStrongSummary(line: string): boolean {
-  for (const marker of ["**", "__"]) {
-    if (!line.startsWith(marker) || !line.endsWith(marker)) continue;
-    const body = line.slice(marker.length, -marker.length);
-    if (body.length > 0 && body === body.trim() && !body.includes(marker)) return true;
-  }
-  return false;
-}
-
-function nextNonEmptySourceLine(lines: ThinkingSourceLine[], start: number): ThinkingSourceLine | undefined {
-  for (let i = start; i < lines.length; i++) {
-    if (lines[i]!.sanitized) return lines[i];
-  }
-  return undefined;
-}
-
-function thinkingPreviewForTrace(text: string): ThinkingPreview[] {
-  const lines = text.split(/\r\n|\r|\n/).map((rawLine) => {
+function thinkingPreviewFragments(text: string): string[] {
+  const fragments: string[] = [];
+  for (const rawLine of text.split(/\r\n|\r|\n/)) {
     const sanitized = sanitizeThinkingLine(rawLine);
-    return { sanitized, standaloneSummary: isStandaloneStrongSummary(sanitized) };
-  });
-  const previews: ThinkingPreview[] = [];
-  let previousWasBlank = false;
-  let previousWasStandaloneSummary = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (!line.sanitized) {
-      // OpenAI reasoning summaries commonly arrive as standalone bold paragraphs.
-      // Once markdown styling is stripped they read as a list, not prose paragraphs,
-      // so keep consecutive summary rows tight while preserving every real prose break.
-      const next = nextNonEmptySourceLine(lines, i + 1);
-      const separatesSummaries = previousWasStandaloneSummary && next?.standaloneSummary === true;
-      if (!separatesSummaries && previews.length > 0 && !previousWasBlank) previews.push(undefined);
-      previousWasBlank = !separatesSummaries;
-      continue;
-    }
-    const plain = markdownToPlainInline(line.sanitized);
-    if (plain) {
-      previews.push(plain);
-      previousWasBlank = false;
-      previousWasStandaloneSummary = line.standaloneSummary;
-    }
+    if (!sanitized) continue;
+    const plain = markdownToPlainInline(sanitized);
+    if (plain) fragments.push(plain);
   }
-  while (previews.length > 0 && previews.at(-1) === undefined) previews.pop();
-  return previews;
+  return fragments;
 }
 
 const FALLBACK_LABEL = Symbol("fallback-label");
-type ThinkingPreviewRow = ThinkingPreview | typeof FALLBACK_LABEL;
+type ThinkingPreviewRow = string | typeof FALLBACK_LABEL;
 
 type ThinkingLabelPlan = {
-  rows: ThinkingPreviewRow[];
+  row: ThinkingPreviewRow;
   emitsGroup: boolean;
 };
 
@@ -136,22 +92,12 @@ function thinkingLabelPlans(comp: AssistantRowDataLike): ThinkingLabelPlan[] {
   if (!Array.isArray(content)) return [];
 
   const plans: ThinkingLabelPlan[] = [];
-  let blocks: ThinkingPreview[][] = [];
+  let blocks: string[][] = [];
   const flush = () => {
     if (blocks.length === 0) return;
-    const rows: ThinkingPreviewRow[] = [];
-    for (const previews of blocks) {
-      if (previews.some((preview) => preview !== undefined)) {
-        rows.push(...previews);
-      } else if (rows.at(-1) !== FALLBACK_LABEL) {
-        // A non-empty payload that sanitizes to nothing still needs one native label.
-        // Consecutive such blocks keep the old duplicate-label fold inside the run.
-        rows.push(FALLBACK_LABEL);
-      }
-    }
-    for (let i = 0; i < blocks.length; i++) {
-      plans.push({ rows, emitsGroup: i === 0 });
-    }
+    const fragments = blocks.flat();
+    const row: ThinkingPreviewRow = fragments.length > 0 ? fragments.join(" · ") : FALLBACK_LABEL;
+    for (let i = 0; i < blocks.length; i++) plans.push({ row, emitsGroup: i === 0 });
     blocks = [];
   };
 
@@ -160,7 +106,7 @@ function thinkingLabelPlans(comp: AssistantRowDataLike): ThinkingLabelPlan[] {
       if (typeof block.thinking === "string" && block.thinking.trim().length > 0) {
         // Pi skips empty thinking blocks, so only rendered blocks receive a label plan.
         // Empty fragments still leave `blocks` open and therefore preserve adjacency.
-        blocks.push(thinkingPreviewForTrace(block.thinking));
+        blocks.push(thinkingPreviewFragments(block.thinking));
       }
       continue;
     }
@@ -182,7 +128,7 @@ function replaceVisibleThinkingLabel(line: string, displayLabel: string, width?:
   // suffixes, but drop that old visible padding before fitting the longer preview.
   const suffix = width && width > 0 ? line.slice(end).replace(/[ \t]+$/g, "") : line.slice(end);
   const replaced = `${line.slice(0, start)}${displayLabel}${suffix}`;
-  return width && width > 0 ? truncateToWidth(replaced, Math.max(1, width), ELLIPSIS) : replaced;
+  return width && width > 0 ? middleTruncate(replaced, Math.max(1, width)) : replaced;
 }
 
 export function dedupeThinkingLabels(comp: AssistantRowDataLike, lines: string[], width?: number): string[] {
@@ -221,7 +167,7 @@ export function dedupeThinkingLabels(comp: AssistantRowDataLike, lines: string[]
           // Pi inserts a spacer between visible thinking blocks. The first label already
           // emitted this whole adjacent group, so remove only the blanks immediately
           // before its now-redundant continuation label. Transplant dropped OSC marks to
-          // the group's last preview now, never across a later semantic boundary.
+          // the group's one preview now, never across a later semantic boundary.
           let spacerMarks = "";
           while (out.length > 0 && stripAnsi(out.at(-1)!).trim().length === 0) {
             spacerMarks = `${oscSequences(out.pop()!)}${spacerMarks}`;
@@ -231,18 +177,11 @@ export function dedupeThinkingLabels(comp: AssistantRowDataLike, lines: string[]
         }
 
         flushPendingMarks();
-        let firstRow = true;
-        for (const row of plan.rows) {
-          if (row === undefined) {
-            out.push("");
-            continue;
-          }
-          // Only the first replacement inherits the native row's OSC zone marks.
-          // Synthetic continuation rows keep its SGR styling but must not duplicate OSC.
-          const template = firstRow ? line : line.replace(OSC_SEQUENCE, "");
-          out.push(row === FALLBACK_LABEL ? template : replaceVisibleThinkingLabel(template, `Thinking: ${row}`, width));
-          firstRow = false;
-        }
+        out.push(
+          plan.row === FALLBACK_LABEL
+            ? line
+            : replaceVisibleThinkingLabel(line, `Thinking: ${plan.row}`, width),
+        );
         activePreviewLineAt = out.length - 1;
         continue;
       }

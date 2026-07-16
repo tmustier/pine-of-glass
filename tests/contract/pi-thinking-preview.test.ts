@@ -44,7 +44,7 @@ test("empty thinking blocks are skipped natively and do not shift Traceline prev
   );
 });
 
-test("one native run label becomes a multiline preview across adjacent empty fragments", () => {
+test("one native run label becomes one appended preview across adjacent empty fragments", () => {
   const { native, preview } = collapsedLines([
     { type: "thinking", thinking: "first adjacent step" },
     { type: "thinking", thinking: "" },
@@ -60,9 +60,7 @@ test("one native run label becomes a multiline preview across adjacent empty fra
   );
   assert.deepEqual(preview, [
     "",
-    "Thinking: first adjacent step",
-    "Thinking: second adjacent step",
-    "Thinking: third adjacent step",
+    "Thinking: first adjacent step · second adjacent step · third adjacent step",
   ]);
 });
 
@@ -86,19 +84,17 @@ test("tool calls and text keep native boundaries between thinking runs", () => {
   ]);
 });
 
-test("a single collapsed block keeps multiline and prose paragraph rendering", () => {
+test("a single collapsed block flattens source lines and prose paragraphs", () => {
   const { preview } = collapsedLines([
     { type: "thinking", thinking: "single first line\n\nsingle second line" },
   ]);
   assert.deepEqual(preview, [
     "",
-    "Thinking: single first line",
-    "",
-    "Thinking: single second line",
+    "Thinking: single first line · single second line",
   ]);
 });
 
-test("standalone summary paragraphs render as one tight native-backed sequence", () => {
+test("standalone summary paragraphs append into one native-backed row", () => {
   const { native, preview } = collapsedLines([
     { type: "thinking", thinking: "**Planning the change**\n\n**Implementing the renderer**" },
     { type: "thinking", thinking: "**Verifying the result**\n\n**Preparing the report**" },
@@ -106,9 +102,6 @@ test("standalone summary paragraphs render as one tight native-backed sequence",
   assert.equal(native.filter((line) => line === "Thinking...").length, 1);
   assert.deepEqual(preview, [
     "",
-    "Thinking: Planning the change",
-    "Thinking: Implementing the renderer",
-    "Thinking: Verifying the result",
-    "Thinking: Preparing the report",
+    "Thinking: Planning the change · Imp…Verifying the result · Preparing the report",
   ]);
 });
