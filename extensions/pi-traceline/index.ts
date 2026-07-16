@@ -1423,7 +1423,7 @@ const FOLD_CONT_INDENT = "read ".length;
 function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   const theme = currentTheme();
   const last = rows[rows.length - 1]!;
-  const tone = statusTone(last);
+  const tone = rows.some((row) => toolStatus(row) === "running") ? "running" : statusTone(last);
   const blockRows = blockToolRows(last);
   const facts = blockFacts(blockRows);
   const available = traceRowAvailable(width);
@@ -1492,7 +1492,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
     const sepPlain = cur.hasCell ? ", " : " ";
     const budget = cur.continuation ? contBudget : bodyBudget;
     const commaRoom = i < cells.length - 1 ? 1 : 0;
-    const fits = cur.plain.length + sepPlain.length + cell.plain.length + commaRoom <= budget;
+    const fits = visibleWidth(cur.plain) + sepPlain.length + visibleWidth(cell.plain) + commaRoom <= budget;
     // A lone cell longer than a fresh continuation line stays put and middle-truncates
     // below; wrapping never emits an empty line.
     if (fits || (cur.continuation && !cur.hasCell)) {

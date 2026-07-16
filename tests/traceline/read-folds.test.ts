@@ -7,6 +7,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
@@ -58,6 +59,19 @@ test("a running last page keeps the fold live: running bullet, no premature size
   assert.ok(line.includes("\x1b[34m\u203a"), "bullet must reflect the in-flight last call");
   const visible = stripAnsi(line);
   assert.ok(visible.trimEnd().endsWith("2 calls · 9.0k ch"), `only landed results count: ${visible}`);
+});
+
+test("a running earlier sibling keeps the fold live after a later sibling lands", () => {
+  const dir = `${homedir()}/projects/demo`;
+  const running = { ...wholeFileReadRow(`${dir}/a.ts`), result: undefined, isPartial: true };
+  const completed = wholeFileReadRow(`${dir}/b.ts`);
+  setTracelineChat({ children: [running, completed] });
+
+  const line = renderTraceRow(running, 120).at(-1)!;
+  assert.ok(line.includes("\x1b[34m\u203a"), "any in-flight call keeps the folded bullet blue");
+  assert.ok(!line.includes("\x1b[32m\u203a"), "a completed last call must not turn the fold green");
+  const visible = stripAnsi(line);
+  assert.ok(visible.trimEnd().endsWith("2 calls · 1.0k ch"), `only landed results count: ${visible}`);
 });
 
 test("error pages never fold: the red row survives and breaks the run on both sides", () => {
@@ -178,9 +192,23 @@ test("a long dir fold wraps at file boundaries onto rail-only continuation lines
   }
   assert.equal(rest[0]!.indexOf("bravo"), first!.indexOf("~/projects"), "continuation cells share the dir cell's left edge");
   for (const line of [first!, ...rest]) {
-    assert.ok(stripAnsi(line).length <= width, `no line exceeds the width: ${line}`);
+    assert.ok(visibleWidth(line) <= width, `no line exceeds the width: ${line}`);
   }
   const joined = [first!, ...rest].join("\n");
   for (const name of names) assert.ok(joined.includes(name), `no basename is cut: ${name}`);
   for (const row of rows.slice(1)) assert.deepEqual(renderTraceRow(row, width), [], "later siblings render nothing");
+});
+
+test("dir folding counts terminal cells so wide basenames wrap without cuts", () => {
+  const dir = `${homedir()}/projects/demo`;
+  const names = ["界界界界界-a.ts", "界界界界界-b.ts", "界界界界界-c.ts", "界界界界界-d.ts"];
+  const rows = names.map((name) => wholeFileReadRow(`${dir}/${name}`));
+  setTracelineChat({ children: [...rows] });
+
+  const width = 60;
+  const lines = renderTraceRow(rows[0]!, width);
+  const joined = lines.map(stripAnsi).join("\n");
+  for (const line of lines) assert.ok(visibleWidth(line) <= width, `no line exceeds the width: ${stripAnsi(line)}`);
+  for (const name of names) assert.ok(joined.includes(name), `wide basename stays whole: ${name}`);
+  assert.ok(!joined.includes("\u2026"), `no fitted basename needs truncation: ${joined}`);
 });
