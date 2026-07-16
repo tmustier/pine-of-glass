@@ -156,6 +156,8 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   live-rate calibration.
 - **Session totals and config parsing**: open idle time contributes to idle, active is
   the watched span minus idle, and malformed boundary values are ignored.
+- **Feature-flag registration**: the default config registers no hooks or command;
+  explicit `enabled: true` registers the full event surface and `/pace`.
 
 ## Layer 3: render goldens
 
@@ -200,8 +202,9 @@ model call required:
   cannot leave a hot orphan behind.
 - The full startup smoke checks that the `[Contextimate]` block renders, that
   `/contextimate compact` and `expanded` change the rendered mode line, and that `/reload`
-  keeps exactly one block. It also proves `/cache` and `/pace` render through the real TUI
-  and both survive the Ctrl+T chat rebuild.
+  keeps exactly one block. Its project config explicitly enables Meantime, proving the
+  public opt-in path; it then proves `/cache` and `/pace` render through the real TUI and
+  both survive the Ctrl+T chat rebuild.
 - Both exit non-zero on assertion failure so they can gate publishes. They do not run in
   CI because they need a TTY and an installed Pi. A "live turn" variant (real model, one
   bash call, assert a trace line appears and Ctrl+T restores native rows) stays a

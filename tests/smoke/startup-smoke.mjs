@@ -5,7 +5,8 @@
 //   2. /contextimate compact and expanded actually switch the rendered mode line,
 //   3. /reload leaves exactly one estimator block,
 //   4. traceline announces itself (extension loaded without crashing the TUI),
-//   5. /pace and /cache render, and both survive the Ctrl+T chat rebuild.
+//   5. the explicit Meantime feature flag enables /pace through real Pi,
+//   6. /pace and /cache render, and both survive the Ctrl+T chat rebuild.
 // Local-only: needs tmux + an installed pi on PATH. Exits non-zero on any failure.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
@@ -87,6 +88,9 @@ for (const path of [fixtureDir, repoRoot]) {
 writeFileSync(join(fixtureHome, ".pi", "agent", "trust.json"), JSON.stringify(trusted, null, 2));
 writeFileSync(join(fixtureDir, "AGENTS.md"), "# Smoke fixture\nMinimal project context for the startup smoke test.\n");
 mkdirSync(join(fixtureDir, ".pi"), { recursive: true });
+// Meantime ships disabled. This project-local opt-in proves the public feature-flag
+// path against real Pi instead of accidentally relying on a test-only registration.
+writeFileSync(join(fixtureDir, ".pi", "pi-meantime.json"), JSON.stringify({ enabled: true }, null, 2));
 
 // Fixture-controlled compact marker: a project skill whose *name* renders as a compact
 // scan row (`zz-smoke-probe  ~0.1k …`) but appears in no summary row — a deterministic

@@ -1,8 +1,8 @@
 # pi-meantime
 
-> **Status: experimental.** New in `pine-of-glass` `0.7.0`; wording, thresholds, and
-> states may change without notice. Track
-> [#26](https://github.com/tmustier/pine-of-glass/issues/26).
+> **Status: experimental and opt-in.** New in `pine-of-glass` `0.7.0`; wording,
+> thresholds, and states may change without notice. Meantime is feature-flagged off by
+> default. Track [#26](https://github.com/tmustier/pine-of-glass/issues/26).
 
 Explains where the wall-clock went. pi's footer *counts* elapsed time; meantime
 *decomposes* it: is the model thinking or stuck, why was that call slow, and where did
@@ -74,13 +74,12 @@ pi -e ./extensions/pi-meantime
 
 ## Use
 
-Nothing to press: the tempo line ticks above the editor during a run and notices
-arrive on their own. `/pace` prints the ledger.
-
-Config lives at `~/.pi/agent/pi-meantime.json` or `<project>/.pi/pi-meantime.json`:
+Meantime is inert by default. To opt in, create `~/.pi/agent/pi-meantime.json` for
+all projects or `<project>/.pi/pi-meantime.json` for one project, then run `/reload`:
 
 ```json
 {
+  "enabled": true,
   "widget": true,
   "notices": true,
   "slowStartFactor": 3,
@@ -91,6 +90,11 @@ Config lives at `~/.pi/agent/pi-meantime.json` or `<project>/.pi/pi-meantime.jso
   "prefillCauseTokens": 20000
 }
 ```
+
+`enabled` is the feature flag. Unless it is explicitly `true`, Meantime registers no
+hooks, timer, widget, notices, or `/pace` command. Once enabled, there is nothing to
+press: the tempo line ticks during a run, notices arrive on their own, and `/pace`
+prints the ledger.
 
 A slow start fires when a call's first token takes at least `slowStartFactor` times
 the rolling median *and* clears the absolute floor; a slow stream fires when a call

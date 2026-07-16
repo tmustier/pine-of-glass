@@ -246,10 +246,12 @@ test("sessionTotals: bucket sums, open idle interval, active = span − idle", (
 // --- config -----------------------------------------------------------------------------------
 
 test("parseMeantimeConfig: permissive at the boundary, precise at the call site", () => {
+  assert.equal(DEFAULT_CONFIG.enabled, false, "experimental runtime must be opt-in");
   assert.deepEqual(parseMeantimeConfig(null), {});
   assert.deepEqual(parseMeantimeConfig("nope"), {});
   assert.deepEqual(
-    parseMeantimeConfig({ widget: false, slowStartFloorMs: 8_000, slowStreamMinTokens: 500.9, baselineMinCalls: -2, junk: 1 }),
-    { widget: false, slowStartFloorMs: 8_000, slowStreamMinTokens: 500 },
+    parseMeantimeConfig({ enabled: true, widget: false, slowStartFloorMs: 8_000, slowStreamMinTokens: 500.9, baselineMinCalls: -2, junk: 1 }),
+    { enabled: true, widget: false, slowStartFloorMs: 8_000, slowStreamMinTokens: 500 },
   );
+  assert.deepEqual(parseMeantimeConfig({ enabled: "yes" }), {});
 });

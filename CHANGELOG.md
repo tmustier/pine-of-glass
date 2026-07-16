@@ -8,6 +8,9 @@ loop-economics voice as cachemire (`◍`) with wall-clock milliseconds as the
 currency. Design language grows a family row, latency/rate number grammar, and
 §10 (tempo facts: measurement honesty, segments, surfaces).
 
+- Meantime is feature-flagged off by default while its experimental UX settles.
+  Set `"enabled": true` in `pi-meantime.json` to opt in; otherwise its entrypoint
+  registers no hooks, timer, widget, notices, or `/pace` command.
 - A live tempo line above the editor names the current phase of the wait
   (`waiting`, `thinking`, `writing` with a `~tok/s` estimate from streamed
   chars, `tools` with wall-clock and a running count) and turns warning ink
