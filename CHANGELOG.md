@@ -49,6 +49,12 @@ currency. Design language grows a family row, latency/rate number grammar, and
   warning size threshold keeps its own row (still folding its own pages) and
   splits the run, as an error row already did, so ballooned reads stay visible
   in the size column. Ctrl+T's expanded view still shows every individual call.
+- Collapsed thinking previews keep consecutive standalone bold summaries tight.
+  OpenAI serializes these terse summaries as separate Markdown paragraphs; once
+  their emphasis is stripped, preserving every source blank line created an
+  artificial ladder of gaps. Ordinary prose paragraph breaks remain visible.
+  The installed-Pi contracts now track Pi 0.80.8's one native label per adjacent
+  thinking run.
 - Internal: the write pre-image snapshot and diff-stat parsing moved from
   `pi-traceline`'s `index.ts` into `write-diff.ts`; no behaviour change.
 
