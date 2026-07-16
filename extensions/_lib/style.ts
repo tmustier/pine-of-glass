@@ -186,12 +186,33 @@ function activeSgrAt(line: string, rawIndex: number): string {
   return [...state.values()].join("");
 }
 
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function columnBoundary(
+  text: string,
+  target: number,
+  round: "down" | "up",
+): { plainIndex: number; column: number } {
+  let column = 0;
+  for (const { segment, index } of GRAPHEME_SEGMENTER.segment(text)) {
+    const nextColumn = column + visibleWidth(segment);
+    if (target <= column) return { plainIndex: index, column };
+    if (target < nextColumn) {
+      return round === "up"
+        ? { plainIndex: index + segment.length, column: nextColumn }
+        : { plainIndex: index, column };
+    }
+    column = nextColumn;
+  }
+  return { plainIndex: text.length, column };
+}
+
 export function middleTruncate(line: string, width: number, theme?: Theme): string {
   const maxWidth = Math.max(1, width);
   if (visibleWidth(line) <= maxWidth) return line;
 
   const vis = stripAnsi(line);
-  const visLen = vis.length;
+  const visLen = visibleWidth(vis);
   const ellipsisWidth = visibleWidth(ELLIPSIS);
   const budget = Math.max(1, maxWidth - ellipsisWidth); // reserve columns for the ellipsis
 
@@ -200,18 +221,22 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
 
   // The cut is a column (design language §9.8): the tail is exactly `maxTail` wide and
   // the head exactly fills the rest, so every line truncated to the same budget cuts at
-  // identical columns and fills the budget exactly. No content-dependent snapping — a
-  // mid-token cut beside a dim ellipsis is legible; a wandering ellipsis column is not.
+  // identical columns and fills the budget exactly. Wide graphemes that cross either cut
+  // round out of the retained spans; padding keeps the ellipsis and right edge fixed.
   const tailStart = visLen - maxTail;
+  const tailBoundary = columnBoundary(vis, tailStart, "up");
   const dimEllipsis = ink(theme, "dim", ELLIPSIS);
-  const tailRawStart = rawIndexAtVisibleIndex(line, tailStart);
+  const tailRawStart = rawIndexAtVisibleIndex(line, tailBoundary.plainIndex);
   const tailRaw = `${activeSgrAt(line, tailRawStart)}${line.slice(tailRawStart)}`;
+  const tailPadding = Math.max(0, maxTail - (visLen - tailBoundary.column));
 
   const headEnd = budget - maxTail;
-  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
+  if (headEnd <= 0) return `${dimEllipsis}${" ".repeat(tailPadding)}${tailRaw}`;
 
-  const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headEnd));
-  return `${headRaw}${RESET}${dimEllipsis}${tailRaw}`;
+  const headBoundary = columnBoundary(vis, headEnd, "down");
+  const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headBoundary.plainIndex));
+  const headPadding = Math.max(0, headEnd - headBoundary.column);
+  return `${headRaw}${RESET}${" ".repeat(headPadding)}${dimEllipsis}${" ".repeat(tailPadding)}${tailRaw}`;
 }
 
 /** Quantities right (design language §5): body left, right-aligned suffix, ≥2-space gap

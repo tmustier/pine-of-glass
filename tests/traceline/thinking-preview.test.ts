@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { dedupeThinkingLabels } from "../../extensions/pi-traceline/thinking-preview.ts";
 
@@ -56,10 +57,17 @@ test("a single block appends every non-empty line into one width-bounded preview
     52,
   )[0]!;
   const visibleLong = stripAnsi(long);
-  assert.ok(visibleLong.length <= 52, `preview must respect row width: ${visibleLong}`);
+  assert.ok(visibleWidth(long) <= 52, `preview must respect row width: ${visibleLong}`);
   assert.ok(visibleLong.startsWith("Thinking: first"), visibleLong);
   assert.ok(visibleLong.includes("…"), visibleLong);
   assert.ok(visibleLong.endsWith("newest appended thought"), visibleLong);
+
+  const wide = dedupeThinkingLabels(
+    thinkingComp([{ type: "thinking", thinking: `提交内容 ${"analysis ".repeat(40)}` }]),
+    [LABEL],
+    187,
+  )[0]!;
+  assert.equal(visibleWidth(wide), 187, `wide-character preview must fit: ${stripAnsi(wide)}`);
 });
 
 test("three adjacent blocks append into one preview row", () => {
