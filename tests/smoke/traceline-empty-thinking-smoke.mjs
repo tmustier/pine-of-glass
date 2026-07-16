@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Resume a real Pi session whose assistant message contains three adjacent thinking
-// blocks with empty and whitespace-only fragments interleaved. The collapsed preview must
-// stay tight and aligned. A past Traceline implementation entered a synchronous loop on
-// an empty block, so every subprocess call is bounded and the uniquely launched Pi is
-// killed on timeout.
+// Resume a real Pi session whose assistant message contains adjacent thinking blocks,
+// standalone bold summary paragraphs, and empty fragments interleaved. The collapsed
+// preview must stay tight and aligned. A past Traceline implementation entered a
+// synchronous loop on an empty block, so every subprocess call is bounded and the
+// uniquely launched Pi is killed on timeout.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +18,7 @@ const previews = [
   "Thinking: first adjacent reasoning step",
   "Thinking: second adjacent reasoning step",
   "Thinking: third adjacent reasoning step",
+  "Thinking: fourth adjacent reasoning step",
 ];
 const hardDeadline = Date.now() + 45_000;
 let launchedPid;
@@ -84,11 +85,16 @@ function sessionEntries(cwd) {
       message: {
         role: "assistant",
         content: [
-          { type: "thinking", thinking: "first adjacent reasoning step" },
+          {
+            type: "thinking",
+            thinking: "**first adjacent reasoning step**\n\n**second adjacent reasoning step**",
+          },
           { type: "thinking", thinking: "" },
           { type: "thinking", thinking: " \n\t\n " },
-          { type: "thinking", thinking: "second adjacent reasoning step" },
-          { type: "thinking", thinking: "third adjacent reasoning step" },
+          {
+            type: "thinking",
+            thinking: "**third adjacent reasoning step**\n\n**fourth adjacent reasoning step**",
+          },
           { type: "text", text: sentinel },
         ],
         api: "anthropic-messages",

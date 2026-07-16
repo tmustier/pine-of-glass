@@ -6,10 +6,11 @@ import { ELLIPSIS } from "../_lib/style.ts";
 
 const PREVIEW_RENDER_WIDTH = 10_000;
 
-// pi renders one collapsed label per non-empty thinking block. Traceline replaces a
-// contiguous run of those labels with one logical multiline preview: every non-empty
-// source line gets an informative `Thinking: …` row, source paragraph breaks survive,
-// and Pi's spacers between provider-split adjacent blocks disappear. Any non-thinking
+// Pi renders one collapsed label per adjacent thinking run; older versions rendered one
+// per non-empty block. Traceline accepts both shapes and expands the run into one logical
+// multiline preview: every non-empty source line gets an informative `Thinking: …` row,
+// genuine prose paragraph breaks survive, provider summary paragraphs stay tight, and
+// native spacers between provider-split adjacent blocks disappear. Any non-thinking
 // content entry ends the run, even when Pi does not render that entry here (a tool call,
 // for example). Empty thinking fragments neither render nor break adjacency. Payloads
 // that cannot yield a safe preview keep one native label; labels without corresponding
@@ -70,20 +71,52 @@ function markdownToPlainInline(markdown: string): string {
   return sanitizeThinkingLine(markdown);
 }
 
+type ThinkingSourceLine = {
+  sanitized: string;
+  standaloneSummary: boolean;
+};
+
+function isStandaloneStrongSummary(line: string): boolean {
+  for (const marker of ["**", "__"]) {
+    if (!line.startsWith(marker) || !line.endsWith(marker)) continue;
+    const body = line.slice(marker.length, -marker.length);
+    if (body.length > 0 && body === body.trim() && !body.includes(marker)) return true;
+  }
+  return false;
+}
+
+function nextNonEmptySourceLine(lines: ThinkingSourceLine[], start: number): ThinkingSourceLine | undefined {
+  for (let i = start; i < lines.length; i++) {
+    if (lines[i]!.sanitized) return lines[i];
+  }
+  return undefined;
+}
+
 function thinkingPreviewForTrace(text: string): ThinkingPreview[] {
+  const lines = text.split(/\r\n|\r|\n/).map((rawLine) => {
+    const sanitized = sanitizeThinkingLine(rawLine);
+    return { sanitized, standaloneSummary: isStandaloneStrongSummary(sanitized) };
+  });
   const previews: ThinkingPreview[] = [];
   let previousWasBlank = false;
-  for (const rawLine of text.split(/\r\n|\r|\n/)) {
-    const sanitized = sanitizeThinkingLine(rawLine);
-    if (!sanitized) {
-      if (previews.length > 0 && !previousWasBlank) previews.push(undefined);
-      previousWasBlank = true;
+  let previousWasStandaloneSummary = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.sanitized) {
+      // OpenAI reasoning summaries commonly arrive as standalone bold paragraphs.
+      // Once markdown styling is stripped they read as a list, not prose paragraphs,
+      // so keep consecutive summary rows tight while preserving every real prose break.
+      const next = nextNonEmptySourceLine(lines, i + 1);
+      const separatesSummaries = previousWasStandaloneSummary && next?.standaloneSummary === true;
+      if (!separatesSummaries && previews.length > 0 && !previousWasBlank) previews.push(undefined);
+      previousWasBlank = !separatesSummaries;
       continue;
     }
-    const plain = markdownToPlainInline(sanitized);
+    const plain = markdownToPlainInline(line.sanitized);
     if (plain) {
       previews.push(plain);
       previousWasBlank = false;
+      previousWasStandaloneSummary = line.standaloneSummary;
     }
   }
   while (previews.length > 0 && previews.at(-1) === undefined) previews.pop();

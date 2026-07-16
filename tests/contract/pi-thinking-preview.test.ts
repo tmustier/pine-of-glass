@@ -44,7 +44,7 @@ test("empty thinking blocks are skipped natively and do not shift Traceline prev
   );
 });
 
-test("three adjacent native blocks become one multiline preview across empty fragments", () => {
+test("one native run label becomes a multiline preview across adjacent empty fragments", () => {
   const { native, preview } = collapsedLines([
     { type: "thinking", thinking: "first adjacent step" },
     { type: "thinking", thinking: "" },
@@ -55,8 +55,8 @@ test("three adjacent native blocks become one multiline preview across empty fra
 
   assert.equal(
     native.filter((line) => line === "Thinking...").length,
-    3,
-    "Pi's label-per-non-empty-block contract changed: re-check grouping",
+    1,
+    "Pi's label-per-adjacent-run contract changed: re-check grouping",
   );
   assert.deepEqual(preview, [
     "",
@@ -86,7 +86,7 @@ test("tool calls and text keep native boundaries between thinking runs", () => {
   ]);
 });
 
-test("a single collapsed block keeps multiline and paragraph rendering", () => {
+test("a single collapsed block keeps multiline and prose paragraph rendering", () => {
   const { preview } = collapsedLines([
     { type: "thinking", thinking: "single first line\n\nsingle second line" },
   ]);
@@ -95,5 +95,20 @@ test("a single collapsed block keeps multiline and paragraph rendering", () => {
     "Thinking: single first line",
     "",
     "Thinking: single second line",
+  ]);
+});
+
+test("standalone summary paragraphs render as one tight native-backed sequence", () => {
+  const { native, preview } = collapsedLines([
+    { type: "thinking", thinking: "**Planning the change**\n\n**Implementing the renderer**" },
+    { type: "thinking", thinking: "**Verifying the result**\n\n**Preparing the report**" },
+  ]);
+  assert.equal(native.filter((line) => line === "Thinking...").length, 1);
+  assert.deepEqual(preview, [
+    "",
+    "Thinking: Planning the change",
+    "Thinking: Implementing the renderer",
+    "Thinking: Verifying the result",
+    "Thinking: Preparing the report",
   ]);
 });
