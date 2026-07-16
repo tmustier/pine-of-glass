@@ -194,7 +194,7 @@ test("real AssistantMessageComponent satisfies traceline's assistant duck type",
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
 });
 
-test("adjacent thinking blocks get one native run label; traceline expands their previews", () => {
+test("adjacent thinking blocks get one native run label; traceline appends one preview", () => {
   pi.initTheme(undefined, false);
   const component = new pi.AssistantMessageComponent(assistantMessage([
     { type: "thinking", thinking: "first reasoning segment" },
@@ -213,8 +213,8 @@ test("adjacent thinking blocks get one native run label; traceline expands their
   assert.equal(labelCount(deduped), 0, "native placeholders should become trace previews");
   assert.deepEqual(
     deduped.map((line) => traceline.stripAnsi(line).trim()),
-    ["", "Thinking: first reasoning segment", "Thinking: second reasoning segment"],
-    "adjacent source blocks remain visible without Pi's inter-label spacer",
+    ["", "Thinking: first reasoning segment · second reasoning segment"],
+    "adjacent source blocks append without Pi's inter-label spacer",
   );
 
   // pi marks the message's first and last lines with OSC 133 zone marks; the dedupe must

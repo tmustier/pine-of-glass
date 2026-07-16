@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Resume a real Pi session whose assistant message contains adjacent thinking blocks,
 // standalone bold summary paragraphs, and empty fragments interleaved. The collapsed
-// preview must stay tight and aligned. A past Traceline implementation entered a
+// run must render as one appended line. A past Traceline implementation entered a
 // synchronous loop on an empty block, so every subprocess call is bounded and the
 // uniquely launched Pi is killed on timeout.
 import { spawnSync } from "node:child_process";
@@ -14,12 +14,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const extensionPath = join(repoRoot, "extensions", "pi-traceline", "index.ts");
 const tmuxSession = `pog-empty-thinking-${process.pid}`;
 const sentinel = "GROUPED_THINKING_RESUME_SENTINEL";
-const previews = [
-  "Thinking: first adjacent reasoning step",
-  "Thinking: second adjacent reasoning step",
-  "Thinking: third adjacent reasoning step",
-  "Thinking: fourth adjacent reasoning step",
-];
+const firstPreviewFragment = "Thinking: first adjacent reasoning step";
+const latestPreviewFragment = "fourth adjacent reasoning step";
 const hardDeadline = Date.now() + 45_000;
 let launchedPid;
 let fixtureHome;
@@ -55,6 +51,10 @@ function capturePane() {
   return run(["tmux", "capture-pane", "-p", "-t", tmuxSession, "-S", "-500"], {
     timeoutMs: 2_000,
   }).stdout ?? "";
+}
+
+function previewRows(pane) {
+  return pane.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("Thinking: "));
 }
 
 function sleep(ms) {
@@ -184,19 +184,24 @@ try {
 
   while (Date.now() < hardDeadline && hasTmuxSession()) {
     lastPane = capturePane();
-    if (lastPane.includes(sentinel) && previews.every((preview) => lastPane.includes(preview))) break;
+    const rows = previewRows(lastPane);
+    if (
+      lastPane.includes(sentinel)
+      && rows.length === 1
+      && rows[0].includes(firstPreviewFragment)
+      && rows[0].includes(latestPreviewFragment)
+    ) break;
     sleep(250);
   }
   if (!lastPane.includes(sentinel)) {
     throw new Error(`resumed session did not render before the hard watchdog\n${lastPane}`);
   }
-  if (!previews.every((preview) => lastPane.includes(preview))) {
-    throw new Error(`collapsed preview lost adjacent thinking content\n${lastPane}`);
+  const rows = previewRows(lastPane);
+  if (rows.length !== 1) {
+    throw new Error(`collapsed thinking run rendered as ${rows.length} rows instead of one\n${lastPane}`);
   }
-  const paneLines = lastPane.split("\n").map((line) => line.trim());
-  const previewRows = previews.map((preview) => paneLines.indexOf(preview));
-  if (!previewRows.every((row, index) => index === 0 || row === previewRows[index - 1] + 1)) {
-    throw new Error(`adjacent thinking previews were separated by native spacers\n${lastPane}`);
+  if (!rows[0].includes(firstPreviewFragment) || !rows[0].includes(latestPreviewFragment)) {
+    throw new Error(`one-line preview lost its opening or newest fragment\n${lastPane}`);
   }
 
   run(["tmux", "send-keys", "-t", tmuxSession, "/quit", "Enter"], { timeoutMs: 2_000 });
@@ -204,7 +209,7 @@ try {
   while (Date.now() < exitDeadline && hasTmuxSession()) sleep(100);
   if (hasTmuxSession()) throw new Error("resumed Pi rendered but did not respond to /quit");
 
-  console.log("real-Pi grouped-thinking resume smoke passed");
+  console.log("real-Pi one-line thinking resume smoke passed");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

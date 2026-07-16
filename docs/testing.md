@@ -103,11 +103,11 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   are user-facing grammar).
 - **`toolStatus`**: result+`isError` → error; result+complete → success; partial/none →
   running.
-- **Collapsed thinking previews**: three adjacent non-empty blocks form one tight
-  multiline run; empty thinking fragments do not consume labels or break adjacency;
-  text, tools and other semantic content do; standalone strong-emphasis summary
-  paragraphs stay tight while ordinary prose paragraph breaks survive; fallback labels,
-  OSC marks and width bounds remain unchanged.
+- **Collapsed thinking previews**: three adjacent non-empty blocks and every non-empty
+  line inside them append into one ` · `-separated display row; source paragraph breaks
+  never add rows; empty thinking fragments do not consume labels or break adjacency;
+  text, tools and other semantic content do; fallback labels, OSC marks, middle-truncated
+  tail visibility and width bounds remain covered.
 
 ### contextimate
 
@@ -197,8 +197,9 @@ model call required:
 
 - `test:smoke:traceline` resumes a crafted session with adjacent collapsed thinking
   blocks, standalone strong-emphasis summary paragraphs, and empty or whitespace-only
-  fragments interleaved. It requires every preview row to render consecutively, then
-  proves Pi still handles `/quit`. A 45-second hard watchdog
+  fragments interleaved. It requires the whole run to render on exactly one preview row,
+  with the newest fragment visible after width fitting, then proves Pi still handles
+  `/quit`. A 45-second hard watchdog
   kills only the uniquely launched fixture process if rendering blocks, so the regression
   cannot leave a hot orphan behind.
 - The full startup smoke checks that the `[Contextimate]` block renders, that
