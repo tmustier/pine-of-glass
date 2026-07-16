@@ -320,6 +320,67 @@ test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", () =
 });
 
 // ---------------------------------------------------------------------------------------
+// Drill mode's Pi seams (design language §9.13): the custom-UI editor swap, the overlay
+// pager, and the expanded-row spacer line the number cell replaces.
+
+test("showExtensionCustom seam: editor swap/restore + overlay close drill mode rides", () => {
+  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
+  assert.ok(
+    source.includes("custom: (factory, options) => this.showExtensionCustom(factory, options)"),
+    "ctx.ui.custom wiring gone — drill mode cannot open its hint bar or pager",
+  );
+  const custom = source.slice(source.indexOf("async showExtensionCustom"));
+  assert.ok(custom.includes("const savedText = this.editor.getText();"), "editor draft no longer saved — exiting drill mode would eat the user's draft");
+  for (const anchor of [
+    "this.editorContainer.clear();",
+    "this.editorContainer.addChild(this.editor);",
+    "this.editor.setText(savedText);",
+    "this.ui.setFocus(this.editor);",
+  ]) {
+    assert.ok(custom.includes(anchor), `editor restore step gone (${anchor}) — drill exit strands the editor`);
+  }
+  assert.ok(custom.includes("this.ui.hideOverlay()"), "overlay close no longer hides — the pager would never leave the screen");
+
+  const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
+  assert.ok(declarations.includes("registerShortcut(shortcut: KeyId"), "registerShortcut signature drifted — the alt+t entry point dies");
+  assert.ok(declarations.includes("onTerminalInput(handler: TerminalInputHandler)"), "onTerminalInput gone — drill's mouse routing dies");
+  assert.ok(declarations.includes("custom<T>(factory: (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void)"), "custom factory signature drifted — hint bar and pager factories break");
+});
+
+test("pi-tui overlay focus restore + terminal dimensions the drill pager reads", () => {
+  const tuiRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "..");
+  const tuiSource = readFileSync(join(tuiRoot, "dist/tui.js"), "utf8");
+  assert.ok(
+    tuiSource.includes("preFocus: this.focusedComponent"),
+    "showOverlay no longer records pre-overlay focus — closing the pager would not return keys to the hint bar",
+  );
+  assert.ok(
+    tuiSource.includes("overlayLines.slice(0, maxHeight)"),
+    "overlay no longer clips lines to maxHeight — re-verify the pager's self-windowing assumption",
+  );
+  const tuiDecl = readFileSync(join(tuiRoot, "dist/tui.d.ts"), "utf8");
+  assert.ok(tuiDecl.includes("terminal: Terminal;"), "TUI.terminal gone — the pager loses its height source");
+});
+
+test("real expanded tool row: setExpanded mirrors .expanded and leads with a blank spacer", () => {
+  pi.initTheme(undefined, false);
+  const comp = new pi.ToolExecutionComponent("read", "tool-drill", { path: "/tmp/x.txt" }, undefined, undefined, {} as never, tmpdir());
+  comp.updateResult({ content: [{ type: "text", text: "hello ".repeat(40) }], isError: false }, false);
+  const peek = comp as unknown as { expanded?: boolean };
+  assert.equal(peek.expanded ?? false, false, "rows must start collapsed");
+  comp.setExpanded(true);
+  assert.equal(peek.expanded, true, "expanded flag no longer mirrors setExpanded — drill pins and §9.12 z1 desync");
+  assert.equal(traceline.isExpandedToolRow(comp), true, "real expanded row must match the z1 duck type");
+
+  // The number cell rides the blank spacer line pi renders above a native row (§9.13).
+  // If this softens, drill numbering on expanded rows silently degrades (row stays
+  // selectable but shows no number) — this contract names the drift instead.
+  const lines = comp.render(80);
+  assert.ok(Array.isArray(lines) && lines.length > 1, "expanded render shape drifted");
+  assert.equal(traceline.stripAnsi(lines[0] as string).trim(), "", "expanded native render no longer leads with a blank spacer line");
+});
+
+// ---------------------------------------------------------------------------------------
 // Settings + ExtensionAPI declaration anchors (source-text tripwires).
 
 test("ExtensionAPI still declares the tool surface contextimate reads", () => {

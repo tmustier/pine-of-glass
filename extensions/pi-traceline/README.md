@@ -2,7 +2,7 @@
 
 `pi-traceline` turns each tool call into one line. Use it to see what Pi did, which files it changed and which tool results used the most context.
 
-Press `Ctrl+T` to switch between the trace and Pi's full tool output.
+Press `Ctrl+T` to switch between the trace and Pi's full tool output. Press `Alt+T` to drill into a single row without moving the transcript.
 
 ![Traceline showing one tool call per line](../../docs/img/pi-traceline-collapsed.png)
 
@@ -46,14 +46,40 @@ pi -e ./extensions/pi-traceline
 
 ## Switch between trace and detail
 
-Traceline follows Pi's reasoning visibility setting. It does not add a keybinding.
+Traceline follows Pi's reasoning visibility setting. The full view reuses Pi's own `Ctrl+T` keybinding.
 
 - press `Ctrl+T` to show Pi's reasoning and full tool output
 - press `Ctrl+T` again to hide reasoning and show one line per tool call
+- press `Ctrl+O` (Pi's tool expansion) to expand or collapse every tool row in place while reasoning stays hidden
 
 The tool view reads its state from the live assistant row. It cannot get out of sync with the reasoning view. Traceline hides Pi's `Thinking blocks: hidden/visible` caption because the changing tool rows already show the state.
 
-Traceline does not enable mouse reporting or change terminal scrolling.
+Outside drill mode, Traceline does not enable mouse reporting or change terminal scrolling.
+
+## Drill into one row
+
+`Ctrl+T` and `Ctrl+O` show everything at once. Drill mode shows one call.
+
+Press `Alt+T` (or run `/drill`) to number the tool rows in place. The transcript does not move or reflow: each row's rail becomes its number, and `1` is the most recent call. A folded read row is one number. A two-line hint bar replaces the editor while the mode is open; your draft comes back when you leave.
+
+- type a number to open that row in a full-screen pager; short numbers open instantly, and `enter` forces an ambiguous one
+- press `enter` to open the selected row, `j`/`k` or the arrow keys to move the selection
+- press `p` to expand or collapse the selected row in place, using Pi's native tool row
+- press `esc` to leave
+
+The pager shows the row's trace line, then the complete invocation and the complete result. Scroll with `j`/`k`, the arrow keys, the page keys or `g`/`G`. Press `h`/`l` to move to the neighbouring row without closing. Press `esc` to return to the numbered transcript, exactly as you left it.
+
+The most common case takes two keys: `Alt+T`, then `1` for the latest call.
+
+Inside drill mode the mouse wheel works: it moves the selection, or scrolls the pager. Traceline turns mouse reporting on only while drill mode is open and turns it off again on exit, so normal terminal text selection is never affected.
+
+Configure drill mode in the same config file as the size thresholds:
+
+```json
+{ "drillKey": "alt+d", "drillMouse": false }
+```
+
+`drillKey` changes the shortcut. `drillMouse: false` keeps mouse reporting off even inside drill mode.
 
 ## Find large tool results
 

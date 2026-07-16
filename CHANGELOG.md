@@ -52,6 +52,28 @@ currency. Design language grows a family row, latency/rate number grammar, and
 - Internal: the write pre-image snapshot and diff-stat parsing moved from
   `pi-traceline`'s `index.ts` into `write-diff.ts`; no behaviour change.
 
+`pi-traceline` also adds drill mode: inspect one tool call without expanding
+everything and without moving the transcript.
+
+- Press `Alt+T` (configurable via `drillKey`, or run `/drill`) to number the
+  visible tool rows in place. Each row's rail becomes its number at identical
+  width, so nothing reflows; `1` is the most recent call and a folded read run
+  is one number (a wrapped dir fold wears it on its bullet line). A two-line
+  hint bar replaces the editor and restores your draft on exit.
+- Type a number (or press `enter`) to open that call in a full-screen pager
+  showing the trace lines, the complete invocation and the complete result.
+  `j`/`k` scroll, `h`/`l` move between rows without closing, `esc` returns to
+  the transcript exactly as you left it. The common case is two keys:
+  `Alt+T`, then `1`.
+- Press `p` to expand or collapse the selected row in place using Pi's native
+  tool row. Expanded rows now also render natively outside drill mode, so
+  Pi's `Ctrl+O` tool expansion works under traceline; an expanded row leaves
+  read folds and shared columns and rejoins them when collapsed.
+- Inside drill mode the mouse wheel moves the selection or scrolls the pager.
+  Mouse reporting turns on only while the mode is open and always turns off on
+  exit, so terminal text selection is never affected; `"drillMouse": false`
+  opts out.
+
 ## 0.6.2 (2026-07-14)
 
 - Fix a `pi-traceline` startup hang when a resumed session contains an empty or
