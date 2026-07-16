@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+## 0.7.0 (2026-07-16)
 
 New extension: `pi-meantime` (experimental, issue #26) answers "where did the
 time go?" pi's footer counts elapsed time; meantime decomposes it, in the same
