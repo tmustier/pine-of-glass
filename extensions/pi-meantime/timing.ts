@@ -3,7 +3,9 @@
 // process; nothing is provider-reported timing (none exists) and nothing is
 // reconstructed from session history.
 
-import { booleanValue, isJsonObject, positiveNumberValue } from "../_lib/boundary.ts";
+import type { MeantimeConfig } from "./config.ts";
+export { DEFAULT_CONFIG, parseMeantimeConfig } from "./config.ts";
+export type { MeantimeConfig } from "./config.ts";
 
 // --- segments (design language §10.2) ---------------------------------------------------
 
@@ -296,54 +298,4 @@ export function sessionTotals(
     spanMs,
     activeMs: Math.max(0, spanMs - idleMs),
   };
-}
-
-// --- config (family convention: ~/.pi/agent/pi-meantime.json, <cwd>/.pi/pi-meantime.json)
-
-export interface MeantimeConfig {
-  widget: boolean;
-  notices: boolean;
-  /** Slow start: ttft ≥ factor × rolling median, and ≥ the absolute floor. */
-  slowStartFactor: number;
-  slowStartFloorMs: number;
-  /** Slow stream: rate ≤ median ÷ factor, on calls with enough output to matter. */
-  slowStreamFactor: number;
-  slowStreamMinTokens: number;
-  /** Resolved samples required before any baseline claim (short sessions stay silent). */
-  baselineMinCalls: number;
-  /** Uncached prompt tokens needed to name prefill as a slow-start cause. */
-  prefillCauseTokens: number;
-}
-
-export const DEFAULT_CONFIG: MeantimeConfig = {
-  widget: true,
-  notices: true,
-  slowStartFactor: 3,
-  slowStartFloorMs: 5_000,
-  slowStreamFactor: 3,
-  slowStreamMinTokens: 300,
-  baselineMinCalls: 3,
-  prefillCauseTokens: 20_000,
-};
-
-export function parseMeantimeConfig(value: unknown): Partial<MeantimeConfig> {
-  if (!isJsonObject(value)) return {};
-  const config: Partial<MeantimeConfig> = {};
-  const widget = booleanValue(value.widget);
-  const notices = booleanValue(value.notices);
-  const slowStartFactor = positiveNumberValue(value.slowStartFactor);
-  const slowStartFloorMs = positiveNumberValue(value.slowStartFloorMs);
-  const slowStreamFactor = positiveNumberValue(value.slowStreamFactor);
-  const slowStreamMinTokens = positiveNumberValue(value.slowStreamMinTokens);
-  const baselineMinCalls = positiveNumberValue(value.baselineMinCalls);
-  const prefillCauseTokens = positiveNumberValue(value.prefillCauseTokens);
-  if (widget !== undefined) config.widget = widget;
-  if (notices !== undefined) config.notices = notices;
-  if (slowStartFactor !== undefined) config.slowStartFactor = slowStartFactor;
-  if (slowStartFloorMs !== undefined) config.slowStartFloorMs = slowStartFloorMs;
-  if (slowStreamFactor !== undefined) config.slowStreamFactor = slowStreamFactor;
-  if (slowStreamMinTokens !== undefined) config.slowStreamMinTokens = Math.floor(slowStreamMinTokens);
-  if (baselineMinCalls !== undefined) config.baselineMinCalls = Math.floor(baselineMinCalls);
-  if (prefillCauseTokens !== undefined) config.prefillCauseTokens = Math.floor(prefillCauseTokens);
-  return config;
 }

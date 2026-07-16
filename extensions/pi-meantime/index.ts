@@ -201,13 +201,17 @@ function updateWidget(now = Date.now()): void {
 
 // --- extension entry --------------------------------------------------------------------------
 
-export default function piMeantime(pi: ExtensionAPI): void {
+/** Register the runtime only after the explicit config opt-in. Keeping this boundary
+ * outside every hook makes the disabled state inert: no events, command, timer, or UI. */
+export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void {
+  if (!config.enabled) return;
   const s = state();
+  s.config = config;
 
   pi.on("session_start", async (event, ctx) => {
     const now = Date.now();
     if (event.reason === "new" || event.reason === "resume" || event.reason === "fork") resetState(now);
-    s.config = loadConfig(process.cwd());
+    s.config = config;
     if (ctx.model) s.currentModel = `${ctx.model.provider}/${ctx.model.id}`;
     if (!ctx.hasUI) return;
     s.ui = ctx.ui;
@@ -220,9 +224,11 @@ export default function piMeantime(pi: ExtensionAPI): void {
     updateWidget(now);
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async (_event, ctx) => {
     if (g.__piMeantimeTimer) clearInterval(g.__piMeantimeTimer);
     g.__piMeantimeTimer = undefined;
+    if (ctx.hasUI) ctx.ui.setWidget("pi-meantime", undefined);
+    s.lastWidgetText = undefined;
   });
 
   pi.on("model_select", async (event) => {
@@ -327,4 +333,8 @@ export default function piMeantime(pi: ExtensionAPI): void {
       appendChatLine(lines.join("\n"));
     },
   });
+}
+
+export default function piMeantime(pi: ExtensionAPI): void {
+  registerMeantime(pi, loadConfig(process.cwd()));
 }
