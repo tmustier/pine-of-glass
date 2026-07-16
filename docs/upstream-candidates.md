@@ -12,29 +12,31 @@ Entries pin the pi version inspected; internals drift, so re-verify before filin
 
 ---
 
-## 1. Doubled `Thinking...` lines when reasoning is hidden
+## 1. Doubled `Thinking...` lines when reasoning is hidden (resolved)
 
-**Observed:** pi 0.79.1 · live sessions, 2026-06-10 · diagnosed in
+**Observed:** Pi 0.79.1 · live sessions, 2026-06-10 · diagnosed in
 [pine-of-glass#14](https://github.com/tmustier/pine-of-glass/issues/14)
 
-With reasoning hidden (Ctrl+T), `AssistantMessageComponent` renders the collapsed
-`Thinking...` label **once per thinking block, not per message**
-(`dist/modes/interactive/components/assistant-message.js`: the content loop emits a
-label for each `thinking` block, with a spacer when more visible content follows). An
-assistant message containing adjacent thinking blocks therefore renders two or more
-consecutive `Thinking...` lines with nothing between them.
+**Resolved:** Pi 0.80.8 and 0.80.9 emit one collapsed label per adjacent thinking
+run. Traceline's installed-Pi contract pins that cardinality and still accepts the
+older label-per-block shape.
+
+In Pi 0.79.1, with reasoning hidden (Ctrl+T), `AssistantMessageComponent` rendered
+the collapsed `Thinking...` label **once per thinking block, not per message**
+(`dist/modes/interactive/components/assistant-message.js`: the content loop emitted
+a label for each `thinking` block, with a spacer when more visible content followed).
+An assistant message containing adjacent thinking blocks therefore rendered two or
+more consecutive `Thinking...` lines with nothing between them.
 
 Frequency evidence from one live session (`019eb262`): **24 instances** of adjacent
 thinking blocks within a single assistant message; **0** consecutive thinking-only
-messages, so the doubling is intra-message block adjacency (models emitting multiple
+messages, so the doubling was intra-message block adjacency (models emitting multiple
 reasoning segments per response), not message boundaries.
 
-Two native collapsed labels carry no more information than one; the duplication is
-purely an artifact of per-block rendering. Possible upstream direction: coalesce a
-*run* of adjacent thinking blocks into one collapsed label. `pi-traceline` now works
-around this downstream by patching assistant rows and replacing the placeholder with a
-`Thinking: <first reasoning line> ... (N lines)` preview, but the upstream rendering
-seam remains.
+Two native collapsed labels carried no more information than one; the duplication
+was purely an artifact of per-block rendering. Pi adopted the possible upstream
+direction and now coalesces an adjacent run into one collapsed label. Traceline
+replaces that label with one `Thinking: <fragment> · <fragment>` preview line.
 
 ## 2. Anthropic tool search (`defer_loading`) not wired through pi-ai
 

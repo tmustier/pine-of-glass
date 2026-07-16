@@ -1,5 +1,5 @@
 // Collapsed-thinking preview grammar (design language §9.11): adjacent provider
-// fragments form one multiline run, while every non-thinking content entry is a
+// fragments append into one display row, while every non-thinking content entry is a
 // semantic boundary. The installed-Pi suite separately pins native label spacing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -14,13 +14,13 @@ function thinkingComp(content: Array<Record<string, unknown>>) {
   return { hiddenThinkingLabel: "Thinking...", lastMessage: { content } };
 }
 
-test("a single block preserves reasoning lines, prose paragraph breaks, and width", () => {
+test("a single block appends every non-empty line into one width-bounded preview", () => {
   const multiline = thinkingComp([
     { type: "thinking", thinking: "\n  **first reasoning line**\nsecond reasoning line" },
   ]);
   assert.deepEqual(
     dedupeThinkingLabels(multiline, ["", LABEL]),
-    ["", preview("first reasoning line"), preview("second reasoning line")],
+    ["", preview("first reasoning line · second reasoning line")],
   );
 
   const paragraphs = thinkingComp([
@@ -28,8 +28,8 @@ test("a single block preserves reasoning lines, prose paragraph breaks, and widt
   ]);
   assert.deepEqual(
     dedupeThinkingLabels(paragraphs, [LABEL]),
-    [preview("first paragraph"), "", preview("second paragraph")],
-    "long source blank runs collapse to one display line",
+    [preview("first paragraph · second paragraph")],
+    "source paragraph breaks do not create display rows",
   );
 
   const mixedParagraphs = thinkingComp([
@@ -37,8 +37,8 @@ test("a single block preserves reasoning lines, prose paragraph breaks, and widt
   ]);
   assert.deepEqual(
     dedupeThinkingLabels(mixedParagraphs, [LABEL]),
-    [preview("Planning summary"), "", preview("ordinary prose paragraph"), "", preview("Next summary")],
-    "standalone summaries do not erase real prose boundaries",
+    [preview("Planning summary · ordinary prose paragraph · Next summary")],
+    "summary and prose fragments follow the same one-line rule",
   );
 
   const literalStar = dedupeThinkingLabels(
@@ -48,15 +48,21 @@ test("a single block preserves reasoning lines, prose paragraph breaks, and widt
   assert.equal(stripAnsi(literalStar).trim(), "Thinking: 2 * 3 = 6", "markdown rendering preserves genuine stars");
 
   const long = dedupeThinkingLabels(
-    thinkingComp([{ type: "thinking", thinking: "a very long reasoning preview" }]),
+    thinkingComp([{
+      type: "thinking",
+      thinking: "first framing thought\nintermediate detail that will be cut\nnewest appended thought",
+    }]),
     [LABEL],
-    18,
+    52,
   )[0]!;
-  assert.ok(stripAnsi(long).length <= 18, `preview must respect row width: ${stripAnsi(long)}`);
-  assert.ok(stripAnsi(long).startsWith("Thinking:"), stripAnsi(long));
+  const visibleLong = stripAnsi(long);
+  assert.ok(visibleLong.length <= 52, `preview must respect row width: ${visibleLong}`);
+  assert.ok(visibleLong.startsWith("Thinking: first"), visibleLong);
+  assert.ok(visibleLong.includes("…"), visibleLong);
+  assert.ok(visibleLong.endsWith("newest appended thought"), visibleLong);
 });
 
-test("three adjacent blocks form one tight multiline preview", () => {
+test("three adjacent blocks append into one preview row", () => {
   const adjacent = thinkingComp([
     { type: "thinking", thinking: "first reasoning block" },
     { type: "thinking", thinking: "second reasoning block" },
@@ -66,14 +72,12 @@ test("three adjacent blocks form one tight multiline preview", () => {
     dedupeThinkingLabels(adjacent, ["", LABEL, "", LABEL, "", LABEL]),
     [
       "",
-      preview("first reasoning block"),
-      preview("second reasoning block"),
-      preview("third reasoning block"),
+      preview("first reasoning block · second reasoning block · third reasoning block"),
     ],
   );
 });
 
-test("standalone summary paragraphs stay tight within and across provider blocks", () => {
+test("standalone summary paragraphs append within and across provider blocks", () => {
   const sessionShape = thinkingComp([
     {
       type: "thinking",
@@ -86,12 +90,10 @@ test("standalone summary paragraphs stay tight within and across provider blocks
   ]);
   assert.deepEqual(
     dedupeThinkingLabels(sessionShape, [LABEL]),
-    [
-      preview("Implementing conditional HUD rendering"),
-      preview("Assigning active inline renderer in factory"),
-      preview("Refining editor text update flow"),
-      preview("Implementing dispatch control around edits"),
-    ],
+    [preview(
+      "Implementing conditional HUD rendering · Assigning active inline renderer in factory · "
+      + "Refining editor text update flow · Implementing dispatch control around edits",
+    )],
   );
 });
 
@@ -104,7 +106,7 @@ test("empty thinking fragments neither consume labels nor break adjacency", () =
   ]);
   assert.deepEqual(
     dedupeThinkingLabels(interleaved, ["", LABEL, "", LABEL]),
-    ["", preview("first reasoning block"), preview("second reasoning block")],
+    ["", preview("first reasoning block · second reasoning block")],
   );
 });
 
@@ -154,8 +156,7 @@ test("OSC marks from grouped labels stay before later semantic content", () => {
     [LABEL, "", `${markedEnd}${LABEL}`, "", "visible boundary", LABEL],
   );
   assert.deepEqual(out, [
-    preview("first grouped step"),
-    `${markedEnd}${preview("second grouped step")}`,
+    `${markedEnd}${preview("first grouped step · second grouped step")}`,
     "",
     "visible boundary",
     preview("later separate step"),
@@ -188,8 +189,8 @@ test("fallback labels fold only within a known run and preserve OSC marks", () =
   ]);
   assert.deepEqual(
     dedupeThinkingLabels(mixedAdjacent, [LABEL, "", `${markedEnd}${LABEL}`]),
-    [preview("visible step"), `${markedEnd}${LABEL}`],
-    "an unpreviewable block keeps one fallback row and receives its native OSC mark",
+    [`${markedEnd}${preview("visible step")}`],
+    "an unpreviewable fragment adds no row and its native OSC mark reaches the run preview",
   );
 
   const controlOnlySeparated = thinkingComp([
@@ -212,9 +213,9 @@ test("fallback labels fold only within a known run and preserve OSC marks", () =
   const multiline = thinkingComp([{ type: "thinking", thinking: "first\nsecond" }]);
   const marked = `\x1b]133;C\x07${LABEL}`;
   const out = dedupeThinkingLabels(multiline, [marked]);
-  assert.equal(out.length, 2);
+  assert.equal(out.length, 1);
   assert.ok(out[0]!.startsWith("\x1b]133;C\x07"), `native zone mark must survive: ${JSON.stringify(out)}`);
-  assert.equal((out.join("").match(/\x1b\]133;C\x07/g) ?? []).length, 1, "synthetic rows do not duplicate OSC marks");
+  assert.equal((out.join("").match(/\x1b\]133;C\x07/g) ?? []).length, 1, "the one preview keeps one OSC mark");
 
   assert.deepEqual(
     dedupeThinkingLabels({ hiddenThinkingLabel: "Pondering…" }, ["Pondering…", "", "Pondering…"]),

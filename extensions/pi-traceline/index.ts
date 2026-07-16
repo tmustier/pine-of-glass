@@ -114,9 +114,9 @@ import { dedupeThinkingLabels } from "./thinking-preview.ts";
  * consecutive reads of sibling files fold into a dir row that prints the shared
  * directory once and lists the basenames, wrapping at file boundaries when long
  * (§9.9) while a file whose combined result reaches warning severity keeps its own
- * row; and adjacent collapsed thinking blocks become one informative multiline preview.
- * Multiline reasoning keeps each non-empty source line and source blank lines, while
- * text, tool calls and other semantic content keep separate thinking runs separate.
+ * row; and adjacent collapsed thinking blocks append into one informative preview line.
+ * Source newlines never add display rows; text, tool calls and other semantic content
+ * keep separate thinking runs separate.
  *
  * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
  * between consecutive tools.
