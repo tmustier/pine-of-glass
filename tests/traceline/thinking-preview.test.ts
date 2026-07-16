@@ -14,7 +14,7 @@ function thinkingComp(content: Array<Record<string, unknown>>) {
   return { hiddenThinkingLabel: "Thinking...", lastMessage: { content } };
 }
 
-test("a single block preserves reasoning lines, paragraph breaks, and width", () => {
+test("a single block preserves reasoning lines, prose paragraph breaks, and width", () => {
   const multiline = thinkingComp([
     { type: "thinking", thinking: "\n  **first reasoning line**\nsecond reasoning line" },
   ]);
@@ -30,6 +30,15 @@ test("a single block preserves reasoning lines, paragraph breaks, and width", ()
     dedupeThinkingLabels(paragraphs, [LABEL]),
     [preview("first paragraph"), "", preview("second paragraph")],
     "long source blank runs collapse to one display line",
+  );
+
+  const mixedParagraphs = thinkingComp([
+    { type: "thinking", thinking: "**Planning summary**\n\nordinary prose paragraph\n\n**Next summary**" },
+  ]);
+  assert.deepEqual(
+    dedupeThinkingLabels(mixedParagraphs, [LABEL]),
+    [preview("Planning summary"), "", preview("ordinary prose paragraph"), "", preview("Next summary")],
+    "standalone summaries do not erase real prose boundaries",
   );
 
   const literalStar = dedupeThinkingLabels(
@@ -60,6 +69,28 @@ test("three adjacent blocks form one tight multiline preview", () => {
       preview("first reasoning block"),
       preview("second reasoning block"),
       preview("third reasoning block"),
+    ],
+  );
+});
+
+test("standalone summary paragraphs stay tight within and across provider blocks", () => {
+  const sessionShape = thinkingComp([
+    {
+      type: "thinking",
+      thinking: "**Implementing conditional HUD rendering**\n\n**Assigning active inline renderer in factory**",
+    },
+    {
+      type: "thinking",
+      thinking: "**Refining editor text update flow**\n\n**Implementing dispatch control around edits**",
+    },
+  ]);
+  assert.deepEqual(
+    dedupeThinkingLabels(sessionShape, [LABEL]),
+    [
+      preview("Implementing conditional HUD rendering"),
+      preview("Assigning active inline renderer in factory"),
+      preview("Refining editor text update flow"),
+      preview("Implementing dispatch control around edits"),
     ],
   );
 });

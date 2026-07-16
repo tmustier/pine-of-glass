@@ -194,7 +194,7 @@ test("real AssistantMessageComponent satisfies traceline's assistant duck type",
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
 });
 
-test("adjacent thinking blocks get native labels; traceline groups their previews", () => {
+test("adjacent thinking blocks get one native run label; traceline expands their previews", () => {
   pi.initTheme(undefined, false);
   const component = new pi.AssistantMessageComponent(assistantMessage([
     { type: "thinking", thinking: "first reasoning segment" },
@@ -205,9 +205,9 @@ test("adjacent thinking blocks get native labels; traceline groups their preview
   const native = component.render(80);
   const labelCount = (lines: string[]) =>
     lines.filter((line) => traceline.stripAnsi(line).trim() === "Thinking...").length;
-  // The seam itself (issue #14 №3): pi renders one collapsed label per non-empty
-  // thinking block. A change here requires re-checking preview-to-label alignment.
-  assert.equal(labelCount(native), 2, "Pi's collapsed-label cardinality changed");
+  // The seam itself (issue #14 №3): Pi renders one collapsed label per adjacent
+  // thinking run. A change here requires re-checking preview-to-label alignment.
+  assert.equal(labelCount(native), 1, "Pi's collapsed-run label cardinality changed");
 
   const deduped = traceline.dedupeThinkingLabels(component as never, native, 80);
   assert.equal(labelCount(deduped), 0, "native placeholders should become trace previews");

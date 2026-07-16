@@ -76,7 +76,7 @@ moved.
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
-| A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per non-empty block, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
+| A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 
 Where instantiating real components is impractical, the contract test asserts on the
@@ -105,8 +105,9 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   running.
 - **Collapsed thinking previews**: three adjacent non-empty blocks form one tight
   multiline run; empty thinking fragments do not consume labels or break adjacency;
-  text, tools and other semantic content do; single-block rendering, fallback labels,
-  OSC marks, paragraph breaks and width bounds remain unchanged.
+  text, tools and other semantic content do; standalone strong-emphasis summary
+  paragraphs stay tight while ordinary prose paragraph breaks survive; fallback labels,
+  OSC marks and width bounds remain unchanged.
 
 ### contextimate
 
@@ -194,10 +195,10 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 `npm run test:smoke` launches real `pi` processes in isolated tmux sessions with no
 model call required:
 
-- `test:smoke:traceline` resumes a crafted session with three adjacent collapsed
-  thinking blocks and empty or whitespace-only fragments interleaved. It requires all
-  three preview rows to render consecutively, then proves Pi still handles `/quit`. A
-  45-second hard watchdog
+- `test:smoke:traceline` resumes a crafted session with adjacent collapsed thinking
+  blocks, standalone strong-emphasis summary paragraphs, and empty or whitespace-only
+  fragments interleaved. It requires every preview row to render consecutively, then
+  proves Pi still handles `/quit`. A 45-second hard watchdog
   kills only the uniquely launched fixture process if rendering blocks, so the regression
   cannot leave a hot orphan behind.
 - The full startup smoke checks that the `[Contextimate]` block renders, that
