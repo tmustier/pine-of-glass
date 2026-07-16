@@ -20,7 +20,7 @@ for legacy in pi-contextimate.ts pi-traceline.ts pi-cachemire.ts; do
   fi
 done
 
-for name in _lib pi-contextimate pi-traceline pi-cachemire; do
+for name in _lib pi-contextimate pi-traceline pi-cachemire pi-meantime; do
   ln -sfn "$repo_root/extensions/$name" "$target_dir/$name"
   echo "linked $target_dir/$name -> $repo_root/extensions/$name"
 done

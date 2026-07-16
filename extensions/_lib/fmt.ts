@@ -28,6 +28,22 @@ export function formatUsd(value: number): string {
   return value >= 0.10 ? `$${value.toFixed(2)}` : `$${value.toFixed(3)}`;
 }
 
+/** Latency durations (design language §4): below 10s the first decimal is significant
+ * at first-token scale (`1.9s`, `9.6s`); from 10s the compact mixed-unit grammar
+ * resumes. */
+export function formatLatency(ms: number): string {
+  const seconds = Math.max(0, ms) / 1000;
+  if (seconds < 9.95) return `${seconds.toFixed(1)}s`;
+  return formatDuration(ms);
+}
+
+/** Rates (design language §4): integer tok/s; `~` when estimated from streamed chars,
+ * none when derived from provider usage. The ~/no-~ distinction is semantic. */
+export function formatRate(tokensPerSecond: number, options: { exact?: boolean } = {}): string {
+  if (!Number.isFinite(tokensPerSecond) || tokensPerSecond < 0) return "?";
+  return `${options.exact ? "" : "~"}${Math.round(tokensPerSecond)} tok/s`;
+}
+
 /** Durations: compact mixed units, no spaces — 14s, 2m41s, 9h50m. */
 export function formatDuration(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000));

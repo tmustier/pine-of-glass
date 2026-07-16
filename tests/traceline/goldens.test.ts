@@ -1,4 +1,4 @@
-// Visual regression net for the one-line trace grammar (design language §10):
+// Visual regression net for the one-line trace grammar (design language §11):
 // a realistic scripted sequence — repeated cd preambles, a dropped set-hygiene run, a
 // newline-preamble context fold, a grouped multiline thinking preview, a paginated read
 // run, healthy and ballooned outputs, and a flattened multiline command, rendered at 80

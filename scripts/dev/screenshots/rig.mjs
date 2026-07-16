@@ -9,6 +9,7 @@
 //   node scripts/dev/screenshots/rig.mjs traceline
 //   node scripts/dev/screenshots/rig.mjs contextimate
 //   node scripts/dev/screenshots/rig.mjs cachemire   # LIVE: real model calls (cents)
+//   node scripts/dev/screenshots/rig.mjs meantime    # LIVE: real model calls (cents)
 //
 // Captures land in docs/img/. Pass --keep to leave the tmux session running.
 import { spawnSync } from "node:child_process";
@@ -217,9 +218,9 @@ function cachemireShot() {
     join(fixture.cwd, ".pi", "pi-cachemire.json"),
     JSON.stringify({ turnSummaryMinCalls: 1, missWarnUsd: 0.001, missWarnTokens: 250 }),
   );
-  launchPi({ ...fixture, args: "--model openai-codex/gpt-5.5", rows: 45 });
+  launchPi({ ...fixture, args: "--model openai-codex/gpt-5.6-sol:medium", rows: 45 });
   try {
-    waitFor("editor", (t) => t.includes("gpt-5.5"), 90000);
+    waitFor("editor", (t) => t.includes("gpt-5.6-sol"), 90000);
     sleep(1500);
     send("Read README.md and tell me, in one line, what this project is.");
     sleep(300);
@@ -259,7 +260,39 @@ function cachemireShot() {
   }
 }
 
-const scenarios = { traceline: tracelineShot, contextimate: contextimateShot, cachemire: cachemireShot };
+function meantimeShot() {
+  const fixture = makeFixture({ extensions: ["pi-traceline", "pi-meantime"], withAuth: true });
+  writeFileSync(
+    join(fixture.cwd, "README.md"),
+    "# tempo fixture\n\nA tiny project used to show model and tool timing in the real pi TUI.\n",
+  );
+  launchPi({ ...fixture, args: "--model openai-codex/gpt-5.6-sol:medium", rows: 48 });
+  try {
+    waitFor("editor", (t) => t.includes("gpt-5.6-sol"), 90000);
+    sleep(1500);
+    send("Use the bash tool to run `sleep 8`, then reply with exactly: Timing complete.");
+    sleep(300);
+    send("Enter");
+    waitFor("live tool phase", (t) => t.includes("◍ tools"), 120000);
+    sleep(2500);
+    shoot("pi-meantime-tempo", { trimTo: "Use the bash tool" });
+    waitFor("turn complete", (t) => (t.match(/Timing complete\./g) ?? []).length >= 2, 120000);
+    sleep(1500);
+    send("/pace", "Enter");
+    waitFor("pace ledger", (t) => t.includes("[Meantime]"));
+    sleep(1000);
+    shoot("pi-meantime-ledger", { trimTo: "[Meantime]" });
+  } finally {
+    cleanup(fixture);
+  }
+}
+
+const scenarios = {
+  traceline: tracelineShot,
+  contextimate: contextimateShot,
+  cachemire: cachemireShot,
+  meantime: meantimeShot,
+};
 if (!scenarios[scenario]) {
   console.error(`usage: rig.mjs <${Object.keys(scenarios).join("|")}> [--keep]`);
   process.exit(2);

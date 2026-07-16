@@ -1,0 +1,30 @@
+=== widget states ===
+[waiting] (running) ◍ waiting · 3s
+[waiting-slow] (warning) ◍ waiting · 14s · slow start (median 1.9s)
+[thinking] (running) ◍ thinking · 42s · ~50 tok/s
+[writing] (running) ◍ writing · 8s · ~50 tok/s
+[tools] (running) ◍ tools · 31s
+[tools-parallel] (running) ◍ tools · 31s · 3 running
+[idle] (hidden)
+
+=== notices (chat lines) ===
+◍ slow start · first token 14s (median 1.9s) · cause: prefill 145.3k uncached prompt tokens
+◍ slow start · first token 12s (median 1.9s) · cause unknown
+◍ slow stream · 11 tok/s (median 48 tok/s) · 2.1k tokens over 3m10s
+
+=== /pace panel ===
+[Meantime]
+  /pace · event-boundary wall clock · usage-based tok/s · process-local · anthropic/claude-opus-4-8
+  call    ttft   think   write   tools   total     out  tok/s
+     1    1.9s     42s    8.0s     31s   1m22s    2.1k     48
+     2    1.7s       —     12s    4.2s     15s    0.8k     41
+     3    2.1s    6.0s    9.0s       —     18s    1.2k     52
+     4     14s       —    5.0s     22s     20s    0.7k      —  slow start (median 1.9s) · wait incl. silent reasoning · 3 tools overlapped · harness 4.1s
+     5    2.0s       —      3m       —   3m12s    2.1k     11  slow stream (median 48 tok/s)
+  totals: 5 calls · waiting 22s · thinking 48s · writing 3m34s · tools 57s · harness 4.8s
+  timed 1h42m   ██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  active 10m (10%) · idle 1h32m
+
+=== /pace panel (empty) ===
+[Meantime]
+  /pace · event-boundary wall clock · usage-based tok/s · process-local
+  no timed model calls yet

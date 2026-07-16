@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { compactCount, formatChars, formatTokens, formatUsd, formatDuration } from "../../extensions/_lib/fmt.ts";
+import { compactCount, formatChars, formatTokens, formatUsd, formatDuration, formatLatency, formatRate } from "../../extensions/_lib/fmt.ts";
 
 test("counts: one unit everywhere — fixed k below 1M, M above", () => {
   assert.equal(compactCount(0), "0.0k");
@@ -40,4 +40,21 @@ test("durations: compact mixed units, no spaces", () => {
   assert.equal(formatDuration(270_000), "4m30s");
   assert.equal(formatDuration(120_000), "2m");
   assert.equal(formatDuration(35_400_000), "9h50m");
+});
+
+test("latency: one decimal below 10s, duration grammar above", () => {
+  assert.equal(formatLatency(1_900), "1.9s");
+  assert.equal(formatLatency(9_600), "9.6s");
+  assert.equal(formatLatency(9_940), "9.9s");
+  assert.equal(formatLatency(9_960), "10s"); // no 10.0s: toFixed would round past the boundary
+  assert.equal(formatLatency(14_200), "14s");
+  assert.equal(formatLatency(82_000), "1m22s");
+  assert.equal(formatLatency(0), "0.0s");
+});
+
+test("rates: integer tok/s; ~ marks streamed-chars estimates, exact usage drops it", () => {
+  assert.equal(formatRate(54.6), "~55 tok/s");
+  assert.equal(formatRate(48.2, { exact: true }), "48 tok/s");
+  assert.equal(formatRate(Number.NaN), "?");
+  assert.equal(formatRate(-1), "?");
 });

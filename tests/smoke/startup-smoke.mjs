@@ -4,7 +4,8 @@
 //   1. the [Contextimate] block renders at startup (no model call needed),
 //   2. /contextimate compact and expanded actually switch the rendered mode line,
 //   3. /reload leaves exactly one estimator block,
-//   4. traceline announces itself (extension loaded without crashing the TUI).
+//   4. traceline announces itself (extension loaded without crashing the TUI),
+//   5. /pace and /cache render, and both survive the Ctrl+T chat rebuild.
 // Local-only: needs tmux + an installed pi on PATH. Exits non-zero on any failure.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
@@ -107,6 +108,7 @@ writeFileSync(
         join(repoRoot, "extensions", "pi-contextimate", "index.ts"),
         join(repoRoot, "extensions", "pi-traceline", "index.ts"),
         join(repoRoot, "extensions", "pi-cachemire", "index.ts"),
+        join(repoRoot, "extensions", "pi-meantime", "index.ts"),
       ],
     },
     null,
@@ -142,6 +144,7 @@ try {
   pane = waitFor("startup resources", (text) => /pi-traceline/.test(text));
   check("repo contextimate extension loaded", pane.includes("pi-contextimate"));
   check("repo traceline extension loaded", pane.includes("pi-traceline"));
+  check("repo meantime extension loaded", pane.includes("pi-meantime"));
 
   // 2. Mode switching via the slash command actually changes the rendered block.
   run(["tmux", "send-keys", "-t", session, "/contextimate compact", "Enter"]);
@@ -170,6 +173,10 @@ try {
   // scrollback retains pre-toggle frames.
   run(["tmux", "send-keys", "-t", session, "/cache", "Enter"]);
   waitFor("cachemire ledger renders", (text) => text.includes("cache & loop ledger"));
+  // Meantime's /pace shares the anchored chat-line machinery; the no-auth fixture has
+  // no timed calls, so the honest empty panel is the expected render.
+  run(["tmux", "send-keys", "-t", session, "/pace", "Enter"]);
+  waitFor("meantime pace panel renders", (text) => text.includes("no timed model calls yet"));
   run(["tmux", "send-keys", "-t", session, "C-t"]);
   // Traceline suppresses pi's "Thinking blocks: hidden/visible" status caption (design
   // language §9.11), so the on-screen text can no longer signal the toggle. The proof
@@ -190,6 +197,7 @@ try {
     "status line still rendered",
   );
   check("cachemire ledger survives the Ctrl+T chat rebuild", pane.includes("cache & loop ledger"));
+  check("meantime pace panel survives the Ctrl+T chat rebuild", pane.includes("no timed model calls yet"));
 } finally {
   run(["tmux", "send-keys", "-t", session, "/quit", "Enter"]);
   sleep(1000);

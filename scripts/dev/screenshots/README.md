@@ -9,7 +9,8 @@ rendering never is: the point is to show what the actual renderers produce.
 ```bash
 node scripts/dev/screenshots/rig.mjs traceline     # replays a crafted session (free)
 node scripts/dev/screenshots/rig.mjs contextimate  # real startup panel (free)
-node scripts/dev/screenshots/rig.mjs cachemire     # LIVE model calls (~$0.03, gpt-5.5)
+node scripts/dev/screenshots/rig.mjs cachemire     # LIVE model calls (cents, gpt-5.6-sol)
+node scripts/dev/screenshots/rig.mjs meantime      # LIVE model calls (cents, gpt-5.6-sol)
 ```
 
 PNGs land in `docs/img/`. Each run prints the intermediate ANSI capture path so you can
@@ -17,7 +18,7 @@ inspect exactly what was on screen. Pass `--keep` to leave the tmux session and 
 HOME in place for debugging (attach with `tmux -L pogshots attach -t pog-shots-<pid>`).
 
 Requirements: `pi` on PATH, `tmux`, Google Chrome (headless), `python3` with PIL,
-`~/.pi/agent/auth.json` (copied into the fixture; cachemire needs working credentials).
+`~/.pi/agent/auth.json` (copied into the fixture; live scenarios need working credentials).
 
 ## How it works
 
@@ -96,11 +97,17 @@ the full dump is a wall and one tree gives the sense.
 ### cachemire: fully live (costs money)
 
 Cache behaviour can't be honestly mocked, so this scenario makes **real model calls**:
-two tiny turns against a small fixture README, then `/cache`. Runs on
-`openai-codex/gpt-5.5` (the Anthropic subscription ran out of extra usage when first
-built; cachemire degrades honestly to OpenAI's band-cache wording, which also
-demonstrates the cross-provider story). Expect the table to vary run to run: cold
-start / hit / an occasional honestly-attributed miss are all authentic.
+two tiny turns against a small fixture README, then `/cache`. It runs on
+`openai-codex/gpt-5.6-sol`; cachemire degrades honestly to OpenAI's band-cache wording,
+which also demonstrates the cross-provider story. Expect the table to vary run to run:
+cold start, hit, or an occasional honestly attributed miss are all authentic.
+
+### meantime: fully live (costs money)
+
+The meantime scenario asks `openai-codex/gpt-5.6-sol` to run an eight-second sleep. It
+captures the live tool-union clock while the tool is open, then captures `/pace` after
+the follow-up model call resolves. Both images come from real stream and tool event
+boundaries; only the tiny fixture prompt is crafted.
 
 ## Iterating
 

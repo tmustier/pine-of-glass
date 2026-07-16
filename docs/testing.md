@@ -3,7 +3,7 @@
 Tests in this repo exist to catch three specific kinds of breakage, in order of real-world
 likelihood. Anything that does not map to one of these failure modes does not get a test.
 
-1. **Pi drift**: both extensions reach into Pi internals (prototype patching, duck-typed
+1. **Pi drift**: the extensions reach into Pi internals (prototype patching, duck-typed
    component detection, system-prompt regex parsing, `buildSessionContext`/`convertToLlm`
    imports). `pi update` can silently invalidate any of these assumptions. This is the #1
    failure mode and it is *not* catchable by conventional unit tests.
@@ -11,7 +11,7 @@ likelihood. Anything that does not map to one of these failure modes does not ge
    formula constants, heuristic precedence, alignment layout. These encode hard-won
    behaviour (several were the subject of past fix commits) and a wrong answer renders as
    plausible-looking output, so a human won't notice.
-3. **Render regressions**: alignment, row order, and labels in the estimator views.
+3. **Render regressions**: alignment, row order, and labels in the family views.
    These change as a side effect of unrelated edits (e.g. the Total-row reorder) and are
    only verifiable today by eyeballing a live TUI.
 
@@ -40,10 +40,10 @@ Deliberately **not** tested:
   Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) into the repo's
   gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
   runtime, so a `pi update` followed by `npm test` is the drift detector.
-- **Testability route:** the extensions stay single-file. Pure functions move (within the
-  same file) into an exported `internals` object consumed by tests. Pi imports only the
-  default export (`jiti.import(path, { default: true })`), so named exports are
-  runtime-inert. No file split until the code itself needs one.
+- **Testability route:** pure domain logic lives in importable modules or an exported
+  `internals` object consumed by tests. Pi imports only each extension's default entry
+  point, so named test surfaces are runtime-inert. Split files by domain when the code
+  needs it, as cachemire's renderer and meantime's timing/render modules do.
 - **Scripts:** `npm run lint` (agent coding-standard source checks),
   `npm run typecheck`, `npm test` (unit + render + contract),
   `npm run check` (lint + typecheck + tests), and `npm run test:smoke`
@@ -56,6 +56,8 @@ tests/
   contract/pi-internals.test.ts      # layer 1: drift
   contextimate/*.test.ts             # layer 2/3
   traceline/*.test.ts                # layer 2
+  cachemire/*.test.ts                # layer 2/3
+  meantime/*.test.ts                 # layer 2/3
   fixtures/                          # frozen system prompts, tool schemas, goldens
 scripts/dev/link-pi-runtime.sh
 ```
@@ -141,6 +143,20 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
 - **Snapshot signature**: identical inputs → identical signature; changing the active tool
   set, model, config, or session chars each changes it (render-cache invalidation).
 
+### meantime
+
+- **Segment and resolution arithmetic**: the bare stream start does not set TTFT;
+  thinking, text and tool-argument events open the right spans; silent reasoning omits
+  a resolved rate because its generation start is not observable.
+- **Tool interval union**: parallel intervals count once, harness gaps do not count as
+  live or resolved tool time, and harness duration is only attached when a next request
+  supplies an end boundary.
+- **Per-model baselines and calibration**: medians filter on provider-qualified model
+  identity, need the configured sample floor, and exclude silent-reasoning calls from
+  live-rate calibration.
+- **Session totals and config parsing**: open idle time contributes to idle, active is
+  the watched span minus idle, and malformed boundary values are ignored.
+
 ## Layer 3: render goldens
 
 `tests/contextimate/render-golden.test.ts` builds one synthetic `PrefixSnapshot` (fixture:
@@ -166,6 +182,10 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
   session plus every one-line `◍` surface (clock states, break notices, resolutions,
   and the turn summary), pinning wording, glyphs, and fact order (colour excluded as
   everywhere).
+- Meantime gets one combined golden (`tests/meantime/goldens.test.ts` →
+  `meantime-lines.txt`): every widget phase, both anomaly notices, and the `/pace`
+  ledger with aligned columns, notes, totals and the active/idle share bar. A focused
+  render test separately pins provider-qualified model transitions.
 
 ## Layer 4: startup smoke (tmux, local-only)
 
@@ -180,7 +200,8 @@ model call required:
   cannot leave a hot orphan behind.
 - The full startup smoke checks that the `[Contextimate]` block renders, that
   `/contextimate compact` and `expanded` change the rendered mode line, and that `/reload`
-  keeps exactly one block.
+  keeps exactly one block. It also proves `/cache` and `/pace` render through the real TUI
+  and both survive the Ctrl+T chat rebuild.
 - Both exit non-zero on assertion failure so they can gate publishes. They do not run in
   CI because they need a TTY and an installed Pi. A "live turn" variant (real model, one
   bash call, assert a trace line appears and Ctrl+T restores native rows) stays a

@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+New extension: `pi-meantime` (experimental, issue #26) answers "where did the
+time go?" pi's footer counts elapsed time; meantime decomposes it, in the same
+loop-economics voice as cachemire (`◍`) with wall-clock milliseconds as the
+currency. Design language grows a family row, latency/rate number grammar, and
+§10 (tempo facts: measurement honesty, segments, surfaces).
+
+- A live tempo line above the editor names the current phase of the wait
+  (`waiting`, `thinking`, `writing` with a `~tok/s` estimate from streamed
+  chars, `tools` with wall-clock and a running count) and turns warning ink
+  when the wait passes the session's slow-start bar. Hidden when idle: pi
+  already counts time; the widget exists to decompose an active wait.
+- Anomaly notices at call resolution, judged against the session's own rolling
+  per-model medians (minimum samples plus an absolute floor keep short
+  sessions silent): `slow start` names prefill as cause when uncached prompt
+  tokens prove it and says `cause unknown` otherwise; `slow stream` reports a
+  collapsed exact rate.
+- `/pace` renders the tempo ledger: per-call ttft / think / write / tools /
+  total / out / exact tok/s with row notes (slow start, silent reasoning,
+  overlapped tools, harness stalls), a totals row, and a session line with an
+  active-vs-idle `█▒` share bar.
+- Honesty rules (design language §10.1): every duration is an event-boundary
+  observation from this process; TTFT is one number on purpose (the
+  network/queue/prefill split is not observable); resolved tok/s is exact
+  provider usage over the observed stream span while live rates wear `~` and
+  self-calibrate chars-per-token from resolved calls; silent-reasoning calls
+  omit the rate when hidden generation has no observable start boundary; a
+  silent pre-text gap is `waiting` until usage proves reasoning
+  (`wait incl. silent reasoning`); parallel tools report the interval union
+  with overlap noted, never a sum, and the live tool clock excludes harness gaps;
+  the harness gap is only claimed when a next request bounded it; mixed-model
+  ledgers mark transitions instead of labelling every row as the current model;
+  restored sessions are not retro-timed.
+- Shared plumbing: cachemire's durable-anchor chat-line machinery (append,
+  clear-hook re-attachment, notify fallback) moves to `_lib/chatline.ts` and
+  both extensions use it; `_lib/fmt.ts` gains `formatLatency` (one-decimal
+  seconds under 10s, duration grammar above) and `formatRate`.
+
 ## 0.6.2 (2026-07-14)
 
 - Fix a `pi-traceline` startup hang when a resumed session contains an empty or
