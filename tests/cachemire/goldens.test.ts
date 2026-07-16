@@ -44,6 +44,18 @@ const RECORDS: CallRecord[] = [
   },
 ];
 
+const COMPACTION_RECORD: CallRecord = {
+  index: 5,
+  at: 10 * MIN,
+  gapMs: MIN,
+  usage: { input: 400, output: 1_000, cacheRead: 34_900, cacheWrite: 38_700 },
+  expectedRead: 72_500,
+  classification: { kind: "partial", cause: { kind: "compaction", detail: "compaction rewrote history" } },
+  rewroteTokens: 38_700,
+  postCompaction: { modelSwitched: false },
+  costUsd: 0.79,
+};
+
 test("cachemire ledger and one-line surfaces golden", () => {
   const clock = (input: Parameters<typeof cacheClock>[0]) => {
     const state = cacheClock(input);
@@ -67,6 +79,7 @@ test("cachemire ledger and one-line surfaces golden", () => {
     "=== notices (chat lines) ===",
     `\u25cd ${renderBreakingLine({ cause: { kind: "ttl", detail: "idle 7m00s > 5m TTL" }, expectedRewriteTokens: 150_300, expectedUsd: 2.82 })}`,
     `\u25cd ${renderBreakingLine({ cause: { kind: "compaction", detail: "history compacted" } })}`,
+    `\u25cd ${renderMissLine(COMPACTION_RECORD)}`,
     `\u25cd ${renderMissLine(RECORDS[3]!)}`,
     `\u25cd ${renderMissLine(RECORDS[2]!)}`,
     `\u25cd ${renderHeldLine(RECORDS[1]!)}`,

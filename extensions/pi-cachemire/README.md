@@ -36,18 +36,24 @@ cause from exact byte-level differences.
 
 The notice appears at send time, where Cachemire can tie it to the request. It
 updates in place when usage arrives. Progressive wording and `~` show an in-flight
-expectation. Past-tense
-wording shows exact actuals.
+expectation. Past-tense wording shows exact actuals.
 
 Healthy caches stay quiet. Notices appear only above a materiality threshold. The
 default threshold is $0.05 or 20k re-written tokens.
 
 ```
 ◍ cache breaking · re-writing ~138.2k (~$2.59) · cause: idle 9h50m > 5m TTL   (in flight)
+◍ cache after compaction · preserved 34.9k of the prior 72.5k prefix · re-wrote 38.7k (52% of prompt)
 ◍ cache broke · re-wrote 138.2k of 139.6k prompt (99%) · $0.52 · cause: idle 9h50m > 5m TTL
 ◍ cache partial · read 41.2k of 138.2k expected · re-wrote 138.2k (76% of prompt) · cause: system prompt changed
 ◍ cache held · read 76.0k of 77.7k expected · prefix stayed warm              (prediction wrong, good news)
 ```
+
+A compaction prediction stays unsized because the new prefix is not provider-known
+until the next response. The resolved line uses exact provider usage. `Preserved`
+means cache reads from the unchanged prompt prefix, not semantic conversation tokens
+retained by the compactor. If the model also changed, Cachemire withholds the prior
+count rather than compare values from different tokenizers.
 
 ## See the cost of each turn
 

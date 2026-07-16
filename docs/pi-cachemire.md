@@ -141,6 +141,14 @@ break (e.g. provider-side eviction) still gets a resolved-form line when usage
 arrives; a send that aborts before usage resolves the notice to an explicit "outcome
 unknown".
 
+Compaction is deliberately unsized in flight: Pi's compact event does not provide an
+exact provider-token split for the new prefix. The first billed call afterwards does,
+so the resolved notice shows both sides: `preserved 34.9k of the prior 72.5k prefix ·
+re-wrote 38.7k (52% of prompt)`. `Preserved` is the response's exact `cacheRead`
+from the unchanged prompt prefix. It is not a claim about how many semantic
+conversation tokens Pi kept. If the model also changed, the old-model prefix count is
+withheld rather than compared with usage from a different tokenizer.
+
 The `(99%)` in a resolved notice is the share of the request's prompt-side tokens
 (input + cacheRead + cacheWrite) that had to be re-written. `cache held` (green)
 appears when a predicted break didn't happen, usually shared-prefix warmth: another
