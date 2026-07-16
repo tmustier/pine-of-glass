@@ -8,6 +8,7 @@ Thinking: The previous test output was noisy.
 Thinking: Reading the paginated file next.
   ▏ › $ ⋯ npm run typecheck                                                                                   14.2k ch
   ▏ › read ~/projects/pine-of-glass/extensions/pi-cachemire/index.ts:1-200,201-400,401-600          3 calls · 51.1k ch
+  ▏ › read ~/projects/pine-of-glass/extensions/pi-cachemire/ render.ts:1-80, README.md:1-40          2 calls · 5.2k ch
   ▏ › $ ⋯ rm -f /tmp/pog-scratch.txt                                                                           0.0k ch
 
 Measuring the bash-corpus census before and after the rule change.

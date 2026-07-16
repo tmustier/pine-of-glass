@@ -42,6 +42,32 @@ export function nativeBashLines(command: string, timeout?: number): string[] {
   );
 }
 
+// A completed read row; the native renderer text derives from the same arguments.
+export function completedReadRow(path: string, offset: number, limit: number, resultChars = 1_000): ToolRowLike {
+  return {
+    toolName: "read",
+    args: { path, offset, limit },
+    result: { content: [{ type: "text", text: "x".repeat(resultChars) }], isError: false },
+    isPartial: false,
+    render: () => [],
+    setExpanded: () => {},
+    callRendererComponent: { render: () => [`read ${path}:${offset}-${offset + limit - 1}`] },
+  } as ToolRowLike;
+}
+
+// A whole-file read (no offset/limit), the common shape in sibling-file sweeps.
+export function wholeFileReadRow(path: string, resultChars = 1_000): ToolRowLike {
+  return {
+    toolName: "read",
+    args: { path },
+    result: { content: [{ type: "text", text: "x".repeat(resultChars) }], isError: false },
+    isPartial: false,
+    render: () => [],
+    setExpanded: () => {},
+    callRendererComponent: { render: () => [`read ${path}`] },
+  } as ToolRowLike;
+}
+
 export function completedWriteRow(cwd: string, path: string, content: string): ToolRowLike {
   const row = {
     toolName: "write",

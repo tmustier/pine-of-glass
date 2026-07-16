@@ -41,6 +41,16 @@ currency. Design language grows a family row, latency/rate number grammar, and
   clear-hook re-attachment, notify fallback) moves to `_lib/chatline.ts` and
   both extensions use it; `_lib/fmt.ts` gains `formatLatency` (one-decimal
   seconds under 10s, duration grammar above) and `formatRate`.
+- `pi-traceline` now folds consecutive reads of sibling files (the same exact
+  directory) into one row: the shared directory prints once, then the basenames
+  follow with their line ranges, the call count and combined size on the right.
+  A long file list wraps at file boundaries onto rail-only continuation lines
+  instead of truncating basenames away. A file whose combined result reaches the
+  warning size threshold keeps its own row (still folding its own pages) and
+  splits the run, as an error row already did, so ballooned reads stay visible
+  in the size column. Ctrl+T's expanded view still shows every individual call.
+- Internal: the write pre-image snapshot and diff-stat parsing moved from
+  `pi-traceline`'s `index.ts` into `write-diff.ts`; no behaviour change.
 
 ## 0.6.2 (2026-07-14)
 

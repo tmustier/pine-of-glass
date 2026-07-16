@@ -390,10 +390,36 @@ dim ellipsis is legible; a wandering ellipsis column is not.
 
 ### 9.9 Folded reads
 
-Paginated reads of one file fold into one row:
-`read …/index.ts:1-200,201-400 · 2 calls · 37.0k ch`. The folded row speaks the
-block's shared suffix grammar; its `N calls · size` cell counts as its fact
-suffix in the block's reserve (§9.8).
+Consecutive reads fold into one entity, at two granularities sharing one
+grammar (both adopted against a 400-session corpus of real transcripts, per
+§10):
+
+- paginated reads of one file merge their ranges:
+  `read …/index.ts:1-200,201-400 · 2 calls · 37.0k ch`
+- consecutive reads of sibling files (the same exact directory) fold into one
+  dir row: the shared directory prints once, then the basenames follow as a
+  bold list with dim commas, each wearing its own warning `:ranges` (adjacent
+  same-file calls merge their ranges first):
+  `read ./extensions/pi-traceline/ index.ts:1-120, path-rows.ts · 3 calls · 15.8k ch`.
+  The directory cell keeps §9.5's grammar: the block-scoped boring prefix is
+  dim and a divergent dir tail stays a bold discriminator
+- the fold compresses only the boring: a file whose combined result reaches
+  warning severity (§6) keeps its own row (itself a pagination fold when it
+  was paged) and splits the run, exactly as an error row does. What ballooned
+  must stay visible in the size column; what folds is genuinely routine
+- runs break on anything visible between the reads (prose, a collapsed
+  thinking preview, another tool) and never reorder the transcript. Ctrl+T
+  restores the individual native rows
+- a dir fold that overflows the block's body budget (§9.8) wraps at file
+  boundaries instead of truncating: dropped basenames would make the fold
+  lossier than the rows it replaced. Continuation lines keep the rail but not
+  the bullet (one entity, one bullet) and indent to the directory cell's
+  column; a wrapped line ends with its dim comma, so the entity visibly
+  continues. The `N calls · size` suffix stays on the bullet line, keeping the
+  block's fact column aligned against bullets. A lone cell longer than a line
+  still middle-truncates; wrapping never cuts mid-name
+- the folded row speaks the block's shared suffix grammar; its `N calls · size`
+  cell counts as its fact suffix in the block's reserve (§9.8)
 
 ### 9.10 Records
 

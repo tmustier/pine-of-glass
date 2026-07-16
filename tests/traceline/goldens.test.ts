@@ -1,8 +1,8 @@
 // Visual regression net for the one-line trace grammar (design language §11):
 // a realistic scripted sequence — repeated cd preambles, a dropped set-hygiene run, a
-// newline-preamble context fold, a grouped multiline thinking preview, a paginated read
-// run, healthy and ballooned outputs, and a flattened multiline command, rendered at 80
-// and 120 columns.
+// newline-preamble context fold, a grouped multiline thinking preview, and a paginated
+// read run with a sibling-file dir fold (wrapping at 80 columns), healthy and ballooned
+// outputs, and a flattened multiline command, rendered at 80 and 120 columns.
 // Colour is not under test (see docs/testing.md); structure, alignment, folding, and
 // wording are. Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
 import { test, beforeEach } from "node:test";
@@ -92,6 +92,11 @@ test("one-line trace goldens at 80 and 120 columns", () => {
     const read1 = read(`${repo}/extensions/pi-cachemire/index.ts`, 1, 200, 18_400);
     const read2 = read(`${repo}/extensions/pi-cachemire/index.ts`, 201, 200, 18_400);
     const read3 = read(`${repo}/extensions/pi-cachemire/index.ts`, 401, 200, 14_300);
+    // Sibling files after the ballooned index.ts: the breakout keeps its own pagination
+    // fold while the sub-warning siblings fold into a dir row (§9.9); at 80 columns the
+    // dir row wraps onto a rail-only continuation line.
+    const read4 = read(`${repo}/extensions/pi-cachemire/render.ts`, 1, 80, 3_100);
+    const read5 = read(`${repo}/extensions/pi-cachemire/README.md`, 1, 40, 2_050);
     const cleanup = bash(`cd ${repo} && rm -f /tmp/pog-scratch.txt`, { chars: 0 });
     const censusBefore = bash(
       `set -euo pipefail\ncd ${repo}\nuv run scripts/dev/bash-corpus/report.ts --census out/before.json`,
@@ -121,11 +126,13 @@ test("one-line trace goldens at 80 and 120 columns", () => {
         "Checking the typecheck before the next command.",
         "The previous test output was noisy.",
         "Reading the paginated file next.",
-      ], [typecheck, read1, read2, read3, cleanup]),
+      ], [typecheck, read1, read2, read3, read4, read5, cleanup]),
       typecheck,
       read1,
       read2,
       read3,
+      read4,
+      read5,
       cleanup,
       prose("Measuring the bash-corpus census before and after the rule change.", [censusBefore, censusAfter]),
       censusBefore,

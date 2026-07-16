@@ -12,6 +12,12 @@ export function lineRange(args: ToolArgsLike | undefined): string {
   return "";
 }
 
+// The directory key a read fold groups on (design language §9.9): everything up to
+// and including the raw path's last `/`, so bare cwd-relative names share the empty key.
+export function readDirKey(path: string): string {
+  return path.slice(0, path.lastIndexOf("/") + 1);
+}
+
 export function cwdRelativePath(comp: ToolRowDataLike | undefined, rawPath: string): string {
   const tilde = tildify(rawPath);
   const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : undefined;
