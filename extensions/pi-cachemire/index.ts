@@ -15,6 +15,7 @@ import {
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
+import { settleDanglingSend } from "./lifecycle.ts";
 import { promptTokens, renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
 
 /**
@@ -648,27 +649,6 @@ function cacheClock(input: ClockInput): ClockState {
   return { phase: "warm-unknown", text: `cache likely warm \u00b7 ${formatDuration(since)} since last call` };
 }
 
-// --- aborted sends ----------------------------------------------------------------------
-
-/** Settle the clock anchor for a send that ended without billed usage (abort or error).
- * before_provider_request moves the anchor to the in-flight request optimistically —
- * right for every send whose usage arrives, including mid-stream aborts (Anthropic
- * delivers prompt-side usage in message_start, which survives an abort). What lands here
- * is the remainder: fast aborts and errors where usage never arrived, so nothing proves
- * the provider processed — and so refreshed or wrote — the prefix (on a first send there
- * may be no entry at all). The anchor rolls back to the last billed request, the only
- * provider-confirmed refresh; a first-send abort clears it outright (the clock hides).
- * If the aborted send did touch the cache after all, the next call resolves green
- * ("cache held") — the same correction path as any wrong prediction. */
-function settleDanglingSend(state: {
-  pendingRequestAt?: number;
-  prevCallRequestAt?: number;
-  lastRequestAt?: number;
-}): { changed: boolean; lastRequestAt?: number } {
-  if (state.pendingRequestAt === undefined) return { changed: false, lastRequestAt: state.lastRequestAt };
-  return { changed: true, lastRequestAt: state.prevCallRequestAt };
-}
-
 // --- ledger lines ----------------------------------------------------------------------
 
 // The family status scale (design language §1): ○ cold · ● hit · ◑ partial · ◌ miss.
@@ -860,6 +840,7 @@ interface CachemireState {
 type CachemireGlobal = typeof globalThis & {
   __piCachemire?: CachemireState;
   __piCachemireTimer?: ReturnType<typeof setInterval>;
+  __piCachemireOwner?: symbol;
 };
 const g = globalThis as CachemireGlobal;
 
@@ -937,8 +918,13 @@ function resolveNotice(text: string): void {
 
 export default function piCachemire(pi: ExtensionAPI): void {
   const s = state();
+  const ownerToken = Symbol("pi-cachemire-owner");
+  const ownsState = () => g.__piCachemireOwner === ownerToken;
 
   pi.on("session_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    if (g.__piCachemireOwner !== undefined && !ownsState()) return;
+    g.__piCachemireOwner = ownerToken;
     s.config = loadConfig(process.cwd());
     const { messages } = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
     s.records = restoreFromMessages(messages as unknown as Array<Record<string, unknown>>);
@@ -990,11 +976,14 @@ export default function piCachemire(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", async () => {
+    if (!ownsState()) return;
     if (g.__piCachemireTimer) clearInterval(g.__piCachemireTimer);
     g.__piCachemireTimer = undefined;
+    g.__piCachemireOwner = undefined;
   });
 
   pi.on("before_provider_request", async (event) => {
+    if (!ownsState()) return;
     s.pendingFingerprint = fingerprintPayload(event.payload);
     s.pendingRequestAt = Date.now();
     // TTL anchor = request start: providers read/refresh/write cache entries while
@@ -1041,6 +1030,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   });
 
   pi.on("model_select", async (event) => {
+    if (!ownsState()) return;
     const model = event.model;
     s.rates = model.cost;
     s.modelLabel = `${model.provider}/${model.id}`;
@@ -1057,6 +1047,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   });
 
   pi.on("thinking_level_select", async (event, ctx) => {
+    if (!ownsState()) return;
     // First flip in a session: the event's own previousLevel is the level every billed
     // call so far used — a baseline that needs no session_start timing assumptions.
     s.lastCallThinkingLevel ??= event.previousLevel;
@@ -1070,19 +1061,23 @@ export default function piCachemire(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_start", async () => {
+    if (!ownsState()) return;
     s.run = { startedAt: Date.now(), calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, costUsd: 0 };
   });
 
   pi.on("session_before_compact", async () => {
+    if (!ownsState()) return;
     s.inCompaction = true;
   });
 
   pi.on("session_compact", async () => {
+    if (!ownsState()) return;
     s.inCompaction = false;
     s.compacted = true;
   });
 
   pi.on("message_end", async (event) => {
+    if (!ownsState()) return;
     const message = event.message;
     if (message.role !== "assistant") return;
     const usage = message.usage;
@@ -1185,6 +1180,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_end", async () => {
+    if (!ownsState()) return;
     // A notice whose call never produced usage (abort/error) must not dangle as "breaking".
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
     // Same honesty for the clock: a send that never produced usage must not keep the TTL
@@ -1206,7 +1202,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.registerCommand("cache", {
     description: "Show the cachemire cache & loop ledger",
     handler: async (_args, ctx) => {
-      if (!ctx.hasUI) return;
+      if (!ownsState() || !ctx.hasUI) return;
       const lines = renderLedger(s.records, {
         providerLabel: s.providerLabel,
         window: s.window,
