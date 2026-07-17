@@ -3,8 +3,9 @@
 // end (design language §9.13): Alt+T numbers the rows with zero reflow and swaps the
 // editor (and its draft) for the hint bar, a committed digit opens the peek pager on
 // the full result, esc unwinds to the numbered transcript and then back to the editor
-// with the draft intact. Every subprocess call is bounded and the uniquely launched Pi
-// is killed on timeout.
+// with the draft intact, and a foreign chord (alt+up) exits the mode un-consumed so
+// the same press reaches the restored editor. Every subprocess call is bounded and
+// the uniquely launched Pi is killed on timeout.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -268,6 +269,21 @@ try {
   if (restoredRows.join("\n") !== beforeRows.join("\n")) {
     throw new Error(`exit did not restore the plain rail rows\n${restoredRows.join("\n")}`);
   }
+
+  // 5. A foreign chord (§9.13): alt+up exits the mode un-consumed and lands in the
+  // restored editor in the same press — stock pi answers with its native dequeue status.
+  sendKeys("M-t");
+  const redrilling = waitForPane((pane) => pane.includes("drill · row 1 of 2"));
+  if (!redrilling.includes("drill · row 1 of 2")) throw new Error(`hint bar did not reappear for the chord step\n${redrilling}`);
+  sendKeys("M-Up");
+  const chordExit = waitForPane(
+    (pane) => !pane.includes("drill · row") && pane.includes("No queued messages to restore"),
+  );
+  if (chordExit.includes("drill · row")) throw new Error(`alt+up did not exit drill mode\n${chordExit}`);
+  if (!chordExit.includes("No queued messages to restore")) {
+    throw new Error(`alt+up did not reach the restored editor in the same press\n${chordExit}`);
+  }
+  if (!chordExit.includes(draft)) throw new Error(`editor draft lost across the chord exit\n${chordExit}`);
 
   sendKeys("C-c");
   sendKeys("/quit", "Enter");

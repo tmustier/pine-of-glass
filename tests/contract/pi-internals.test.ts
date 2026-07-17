@@ -347,6 +347,27 @@ test("showExtensionCustom seam: editor swap/restore + overlay close drill mode r
   assert.ok(declarations.includes("custom<T>(factory: (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void)"), "custom factory signature drifted — hint bar and pager factories break");
 });
 
+test("foreign-chord exit seam: listeners precede focus dispatch; close() restores inline", () => {
+  // Drill's foreign-chord exit (§9.13) rides two orderings inside one input dispatch:
+  // the extension input listener exits the mode, pi restores the editor synchronously
+  // inside showExtensionCustom's close(), and only then does tui resolve the focused
+  // component — so the very same keystroke lands in the restored editor.
+  const tuiRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "..");
+  const tuiSource = readFileSync(join(tuiRoot, "dist/tui.js"), "utf8");
+  const listenerLoop = tuiSource.indexOf("for (const listener of this.inputListeners)");
+  const focusDispatch = tuiSource.indexOf("this.focusedComponent.handleInput(data)");
+  assert.ok(listenerLoop !== -1, "input-listener loop gone — the foreign-chord hook never runs");
+  assert.ok(focusDispatch !== -1, "focused-component dispatch gone — re-verify tui input routing");
+  assert.ok(listenerLoop < focusDispatch, "listeners no longer run before focus dispatch — a foreign chord would hit the dead hint bar");
+
+  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
+  const closeBody = source.slice(source.indexOf("async showExtensionCustom")).slice(0, 2_000);
+  const restoreAt = closeBody.indexOf("restoreEditor();");
+  const resolveAt = closeBody.indexOf("resolve(result);");
+  assert.ok(restoreAt !== -1 && resolveAt !== -1, "close() body drifted — re-verify the synchronous editor restore");
+  assert.ok(restoreAt < resolveAt, "close() no longer restores the editor before resolving — the flowed-through chord would land in a void");
+});
+
 test("pi-tui overlay focus restore + terminal dimensions the drill pager reads", () => {
   const tuiRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "..");
   const tuiSource = readFileSync(join(tuiRoot, "dist/tui.js"), "utf8");

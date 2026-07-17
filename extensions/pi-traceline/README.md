@@ -67,6 +67,8 @@ Press `Alt+T` (or run `/drill`) to number the tool rows in place. The transcript
 - press `p` to expand or collapse the selected row in place, using Pi's native tool row
 - press `esc` to leave
 
+A modifier chord drill mode does not own (`Option+Up`, `Ctrl+C`, …) leaves the mode and still does its normal job: the editor is restored first, then the same keystroke lands in it. Drill mode never silently eats a shortcut that means something outside it.
+
 The pager shows the row's trace line, then the complete invocation and the complete result. Scroll with `j`/`k`, the arrow keys, the page keys or `g`/`G`. Press `h`/`l` to move to the neighbouring row without closing. Press `esc` to return to the numbered transcript, exactly as you left it.
 
 The most common case takes two keys: `Alt+T`, then `1` for the latest call.

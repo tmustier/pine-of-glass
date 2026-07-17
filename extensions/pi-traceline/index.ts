@@ -45,9 +45,9 @@ import {
   drillTracePrefix,
   enterDrillMode,
   exitDrillMode,
-  handleDrillTerminalInput,
   type DrillHost,
 } from "./drill.ts";
+import { handleDrillTerminalInput } from "./drill-input.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 import {
@@ -1761,7 +1761,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     // only changes how tool rows render while reasoning is hidden.
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
-      // Drill mode owns every mouse report while active (§9.13), and nothing else.
+      // Drill mode owns mouse reports; a foreign chord exits it un-consumed (§9.13).
       const drill = handleDrillTerminalInput(data);
       if (drill) return drill;
       if (!matchesKey(data, "ctrl+t")) return undefined;
