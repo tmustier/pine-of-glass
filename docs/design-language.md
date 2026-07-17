@@ -527,6 +527,13 @@ Entry and exit:
   line); the editor draft is restored on exit
 - the transcript does not reflow: numbering re-inks the prefix of rows already
   on screen, and one line stays one line
+- the mode owns only its documented keys, all unmodified. A modifier chord it
+  does not understand (option+up, option+enter, ctrl+c, …) exits the mode at
+  once, from the hint bar or the pager alike, and is not consumed: pi restores
+  the editor synchronously, the same keystroke lands there, and it does what
+  it always does. Drill never silently eats a chord that means something
+  outside it. Re-pressing the entry chord therefore re-freezes the numbering
+  through its own shortcut, and a key release never exits
 
 Numbering:
 

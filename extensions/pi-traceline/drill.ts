@@ -3,7 +3,9 @@
 // six-column prefix with its number at identical width (zero reflow), and swaps the
 // editor for a two-line hint bar that owns the keyboard. A committed number or enter
 // opens the peek pager (drill-pager.ts); `p` toggles the selected row's native
-// expansion (§9.12 z1) in place; esc restores the editor and its draft. SGR mouse
+// expansion (§9.12 z1) in place; esc restores the editor and its draft. A modifier
+// chord the mode does not own (option+up, ctrl+c, …) exits the same way without being
+// consumed, so the keystroke lands in the restored editor. SGR mouse
 // reporting, never enabled for the plain transcript, turns on only inside the mode and
 // off at exit/shutdown/process-exit, with every mouse event consumed. State lives on
 // globalThis so that after /reload the previously patched tool-row renderer and the
@@ -314,35 +316,5 @@ function writeIgnoringErrors(sequence: string): void {
   }
 }
 
-const SGR_MOUSE_EVENT = /\x1b\[<(\d+);\d+;\d+([Mm])/g;
-
-/** Net wheel movement across a chunk of SGR mouse events: negative = wheel up. */
-export function wheelDelta(data: string): number {
-  let wheel = 0;
-  SGR_MOUSE_EVENT.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SGR_MOUSE_EVENT.exec(data))) {
-    if (match[2] !== "M") continue; // presses only; SGR release events end in lowercase m
-    const cb = Number(match[1]);
-    if ((cb & 64) === 0) continue; // not a wheel event
-    const dir = cb & 3; // 0 = wheel up, 1 = wheel down; 2/3 are horizontal, ignored
-    if (dir === 0 || dir === 1) wheel += dir === 0 ? -1 : 1;
-  }
-  return wheel;
-}
-
-// Raw terminal-input hook (traceline's existing onTerminalInput listener): while the
-// mode is active every mouse report is consumed. The wheel scrolls the pager when open,
-// else walks the selection (wheel up = older, §9.13); clicks and drags are swallowed
-// so they never reach pi's editor as garbage input.
-export function handleDrillTerminalInput(data: string): { consume: true } | undefined {
-  const st = g.__tracelineDrill;
-  if (!st) return undefined;
-  if (!data.startsWith("\x1b[<") && !data.startsWith("\x1b[M")) return undefined;
-  const wheel = wheelDelta(data);
-  if (wheel !== 0) {
-    if (st.pager) st.pager.scrollBy(wheel * 3);
-    else setSelected(st, st.selected - wheel);
-  }
-  return { consume: true };
-}
+// The raw terminal-input hook (mouse consumption + foreign-chord exit) lives in
+// drill-input.ts; index.ts feeds it traceline's onTerminalInput listener.

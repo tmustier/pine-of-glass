@@ -15,11 +15,10 @@ import {
   drillTracePrefix,
   enterDrillMode,
   exitDrillMode,
-  handleDrillTerminalInput,
   stepDigits,
-  wheelDelta,
   type DrillHost,
 } from "../../extensions/pi-traceline/drill.ts";
+import { handleDrillTerminalInput, isForeignChord, wheelDelta } from "../../extensions/pi-traceline/drill-input.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
 const { foldedReadLines, isExpandedToolRow, leadingBlank, oneLine, readRun, renderTraceRow, setTracelineChat, statusTone, stripAnsi } = internals;
@@ -295,4 +294,40 @@ test("terminal-input hook consumes all mouse reports while active, none outside"
   assert.equal(drillState()!.selected, 1, "wheel up walks to the older row");
   assert.deepEqual(handleDrillTerminalInput("\x1b[<0;3;3M"), { consume: true }, "clicks are swallowed, not leaked");
   assert.equal(handleDrillTerminalInput("plain keys"), undefined, "keyboard input passes through");
+});
+
+// --- foreign chords (§9.13: the mode never silently eats an app-level keystroke) --------
+
+test("isForeignChord: modifier chords only, presses only", () => {
+  assert.equal(isForeignChord("\x1b[1;3A"), true, "alt+up is foreign");
+  assert.equal(isForeignChord("\x1b\r"), true, "alt+enter is foreign");
+  assert.equal(isForeignChord("\x03"), true, "ctrl+c is foreign — abort must not die in the mode");
+  assert.equal(isForeignChord("\x1bt"), true, "the entry chord is foreign too: it re-freezes via its shortcut");
+  assert.equal(isForeignChord("\x1b[1;3:3A"), false, "a key release never exits");
+  for (const own of ["\x1b", "\r", "k", "j", "p", "5", "G", " ", "\x7f", "\x1b[A", "\x1b[5~"]) {
+    assert.equal(isForeignChord(own), false, `mode-owned or plain key treated as foreign: ${JSON.stringify(own)}`);
+  }
+});
+
+test("a foreign chord exits the mode synchronously and is not consumed", () => {
+  const rows = [toolComp({ args: { path: "/tmp/aaa/a.ts" } }), toolComp({ args: { path: "/tmp/bbb/b.ts" } })];
+  enterDrillMode(makeHost(rows));
+  assert.equal(handleDrillTerminalInput("5"), undefined);
+  assert.ok(drillState(), "the mode's own keys must not exit");
+  assert.equal(handleDrillTerminalInput("\x1b"), undefined);
+  assert.ok(drillState(), "esc belongs to the hint bar, not the hook");
+  assert.equal(handleDrillTerminalInput("\x1b[1;3A"), undefined, "the chord must flow on to the restored editor");
+  // Synchronous on purpose: pi dispatches this same keystroke to the focused component
+  // right after the listener returns, so the editor must already be restored.
+  assert.equal(drillState(), undefined, "exit must complete before the hook returns");
+});
+
+test("a foreign chord exits from the pager too", () => {
+  const rows = Array.from({ length: 3 }, (_, i) => toolComp({ args: { path: `/tmp/d${i}/f${i}.ts` } }));
+  const calls: CustomCall[] = [];
+  enterDrillMode(makeHost(rows, calls));
+  calls[0]!.component.handleInput!("3");
+  assert.ok(drillState()!.pager, "sanity: a committed digit opened the pager");
+  assert.equal(handleDrillTerminalInput("\x1b[1;3A"), undefined);
+  assert.equal(drillState(), undefined, "the chord ends the whole mode, pager included");
 });
