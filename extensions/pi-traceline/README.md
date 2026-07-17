@@ -83,6 +83,8 @@ Configure drill mode in the same config file as the size thresholds:
 
 `drillKey` changes the shortcut. `drillMouse: false` keeps mouse reporting off even inside drill mode.
 
+On macOS, an Alt-letter shortcut works only when the terminal sends Option as Alt. In Ghostty, set `macos-option-as-alt = left` in the active config. cmux users can set the same value in Terminal settings or in `~/Library/Application Support/com.cmuxterm.app/config.ghostty`, then run `cmux reload-config`. This leaves right Option available for character composition. The `/drill` command works without Option-as-Alt.
+
 ## Find large tool results
 
 Completed rows show their result size on a shared right edge. This makes unusually large results easy to spot.

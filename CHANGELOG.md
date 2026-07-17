@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.0 (2026-07-17)
+
+`pi-traceline` adds drill mode: inspect one tool call without expanding
+all tool output and without moving the transcript.
+
+- Press `Alt+T` (configurable via `drillKey`, or run `/drill`) to number the
+  visible tool rows in place. Each row's rail becomes its number at identical
+  width, so nothing reflows; `1` is the most recent call and a folded read run
+  is one number. A two-line hint bar replaces the editor and restores its draft
+  on exit.
+- Type a number (or press `enter`) to open that call in a full-screen pager
+  showing its trace lines, complete invocation and complete result. `j`/`k`
+  scroll, `h`/`l` move between rows without closing, and `esc` returns to the
+  numbered transcript exactly as it was. The common case is two keys:
+  `Alt+T`, then `1`.
+- Press `p` to expand or collapse the selected row using Pi's native tool row.
+  Expanded rows now also render natively outside drill mode, so Pi's `Ctrl+O`
+  tool expansion works under Traceline.
+- The mouse wheel moves the selection or scrolls the pager. Mouse reporting is
+  active only inside drill mode and always turns off on exit;
+  `"drillMouse": false` opts out.
+- Drill mode owns only its documented keys. An unrecognized modifier chord,
+  such as `Option+Up` or `Ctrl+C`, exits immediately without consuming the
+  input. Pi restores the editor synchronously, so the same keystroke reaches
+  its normal handler. This lets `Option+Up` open queue-edit mode in extensions
+  such as `pi-queue-steer` with one press instead of dying in Traceline.
+- On macOS, Alt-letter shortcuts require the terminal to send Option as Alt.
+  Ghostty supports `macos-option-as-alt = left`; cmux requires this in its
+  managed Ghostty config (or Terminal settings), followed by
+  `cmux reload-config`. Right Option remains available for character
+  composition. `/drill` remains a configuration-free fallback.
+
 ## 0.7.0 (2026-07-16)
 
 New extension: `pi-meantime` (experimental, issue #26) answers "where did the
@@ -57,28 +89,6 @@ currency. Design language grows a family row, latency/rate number grammar, and
   Pi 0.80.8.
 - Internal: the write pre-image snapshot and diff-stat parsing moved from
   `pi-traceline`'s `index.ts` into `write-diff.ts`; no behaviour change.
-
-`pi-traceline` also adds drill mode: inspect one tool call without expanding
-everything and without moving the transcript.
-
-- Press `Alt+T` (configurable via `drillKey`, or run `/drill`) to number the
-  visible tool rows in place. Each row's rail becomes its number at identical
-  width, so nothing reflows; `1` is the most recent call and a folded read run
-  is one number (a wrapped dir fold wears it on its bullet line). A two-line
-  hint bar replaces the editor and restores your draft on exit.
-- Type a number (or press `enter`) to open that call in a full-screen pager
-  showing the trace lines, the complete invocation and the complete result.
-  `j`/`k` scroll, `h`/`l` move between rows without closing, `esc` returns to
-  the transcript exactly as you left it. The common case is two keys:
-  `Alt+T`, then `1`.
-- Press `p` to expand or collapse the selected row in place using Pi's native
-  tool row. Expanded rows now also render natively outside drill mode, so
-  Pi's `Ctrl+O` tool expansion works under traceline; an expanded row leaves
-  read folds and shared columns and rejoins them when collapsed.
-- Inside drill mode the mouse wheel moves the selection or scrolls the pager.
-  Mouse reporting turns on only while the mode is open and always turns off on
-  exit, so terminal text selection is never affected; `"drillMouse": false`
-  opts out.
 
 ## 0.6.2 (2026-07-14)
 
