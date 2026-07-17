@@ -233,7 +233,7 @@ In expanded audit views:
 Traceline collapses each tool call to one line. These rules make a run of those
 lines read as one calm block: dim apparatus, bold discriminators, status accents.
 Nothing in a trace row shares ink with assistant prose. The full invocation and
-output stay one Ctrl+T away.
+output stay one zoom away (§9.12).
 
 ### 9.1 The block
 
@@ -490,6 +490,101 @@ to a trace line or expands back. So traceline suppresses pi's
 `Thinking blocks: hidden/visible` status caption before it renders. The
 suppression is surgical: only that exact text at the chat tail matches. Every
 other status message announces an otherwise invisible action and passes through.
+
+### 9.12 The zoom ladder
+
+A trace line is the surface of a three-step ladder, and every deeper step
+renders with pi's own machinery, so each zoom looks exactly like the view it
+borrows from:
+
+- z0, trace: the one-line row. The default whenever reasoning is hidden
+- z1, expanded: pi's native tool row with full invocation and output, still
+  without reasoning. Ctrl+O (pi's tools-expand keybinding) toggles it globally;
+  drill mode (§9.13) pins it per row. Both write pi's own per-row `expanded`
+  flag, so there is exactly one expansion state and it cannot desync
+- z2, native: Ctrl+T shows reasoning and native tool rows, untouched by
+  traceline
+
+An expanded row opts out of trace-block grammar: it breaks the rail block
+(§9.1), leaves its neighbours' fact and truncation columns (§9.7, §9.8), and
+never participates in a read fold (§9.9); a trace block that follows one starts
+with its own blank line. Collapsing back restores all of it. Expansion is the
+one deliberate reflow in traceline: an expanded row grows in place and the
+transcript moves to make room. The zero-reflow surfaces are z0 and drill
+mode's numbering.
+
+### 9.13 Drill mode
+
+Drill mode answers "show me that row" without leaving the transcript: the live
+transcript is the picker, and every zoom target is named by a number in the
+row's own gutter.
+
+Entry and exit:
+
+- `alt+t` (configurable via `drillKey` in the family config) or `/drill`
+  enters; esc exits. Entering swaps the editor for a two-line hint bar in the
+  §8 header form (`[Traceline] drill · row 1 of 37` plus one dim key-hint
+  line); the editor draft is restored on exit
+- the transcript does not reflow: numbering re-inks the prefix of rows already
+  on screen, and one line stays one line
+- the mode owns only its documented keys, all unmodified. A modifier chord it
+  does not understand (option+up, option+enter, ctrl+c, …) exits the mode at
+  once, from the hint bar or the pager alike, and is not consumed: pi restores
+  the editor synchronously, the same keystroke lands there, and it does what
+  it always does. Drill never silently eats a chord that means something
+  outside it. Re-pressing the entry chord therefore re-freezes the numbering
+  through its own shortcut, and a key release never exits
+
+Numbering:
+
+- the number cell replaces the rail at identical width: the six-column prefix
+  (§9.1) becomes a right-aligned number in the first three columns, a space,
+  the row's `›` bullet with its status ink, a space
+- 1 is the most recent visible target, counting up into history. A folded read
+  run (§9.9) is one target with one number; a multi-line dir fold wears it on
+  the bullet line, and its continuation lines keep the plain rail. Numbers
+  freeze on entry; rows that stream in during drill mode render as plain
+  unnumbered trace rows
+- an expanded row (§9.12 z1) takes its number on the blank spacer line pi
+  renders above the native row, in the same cell grammar; if that line is
+  missing, the row stays selectable but shows no number. Rows past 999 keep
+  the rail
+- the selected row's number wears accent bold; every other number is dim.
+  Selection is a legitimate accent use under §3's "sparingly": exactly one
+  cell wears it, and only inside an explicitly entered mode
+
+Selection:
+
+- digits type a number, which commits the moment no longer valid number could
+  follow (`5` opens instantly when 37 targets exist; `1` waits for a second
+  digit or enter). Backspace edits the buffer, enter forces the commit
+- `j`/`k` and the arrow keys step through targets in transcript order; enter
+  peeks the selection
+- `p` toggles the selected row's expansion (§9.12 z1) in place
+
+The peek pager:
+
+- enter (or a committed number) opens a full-screen overlay pager. The
+  transcript beneath is untouched, and esc returns to identical pixels
+- the pager is a §8 panel: a `[Traceline] peek · row 3 of 37` brand line, one
+  dim hint line, then the row's own trace lines as the anchor, the full
+  invocation from pi's call renderer with its real newlines, and the complete
+  result text, each section under a dim label. A folded read run renders one
+  invocation and result section per call
+- `j`/`k`, the arrows, page keys and `g`/`G` scroll; `h`/`l` and left/right
+  move to the neighbouring numbered target without closing; `p` toggles
+  expansion; digits jump; esc, enter or `q` closes back to drill mode
+
+Mouse:
+
+- the live transcript never owns mouse reporting: enabling it breaks terminal
+  text selection for the whole session, so z0 stays keyboard-and-scrollback
+  native. This is a hard rule, not a phasing decision
+- drill mode is a bounded exception: SGR mouse reporting is enabled on entry
+  and disabled on exit, on session shutdown and on process exit. The wheel
+  moves the selection (wheel up walks older rows); inside the pager it
+  scrolls. Every other mouse event is swallowed, never leaked to the editor.
+  `"drillMouse": false` in the family config opts out
 
 ## 10. Tempo facts
 

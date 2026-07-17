@@ -1,13 +1,14 @@
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
   isKeyRelease,
   isKeyRepeat,
   matchesKey,
   truncateToWidth,
   visibleWidth,
+  type KeyId,
 } from "@earendil-works/pi-tui";
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
-import { positiveNumberValue, isJsonObject } from "../_lib/boundary.ts";
+import { booleanValue, positiveNumberValue, isJsonObject, stringValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
 import {
   findChatContainer,
@@ -38,6 +39,15 @@ import {
   type SizeThresholds,
   type Tone,
 } from "../_lib/style.ts";
+import { LINE_BREAK_MARK, PREAMBLE_MARK, bashPreambleRun, type BashPreambleRun } from "./bash-preamble.ts";
+import {
+  drillDecorateNativeRow,
+  drillTracePrefix,
+  enterDrillMode,
+  exitDrillMode,
+  type DrillHost,
+} from "./drill.ts";
+import { handleDrillTerminalInput } from "./drill-input.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 import {
@@ -153,9 +163,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 // gutter, so the suffix column never touches the terminal edge.
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const LINE_BREAK_MARK = "\u21b5"; // ↵ — marks a real newline in a flattened invocation
-const PREAMBLE_MARK = "\u22ef"; // ⋯ — stands in for a preamble identical to the row above
-const TRACELINE_PATCH_VERSION = 27;
+const TRACELINE_PATCH_VERSION = 28;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 4;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
@@ -281,8 +289,14 @@ function discriminatorInk(comp: ToolRowDataLike | undefined, text: string): stri
 // Every trace row indents one gutter, then opens with the dim ▏ rail (design language
 // §1/§5/§9.1): the block nests under the narrative line that motivated it, consecutive
 // rows fuse into one visible block, and the blank spacer before a group ends the rail.
-function toolPrefix(tone: Tone): string {
-  return `${TOOL_INDENT}${dim(TOOL_RAIL)} ${ink(currentTheme(), tone, TOOL_BULLET)}${TOOL_AFTER_BULLET}`;
+// While drill mode is active (§9.13), a numbered row swaps the rail cell for its
+// right-aligned number at identical width, so numbering never reflows the transcript.
+function toolPrefix(tone: Tone, comp?: ToolRowDataLike): string {
+  const bullet = ink(currentTheme(), tone, TOOL_BULLET);
+  return (
+    drillTracePrefix(currentTheme(), comp, bullet) ??
+    `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`
+  );
 }
 
 function formatCharCount(value: number): string {
@@ -297,15 +311,21 @@ let sizeThresholds: SizeThresholds = SIZE_THRESHOLDS;
 type TracelineConfig = {
   sizeWarningChars?: number;
   sizeErrorChars?: number;
+  drillKey?: string;
+  drillMouse?: boolean;
 };
 
 function parseTracelineConfig(value: unknown): TracelineConfig {
   if (!isJsonObject(value)) return {};
   const sizeWarningChars = positiveNumberValue(value.sizeWarningChars);
   const sizeErrorChars = positiveNumberValue(value.sizeErrorChars);
+  const drillKey = stringValue(value.drillKey);
+  const drillMouse = booleanValue(value.drillMouse);
   return {
     ...(sizeWarningChars !== undefined ? { sizeWarningChars: Math.floor(sizeWarningChars) } : {}),
     ...(sizeErrorChars !== undefined ? { sizeErrorChars: Math.floor(sizeErrorChars) } : {}),
+    ...(drillKey !== undefined && drillKey.length > 0 ? { drillKey } : {}),
+    ...(drillMouse !== undefined ? { drillMouse } : {}),
   };
 }
 
@@ -365,7 +385,8 @@ function inlineMutationRow(comp: ToolRowDataLike | undefined): boolean {
 function blockToolRows(comp: ToolRowLike): ToolRowLike[] {
   const found = componentLocation(comp);
   if (!found) return [comp];
-  const breaksBlock = (c: unknown) => !isToolRow(c) && !isEmptyConnector(c);
+  // An expanded row (§9.12 z1) renders native and breaks the trace block like prose.
+  const breaksBlock = (c: unknown) => (!isToolRow(c) && !isEmptyConnector(c)) || isExpandedToolRow(c);
   let start = found.index;
   for (let j = found.index - 1; j >= 0; j--) {
     if (breaksBlock(found.sibs[j])) break;
@@ -1089,9 +1110,9 @@ function traceRowAvailable(width: number): number {
 
 // The one row form shared by single rows and folded read runs: body left, the block's
 // reserved fact-suffix column right (§9.8/§9.1), behind the railed status prefix.
-function fitTraceRow(tone: Tone, body: string, suffix: string, reserve: number, width: number): string {
+function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string, suffix: string, reserve: number, width: number): string {
   const fitted = rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve);
-  return truncateToWidth(`${toolPrefix(tone)}${fitted}`, Math.max(1, width), ELLIPSIS);
+  return truncateToWidth(`${toolPrefix(tone, comp)}${fitted}`, Math.max(1, width), ELLIPSIS);
 }
 
 function oneLine(comp: ToolRowLike, width: number): string {
@@ -1106,6 +1127,7 @@ function oneLine(comp: ToolRowLike, width: number): string {
   const facts = blockFacts(rows);
   const available = traceRowAvailable(width);
   return fitTraceRow(
+    comp,
     statusTone(comp),
     invocationInk(comp, available),
     toolFactSuffix(comp, available, facts),
@@ -1124,129 +1146,8 @@ function oneLine(comp: ToolRowLike, width: number): string {
 // `set -…` hygiene drops like the `(timeout Ns)` suffix, and the `cd`/assignment context
 // folds to a dim `⋯` when it repeats the previous bash row's (§9.4).
 
-// Top-level segments of a flattened bash body, split on `&&`/`||`/`;`/`↵` outside
-// quotes, command substitutions and backticks. Only the leading preamble run is read
-// (the walk stops at the first real command), so heredoc bodies — which live only in
-// real segments — need no handling here.
-function bashTopLevelSegments(body: string): { start: number; text: string }[] {
-  const segs: { start: number; text: string }[] = [];
-  let quote: "'" | '"' | undefined;
-  let paren = 0;
-  let backtick = false;
-  let segStart = 0;
-  const push = (end: number) => {
-    const raw = body.slice(segStart, end);
-    const lead = raw.length - raw.replace(/^\s+/, "").length;
-    const text = raw.trim();
-    if (text.length > 0) segs.push({ start: segStart + lead, text });
-  };
-  let i = 0;
-  while (i < body.length) {
-    const ch = body[i]!;
-    if (quote === "'") {
-      if (ch === "'") quote = undefined;
-      i++;
-      continue;
-    }
-    if (quote === '"') {
-      if (ch === "\\") { i += 2; continue; }
-      if (ch === '"') quote = undefined;
-      i++;
-      continue;
-    }
-    if (backtick) {
-      if (ch === "`") backtick = false;
-      i++;
-      continue;
-    }
-    if (ch === "'") { quote = "'"; i++; continue; }
-    if (ch === '"') { quote = '"'; i++; continue; }
-    if (ch === "`") { backtick = true; i++; continue; }
-    if (ch === "\\") { i += 2; continue; }
-    if (ch === "(") { paren++; i++; continue; }
-    if (ch === ")") { if (paren > 0) paren--; i++; continue; }
-    if (paren === 0) {
-      if (body.startsWith("&&", i) || body.startsWith("||", i)) { push(i); i += 2; segStart = i; continue; }
-      if (ch === ";" || ch === LINE_BREAK_MARK) { push(i); i += 1; segStart = i; continue; }
-    }
-    i++;
-  }
-  push(body.length);
-  return segs;
-}
-
-// One env-assignment-only segment (`WORK=$(cat x)`, `A=1 B=2`) is setup, not a command,
-// so it situates; `FOO=bar cmd` is the command `cmd` and does not. Consumes each
-// `VAR=value` token quote/substitution-aware, then checks nothing but assignments remain.
-function isEnvAssignmentOnly(text: string): boolean {
-  let i = 0;
-  while (i < text.length) {
-    while (i < text.length && /\s/.test(text[i]!)) i++;
-    if (i >= text.length) return true;
-    if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(text.slice(i))) return false;
-    let quote: "'" | '"' | undefined;
-    let paren = 0;
-    let backtick = false;
-    while (i < text.length) {
-      const ch = text[i]!;
-      if (quote === "'") { if (ch === "'") quote = undefined; i++; continue; }
-      if (quote === '"') { if (ch === "\\") { i += 2; continue; } if (ch === '"') quote = undefined; i++; continue; }
-      if (backtick) { if (ch === "`") backtick = false; i++; continue; }
-      if (ch === "'") { quote = "'"; i++; continue; }
-      if (ch === '"') { quote = '"'; i++; continue; }
-      if (ch === "`") { backtick = true; i++; continue; }
-      if (ch === "\\") { i += 2; continue; }
-      if (ch === "(") { paren++; i++; continue; }
-      if (ch === ")") { if (paren > 0) paren--; i++; continue; }
-      if (paren === 0 && /\s/.test(ch)) break;
-      i++;
-    }
-  }
-  return true;
-}
-
-type BashSegmentClass = "hygiene" | "context" | "real";
-
-// `set -…` is hygiene (drop-always); `cd`, `export …` and bare assignments situate
-// (fold-on-repeat); everything else is the reason the row exists and stops the run.
-function classifyBashSegment(text: string): BashSegmentClass {
-  if (/^set(\s|$)/.test(text)) return "hygiene";
-  if (/^cd(\s|$)/.test(text)) return "context";
-  if (/^export\s+[A-Za-z_]/.test(text)) return "context";
-  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(text)) return isEnvAssignmentOnly(text) ? "context" : "real";
-  return "real";
-}
-
-type BashPreambleRun = {
-  contextText: string; // situating context, joined; "" when the run has none
-  firstRealStart?: number; // body index of the first real command, if any
-  dropStart?: number; // body index just past a leading `set -…` run, when a drop applies
-};
-
-// The leading preamble run of a flattened bash body. contextText compares context
-// across rows (both computed from tildified bodies, so `cd ~/x` matches `cd ~/x`);
-// firstRealStart is where the `⋯` fold would point; dropStart marks where a leading
-// `set -…` run ends. dropStart stays undefined when the whole body is hygiene, so a
-// `set -e`-only row keeps its head and no row goes dark (§9.4).
-function bashPreambleRun(body: string): BashPreambleRun {
-  const contextParts: string[] = [];
-  let firstRealStart: number | undefined;
-  let dropStart: number | undefined;
-  for (const seg of bashTopLevelSegments(body)) {
-    const cls = classifyBashSegment(seg.text);
-    if (cls === "real") {
-      firstRealStart = seg.start;
-      if (dropStart === undefined) dropStart = seg.start;
-      break;
-    }
-    if (cls === "context") {
-      contextParts.push(seg.text);
-      if (dropStart === undefined) dropStart = seg.start;
-    }
-    // a leading hygiene (`set`) segment leaves dropStart pointing just past it
-  }
-  return { contextText: contextParts.join("\n"), firstRealStart, dropStart };
-}
+// The segment grammar behind the reclaim (top-level splitting, env-assignment
+// detection, hygiene/context/real classification) lives in bash-preamble.ts.
 
 // The previous bash row within the same visual group: reads and other tools interleave
 // freely, but visible prose opens a new paragraph — a `⋯` must never point across one.
@@ -1327,6 +1228,7 @@ function readPath(comp: ToolRowDataLike): string | undefined {
 function foldableReadPath(comp: ToolRowDataLike): string | undefined {
   const path = readPath(comp);
   if (path === undefined) return undefined;
+  if (comp.expanded === true) return undefined; // an expanded row (§9.12) never folds
   return toolStatus(comp) === "error" ? undefined : path;
 }
 
@@ -1444,7 +1346,8 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
       .filter(Boolean)
       .join(",");
     const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
-    return [fitTraceRow(tone, body, suffix, reserve, width)];
+    // rows[0] is the carrier: in drill mode the fold is one target and rows[0] renders it.
+    return [fitTraceRow(rows[0], tone, body, suffix, reserve, width)];
   }
 
   // Sibling files fold into one dir row (§9.9): the shared directory prints once
@@ -1516,7 +1419,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   return lines.map((line) =>
     line.continuation
       ? truncateToWidth(`${contPrefix}${middleTruncate(line.ink, contBudget, theme)}`, Math.max(1, width), ELLIPSIS)
-      : fitTraceRow(tone, line.ink, suffix, reserve, width),
+      : fitTraceRow(rows[0], tone, line.ink, suffix, reserve, width),
   );
 }
 
@@ -1561,6 +1464,12 @@ function isCollapsedThinkingRow(c: unknown): boolean {
   return hasThinking;
 }
 
+// An expanded row (design language §9.12 z1): pi's native render, traceline's grammar
+// opts it out of folds, blocks and shared columns.
+function isExpandedToolRow(c: unknown): boolean {
+  return isToolRow(c) && c.expanded === true;
+}
+
 // One blank line before a tool *group*, none within it: walk back past invisible
 // connector turns; tight if the nearest visible sibling is another collapsed tool row
 // or the collapsed thinking-label line that motivated this call.
@@ -1570,6 +1479,7 @@ function leadingBlank(comp: ToolRowDataLike): boolean {
   const { sibs, index } = found;
   for (let j = index - 1; j >= 0; j--) {
     const prev = sibs[j];
+    if (isExpandedToolRow(prev)) return true; // a native-rendered block above → new trace block
     if (isToolRow(prev)) return false; // adjacent (through connectors) to another tool
     if (isEmptyConnector(prev)) continue; // skip invisible tool-call-only turns
     if (isCollapsedThinkingRow(prev)) return false; // tight under its Thinking... line
@@ -1666,7 +1576,12 @@ function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
     // One guard, one policy: any failure on traceline's path falls back to the
     // native render — never let pi-traceline break a render.
     try {
-      if (displayMode() === "native") return original.call(this, width);
+      if (displayMode() === "native" || this.expanded === true) {
+        // Native-rendered rows (z2, or an expanded z1 row) still take their drill
+        // number on the leading blank spacer line while drill mode is active (§9.13).
+        const bullet = ink(currentTheme(), statusTone(this), TOOL_BULLET);
+        return drillDecorateNativeRow(currentTheme(), this, original.call(this, width), bullet);
+      }
       return renderTraceRow(this, width);
     } catch {
       return original.call(this, width);
@@ -1740,6 +1655,9 @@ export const internals = {
   oneLine,
   leadingBlank,
   renderTraceRow,
+  isExpandedToolRow,
+  statusTone,
+  foldedReadLines,
   // repetition folding + preamble reclaim + thinking-label preview/dedupe (issue #14)
   bashPreambleRun,
   bashPreambleRunOf,
@@ -1758,6 +1676,54 @@ export const internals = {
 };
 
 export default function piTraceline(pi: ExtensionAPI) {
+  const config: TracelineConfig = Object.assign(
+    {},
+    ...configPaths("pi-traceline", process.cwd()).map(
+      (path) => readJsonConfig(path, parseTracelineConfig) ?? {},
+    ),
+  );
+
+  // Drill mode (§9.13) lives in drill.ts / drill-pager.ts; this host hands it just the
+  // render internals it needs. Entry points: a shortcut (alt+t by default, `drillKey`
+  // in the family config to rebind) plus /drill for discoverability.
+  const drillHost = (ui: ExtensionUIContext): DrillHost => ({
+    ui,
+    theme: currentTheme,
+    chatChildren,
+    requestRender: () => {
+      try {
+        g.__tracelineTui?.requestRender();
+      } catch {
+        /* never let drill mode break a render */
+      }
+    },
+    traceLines: (comp, width) => {
+      const run = readRun(comp);
+      return run && run.index === 0 ? foldedReadLines(run.rows, width) : [oneLine(comp, width)];
+    },
+    runRows: (comp) => {
+      const run = readRun(comp);
+      return run && run.index === 0 ? run.rows : undefined;
+    },
+    // Only one-line mode folds reads away; in native mode every row is its own target.
+    hiddenByFold: (comp) => displayMode() === "oneLine" && (readRun(comp)?.index ?? 0) > 0,
+    statusTone,
+    mouse: config.drillMouse !== false,
+  });
+  const startDrill = (ctx: { ui: ExtensionUIContext; hasUI: boolean }) => {
+    if (!ctx.hasUI) return;
+    enterDrillMode(drillHost(ctx.ui));
+  };
+  // SAFETY: drillKey comes from user config; an unknown key id just never matches.
+  pi.registerShortcut((config.drillKey ?? "alt+t") as KeyId, {
+    description: "traceline: drill into tool rows (number, peek, pin)",
+    handler: async (ctx) => startDrill(ctx),
+  });
+  pi.registerCommand("drill", {
+    description: "traceline: number the visible tool rows; type one to peek",
+    handler: async (_args, ctx) => startDrill(ctx),
+  });
+
   pi.on("session_start", async (_event, ctx) => {
     // Capture the real TUI (passed synchronously to the widget factory), then patch only
     // extension-visible seams: requestRender for delayed tool-row patching, and raw
@@ -1769,12 +1735,6 @@ export default function piTraceline(pi: ExtensionAPI) {
         return undefined;
       }
     };
-    const config = Object.assign(
-      {},
-      ...configPaths("pi-traceline", process.cwd()).map(
-        (path) => readJsonConfig(path, parseTracelineConfig) ?? {},
-      ),
-    );
     configureSizeThresholds(config);
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
       const t = tui as TracelineTuiLike;
@@ -1801,6 +1761,9 @@ export default function piTraceline(pi: ExtensionAPI) {
     // only changes how tool rows render while reasoning is hidden.
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
+      // Drill mode owns mouse reports; a foreign chord exits it un-consumed (§9.13).
+      const drill = handleDrillTerminalInput(data);
+      if (drill) return drill;
       if (!matchesKey(data, "ctrl+t")) return undefined;
       if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
       return undefined;
@@ -1808,6 +1771,7 @@ export default function piTraceline(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    exitDrillMode(); // restores the editor and turns mouse reporting off
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;
   });
