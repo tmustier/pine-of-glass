@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fix `pi-traceline` so `Ctrl+T` remains decisive after `Ctrl+O` expands every
+  tool row. Traceline now collapses Pi's global tool expansion before passing
+  the same keypress to Pi's native reasoning toggle, so returning to hidden
+  reasoning restores the one-line trace instead of leaving rows pinned open.
+
 ## 0.8.0 (2026-07-17)
 
 `pi-traceline` adds drill mode: inspect one tool call without expanding

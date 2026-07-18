@@ -52,6 +52,8 @@ Traceline follows Pi's reasoning visibility setting. The full view reuses Pi's o
 - press `Ctrl+T` again to hide reasoning and show one line per tool call
 - press `Ctrl+O` (Pi's tool expansion) to expand or collapse every tool row in place while reasoning stays hidden
 
+`Ctrl+T` remains decisive after `Ctrl+O`: if every tool row is expanded, Traceline collapses that expansion before Pi toggles reasoning. The next hidden-reasoning view therefore returns to the trace instead of staying expanded. Press `Ctrl+O` again whenever you want the expanded tool view.
+
 The tool view reads its state from the live assistant row. It cannot get out of sync with the reasoning view. Traceline hides Pi's `Thinking blocks: hidden/visible` caption because the changing tool rows already show the state.
 
 Outside drill mode, Traceline does not enable mouse reporting or change terminal scrolling.
