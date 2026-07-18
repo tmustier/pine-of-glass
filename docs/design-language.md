@@ -505,6 +505,11 @@ borrows from:
 - z2, native: Ctrl+T shows reasoning and native tool rows, untouched by
   traceline
 
+Ctrl+T is decisive over z1: when Pi's global Ctrl+O expansion is active,
+Traceline first collapses that expansion, then lets Pi's native reasoning toggle run.
+This guarantees that the next hidden-reasoning view is z0 rather than remaining pinned
+at z1. Ctrl+O can expand the rows again whenever z1 is wanted.
+
 An expanded row opts out of trace-block grammar: it breaks the rail block
 (§9.1), leaves its neighbours' fact and truncation columns (§9.7, §9.8), and
 never participates in a read fold (§9.9); a trace block that follows one starts

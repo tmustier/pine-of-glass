@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// Resume a real Pi session with two completed read rows, then walk drill mode end to
-// end (design language §9.13): Alt+T numbers the rows with zero reflow and swaps the
-// editor (and its draft) for the hint bar, a committed digit opens the peek pager on
-// the full result, esc unwinds to the numbered transcript and then back to the editor
-// with the draft intact, and a foreign chord (alt+up) exits the mode un-consumed so
-// the same press reaches the restored editor. Every subprocess call is bounded and
-// the uniquely launched Pi is killed on timeout.
+// Resume a real Pi session with two completed read rows, prove Ctrl+T returns from a
+// Ctrl+O-expanded view to the trace (design language §9.12), then walk drill mode end
+// to end (§9.13): Alt+T numbers the rows with zero reflow and swaps the editor (and
+// its draft) for the hint bar, a committed digit opens the peek pager on the full
+// result, esc unwinds to the numbered transcript and then back to the editor with the
+// draft intact, and a foreign chord (alt+up) exits the mode un-consumed so the same
+// press reaches the restored editor. Every subprocess call is bounded and the
+// uniquely launched Pi is killed on timeout.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,6 +72,18 @@ function waitForPane(predicate) {
     sleep(200);
   }
   return pane;
+}
+
+function waitForHiddenThinking(settingsPath, expected) {
+  while (Date.now() < hardDeadline && hasTmuxSession()) {
+    try {
+      if (JSON.parse(readFileSync(settingsPath, "utf8")).hideThinkingBlock === expected) return true;
+    } catch {
+      // The settings write may be in flight; keep polling within the smoke deadline.
+    }
+    sleep(100);
+  }
+  return false;
 }
 
 function sessionEntries(cwd) {
@@ -197,7 +210,8 @@ fixtureHome = mkdtempSync(join(tmpdir(), "pog-drill-home-"));
 fixtureDir = mkdtempSync(join(tmpdir(), `${tmuxSession}-`));
 const agentDir = join(fixtureHome, ".pi", "agent");
 mkdirSync(agentDir, { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ hideThinkingBlock: true }, null, 2));
+const settingsPath = join(agentDir, "settings.json");
+writeFileSync(settingsPath, JSON.stringify({ hideThinkingBlock: true }, null, 2));
 writeFileSync(join(agentDir, "trust.json"), JSON.stringify({ [fixtureDir]: true, [repoRoot]: true }, null, 2));
 writeFileSync(join(fixtureDir, "AGENTS.md"), "# Drill smoke\nFixture only.\n");
 const sessionFile = join(fixtureDir, "session.jsonl");
@@ -232,7 +246,25 @@ try {
   const beforeRows = traceRowsOf(resumed).map((line) => line.trimEnd());
   if (beforeRows.length !== 2) throw new Error(`expected two trace rows, saw:\n${resumed}`);
 
-  // 2. A draft, then Alt+T: hint bar replaces the editor, numbers land at equal width.
+  // 2. Ctrl+O opens z1. Ctrl+T still owns the next transition: it clears z1 before
+  // Pi shows reasoning, and a second Ctrl+T therefore returns to z0 trace rows.
+  sendKeys("C-o");
+  const expanded = waitForPane((pane) => pane.includes("DRILL_RESULT_ALPHA") && !traceRowsOf(pane).some((line) => line.includes("▏")));
+  if (!expanded.includes("DRILL_RESULT_ALPHA")) throw new Error(`Ctrl+O did not expand the native tool rows\n${expanded}`);
+  sendKeys("C-t");
+  if (!waitForHiddenThinking(settingsPath, false)) throw new Error("first Ctrl+T did not reach Pi's native reasoning toggle");
+  sendKeys("C-t");
+  if (!waitForHiddenThinking(settingsPath, true)) throw new Error("second Ctrl+T did not return to hidden reasoning");
+  const retraced = waitForPane((pane) => {
+    const rows = traceRowsOf(pane);
+    return rows.length === 2 && rows.every((line) => line.includes("▏"));
+  });
+  const retracedRows = traceRowsOf(retraced).map((line) => line.trimEnd());
+  if (retracedRows.join("\n") !== beforeRows.join("\n")) {
+    throw new Error(`Ctrl+T left Ctrl+O rows pinned open instead of restoring the trace\n${retraced}`);
+  }
+
+  // 3. A draft, then Alt+T: hint bar replaces the editor, numbers land at equal width.
   sendKeys(draft);
   const withDraft = waitForPane((pane) => pane.includes(draft));
   if (!withDraft.includes(draft)) throw new Error(`draft never appeared in the editor\n${withDraft}`);
@@ -251,14 +283,14 @@ try {
     throw new Error(`gutter numbers wrong (1 must be the most recent row)\n${numberedRows.join("\n")}`);
   }
 
-  // 3. Digit commit opens the pager on the older row's complete result.
+  // 4. Digit commit opens the pager on the older row's complete result.
   sendKeys("2");
   const peeking = waitForPane((pane) => pane.includes("peek · row 2 of 2"));
   if (!peeking.includes("peek · row 2 of 2")) throw new Error(`pager did not open on row 2\n${peeking}`);
   if (!peeking.includes("DRILL_RESULT_ALPHA")) throw new Error(`pager missing the full result text\n${peeking}`);
   if (!peeking.includes("invocation")) throw new Error(`pager missing the invocation section\n${peeking}`);
 
-  // 4. esc unwinds: pager → numbered transcript → editor with the draft intact.
+  // 5. esc unwinds: pager → numbered transcript → editor with the draft intact.
   sendKeys("Escape");
   const backToDrill = waitForPane((pane) => pane.includes("drill · row") && !pane.includes("peek · row"));
   if (!backToDrill.includes("drill · row")) throw new Error(`esc did not return to drill mode\n${backToDrill}`);
@@ -270,7 +302,7 @@ try {
     throw new Error(`exit did not restore the plain rail rows\n${restoredRows.join("\n")}`);
   }
 
-  // 5. A foreign chord (§9.13): alt+up exits the mode un-consumed and lands in the
+  // 6. A foreign chord (§9.13): alt+up exits the mode un-consumed and lands in the
   // restored editor in the same press — stock pi answers with its native dequeue status.
   sendKeys("M-t");
   const redrilling = waitForPane((pane) => pane.includes("drill · row 1 of 2"));

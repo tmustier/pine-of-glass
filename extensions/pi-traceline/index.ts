@@ -1,12 +1,5 @@
 import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import {
-  isKeyRelease,
-  isKeyRepeat,
-  matchesKey,
-  truncateToWidth,
-  visibleWidth,
-  type KeyId,
-} from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { booleanValue, positiveNumberValue, isJsonObject, stringValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
@@ -59,6 +52,7 @@ import {
   type DiffStats,
 } from "./write-diff.ts";
 import { dedupeThinkingLabels } from "./thinking-preview.ts";
+import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 
 /**
  * pi-traceline — collapse each tool call to one scannable trace line so the full arc of
@@ -1727,7 +1721,7 @@ export default function piTraceline(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     // Capture the real TUI (passed synchronously to the widget factory), then patch only
     // extension-visible seams: requestRender for delayed tool-row patching, and raw
-    // terminal input for Ctrl+T key-release/repeat handling.
+    // terminal input for Ctrl+T expansion coordination plus release/repeat handling.
     g.__tracelineGetTheme = () => {
       try {
         return (ctx.ui as ExtensionUiWithTheme).theme;
@@ -1757,16 +1751,14 @@ export default function piTraceline(pi: ExtensionAPI) {
     });
 
     // Make reload/session-start idempotent: do not stack raw-input listeners.
-    // Ctrl+T itself remains Pi-native: Pi toggles reasoning visibility; this extension
-    // only changes how tool rows render while reasoning is hidden.
+    // Pi still owns Ctrl+T's reasoning toggle. Traceline only clears a conflicting
+    // Ctrl+O expansion first, then lets the same keypress continue to Pi (§9.12).
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
       // Drill mode owns mouse reports; a foreign chord exits it un-consumed (§9.13).
       const drill = handleDrillTerminalInput(data);
       if (drill) return drill;
-      if (!matchesKey(data, "ctrl+t")) return undefined;
-      if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
-      return undefined;
+      return handleThinkingToggleTerminalInput(data, ctx.ui);
     });
   });
 
