@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 (2026-07-18)
 
 - Fix `pi-traceline` so `Ctrl+T` remains decisive after `Ctrl+O` expands every
   tool row. Traceline now collapses Pi's global tool expansion before passing
