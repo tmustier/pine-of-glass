@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.2 (unreleased)
+
+- Fix a crash when a truncated row contained a wide grapheme near the cut.
+  `middleTruncate` (shared by Traceline's thinking previews and every fitted
+  family row) counted characters against a terminal-column budget, so a 2-column
+  grapheme such as an emoji could push the rendered line one column past the
+  terminal width and Pi's render guard exited the session. Cuts are now measured
+  in columns and a grapheme straddling a cut is dropped from that side, leaving
+  the row one column short rather than one over (design language §9.8).
+
 ## 0.8.1 (2026-07-18)
 
 - Fix `pi-traceline` so `Ctrl+T` remains decisive after `Ctrl+O` expands every
