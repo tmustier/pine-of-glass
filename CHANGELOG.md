@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.2 (unreleased)
+## 0.8.2 (2026-07-20)
 
 - Fix a crash when a truncated row contained a wide grapheme near the cut.
   `middleTruncate` (shared by Traceline's thinking previews and every fitted
