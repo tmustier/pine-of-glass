@@ -384,9 +384,12 @@ The right-aligned suffix carries facts in columns that align down the block:
 Truncation columns are deterministic and block-scoped. Every row in a block
 shares one body budget: the width left after the block's widest fact suffix. A
 truncated row cuts at exact columns: the head fills its share, a dim `…`, then a
-tail of exactly the reserved width, ending flush where the suffix column begins.
-Rows that fit their budget simply end early, like prose. A mid-token cut beside a
-dim ellipsis is legible; a wandering ellipsis column is not.
+tail of the reserved width, ending flush where the suffix column begins. Cuts are
+measured in terminal columns, never characters: a wide grapheme (emoji, CJK)
+straddling a cut is dropped from that side, leaving the row one column short
+rather than one over, since an over-wide row is a hard render error. Rows that
+fit their budget simply end early, like prose. A mid-token cut beside a dim
+ellipsis is legible; a wandering ellipsis column is not.
 
 ### 9.9 Folded reads
 

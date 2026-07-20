@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { GLYPH, SCALE, SEP, ink, middleTruncate, panelHeader, panelPips, sizeTone, SIZE_THRESHOLDS } from "../../extensions/_lib/style.ts";
 
 // A recording theme: proves ink() routes through Theme.fg with the right role.
@@ -64,6 +65,33 @@ test("middleTruncate replays active ink across the cut (design language §5)", (
   const reset = middleTruncate(`\x1b[1mB\x1b[0m${"b".repeat(120)}`, 40);
   const resetCut = reset.indexOf("…");
   assert.ok(!reset.slice(resetCut).includes("\x1b[1m"), `no stale bold after a reset: ${JSON.stringify(reset)}`);
+});
+
+test("middleTruncate never overflows the budget when wide graphemes sit at a cut", () => {
+  // Crash regression: the budget is terminal columns, but the cut used to count raw
+  // characters. A 2-column grapheme inside the tail made the "fitted" line one column
+  // wider than the terminal, and pi's render guard killed the session.
+  // Use BMP wide characters (\u2705, CJK): 1 UTF-16 code unit but 2 columns. Astral
+  // emoji are 2 code units for 2 columns, so they cannot expose a char/column mix-up.
+  const wide = "\u2705";
+  const head = "h".repeat(80);
+  const tail = `${"t".repeat(40)} ${wide} tail-end`;
+  const out = middleTruncate(`\x1b[38;5;245m${head} middle ${tail}\x1b[39m`, 100);
+  assert.ok(visibleWidth(out) <= 100, `overflowed: ${visibleWidth(out)} > 100`);
+  assert.ok(out.includes("tail-end"), `tail lost its end: ${JSON.stringify(out)}`);
+  assert.ok(out.includes("\u2026"), "ellipsis preserved");
+
+  // Wide grapheme straddling the head cut: dropped from the head, never half-kept.
+  const headWide = middleTruncate(`${"a".repeat(30)}\u4E2D${"b".repeat(120)}`, 60);
+  assert.ok(visibleWidth(headWide) <= 60, `head overflowed: ${visibleWidth(headWide)} > 60`);
+});
+
+test("middleTruncate fits the exact crashing thinking preview (159 cols in a 158 terminal)", () => {
+  // The pi-traceline Thinking preview that crashed: 158 chars but 159 columns because
+  // the tail carried an emoji.
+  const preview = `Thinking: The TTL docs issue - the CLI help says 30 days but the docs say 7. Let me just compile my findings now. The key items: Confirmed fixed in 0.1.7: 1. \u2705 API`;
+  const out = middleTruncate(` ${preview}`, 158);
+  assert.ok(visibleWidth(out) <= 158, `overflowed: ${visibleWidth(out)} > 158`);
 });
 
 test("sizeTone: dim below warning, warning at 10k ch, error at 50k ch", () => {
