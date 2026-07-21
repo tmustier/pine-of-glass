@@ -41,6 +41,8 @@ export interface ToolRowDataLike {
   args?: ToolArgsLike;
   result?: ToolResultLike;
   isPartial?: unknown;
+  /** pi's per-row expansion flag: written by setExpanded(), read for the zoom ladder (design language §9.12). */
+  expanded?: unknown;
   cwd?: unknown;
   callRendererComponent?: ToolCallRendererLike;
   __tracelineWriteSnapshot?: unknown;

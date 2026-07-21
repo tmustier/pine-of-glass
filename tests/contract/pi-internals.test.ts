@@ -320,6 +320,88 @@ test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", () =
 });
 
 // ---------------------------------------------------------------------------------------
+// Drill mode's Pi seams (design language §9.13): the custom-UI editor swap, the overlay
+// pager, and the expanded-row spacer line the number cell replaces.
+
+test("showExtensionCustom seam: editor swap/restore + overlay close drill mode rides", () => {
+  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
+  assert.ok(
+    source.includes("custom: (factory, options) => this.showExtensionCustom(factory, options)"),
+    "ctx.ui.custom wiring gone — drill mode cannot open its hint bar or pager",
+  );
+  const custom = source.slice(source.indexOf("async showExtensionCustom"));
+  assert.ok(custom.includes("const savedText = this.editor.getText();"), "editor draft no longer saved — exiting drill mode would eat the user's draft");
+  for (const anchor of [
+    "this.editorContainer.clear();",
+    "this.editorContainer.addChild(this.editor);",
+    "this.editor.setText(savedText);",
+    "this.ui.setFocus(this.editor);",
+  ]) {
+    assert.ok(custom.includes(anchor), `editor restore step gone (${anchor}) — drill exit strands the editor`);
+  }
+  assert.ok(custom.includes("this.ui.hideOverlay()"), "overlay close no longer hides — the pager would never leave the screen");
+
+  const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
+  assert.ok(declarations.includes("registerShortcut(shortcut: KeyId"), "registerShortcut signature drifted — the alt+t entry point dies");
+  assert.ok(declarations.includes("onTerminalInput(handler: TerminalInputHandler)"), "onTerminalInput gone — drill's mouse routing dies");
+  assert.ok(declarations.includes("custom<T>(factory: (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void)"), "custom factory signature drifted — hint bar and pager factories break");
+});
+
+test("foreign-chord exit seam: listeners precede focus dispatch; close() restores inline", () => {
+  // Drill's foreign-chord exit (§9.13) rides two orderings inside one input dispatch:
+  // the extension input listener exits the mode, pi restores the editor synchronously
+  // inside showExtensionCustom's close(), and only then does tui resolve the focused
+  // component — so the very same keystroke lands in the restored editor.
+  const tuiRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "..");
+  const tuiSource = readFileSync(join(tuiRoot, "dist/tui.js"), "utf8");
+  const listenerLoop = tuiSource.indexOf("for (const listener of this.inputListeners)");
+  const focusDispatch = tuiSource.indexOf("this.focusedComponent.handleInput(data)");
+  assert.ok(listenerLoop !== -1, "input-listener loop gone — the foreign-chord hook never runs");
+  assert.ok(focusDispatch !== -1, "focused-component dispatch gone — re-verify tui input routing");
+  assert.ok(listenerLoop < focusDispatch, "listeners no longer run before focus dispatch — a foreign chord would hit the dead hint bar");
+
+  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
+  const closeBody = source.slice(source.indexOf("async showExtensionCustom")).slice(0, 2_000);
+  const restoreAt = closeBody.indexOf("restoreEditor();");
+  const resolveAt = closeBody.indexOf("resolve(result);");
+  assert.ok(restoreAt !== -1 && resolveAt !== -1, "close() body drifted — re-verify the synchronous editor restore");
+  assert.ok(restoreAt < resolveAt, "close() no longer restores the editor before resolving — the flowed-through chord would land in a void");
+});
+
+test("pi-tui overlay focus restore + terminal dimensions the drill pager reads", () => {
+  const tuiRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "..");
+  const tuiSource = readFileSync(join(tuiRoot, "dist/tui.js"), "utf8");
+  assert.ok(
+    tuiSource.includes("preFocus: this.focusedComponent"),
+    "showOverlay no longer records pre-overlay focus — closing the pager would not return keys to the hint bar",
+  );
+  assert.ok(
+    tuiSource.includes("overlayLines.slice(0, maxHeight)"),
+    "overlay no longer clips lines to maxHeight — re-verify the pager's self-windowing assumption",
+  );
+  const tuiDecl = readFileSync(join(tuiRoot, "dist/tui.d.ts"), "utf8");
+  assert.ok(tuiDecl.includes("terminal: Terminal;"), "TUI.terminal gone — the pager loses its height source");
+});
+
+test("real expanded tool row: setExpanded mirrors .expanded and leads with a blank spacer", () => {
+  pi.initTheme(undefined, false);
+  const comp = new pi.ToolExecutionComponent("read", "tool-drill", { path: "/tmp/x.txt" }, undefined, undefined, {} as never, tmpdir());
+  comp.updateResult({ content: [{ type: "text", text: "hello ".repeat(40) }], isError: false }, false);
+  const peek = comp as unknown as { expanded?: boolean };
+  assert.equal(peek.expanded ?? false, false, "rows must start collapsed");
+  comp.setExpanded(true);
+  assert.equal(peek.expanded, true, "expanded flag no longer mirrors setExpanded — drill pins and §9.12 z1 desync");
+  assert.equal(traceline.isExpandedToolRow(comp), true, "real expanded row must match the z1 duck type");
+
+  // The number cell rides the blank spacer line pi renders above a native row (§9.13).
+  // If this softens, drill numbering on expanded rows silently degrades (row stays
+  // selectable but shows no number) — this contract names the drift instead.
+  const lines = comp.render(80);
+  assert.ok(Array.isArray(lines) && lines.length > 1, "expanded render shape drifted");
+  assert.equal(traceline.stripAnsi(lines[0] as string).trim(), "", "expanded native render no longer leads with a blank spacer line");
+});
+
+// ---------------------------------------------------------------------------------------
 // Settings + ExtensionAPI declaration anchors (source-text tripwires).
 
 test("ExtensionAPI still declares the tool surface contextimate reads", () => {

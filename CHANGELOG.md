@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.8.2 (2026-07-20)
+
+- Fix a crash when a truncated row contained a wide grapheme near the cut.
+  `middleTruncate` (shared by Traceline's thinking previews and every fitted
+  family row) counted characters against a terminal-column budget, so a 2-column
+  grapheme such as an emoji could push the rendered line one column past the
+  terminal width and Pi's render guard exited the session. Cuts are now measured
+  in columns and a grapheme straddling a cut is dropped whole; padding keeps the
+  row on its exact alignment grid without risking overflow (design language §9.8).
+  Independently reported by @KorenKrita in #43, who contributed the grapheme-safe
+  exact-alignment follow-up.
+
+## 0.8.1 (2026-07-18)
+
+- Fix `pi-traceline` so `Ctrl+T` remains decisive after `Ctrl+O` expands every
+  tool row. Traceline now collapses Pi's global tool expansion before passing
+  the same keypress to Pi's native reasoning toggle, so returning to hidden
+  reasoning restores the one-line trace instead of leaving rows pinned open.
+
+## 0.8.0 (2026-07-17)
+
+`pi-traceline` adds drill mode: inspect one tool call without expanding
+all tool output and without moving the transcript.
+
+- Press `Alt+T` (configurable via `drillKey`, or run `/drill`) to number the
+  visible tool rows in place. Each row's rail becomes its number at identical
+  width, so nothing reflows; `1` is the most recent call and a folded read run
+  is one number. A two-line hint bar replaces the editor and restores its draft
+  on exit.
+- Type a number (or press `enter`) to open that call in a full-screen pager
+  showing its trace lines, complete invocation and complete result. `j`/`k`
+  scroll, `h`/`l` move between rows without closing, and `esc` returns to the
+  numbered transcript exactly as it was. The common case is two keys:
+  `Alt+T`, then `1`.
+- Press `p` to expand or collapse the selected row using Pi's native tool row.
+  Expanded rows now also render natively outside drill mode, so Pi's `Ctrl+O`
+  tool expansion works under Traceline.
+- The mouse wheel moves the selection or scrolls the pager. Mouse reporting is
+  active only inside drill mode and always turns off on exit;
+  `"drillMouse": false` opts out.
+- Drill mode owns only its documented keys. An unrecognized modifier chord,
+  such as `Option+Up` or `Ctrl+C`, exits immediately without consuming the
+  input. Pi restores the editor synchronously, so the same keystroke reaches
+  its normal handler. This lets `Option+Up` open queue-edit mode in extensions
+  such as `pi-queue-steer` with one press instead of dying in Traceline.
+- On macOS, Alt-letter shortcuts require the terminal to send Option as Alt.
+  Ghostty supports `macos-option-as-alt = left`; cmux requires this in its
+  managed Ghostty config (or Terminal settings), followed by
+  `cmux reload-config`. Right Option remains available for character
+  composition. `/drill` remains a configuration-free fallback.
+
 ## 0.7.0 (2026-07-16)
 
 New extension: `pi-meantime` (experimental, issue #26) answers "where did the

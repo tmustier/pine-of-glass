@@ -186,15 +186,19 @@ function activeSgrAt(line: string, rawIndex: number): string {
   return [...state.values()].join("");
 }
 
-const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
+/** Map a terminal-column cut to a grapheme boundary in the stripped line. Wide
+ * graphemes that straddle the cut are excluded whole: down excludes them from the
+ * head, up excludes them from the tail. The returned column lets the caller replace
+ * the excluded cell with padding so every truncated row keeps the exact block grid. */
 function columnBoundary(
   text: string,
   target: number,
   round: "down" | "up",
 ): { plainIndex: number; column: number } {
   let column = 0;
-  for (const { segment, index } of GRAPHEME_SEGMENTER.segment(text)) {
+  for (const { segment, index } of graphemeSegmenter.segment(text)) {
     const nextColumn = column + visibleWidth(segment);
     if (target <= column) return { plainIndex: index, column };
     if (target < nextColumn) {
