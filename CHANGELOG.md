@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.3 (2026-07-22)
 
 - **Cachemire: isolate interactive-session state.** Nested headless Pi
   `AgentSession`s can load the same extension in the interactive process; their
