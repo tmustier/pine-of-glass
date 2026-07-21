@@ -49,6 +49,33 @@ test("tiny widths fall back without exceeding budget", () => {
   }
 });
 
+test("wide characters respect column budgets without splitting graphemes", () => {
+  const fixtures = [
+    `Thinking: 提交内容 ${"a".repeat(220)}`,
+    `head ${"👩‍💻".repeat(40)} tail ${"x".repeat(120)}`,
+  ];
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+  for (const input of fixtures) {
+    const boundaries = new Set([...segmenter.segment(input)].map(({ index }) => index));
+    boundaries.add(input.length);
+
+    for (const width of [21, 52, 80, 187]) {
+      const out = middleTruncate(input, width);
+      const visible = stripAnsi(out);
+      const cut = visible.indexOf(ELLIPSIS);
+      const head = visible.slice(0, cut).trimEnd();
+      const tail = visible.slice(cut + ELLIPSIS.length).trimStart();
+
+      assert.equal(visibleWidth(out), width, `visible width must equal ${width}: ${JSON.stringify(visible)}`);
+      assert.ok(input.startsWith(head), `head must prefix the input: ${JSON.stringify(head)}`);
+      assert.ok(input.endsWith(tail), `tail must suffix the input: ${JSON.stringify(tail)}`);
+      assert.ok(boundaries.has(head.length), `head split a grapheme: ${JSON.stringify(head)}`);
+      assert.ok(boundaries.has(input.length - tail.length), `tail split a grapheme: ${JSON.stringify(tail)}`);
+    }
+  }
+});
+
 test("the cut is a column: equal budgets cut at identical columns and fill exactly (§9.8)", () => {
   const a = "$ git log --oneline --graph --decorate --all --color=never -n 50 | head -30";
   const b = "read ~/somewhere/completely/different/path/to/a/deeply/nested/file.tsx:12-400";
