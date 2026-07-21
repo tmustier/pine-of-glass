@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Traceline: keep wide-grapheme cuts on the exact alignment grid.** The v0.8.2
+  overflow fix safely dropped a grapheme that crossed a truncation boundary but
+  could leave that row one column short. Vacated cells are now padded so related
+  rows retain identical ellipsis and right-edge columns. Independently reported
+  and contributed in #43 by @KorenKrita.
+
 ## 0.8.2 (2026-07-20)
 
 - Fix a crash when a truncated row contained a wide grapheme near the cut.
@@ -7,10 +15,8 @@
   family row) counted characters against a terminal-column budget, so a 2-column
   grapheme such as an emoji could push the rendered line one column past the
   terminal width and Pi's render guard exited the session. Cuts are now measured
-  in columns and a grapheme straddling a cut is dropped whole; padding keeps the
-  row on its exact alignment grid without risking overflow (design language §9.8).
-  Independently reported by @KorenKrita in #43, who contributed the grapheme-safe
-  exact-alignment follow-up.
+  in columns and a grapheme straddling a cut is dropped from that side, leaving
+  the row one column short rather than one over (design language §9.8).
 
 ## 0.8.1 (2026-07-18)
 
