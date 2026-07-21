@@ -186,31 +186,71 @@ function activeSgrAt(line: string, rawIndex: number): string {
   return [...state.values()].join("");
 }
 
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * Cut points for middleTruncate as code-unit indices into the *stripped* line,
+ * measured in terminal columns. Counting raw characters instead under-charges wide
+ * graphemes (emoji, CJK): the TUI measures the rendered line with visibleWidth() and
+ * hard-crashes on any overflow, so a 1-column miscount is fatal. A grapheme
+ * straddling a cut is dropped from that side — the result may be one column short,
+ * never one over.
+ */
+function columnCuts(vis: string, headCols: number, tailCols: number): { headEnd: number; tailStart: number } {
+  const segments = [...graphemeSegmenter.segment(vis)].map((s) => ({
+    index: s.index,
+    length: s.segment.length,
+    width: visibleWidth(s.segment),
+  }));
+  const totalCols = segments.reduce((acc, s) => acc + s.width, 0);
+
+  let headEnd = 0;
+  let cols = 0;
+  for (const s of segments) {
+    if (cols + s.width > headCols) break;
+    cols += s.width;
+    headEnd = s.index + s.length;
+  }
+
+  const tailStartCol = totalCols - tailCols;
+  let tailStart = vis.length;
+  cols = 0;
+  for (const s of segments) {
+    if (cols >= tailStartCol) {
+      tailStart = s.index;
+      break;
+    }
+    cols += s.width;
+  }
+
+  return { headEnd, tailStart };
+}
+
 export function middleTruncate(line: string, width: number, theme?: Theme): string {
   const maxWidth = Math.max(1, width);
   if (visibleWidth(line) <= maxWidth) return line;
 
   const vis = stripAnsi(line);
-  const visLen = vis.length;
   const ellipsisWidth = visibleWidth(ELLIPSIS);
   const budget = Math.max(1, maxWidth - ellipsisWidth); // reserve columns for the ellipsis
 
   const maxTail = Math.min(budget - MIN_HEAD_COLS, Math.max(12, Math.floor(budget * TAIL_RATIO)));
   if (maxTail < 1) return truncateToWidth(line, maxWidth, ELLIPSIS);
 
-  // The cut is a column (design language §9.8): the tail is exactly `maxTail` wide and
-  // the head exactly fills the rest, so every line truncated to the same budget cuts at
-  // identical columns and fills the budget exactly. No content-dependent snapping — a
-  // mid-token cut beside a dim ellipsis is legible; a wandering ellipsis column is not.
-  const tailStart = visLen - maxTail;
+  // The cut is a column (design language §9.8): the tail is at most `maxTail` columns
+  // wide and the head fills the rest, so every line truncated to the same budget cuts
+  // at identical columns and fills the budget exactly (one column short when a wide
+  // grapheme straddles a cut). No content-dependent snapping — a mid-token cut beside
+  // a dim ellipsis is legible; a wandering ellipsis column is not.
+  const headCols = budget - maxTail;
+  const cuts = columnCuts(vis, headCols, maxTail);
   const dimEllipsis = ink(theme, "dim", ELLIPSIS);
-  const tailRawStart = rawIndexAtVisibleIndex(line, tailStart);
+  const tailRawStart = rawIndexAtVisibleIndex(line, cuts.tailStart);
   const tailRaw = `${activeSgrAt(line, tailRawStart)}${line.slice(tailRawStart)}`;
 
-  const headEnd = budget - maxTail;
-  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
+  if (headCols <= 0) return `${dimEllipsis}${tailRaw}`;
 
-  const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headEnd));
+  const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, cuts.headEnd));
   return `${headRaw}${RESET}${dimEllipsis}${tailRaw}`;
 }
 
