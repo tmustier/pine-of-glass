@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Cachemire: isolate interactive-session state.** Nested headless Pi
+  `AgentSession`s can load the same extension in the interactive process; their
+  lifecycle and provider events no longer overwrite the root session's ledger,
+  cache clock or model metadata. Reported in #44 and contributed in #45 by
+  @0xbentang (Ben Tang).
 - **Traceline: keep wide-grapheme cuts on the exact alignment grid.** The v0.8.2
   overflow fix safely dropped a grapheme that crossed a truncation boundary but
   could leave that row one column short. Vacated cells are now padded so related
