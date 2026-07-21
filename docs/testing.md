@@ -53,7 +53,7 @@ Layout:
 
 ```
 tests/
-  contract/pi-internals.test.ts      # layer 1: drift
+  contract/*.test.ts                 # layer 1: Pi drift and lifecycle contracts
   contextimate/*.test.ts             # layer 2/3
   traceline/*.test.ts                # layer 2
   cachemire/*.test.ts                # layer 2/3
@@ -64,10 +64,9 @@ scripts/dev/link-pi-runtime.sh
 
 ## Layer 1: contract tests against the installed Pi (drift)
 
-`tests/contract/pi-internals.test.ts` imports the real installed Pi and asserts every
-structural assumption the extensions make. Each assertion names the extension code that
-depends on it. When `pi update` breaks one, the failure message says exactly which seam
-moved.
+`tests/contract/*.test.ts` import the real installed Pi and assert every structural
+assumption the extensions make. Each assertion names the extension code that depends on
+it. When `pi update` breaks one, the failure message says exactly which seam moved.
 
 | Assumption | Depended on by |
 |---|---|
@@ -77,6 +76,7 @@ moved.
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
+| Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 
 Where instantiating real components is impractical, the contract test asserts on the

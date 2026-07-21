@@ -166,6 +166,12 @@ the event boundary and are never persisted: restored rows say `cause unknown` ra
 than reconstruct a diagnosis from vibes, and cachemire writes nothing into session
 entries or exports (UI-only contract).
 
+Only the Pi extension instance with an interactive UI may own that process-global
+working state. A nested headless `AgentSession` still loads the extension, but its
+lifecycle and provider events are ignored; it cannot overwrite the interactive
+ledger, cache clock or model metadata. The interactive instance releases ownership
+on `session_shutdown` so the next interactive lifecycle can claim it cleanly.
+
 This trade-off fits the current goal: live legibility (repo README, plan 1). Plan 2
 (post-hoc analysis of stored sessions and traces, RPC/remote runs, fleets of agent
 sessions) would need those request-time observations *after* the fact, which means
