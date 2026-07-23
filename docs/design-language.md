@@ -179,11 +179,15 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
 - tense: in-flight statements are progressive with `~`
   (`cache breaking · re-writing ~138.2k`); resolved statements are past tense with
   exacts (`cache broke · re-wrote 138.2k`)
-- a resolved post-compaction notice shows both provider-exact sides:
-  `cache after compaction · preserved 34.9k of the prior 72.5k prefix · re-wrote
-  38.7k (52% of prompt)`. `preserved` means provider-reported cache reads from the
-  unchanged prompt prefix, not the number of conversation tokens the compactor retained.
-  If the model also changed, withhold the prior count rather than compare tokenizers
+- a resolved post-compaction notice compares provider-exact cache reads with the last
+  normal agent prompt before compaction: `cache after compaction · reused 34.9k of the
+  last pre-compaction 72.5k prompt (48%) · processed 39.1k uncached`. The share uses that
+  earlier prompt as its denominator. `reused` means the provider read an unchanged
+  prefix from that earlier cache lineage; it does not mean the compaction summary used
+  that prefix or retained that many semantic conversation tokens. The uncached count is
+  ordinary input plus explicit cache-write input: everything in the new prompt that was
+  not a cache read. It therefore carries no share. If the model also changed,
+  withhold the prior count and share rather than compare tokenizers
 - certainty ladder: contract-backed evidence gets definite words (`cache cold`);
   a documented band gets hedged words (`cache fading`); an unknown provider gets
   `likely`. Never write definite words on soft evidence

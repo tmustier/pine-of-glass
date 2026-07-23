@@ -44,13 +44,14 @@ function isPostCompaction(record: CallRecord): boolean {
 }
 
 function renderCompactionLine(record: CallRecord): string {
-  const prior = record.expectedRead > 0 && record.postCompaction?.modelSwitched !== true
-    ? ` of the prior ${compactCount(record.expectedRead)} prefix`
-    : " from the prior prefix";
-  const prompt = promptTokens(record.usage);
-  const rewriteShare = prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}% of prompt)` : "";
-  return `cache after compaction \u00b7 preserved ${compactCount(record.usage.cacheRead)}${prior}` +
-    ` \u00b7 re-wrote ${compactCount(record.rewroteTokens)}${rewriteShare}`;
+  const canCompare = record.expectedRead > 0 && record.postCompaction?.modelSwitched !== true;
+  const prior = canCompare
+    ? ` of the last pre-compaction ${compactCount(record.expectedRead)} prompt` +
+      ` (${Math.round((record.usage.cacheRead / record.expectedRead) * 100)}%)`
+    : " from the last pre-compaction prompt";
+  const uncached = record.usage.input + record.usage.cacheWrite;
+  return `cache after compaction \u00b7 reused ${compactCount(record.usage.cacheRead)}${prior}` +
+    ` \u00b7 processed ${compactCount(uncached)} uncached`;
 }
 
 export function renderMissLine(record: CallRecord): string {
