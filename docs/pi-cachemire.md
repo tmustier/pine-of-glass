@@ -119,6 +119,28 @@ reads alternating 62,464 → 49,152 → 62,464 → 65,024, which a single cache 
 replica lineages were advancing independently, and each break was one replica's
 first-touch. The matcher turns that hand analysis into the default diagnosis.
 
+## Tree navigation and branch lineages
+
+Pi sessions are trees, so Cachemire's reusable-prefix baseline follows the active
+branch. After `/tree`, it rebuilds that baseline from the selected path's last billed
+assistant message. The provider-reported `input + cacheRead + cacheWrite` for that
+historical call is the exact prompt-side comparison baseline for the selected path.
+
+The abandoned and selected histories necessarily differ after their common prefix.
+That authenticated tree transition is not treated as an ordinary history mutation:
+pricing the abandoned leaf's full prompt would claim that the common prefix broke when
+it did not. Structural differences in model, system prompt, tools or thinking parameters
+still take precedence and are reported normally. The exact size of the new divergent
+tail remains unknown before provider usage, so Cachemire does not invent an in-flight
+suffix bill. The resolved call then uses the provider's exact cache read and uncached
+input.
+
+This also rebases the clock's at-risk prompt size and freshness anchor. Cachemire finds
+the latest billed descendant whose request contained the selected branch root. Calls on
+a sibling branch can refresh their common ancestor, but cannot make the selected
+branch's private suffix younger. If the provider reports otherwise, the normal resolved
+miss path corrects the prediction.
+
 ## The cause ladder
 
 Every provider request is fingerprinted (system prompt, each tool, each history
@@ -168,7 +190,8 @@ what the provider billed (usage on assistant messages in the session transcript)
 which `--continue` rebuilds the ledger (and entry matching still works across a quick
 exit+resume, since prompt totals are recoverable). Request-time observations (payload
 fingerprints, request-start anchors, the observed `cache_control` TTL) exist only at
-the event boundary and are never persisted: restored rows say `cause unknown` rather
+the event boundary and are never persisted. Branch baselines are reconstructed from
+provider usage already stored on the active session path; restored rows say `cause unknown` rather
 than reconstruct a diagnosis from vibes, and cachemire writes nothing into session
 entries or exports (UI-only contract).
 

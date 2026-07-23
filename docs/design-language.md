@@ -188,6 +188,10 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   ordinary input plus explicit cache-write input: everything in the new prompt that was
   not a cache read. It therefore carries no share. If the model also changed,
   withhold the prior count and share rather than compare tokenizers
+- after tree navigation, the cache baseline follows the selected branch, not the
+  abandoned leaf. Use the last provider-billed prompt on the selected path as the
+  expected reusable prefix. The intentional suffix divergence is not a full-prefix
+  mutation; withhold a divergent-tail estimate until provider usage makes it exact
 - certainty ladder: contract-backed evidence gets definite words (`cache cold`);
   a documented band gets hedged words (`cache fading`); an unknown provider gets
   `likely`. Never write definite words on soft evidence
