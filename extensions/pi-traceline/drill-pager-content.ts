@@ -5,8 +5,9 @@
 // and the foreign-block line. Windowing, caching, and image-component lifecycle stay
 // in drill-pager.ts.
 
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath, highlightCode, type Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getImageDimensions, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { stripAnsi } from "../_lib/ansi.ts";
 import { resultTextCharCount, type ToolRowLike } from "../_lib/chat.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { SEP, ink, type Tone } from "../_lib/style.ts";
@@ -69,11 +70,99 @@ function argumentText(value: unknown): string {
   }
 }
 
-export function resultLabel(theme: Theme | undefined, tone: Tone, call: ToolRowLike): string {
+export function resultLabel(theme: Theme | undefined, tone: Tone, call: ToolRowLike, language?: string): string {
   const word = tone === "error" ? "failed" : tone === "success" ? "success" : "running";
   const chars = resultTextCharCount(call);
   const size = chars !== undefined ? ink(theme, "dim", `${SEP}${compactCount(chars)} ch`) : "";
-  return `${ink(theme, "dim", `result${SEP}`)}${ink(theme, tone, word)}${size}`;
+  const lang = language ? ink(theme, "dim", `${SEP}${language}`) : "";
+  return `${ink(theme, "dim", `result${SEP}`)}${ink(theme, tone, word)}${size}${lang}`;
+}
+
+export type CodeContext = { language: string; nextLine: number | undefined };
+
+const CODE_PRINTERS = new Set(["cat", "sed", "head", "tail", "bat"]);
+
+/** A result renders as code only when it provably is code (§9.13): a read whose path
+ * names a language (numbered from the call's offset), or a bash command that is one
+ * plain printer of a single code file (no gutter; the true start line is unknown). */
+export function codeContextFor(call: ToolRowLike): CodeContext | undefined {
+  const args = call.args as { path?: unknown; offset?: unknown; command?: unknown } | undefined;
+  if (call.toolName === "read" && typeof args?.path === "string") {
+    const language = languageOf(args.path);
+    if (!language) return undefined;
+    const offset = typeof args.offset === "number" && args.offset >= 1 ? Math.floor(args.offset) : 1;
+    return { language, nextLine: offset };
+  }
+  if (call.toolName === "bash" && typeof args?.command === "string") {
+    const language = printedCodeLanguage(args.command);
+    if (language) return { language, nextLine: undefined };
+  }
+  return undefined;
+}
+
+function languageOf(path: string): string | undefined {
+  try {
+    return getLanguageFromPath(path.replace(/^["']|["']$/g, ""));
+  } catch {
+    return undefined; // Pi seam: no language means no code claim; the text stays plain.
+  }
+}
+
+function printedCodeLanguage(command: string): string | undefined {
+  if (/[|&;<>`$(){}\n\\]/.test(command)) return undefined; // one plain command, provable
+  const words = command.trim().split(/\s+/);
+  if (!CODE_PRINTERS.has(words[0] ?? "")) return undefined;
+  const operands = words.slice(1).filter((word) => !word.startsWith("-"));
+  const target = operands[operands.length - 1]; // sed's script operand precedes the file
+  return target ? languageOf(target) : undefined;
+}
+
+/** One text block's content lines, unindented. Plain text wraps at the content width;
+ * a code block (§9.13) gets syntax ink (content untouched), a dim right-aligned line
+ * number gutter when the start line is known, and wrapped continuations that keep a
+ * blank gutter cell and hang under the code's own indentation. */
+export function textBlockLines(theme: Theme | undefined, text: string, width: number, code: CodeContext | undefined): string[] {
+  const clean = text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ");
+  if (!code) {
+    const out: string[] = [];
+    for (const raw of clean.split("\n")) {
+      if (raw.length === 0) out.push("");
+      else out.push(...wrapTextWithAnsi(raw, width));
+    }
+    return out;
+  }
+  const source = highlightedLines(clean, code.language);
+  const gutterWidth = code.nextLine === undefined ? 0 : String(code.nextLine + source.length - 1).length;
+  const pad = gutterWidth === 0 ? "" : " ".repeat(gutterWidth + 2);
+  const bodyWidth = Math.max(20, width - pad.length);
+  const out: string[] = [];
+  for (const line of source) {
+    const number = code.nextLine;
+    if (number !== undefined) code.nextLine = number + 1;
+    const gutter = gutterWidth === 0 ? "" : `${ink(theme, "dim", String(number).padStart(gutterWidth))}  `;
+    const plain = stripAnsi(line);
+    if (plain.length === 0) {
+      out.push(gutterWidth === 0 ? "" : gutter.trimEnd());
+      continue;
+    }
+    const hang = Math.min((/^ */.exec(plain)?.[0]?.length ?? 0) + 2, Math.max(0, bodyWidth - 30));
+    let first = true;
+    for (const piece of wrapTextWithAnsi(line, Math.max(20, bodyWidth - hang))) {
+      out.push(first ? `${gutter}${piece}` : `${pad}${" ".repeat(hang)}${piece}`);
+      first = false;
+    }
+  }
+  return out;
+}
+
+function highlightedLines(text: string, language: string): string[] {
+  try {
+    const lines = highlightCode(text, language);
+    if (Array.isArray(lines)) return lines.map((line) => String(line));
+  } catch {
+    // Pi seam: highlighting is ink only, never content; fall through to plain lines.
+  }
+  return text.split("\n");
 }
 
 /** The image fact line (§9.13, §4 grammar: what, then how big): always rendered,

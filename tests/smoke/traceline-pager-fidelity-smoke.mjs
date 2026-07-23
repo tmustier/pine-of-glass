@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Resume a real Pi session holding the two fidelity gaps the peek pager closes
-// (design language §9.13): a custom tool with no call renderer (papercut-shaped) and a
-// read whose result is an image block. Prove end to end that Alt+T → digit shows the
-// complete arguments (the note text a bare tool name would hide) and the image fact
-// line, and that the image read's trace row wears the `png W×H` what-fact (§9.7).
+// Resume a real Pi session holding the fidelity gaps the peek pager closes (design
+// language §9.13): a custom tool with no call renderer (papercut-shaped), a read whose
+// result is an image block, and a code read. Prove end to end that Alt+T → digit shows
+// the complete arguments (the note text a bare tool name would hide), the image fact
+// line, and the code grammar (offset-numbered gutter plus real syntax ink), and that
+// the image read's trace row wears the `png W×H` what-fact (§9.7).
 // tmux reports no image capability, so the pixel path stays unit/contract-tested;
 // this smoke pins the always-on text tier against the real Pi component stack.
 import { spawnSync } from "node:child_process";
@@ -46,8 +47,8 @@ function hasTmuxSession() {
   return run(["tmux", "has-session", "-t", tmuxSession], { timeoutMs: 2_000 }).status === 0;
 }
 
-function capturePane() {
-  return run(["tmux", "capture-pane", "-p", "-t", tmuxSession, "-S", "-500"], { timeoutMs: 2_000 }).stdout ?? "";
+function capturePane(...extra) {
+  return run(["tmux", "capture-pane", "-p", ...extra, "-t", tmuxSession, "-S", "-500"], { timeoutMs: 2_000 }).stdout ?? "";
 }
 
 function sendKeys(...keys) {
@@ -101,10 +102,40 @@ function sessionEntries(cwd) {
       timestamp: iso,
       message: { role: "user", content: [{ type: "text", text: "Resume the pager fidelity fixture." }], timestamp },
     },
+    // Order matters: the papercut call sits between the two reads so consecutive
+    // sibling reads do not fold into one run row (§9.9); each fidelity case keeps its
+    // own numbered trace row. Newest first: 1 image read, 2 papercut, 3 code read.
     {
       type: "message",
       id: "00000003",
       parentId: "00000002",
+      timestamp: iso,
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-code", name: "read", arguments: { path: join(cwd, "answer.ts"), offset: 7 } }],
+        ...assistantShell,
+        stopReason: "toolUse",
+        timestamp: timestamp + 1,
+      },
+    },
+    {
+      type: "message",
+      id: "00000004",
+      parentId: "00000003",
+      timestamp: iso,
+      message: {
+        role: "toolResult",
+        toolCallId: "call-code",
+        toolName: "read",
+        content: [{ type: "text", text: 'const answer = 42;\nexport function speak() {\n  return "lynx";\n}' }],
+        isError: false,
+        timestamp: timestamp + 2,
+      },
+    },
+    {
+      type: "message",
+      id: "00000005",
+      parentId: "00000004",
       timestamp: iso,
       message: {
         role: "assistant",
@@ -118,33 +149,6 @@ function sessionEntries(cwd) {
         ],
         ...assistantShell,
         stopReason: "toolUse",
-        timestamp: timestamp + 1,
-      },
-    },
-    {
-      type: "message",
-      id: "00000004",
-      parentId: "00000003",
-      timestamp: iso,
-      message: {
-        role: "toolResult",
-        toolCallId: "call-papercut",
-        toolName: "papercut",
-        content: [{ type: "text", text: "Recorded locally" }],
-        isError: false,
-        timestamp: timestamp + 2,
-      },
-    },
-    {
-      type: "message",
-      id: "00000005",
-      parentId: "00000004",
-      timestamp: iso,
-      message: {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "call-image", name: "read", arguments: { path: join(cwd, "shot.png") } }],
-        ...assistantShell,
-        stopReason: "toolUse",
         timestamp: timestamp + 3,
       },
     },
@@ -155,12 +159,9 @@ function sessionEntries(cwd) {
       timestamp: iso,
       message: {
         role: "toolResult",
-        toolCallId: "call-image",
-        toolName: "read",
-        content: [
-          { type: "text", text: "Read image file [image/png]" },
-          { type: "image", data: pngBase64(1044, 646), mimeType: "image/png" },
-        ],
+        toolCallId: "call-papercut",
+        toolName: "papercut",
+        content: [{ type: "text", text: "Recorded locally" }],
         isError: false,
         timestamp: timestamp + 4,
       },
@@ -172,10 +173,40 @@ function sessionEntries(cwd) {
       timestamp: iso,
       message: {
         role: "assistant",
+        content: [{ type: "toolCall", id: "call-image", name: "read", arguments: { path: join(cwd, "shot.png") } }],
+        ...assistantShell,
+        stopReason: "toolUse",
+        timestamp: timestamp + 5,
+      },
+    },
+    {
+      type: "message",
+      id: "00000008",
+      parentId: "00000007",
+      timestamp: iso,
+      message: {
+        role: "toolResult",
+        toolCallId: "call-image",
+        toolName: "read",
+        content: [
+          { type: "text", text: "Read image file [image/png]" },
+          { type: "image", data: pngBase64(1044, 646), mimeType: "image/png" },
+        ],
+        isError: false,
+        timestamp: timestamp + 6,
+      },
+    },
+    {
+      type: "message",
+      id: "00000009",
+      parentId: "00000008",
+      timestamp: iso,
+      message: {
+        role: "assistant",
         content: [{ type: "text", text: readySentinel }],
         ...assistantShell,
         stopReason: "stop",
-        timestamp: timestamp + 5,
+        timestamp: timestamp + 7,
       },
     },
   ];
@@ -245,19 +276,36 @@ try {
   if (!resumed.includes(readySentinel)) throw new Error(`resumed session did not render\n${resumed}`);
   if (!resumed.includes("png 1044×646")) throw new Error(`image read trace row missing the png W×H fact\n${resumed}`);
 
-  // 2. Alt+T, then row 2 (the papercut call): the pager shows the complete arguments.
+  // 2. Alt+T, then the papercut row: the pager shows the complete arguments.
   sendKeys("M-t");
-  const drilling = waitForPane((pane) => pane.includes("drill · row 1 of 2"));
-  if (!drilling.includes("drill · row 1 of 2")) throw new Error(`hint bar did not appear\n${drilling}`);
+  const drilling = waitForPane((pane) => pane.includes("drill · row 1 of 3"));
+  if (!drilling.includes("drill · row 1 of 3")) throw new Error(`hint bar did not appear\n${drilling}`);
   sendKeys("2");
-  const papercutPeek = waitForPane((pane) => pane.includes("peek · row 2 of 2"));
+  const papercutPeek = waitForPane((pane) => pane.includes("peek · row 2 of 3"));
   if (!papercutPeek.includes(noteText)) throw new Error(`pager hides the papercut note (bare tool name?)\n${papercutPeek}`);
   if (!papercutPeek.includes("pine-of-glass")) throw new Error(`pager missing the context argument\n${papercutPeek}`);
 
-  // 3. l switches to the image read: the fact line accounts for the image block.
-  sendKeys("l");
-  const imagePeek = waitForPane((pane) => pane.includes("peek · row 1 of 2"));
+  // 3. Digit 1 switches to the image read: the fact line accounts for the image block.
+  sendKeys("1");
+  const imagePeek = waitForPane((pane) => pane.includes("peek · row 1 of 3"));
   if (!imagePeek.includes("image · png · 1044×646")) throw new Error(`pager missing the image fact line\n${imagePeek}`);
+
+  // 4. Digit 3: the code read renders as code, gutter counting from the offset, with
+  // real syntax ink (capture with escapes: the code line must carry SGR beyond the
+  // dim gutter, proving pi's highlighter ran through the live theme).
+  sendKeys("3");
+  const codePeek = waitForPane((pane) => pane.includes("peek · row 3 of 3"));
+  if (!/result · success · [\d.]+k? ?ch · typescript/.test(codePeek)) {
+    throw new Error(`result label missing the language cell\n${codePeek}`);
+  }
+  if (!/7 {2}const answer = 42;/.test(codePeek)) throw new Error(`code gutter missing or misnumbered\n${codePeek}`);
+  if (!/8 {2}export function speak/.test(codePeek)) throw new Error(`gutter did not count on\n${codePeek}`);
+  const inkPane = capturePane("-e");
+  const codeLine = inkPane
+    .split("\n")
+    .find((line) => line.replaceAll(/\x1b\[[0-9;]*m/g, "").includes("const answer"));
+  const sgrCount = (codeLine?.match(/\x1b\[[0-9;]*m/g) ?? []).length;
+  if (sgrCount < 3) throw new Error(`code line lacks syntax ink (${sgrCount} SGR runs)\n${codeLine}`);
 
   sendKeys("Escape");
   sendKeys("Escape");

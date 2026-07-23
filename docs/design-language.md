@@ -611,6 +611,16 @@ The peek pager:
   conversions already made by pi's row are reused rather than redone. Any
   other block type renders its type and what metadata it carries, never a
   bare bracket
+- a text result that is provably code renders as code, ink-only: the text is
+  untouched. A read whose path names a code language gets pi's own syntax
+  highlighter (theme-derived), a dim right-aligned line-number gutter counting
+  from the call's offset, and a language cell on the result label. A wrapped
+  code line's continuations keep a blank gutter cell and hang under the code's
+  own indentation, so wrapping never destroys the shape of the code. A bash
+  result earns the same ink, without the gutter, only when its command is one
+  plain `cat`/`sed`/`head`/`tail` of a single code file with no pipes, chains
+  or redirects: highlighting is a claim about what the text is (§7), and
+  anything less certain stays plain
 - an inline image is atomic under scrolling. The pager scrolls by line
   windowing, but a terminal image escape sequence cannot be sliced: an image
   renders its pixels only when its full cell block lies inside the viewport;

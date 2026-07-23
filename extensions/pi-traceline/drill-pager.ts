@@ -18,7 +18,6 @@ import {
   getCapabilities,
   matchesKey,
   truncateToWidth,
-  wrapTextWithAnsi,
   type Component,
   type KeyId,
   type TUI,
@@ -27,11 +26,14 @@ import type { ToolRowLike } from "../_lib/chat.ts";
 import { ELLIPSIS, SEP, ink } from "../_lib/style.ts";
 import { applyDigit, setSelected, togglePin, type DrillState } from "./drill.ts";
 import {
+  codeContextFor,
   foreignBlockLine,
   imageFactLine,
   imagePixelSource,
   invocationLines,
   resultLabel,
+  textBlockLines,
+  type CodeContext,
   type ImageBlockLike,
 } from "./drill-pager-content.ts";
 
@@ -192,8 +194,9 @@ export class DrillPager implements Component {
       const callLabel = calls.length > 1 ? `${SEP}call ${callIndex + 1} of ${calls.length}` : "";
       lines.push("", `  ${ink(theme, "dim", `invocation${callLabel}`)}`);
       for (const line of invocationLines(theme, call, contentWidth)) lines.push(fit(`${SECTION_INDENT}${line}`));
-      lines.push("", `  ${resultLabel(theme, st.host.statusTone(call), call)}`);
-      this.pushResult(call, callIndex, theme, width, contentWidth, viewport, lines, images);
+      const code = codeContextFor(call);
+      lines.push("", `  ${resultLabel(theme, st.host.statusTone(call), call, code?.language)}`);
+      this.pushResult(call, callIndex, code, theme, width, contentWidth, viewport, lines, images);
     });
     return { lines, images };
   }
@@ -201,6 +204,7 @@ export class DrillPager implements Component {
   private pushResult(
     call: ToolRowLike,
     callIndex: number,
+    code: CodeContext | undefined,
     theme: Theme | undefined,
     width: number,
     contentWidth: number,
@@ -220,13 +224,8 @@ export class DrillPager implements Component {
       if (!block || typeof block !== "object") continue;
       const typed = block as { type?: unknown; text?: unknown };
       if (typed.type === "text" && typeof typed.text === "string") {
-        const text = typed.text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ");
-        for (const raw of text.split("\n")) {
-          if (raw.length === 0) {
-            lines.push("");
-            continue;
-          }
-          for (const wrapped of wrapTextWithAnsi(raw, contentWidth)) lines.push(fit(`${SECTION_INDENT}${wrapped}`));
+        for (const line of textBlockLines(theme, typed.text, contentWidth, code)) {
+          lines.push(line.length === 0 ? "" : fit(`${SECTION_INDENT}${line}`));
         }
       } else if (typed.type === "image") {
         this.pushImage(call, callIndex, imageIndex++, block as ImageBlockLike, theme, width, contentWidth, viewport, lines, images);

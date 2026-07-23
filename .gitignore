@@ -11,3 +11,4 @@ pi-contextimate-*/
 *.payloads.jsonl
 *.summary.json
 pi-contextimate-*-results.json
+.worktrees/

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
 
 import { DrillPager } from "../../extensions/pi-traceline/drill-pager.ts";
-import { argumentLines, imageFactLine } from "../../extensions/pi-traceline/drill-pager-content.ts";
+import { argumentLines, codeContextFor, imageFactLine, textBlockLines } from "../../extensions/pi-traceline/drill-pager-content.ts";
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { DrillHost, DrillState } from "../../extensions/pi-traceline/drill.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
@@ -101,6 +101,51 @@ test("argumentLines: wraps at the value column, JSON for nested values, [] for n
   assert.deepEqual(argumentLines(undefined, undefined, 80), []);
   assert.deepEqual(argumentLines(undefined, ["array"], 80), []);
   assert.deepEqual(argumentLines(undefined, {}, 80), []);
+});
+
+// --- code results (§9.13: code renders as code, ink-only) -------------------------------
+
+test("codeContextFor claims code only when it is provable", () => {
+  const row = (toolName: string, args: object) => ({ ...imageRow(), toolName, args }) as ToolRowLike;
+  assert.deepEqual(codeContextFor(row("read", { path: "a/b.ts", offset: 40 })), { language: "typescript", nextLine: 40 });
+  assert.deepEqual(codeContextFor(row("read", { path: "a/b.ts" })), { language: "typescript", nextLine: 1 });
+  assert.equal(codeContextFor(row("read", { path: "notes.txt" })), undefined);
+  assert.deepEqual(codeContextFor(row("bash", { command: "sed -n 1,120p dist/tool.js" })), {
+    language: "javascript",
+    nextLine: undefined,
+  });
+  assert.deepEqual(codeContextFor(row("bash", { command: "cat 'src/x.py'" })), { language: "python", nextLine: undefined });
+  assert.equal(codeContextFor(row("bash", { command: "cat a.ts | head" })), undefined, "pipes are not provable");
+  assert.equal(codeContextFor(row("bash", { command: "cat a.ts && rm b" })), undefined, "chains are not provable");
+  assert.equal(codeContextFor(row("bash", { command: "echo x.ts" })), undefined, "only printers count");
+  assert.equal(codeContextFor(row("papercut", { note: "x.ts" })), undefined);
+});
+
+test("code blocks: gutter counts from the offset, continuations hang with a blank gutter", () => {
+  const code = { language: "typescript", nextLine: 98 };
+  const text = "function alpha() {\n    return aaaa bbbb cccc dddd eeee ffff gggg hhhh;\n}\n\nconst z = 1;";
+  const lines = textBlockLines(undefined, text, 40, code).map((line) => stripAnsi(line));
+  assert.equal(lines[0], " 98  function alpha() {");
+  assert.equal(lines[1], " 99      return aaaa bbbb cccc dddd", "numbers right-align in one gutter column");
+  assert.equal(lines[2], "          eeee ffff gggg hhhh;", "continuation keeps a blank gutter and hangs under the indent");
+  assert.equal(lines[3], "100  }");
+  assert.equal(lines[4], "101", "blank lines stay counted");
+  assert.equal(lines[5], "102  const z = 1;");
+  assert.equal(code.nextLine, 103, "the counter advances across blocks of one call");
+  const bashLines = textBlockLines(undefined, "const z = 1;", 40, { language: "typescript", nextLine: undefined });
+  assert.equal(stripAnsi(bashLines[0]!), "const z = 1;", "a bash code result gets no gutter");
+});
+
+test("a code read renders through the pager with the language cell and gutter", () => {
+  setCapabilities({ images: null, trueColor: true, hyperlinks: false });
+  const row = imageRow({
+    toolName: "read",
+    args: { path: "src/answer.ts", offset: 7 },
+    result: { content: [{ type: "text", text: "const answer = 42;" }], isError: false },
+  });
+  const text = pagerFor([row]).render(80).map((line) => stripAnsi(line)).join("\n");
+  assert.match(text, /result · success · 0\.0k ch · typescript/, "the result label names the claimed language");
+  assert.match(text, /7  const answer = 42;/, "the gutter counts from the call's offset");
 });
 
 // --- image result blocks (§9.13: every block accounted for) -----------------------------

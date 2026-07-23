@@ -74,6 +74,7 @@ A modifier chord drill mode does not own (`Option+Up`, `Ctrl+C`, …) leaves the
 The pager shows the row's trace line, then the complete invocation and the complete result. It never shows less than the model saw:
 
 - a tool with no call renderer of its own (papercut, MCP tools, most extension tools) shows its complete arguments as aligned `key  value` rows instead of a bare tool name
+- a result that provably is code renders as code: a read whose path names a code language gets pi's own syntax highlighting, a dim line-number gutter counting from the call's offset, and wrapped lines that hang under the code's indentation instead of snapping back to the margin. A bash `cat`/`sed`/`head`/`tail` of a single code file earns the same ink (without the gutter)
 - an image result always shows a fact line (`image · png · 1044×646 · 65.6k bytes`), and on a terminal with inline-image support (kitty, iTerm2, Ghostty) the pixels render right in the pager, mirroring pi's own inline images. A partially scrolled image shows a dim `scroll to view` hint instead of a torn image
 
 Scroll with `j`/`k`, the arrow keys, the page keys or `g`/`G`. Press `h`/`l` to move to the neighbouring row without closing. Press `esc` to return to the numbered transcript, exactly as you left it.

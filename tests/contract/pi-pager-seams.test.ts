@@ -1,16 +1,18 @@
-// Pins for the pi seams behind the peek pager's image fidelity (design language
+// Pins for the pi seams behind the peek pager's fidelity surface (design language
 // §9.13) and the trace row's image what-fact (§9.7): the result image blocks pi's
 // read tool emits, the ToolExecutionComponent fields the pager piggybacks on
 // (showImages, convertedImages, the kitty PNG-only guard), the bare-name call
-// fallback that justifies the pager's argument grammar, and the pi-tui image API
-// (Image component line accounting, kitty id deletion). After `pi update`, a failure
-// here names exactly which seam drifted.
+// fallback that justifies the pager's argument grammar, the syntax-highlight exports
+// behind the pager's code grammar, and the pi-tui image API (Image component line
+// accounting, kitty id deletion). After `pi update`, a failure here names exactly
+// which seam drifted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as piTui from "@earendil-works/pi-tui";
+import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
 
@@ -56,6 +58,22 @@ test("ToolExecutionComponent seams the pager piggybacks on", () => {
     source.includes("createCallFallback() {") &&
       source.includes("return new Text(theme.fg(\"toolTitle\", theme.bold(this.toolName)), 0, 0);"),
     "call fallback no longer a bare tool name — revisit whether the argument grammar still owns this gap",
+  );
+});
+
+test("syntax-highlight exports behind the pager's code grammar", () => {
+  // The pager claims code only through pi's own path-to-language mapping, and inks it
+  // through pi's own highlighter; both must stay exported and line-preserving.
+  assert.equal(getLanguageFromPath("a/b.ts"), "typescript");
+  assert.equal(getLanguageFromPath("dist/x.mjs"), "javascript");
+  assert.equal(getLanguageFromPath("notes.txt"), undefined, "prose must never earn a code claim");
+  const code = "const x = 1;\n\nconst y = 2;";
+  const lines = highlightCode(code, "typescript");
+  assert.equal(lines.length, 3, "highlightCode must preserve line structure");
+  assert.equal(
+    lines.map((line) => line.replaceAll(/\x1b\[[0-9;]*m/g, "")).join("\n"),
+    code,
+    "highlighting must be ink only, never content",
   );
 });
 
