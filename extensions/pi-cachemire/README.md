@@ -49,11 +49,13 @@ default threshold is $0.05 or 20k re-written tokens.
 ◍ cache held · read 76.0k of 77.7k expected · prefix stayed warm              (prediction wrong, good news)
 ```
 
-Tree navigation follows the selected branch's cache lineage. Cachemire rebases its
-expected reusable prefix to the last provider-billed prompt on that path instead of
-pricing the abandoned leaf's whole prompt. The intentional divergent tail does not
-trigger a full-prefix warning; the next response supplies its exact cached and uncached
-split.
+Tree navigation follows the selected branch's cache lineage. Cachemire anchors each
+live billed request to its session path, then chooses the last provider-billed prompt on
+the active path instead of pricing the abandoned leaf. Only descendants with a
+compatible provider, model, cache window and payload fingerprint can refresh that
+baseline. Continuing
+with a divergent suffix is ordinary prefix growth, so it needs no warning suppression;
+the next response supplies the exact cached and uncached split.
 
 A compaction prediction stays unsized because the new prefix is not provider-known
 until the next response. The resolved line uses exact provider usage. `Reused` means
@@ -136,10 +138,11 @@ Cachemire follows these rules:
 - Freshness wording reflects how much is known. A contract TTL gets a definite
   countdown. A documented band gets fading or cap wording. When nothing is known,
   Cachemire says "likely". Under subscription auth, it marks savings as notional.
-- Sessions restored with `--continue` rebuild the ledger from session usage. Cachemire
-  marks restored rows and excludes them from savings because their pricing context is
-  unknown. `/tree` rebuilds the active cache baseline from the selected path while
-  retaining the full session ledger.
+- Sessions restored with `--continue` rebuild the active ledger and all-branch cache
+  baselines from session usage. Cachemire marks restored rows and excludes them from
+  savings because their pricing context is unknown. Payload fingerprints are not
+  persisted, so restored branches use their own response-time anchor approximation until
+  live requests provide compatibility evidence.
 
 ## Understand the model behind the wording
 

@@ -32,11 +32,14 @@
 
 ## 0.8.5 (2026-07-25)
 
-- **Cachemire: follow cache lineage through `/tree` navigation.** Rewinding or
-  switching branches now rebases the expected reusable prefix to the last
-  provider-billed prompt on the selected path. The intentional divergent tail no
-  longer produces a full-prefix break warning; provider usage remains authoritative
-  for the resolved cached and uncached split.
+- **Cachemire: follow cache lineage through `/tree` navigation.** Every live billed
+  request now records its session path, provider, model, fingerprint, cache window and
+  provider usage. Before each send, Cachemire resolves the selected path's last billed
+  prompt and accepts freshness only from compatible descendants. Intentional suffix
+  divergence is ordinary prefix growth rather than a suppressed warning; model, system,
+  tool, thinking and earlier-history changes still invalidate normally. Restored
+  sessions rebuild all-branch baselines from persisted provider usage while withholding
+  fingerprint-only freshness claims.
 - **Tests: keep Contextimate render goldens portable.** Golden prompt counts now use
   a fixed fixture home, so they remain stable across developer home-directory lengths.
 

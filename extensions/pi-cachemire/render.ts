@@ -1,6 +1,6 @@
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { SEP } from "../_lib/style.ts";
-import type { BreakPrediction, CallRecord, RunAggregate, UsageLike } from "./index.ts";
+import type { BreakPrediction, CallRecord, RunAggregate, UsageLike } from "./types.ts";
 
 export function promptTokens(usage: UsageLike): number {
   return usage.input + usage.cacheRead + usage.cacheWrite;

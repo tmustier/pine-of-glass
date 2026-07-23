@@ -190,7 +190,10 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   withhold the prior count and share rather than compare tokenizers
 - after tree navigation, the cache baseline follows the selected branch, not the
   abandoned leaf. Use the last provider-billed prompt on the selected path as the
-  expected reusable prefix. The intentional suffix divergence is not a full-prefix
+  expected reusable prefix. A later request refreshes that baseline only when session
+  ancestry and its provider, model, cache window and payload fingerprint prove
+  compatibility. The
+  intentional suffix divergence is therefore ordinary prefix growth, not a suppressed
   mutation; withhold a divergent-tail estimate until provider usage makes it exact
 - certainty ladder: contract-backed evidence gets definite words (`cache cold`);
   a documented band gets hedged words (`cache fading`); an unknown provider gets

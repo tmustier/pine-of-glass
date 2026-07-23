@@ -15,9 +15,44 @@ import {
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
+import { restoreBranchRecords } from "./ledger.ts";
+import {
+  cacheStateForLineage,
+  findBranchBaseline,
+  hydrateLineageResponseIds,
+  resolveCacheLineage,
+  restoreLineageSnapshots,
+} from "./lineage.ts";
 import { settleDanglingSend } from "./lifecycle.ts";
-import { activeLineageCause, branchLineageBaseline, latestBranchRefreshAt, restoreBranchRecords } from "./lineage.ts";
-import { promptTokens, renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
+import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
+import type {
+  BreakPrediction,
+  CacheLineageSnapshot,
+  CacheWindow,
+  CachemireConfig,
+  CallCause,
+  CallClassification,
+  CallRecord,
+  ModelRates,
+  RequestFingerprint,
+  RunAggregate,
+  UsageLike,
+} from "./types.ts";
+
+export type {
+  BreakPrediction,
+  CacheWindow,
+  CachemireConfig,
+  CallCause,
+  CallClassification,
+  CallRecord,
+  CauseKind,
+  ModelRates,
+  RequestFingerprint,
+  RunAggregate,
+  UsageLike,
+} from "./types.ts";
+
 /**
  * pi-cachemire — explains the cache and loop economics of a pi session.
  *
@@ -38,85 +73,6 @@ import { promptTokens, renderBreakingLine, renderHeldLine, renderMissLine, rende
  * Anthropic gets the full treatment (explicit breakpoints, 5m/1h TTL, priced writes);
  * other providers degrade honestly to observed reads and soft "likely warm/cold" wording.
  */
-
-// --- shared shapes ---------------------------------------------------------------------
-
-export interface UsageLike {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
-}
-
-export interface ModelRates {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-} // USD per Mtok
-
-export interface RequestFingerprint {
-  kind: "anthropic" | "openai-responses" | "unknown";
-  model?: string;
-  systemHash?: string;
-  toolHashes: Array<{ name: string; hash: string }>;
-  messageHashes: string[];
-  ttlMs?: number; // from observed cache_control: 5m default, 1h when ttl:"1h"; undefined = implicit/unknown
-  /** Canonical description of the thinking/reasoning request params (e.g. "thinking budget
-   * 8192", "effort high"). Anthropic documents that changing these invalidates message
-   * cache breakpoints (system/tools stay cached); OpenAI's effort lives outside the
-   * prompt prefix, so there it is forensic context, not a predicted break. */
-  thinking?: string;
-}
-
-export type CauseKind =
-  | "cold" | "ttl" | "compaction" | "compaction-work" | "model" | "thinking" | "system"
-  | "tools" | "history" | "replica" | "restored" | "unknown";
-
-export interface CallCause { kind: CauseKind; detail: string }
-
-export interface CallClassification {
-  kind: "cold" | "hit" | "partial" | "miss";
-  cause?: CallCause;
-}
-
-export interface CallRecord {
-  index: number;
-  at: number;
-  /** Request-start anchor (when the provider wrote/refreshed this call's cache entry);
-   * `at` is response end. Absent on restored records, whose timestamps are response-ish. */
-  requestAt?: number;
-  gapMs?: number;
-  usage: UsageLike;
-  expectedRead: number;
-  classification: CallClassification;
-  rewroteTokens: number;
-  /** Context for the first billed provider call after session compaction. */
-  postCompaction?: { modelSwitched: boolean };
-  costUsd?: number;
-  uncachedUsd?: number; // counterfactual without caching, at this call's rates
-  restored?: boolean;
-}
-
-export interface RunAggregate {
-  startedAt: number;
-  calls: number;
-  input: number;
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-  costUsd: number;
-}
-
-export interface CachemireConfig {
-  widget: boolean;
-  turnSummary: boolean;
-  turnSummaryMinCalls: number;
-  missWarnings: boolean;
-  missWarnUsd: number;
-  missWarnTokens: number;
-}
 
 const DEFAULT_CONFIG: CachemireConfig = {
   widget: true,
@@ -148,11 +104,6 @@ function inferAnthropicTtlMs(env: Record<string, string | undefined> = process.e
 //              "always removed within one hour of the cache's last use" (a hard cap, so
 //              past it "cold" is definite even without a TTL contract)
 //   unknown  — anything else: soft language only
-export type CacheWindow =
-  | { kind: "contract"; ttlMs: number; source: "observed" | "inferred" }
-  | { kind: "band"; softMs: number; hardMs: number }
-  | { kind: "unknown" };
-
 const OPENAI_WINDOW: CacheWindow = { kind: "band", softMs: TTL_SHORT_MS, hardMs: TTL_LONG_MS };
 const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
 
@@ -485,13 +436,6 @@ function classifyCall(args: ClassifyInput): CallClassification {
 // notice sit between the user's action and the response — where the causality lives —
 // and the resolved actuals replace it in place when usage arrives.
 
-export interface BreakPrediction {
-  cause: CallCause;
-  /** Expected re-write size (last call's prompt). undefined when unknowable (compaction). */
-  expectedRewriteTokens?: number;
-  expectedUsd?: number;
-}
-
 function predictBreak(args: {
   isFirst: boolean;
   inCompaction: boolean;
@@ -517,7 +461,7 @@ function predictBreak(args: {
     // Model switches break the cache for certain (caches are per-model on every provider)
     // but the stored size is denominated in the *old* model's tokenizer — withhold it
     // rather than show a number in the wrong currency.
-    if (args.fingerprintCause.kind === "model") return { cause: args.fingerprintCause };
+    if (args.fingerprintCause.kind === "model" || args.fingerprintCause.kind === "compaction") return { cause: args.fingerprintCause };
     if (args.fingerprintCause.kind === "thinking") {
       // Anthropic documents this break (messages invalidate; system/tools stay cached), so
       // a contract window earns an in-flight claim — unsized, because the surviving
@@ -759,8 +703,12 @@ interface CachemireState {
   config: CachemireConfig;
   notifyFallback?: (plainText: string) => void;
   records: CallRecord[];
-  prevFingerprint?: RequestFingerprint;
+  lineages: CacheLineageSnapshot[];
   pendingFingerprint?: RequestFingerprint;
+  pendingFingerprintCause?: CallCause;
+  pendingLineageCandidates?: CacheLineageSnapshot[];
+  pendingRequestLeafId?: string | null;
+  pendingRequestWindow?: CacheWindow;
   pendingRequestAt?: number;
   pendingPreviousCacheAt?: number;
   pendingCacheGapMs?: number;
@@ -782,16 +730,11 @@ interface CachemireState {
   providerLabel?: string;
   compacted: boolean;
   inCompaction: boolean;
-  treeRebased: boolean;
   /** Chat lines cachemire appended, with anchors for re-attachment after pi rebuilds. */
   anchored: AnchoredLine[];
   /** Cached chat container: rebuilds empty it of recognizable rows, but the instance
    * lives for the whole interactive session, so the first find stays valid. */
   chat?: ContainerLike;
-  /** Records before this index belong to a dead cache lineage (pre-compaction, or before
-   * a model/system/tools/history/thinking change): entries the current prefix cannot
-   * read, so entry matching never names them. */
-  lineageStart: number;
   /** In-flight break notice placed at request time; resolved in place when usage arrives. */
   pendingNotice?: Text;
   run?: RunAggregate;
@@ -814,15 +757,14 @@ function state(): CachemireState {
     g.__piCachemire = {
       config: DEFAULT_CONFIG,
       records: [],
+      lineages: [],
       window: UNKNOWN_WINDOW,
       modelSwitched: false,
       thinkingChanged: false,
       expectedRead: 0,
       compacted: false,
       inCompaction: false,
-      treeRebased: false,
       anchored: [],
-      lineageStart: 0,
     };
   }
   return g.__piCachemire;
@@ -892,45 +834,33 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (g.__piCachemireOwner !== undefined && !ownsState()) return;
     g.__piCachemireOwner = ownerToken;
     s.config = loadConfig(process.cwd());
-    s.treeRebased = false;
-    const { messages } = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
+    const entries = ctx.sessionManager.getEntries();
+    const { messages } = buildSessionContext(entries, ctx.sessionManager.getLeafId());
     s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);
-    let restoredModelId: string | undefined;
-    for (let i = messages.length - 1; i >= 0 && restoredModelId === undefined; i--) {
-      const message = messages[i]!;
-      if (message.role === "assistant") restoredModelId = message.model;
-    }
+    s.lineages = restoreLineageSnapshots(entries, windowForProvider);
+    const baseline = findBranchBaseline(entries, ctx.sessionManager.getLeafId(), s.lineages);
     const model = ctx.model;
     if (model) {
       s.rates = model.cost;
       s.currentModelId = model.id;
       s.modelLabel = `${model.provider}/${model.id}`;
     }
-    // Settings restore with the session, so the current level stands in for the level of
-    // the session's last billed call. Note: getThinkingLevel lives on the runtime API
-    // (`pi`), not the per-event ctx (contract-pinned in tests/contract).
+    Object.assign(s, cacheStateForLineage(
+      { baseline, refresh: baseline, compatible: [] },
+      model?.provider,
+      model?.id,
+      baseline?.window ?? windowForProvider(model?.provider) ?? UNKNOWN_WINDOW,
+    ));
+    s.prevCallRequestAt = s.records.at(-1)?.at || undefined;
     s.lastCallThinkingLevel = s.currentThinkingLevel = pi.getThinkingLevel();
-    // Restored sessions get the provider's real freshness window immediately (anthropic:
-    // inferred contract TTL; openai: documented band); the first live request's observed
-    // payload replaces the inference.
-    if (s.window.kind === "unknown") s.window = windowForProvider(model?.provider) ?? UNKNOWN_WINDOW;
-    if (s.records.length > 0) {
-      const last = s.records[s.records.length - 1]!;
-      s.expectedRead = last.usage.input + last.usage.cacheRead + last.usage.cacheWrite;
-      s.cachedTokens = s.expectedRead;
-      // Message timestamps are response-end-ish; the true TTL anchor (request processing
-      // start) is slightly earlier, so this is marginally optimistic — irrelevant at the
-      // hours-scale gaps where restore matters.
-      s.lastRequestAt = last.at || undefined;
-      s.prevCallRequestAt = last.at || undefined;
-      // Caches are per-model: a restored session resumed under a different model is cold,
-      // and cachedTokens is denominated in the old model's tokenizer.
-      s.lastCallModelId = restoredModelId ?? s.lastCallModelId;
-      s.modelSwitched = s.lastCallModelId !== undefined && model?.id !== undefined && s.lastCallModelId !== model.id;
-      // Restored under a different model: the restored entries are unreadable (caches are
-      // per-model), so they are out of lineage for entry matching from the start.
-      if (s.modelSwitched) s.lineageStart = s.records.length;
-    }
+    s.compacted = false;
+    s.inCompaction = false;
+    s.pendingFingerprint = undefined;
+    s.pendingFingerprintCause = undefined;
+    s.pendingLineageCandidates = undefined;
+    s.pendingRequestAt = s.pendingPreviousCacheAt = s.pendingCacheGapMs = undefined;
+    s.pendingRequestLeafId = undefined;
+    s.pendingRequestWindow = undefined;
     if (!ctx.hasUI) return;
     s.ui = ctx.ui;
     s.theme = ctx.ui.theme;
@@ -949,30 +879,48 @@ export default function piCachemire(pi: ExtensionAPI): void {
     g.__piCachemireOwner = undefined;
   });
 
-  pi.on("before_provider_request", async (event) => {
+  pi.on("before_provider_request", async (event, ctx) => {
     if (!ownsState()) return;
+    const firstAttempt = s.pendingRequestAt === undefined;
     s.pendingFingerprint = fingerprintPayload(event.payload);
     const requestAt = Date.now();
-    if (s.pendingRequestAt === undefined) {
-      s.pendingPreviousCacheAt = s.lastRequestAt;
-      s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
-    }
-    s.pendingRequestAt = requestAt;
-    // TTL anchor = request start: providers read/refresh/write cache entries while
-    // processing the request input (entries become available once the response *begins*),
-    // so the freshness window burns during generation — a long thinking block eats into it.
-    s.lastRequestAt = s.pendingRequestAt;
-    // Observation is authoritative per provider kind: anthropic payloads carry the real
-    // cache_control TTL; openai-responses requests get the documented eviction band.
+    const entries = ctx.sessionManager.getEntries();
+    hydrateLineageResponseIds(s.lineages, entries, windowForProvider);
+    const resolution = resolveCacheLineage({
+      entries,
+      activeLeafId: ctx.sessionManager.getLeafId(),
+      snapshots: s.lineages,
+      currentProvider: ctx.model?.provider,
+      currentModel: ctx.model?.id ?? s.pendingFingerprint.model,
+      currentFingerprint: s.pendingFingerprint,
+      compareFingerprints: diffFingerprints,
+    });
+    Object.assign(s, cacheStateForLineage(
+      resolution,
+      ctx.model?.provider,
+      ctx.model?.id ?? s.pendingFingerprint.model,
+      s.window,
+    ));
+    s.pendingFingerprintCause = resolution.cause;
+    s.pendingLineageCandidates = resolution.compatible;
+    s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
+    if (firstAttempt) s.pendingPreviousCacheAt = s.lastRequestAt;
+    s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
     if (s.pendingFingerprint.kind === "anthropic") {
-      s.window = s.pendingFingerprint.ttlMs !== undefined
+      s.pendingRequestWindow = s.pendingFingerprint.ttlMs !== undefined
         ? { kind: "contract", ttlMs: s.pendingFingerprint.ttlMs, source: "observed" }
-        : UNKNOWN_WINDOW; // cacheRetention "none": no breakpoints were sent
+        : UNKNOWN_WINDOW;
       s.providerLabel = "anthropic";
     } else if (s.pendingFingerprint.kind === "openai-responses") {
-      s.window = OPENAI_WINDOW;
+      s.pendingRequestWindow = OPENAI_WINDOW;
       s.providerLabel = "openai";
+    } else {
+      s.pendingRequestWindow = UNKNOWN_WINDOW;
     }
+    s.window = s.pendingRequestWindow;
+    s.pendingRequestAt = requestAt;
+    // Optimistically anchor the in-flight request; agent_end rolls it back if no usage arrives.
+    s.lastRequestAt = requestAt;
 
     // Place the break notice where the causality lives: between the user's action and the
     // response. It shows the expectation now and is resolved in place when usage arrives.
@@ -984,7 +932,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         gapMs: s.pendingCacheGapMs,
         window: s.window,
         expectedRead: s.expectedRead,
-        fingerprintCause: activeLineageCause(s.prevFingerprint, s.pendingFingerprint, s.treeRebased, diffFingerprints),
+        fingerprintCause: s.pendingFingerprintCause,
         rates: s.rates,
       });
       const material = prediction !== undefined && (
@@ -1040,14 +988,18 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("session_tree", async (event, ctx) => {
     if (!ownsState()) return;
     const entries = ctx.sessionManager.getEntries();
-    const { messages } = buildSessionContext(entries, event.newLeafId);
-    const baseline = branchLineageBaseline(messages);
-    const branchRootId = event.summaryEntry?.parentId ?? event.newLeafId;
-    const refreshAt = latestBranchRefreshAt(entries, branchRootId) ?? baseline?.at;
-    s.expectedRead = baseline?.promptTokens ?? 0;
-    s.cachedTokens = baseline?.promptTokens;
-    s.lastRequestAt = refreshAt;
-    s.treeRebased = true;
+    hydrateLineageResponseIds(s.lineages, entries, windowForProvider);
+    const baseline = findBranchBaseline(entries, event.newLeafId, s.lineages);
+    const resolution = resolveCacheLineage({
+      entries,
+      activeLeafId: event.newLeafId,
+      snapshots: s.lineages,
+      currentProvider: ctx.model?.provider,
+      currentModel: ctx.model?.id,
+      currentFingerprint: baseline?.fingerprint,
+      compareFingerprints: diffFingerprints,
+    });
+    Object.assign(s, cacheStateForLineage(resolution, ctx.model?.provider, ctx.model?.id, s.window));
     updateWidget();
   });
 
@@ -1074,20 +1026,17 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const gapMs = s.prevCallRequestAt !== undefined ? requestAt - s.prevCallRequestAt : undefined;
     const cacheGapMs = s.pendingCacheGapMs ?? gapMs;
 
-    const fingerprintCause = activeLineageCause(s.prevFingerprint, s.pendingFingerprint, s.treeRebased, diffFingerprints);
-    // Any invalidating change re-keys the cache: records before it are a dead lineage
-    // whose entries this prefix cannot read, and a 512-bucket collision with one would
-    // name an unreadable entry. Conservative on purpose — a mutation that happened to
-    // leave the cache warm still advances the boundary (false negatives degrade to the
-    // generic unknown hint; false positives would be dishonest).
-    if (s.compacted || fingerprintCause) s.lineageStart = s.records.length;
-    // Entry ages use the request-start anchor (entries are written/refreshed during
-    // request processing); restored records fall back to their response-ish message
-    // timestamp — marginally optimistic, same caveat as the restore-time TTL anchor.
+    const fingerprintCause = s.pendingFingerprintCause;
+    // Best-effort replica matching is restricted to path-compatible, fingerprint-proven
+    // snapshots. A sibling using another model or prompt shape cannot name this read.
     const entryMatch = s.window.kind === "band"
       ? matchPriorEntry(
           usage.cacheRead,
-          s.records.slice(s.lineageStart).map((record) => ({ index: record.index, at: record.requestAt ?? record.at, promptTokens: promptTokens(record.usage) })),
+          (s.pendingLineageCandidates ?? []).flatMap((snapshot) => snapshot.recordIndex === undefined ? [] : [{
+            index: snapshot.recordIndex,
+            at: snapshot.requestAt,
+            promptTokens: snapshot.promptTokens,
+          }]),
           requestAt,
           s.window.hardMs,
         )
@@ -1118,20 +1067,36 @@ export default function piCachemire(pi: ExtensionAPI): void {
       uncachedUsd: uncachedCostUsd(usage, s.rates),
     };
     s.records.push(record);
+    const promptSize = usage.input + usage.cacheRead + usage.cacheWrite;
+    s.lineages.push({
+      requestLeafId: s.pendingRequestLeafId ?? null,
+      responseAt: typeof message.timestamp === "number" ? message.timestamp : now,
+      requestAt,
+      promptTokens: promptSize,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+      provider: message.provider,
+      model: message.model,
+      fingerprint: s.pendingFingerprint,
+      window: s.pendingRequestWindow ?? s.window,
+      recordIndex: record.index,
+    });
     s.compacted = false;
-    s.treeRebased = false;
-    s.prevFingerprint = s.pendingFingerprint ?? s.prevFingerprint;
     s.prevCallRequestAt = requestAt;
     // Usage arrived: the anchor this request claimed at send time is provider-confirmed.
-    // Consume the pending pair — whatever is still pending at agent_end never got usage.
     s.pendingFingerprint = undefined;
+    s.pendingFingerprintCause = undefined;
+    s.pendingLineageCandidates = undefined;
     s.pendingRequestAt = undefined;
+    s.pendingRequestLeafId = undefined;
     s.pendingPreviousCacheAt = undefined;
     s.pendingCacheGapMs = undefined;
-    s.expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
-    s.cachedTokens = s.expectedRead;
+    s.expectedRead = promptSize;
+    s.cachedTokens = promptSize;
+    s.window = s.pendingRequestWindow ?? s.window;
+    s.pendingRequestWindow = undefined;
     // Fresh usage re-baselines the currency: counts are now denominated in this model.
-    s.lastCallModelId = s.currentModelId ?? s.lastCallModelId;
+    s.lastCallModelId = message.model ?? s.currentModelId ?? s.lastCallModelId;
     s.modelSwitched = false;
     s.lastCallThinkingLevel = s.currentThinkingLevel ?? s.lastCallThinkingLevel;
     s.thinkingChanged = false;
@@ -1167,6 +1132,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
     updateWidget(now);
   });
 
+  pi.on("turn_end", async (_event, ctx) => {
+    if (!ownsState()) return;
+    hydrateLineageResponseIds(s.lineages, ctx.sessionManager.getEntries(), windowForProvider);
+  });
+
   pi.on("agent_end", async () => {
     if (!ownsState()) return;
     // A notice whose call never produced usage (abort/error) must not dangle as "breaking".
@@ -1178,8 +1148,12 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (settled.changed) {
       s.lastRequestAt = s.pendingPreviousCacheAt;
       s.pendingRequestAt = undefined;
+      s.pendingRequestLeafId = undefined;
       s.pendingPreviousCacheAt = undefined;
       s.pendingFingerprint = undefined;
+      s.pendingFingerprintCause = undefined;
+      s.pendingLineageCandidates = undefined;
+      s.pendingRequestWindow = undefined;
       s.pendingCacheGapMs = undefined;
       updateWidget();
     }
@@ -1221,9 +1195,10 @@ export const internals = {
   renderBreakingLine,
   renderHeldLine,
   diffFingerprints,
-  activeLineageCause,
-  branchLineageBaseline,
-  latestBranchRefreshAt,
+  findBranchBaseline,
+  hydrateLineageResponseIds,
+  resolveCacheLineage,
+  restoreLineageSnapshots,
   matchPriorEntry,
   classifyCall,
   settleDanglingSend,
