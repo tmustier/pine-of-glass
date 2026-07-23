@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.4 (2026-07-23)
 
 - **Cachemire: use the last pre-compaction prompt for cache-reuse shares.** The
   post-compaction notice now reports the provider cache read as a share of the last
