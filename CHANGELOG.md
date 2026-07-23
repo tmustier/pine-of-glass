@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Cachemire: use the last pre-compaction prompt for cache-reuse shares.** The
+  post-compaction notice now reports the provider cache read as a share of the last
+  normal agent prompt before compaction, rather than dividing the new prompt's uncached
+  count by the new prompt total. It names that earlier cache lineage explicitly and
+  keeps the new prompt's uncached count separate: `reused 17.9k of the last
+  pre-compaction 173.9k prompt (10%) · processed 21.2k uncached`. Fixes #51.
+
 ## 0.8.3 (2026-07-22)
 
 - **Cachemire: isolate interactive-session state.** Nested headless Pi

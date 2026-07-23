@@ -16,14 +16,27 @@ const COMPACTED: CallRecord = {
   postCompaction: { modelSwitched: false },
 };
 
-test("resolved compaction notice reports the exact preserved and re-written split", () => {
+test("resolved compaction notice reports reuse against the last pre-compaction prompt", () => {
   assert.equal(
     renderMissLine(COMPACTED),
-    "cache after compaction \u00b7 preserved 34.9k of the prior 72.5k prefix \u00b7 re-wrote 38.7k (52% of prompt)",
+    "cache after compaction \u00b7 reused 34.9k of the last pre-compaction 72.5k prompt (48%) \u00b7 processed 39.1k uncached",
   );
 });
 
-test("a post-compaction hit keeps the split instead of falling back to generic held wording", () => {
+test("the reported session uses the pre-compaction denominator", () => {
+  const observed: CallRecord = {
+    ...COMPACTED,
+    usage: { input: 21_163, output: 299, cacheRead: 17_920, cacheWrite: 0 },
+    expectedRead: 173_864,
+    rewroteTokens: 21_163,
+  };
+  assert.equal(
+    renderMissLine(observed),
+    "cache after compaction \u00b7 reused 17.9k of the last pre-compaction 173.9k prompt (10%) \u00b7 processed 21.2k uncached",
+  );
+});
+
+test("a post-compaction hit keeps the reuse comparison instead of generic held wording", () => {
   const held: CallRecord = {
     ...COMPACTED,
     usage: { ...COMPACTED.usage, cacheRead: 68_000, cacheWrite: 4_100 },
@@ -32,13 +45,13 @@ test("a post-compaction hit keeps the split instead of falling back to generic h
   };
   assert.equal(
     renderHeldLine(held),
-    "cache after compaction \u00b7 preserved 68.0k of the prior 72.5k prefix \u00b7 re-wrote 4.1k (6% of prompt)",
+    "cache after compaction \u00b7 reused 68.0k of the last pre-compaction 72.5k prompt (94%) \u00b7 processed 4.5k uncached",
   );
 });
 
-test("a model switch withholds the prior count because its tokenizer differs", () => {
+test("a model switch withholds the prior count and share because its tokenizer differs", () => {
   assert.equal(
     renderMissLine({ ...COMPACTED, postCompaction: { modelSwitched: true } }),
-    "cache after compaction \u00b7 preserved 34.9k from the prior prefix \u00b7 re-wrote 38.7k (52% of prompt)",
+    "cache after compaction \u00b7 reused 34.9k from the last pre-compaction prompt \u00b7 processed 39.1k uncached",
   );
 });

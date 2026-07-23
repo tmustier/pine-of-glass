@@ -21,7 +21,7 @@
 === notices (chat lines) ===
 ◍ cache breaking · re-writing ~150.3k (~$2.82) · cause: idle 7m00s > 5m TTL
 ◍ cache breaking · re-writing the new prefix · cause: history compacted
-◍ cache after compaction · preserved 34.9k of the prior 72.5k prefix · re-wrote 38.7k (52% of prompt)
+◍ cache after compaction · reused 34.9k of the last pre-compaction 72.5k prompt (48%) · processed 39.1k uncached
 ◍ cache broke · re-wrote 153.0k of 153.2k prompt (100%) · $2.97 · cause: idle 7m00s > 5m TTL
 ◍ cache partial · read 90.0k of 152.1k expected · re-wrote 62.1k (41% of prompt) · cause: unknown (provider-side eviction?)
 ◍ cache held · read 150.3k of 150.3k expected · prefix stayed warm
