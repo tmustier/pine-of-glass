@@ -28,7 +28,8 @@
     "check": "npm run lint && npm run typecheck && npm test",
     "test:smoke:traceline": "node tests/smoke/traceline-empty-thinking-smoke.mjs",
     "test:smoke:drill": "node tests/smoke/traceline-drill-smoke.mjs",
-    "test:smoke": "npm run test:smoke:traceline && npm run test:smoke:drill && node tests/smoke/startup-smoke.mjs"
+    "test:smoke:pager": "node tests/smoke/traceline-pager-fidelity-smoke.mjs",
+    "test:smoke": "npm run test:smoke:traceline && npm run test:smoke:drill && npm run test:smoke:pager && node tests/smoke/startup-smoke.mjs"
   },
   "pi": {
     "extensions": [

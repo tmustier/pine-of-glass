@@ -386,6 +386,13 @@ The right-aligned suffix carries facts in columns that align down the block:
   size cell as noise unless the output reaches warning severity (§6): its result
   is porcelain about the event, not pulled context, but an output that balloons
   is a story of its own and re-earns the cell
+- a row whose result carries an image block shows an image fact in the size
+  cell's berth instead of a char count: `png 1044×646`, dim. The text note
+  beside an image read is near-noise; counting only its chars claims the
+  result was tiny when the model actually received the pixels. The image fact
+  names what was pulled without pretending to know its token cost. It occupies
+  the size cell for column alignment but does not light the block's size
+  column: it is a what-fact, not a how-big-fact
 
 ### 9.8 Truncation
 
@@ -584,9 +591,35 @@ The peek pager:
   transcript beneath is untouched, and esc returns to identical pixels
 - the pager is a §8 panel: a `[Traceline] peek · row 3 of 37` brand line, one
   dim hint line, then the row's own trace lines as the anchor, the full
-  invocation from pi's call renderer with its real newlines, and the complete
-  result text, each section under a dim label. A folded read run renders one
-  invocation and result section per call
+  invocation, and the complete result, each section under a dim label. A
+  folded read run renders one invocation and result section per call
+- the pager is the fidelity surface: everything the model saw, the reader can
+  see here. The trace line may truncate and the transcript may fold, but the
+  pager never shows less than the call and result the model exchanged
+- the invocation section uses pi's call renderer with its real newlines when
+  the tool has one. A tool without a call renderer (papercut, MCP tools, most
+  extension tools) renders its complete arguments instead: the tool name, then
+  one aligned `key  value` row per argument (keys dim in one left-aligned
+  column, string values verbatim with wrapped continuations hanging at the
+  value column, nested objects as indented JSON). The arguments are the
+  invocation; a bare tool name is not
+- every result block is accounted for. Text blocks render complete. An image
+  block always renders its fact line, `image · png · 1044×646 · 65.6k bytes`
+  (§4 grammar: what, then how big), and on a terminal whose capabilities
+  support inline images it renders the pixels too, mirroring pi's own native
+  tool row: the row's `showImages` setting is honoured, and kitty PNG
+  conversions already made by pi's row are reused rather than redone. Any
+  other block type renders its type and what metadata it carries, never a
+  bare bracket
+- an inline image is atomic under scrolling. The pager scrolls by line
+  windowing, but a terminal image escape sequence cannot be sliced: an image
+  renders its pixels only when its full cell block lies inside the viewport;
+  a partially scrolled image shows its dim fact line in place (`scroll to
+  view`), never a clipped or overdrawn image. Images are sized to fit the
+  viewport so full visibility is always reachable
+- kitty image ids allocated by the pager are deleted when it closes, the same
+  bounded lifecycle as drill-mode mouse reporting: the mode cleans up every
+  terminal-state side effect it created, on exit and on shutdown
 - `j`/`k`, the arrows, page keys and `g`/`G` scroll; `h`/`l` and left/right
   move to the neighbouring numbered target without closing; `p` toggles
   expansion; digits jump; esc, enter or `q` closes back to drill mode

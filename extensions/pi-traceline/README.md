@@ -71,7 +71,12 @@ Press `Alt+T` (or run `/drill`) to number the tool rows in place. The transcript
 
 A modifier chord drill mode does not own (`Option+Up`, `Ctrl+C`, …) leaves the mode and still does its normal job: the editor is restored first, then the same keystroke lands in it. Drill mode never silently eats a shortcut that means something outside it.
 
-The pager shows the row's trace line, then the complete invocation and the complete result. Scroll with `j`/`k`, the arrow keys, the page keys or `g`/`G`. Press `h`/`l` to move to the neighbouring row without closing. Press `esc` to return to the numbered transcript, exactly as you left it.
+The pager shows the row's trace line, then the complete invocation and the complete result. It never shows less than the model saw:
+
+- a tool with no call renderer of its own (papercut, MCP tools, most extension tools) shows its complete arguments as aligned `key  value` rows instead of a bare tool name
+- an image result always shows a fact line (`image · png · 1044×646 · 65.6k bytes`), and on a terminal with inline-image support (kitty, iTerm2, Ghostty) the pixels render right in the pager, mirroring pi's own inline images. A partially scrolled image shows a dim `scroll to view` hint instead of a torn image
+
+Scroll with `j`/`k`, the arrow keys, the page keys or `g`/`G`. Press `h`/`l` to move to the neighbouring row without closing. Press `esc` to return to the numbered transcript, exactly as you left it.
 
 The most common case takes two keys: `Alt+T`, then `1` for the latest call.
 
@@ -97,7 +102,7 @@ Results use these colours by default:
 - warning colour from 10k characters
 - error colour from 50k characters
 
-Results under 100 characters stay hidden unless another row in the same block has a visible size. File changes show diff counts instead of result size.
+Results under 100 characters stay hidden unless another row in the same block has a visible size. File changes show diff counts instead of result size. A result that carries an image shows what was pulled instead of a misleading text-only count: `png 1044×646`, dim.
 
 Set different thresholds in `~/.pi/agent/pi-traceline.json` or `<project>/.pi/pi-traceline.json`:
 
