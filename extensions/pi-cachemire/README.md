@@ -49,6 +49,12 @@ default threshold is $0.05 or 20k re-written tokens.
 ◍ cache held · read 76.0k of 77.7k expected · prefix stayed warm              (prediction wrong, good news)
 ```
 
+Tree navigation follows the selected branch's cache lineage. Cachemire rebases its
+expected reusable prefix to the last provider-billed prompt on that path instead of
+pricing the abandoned leaf's whole prompt. The intentional divergent tail does not
+trigger a full-prefix warning; the next response supplies its exact cached and uncached
+split.
+
 A compaction prediction stays unsized because the new prefix is not provider-known
 until the next response. The resolved line uses exact provider usage. `Reused` means
 the first normal agent call after compaction read an unchanged prefix from the last
@@ -132,7 +138,8 @@ Cachemire follows these rules:
   Cachemire says "likely". Under subscription auth, it marks savings as notional.
 - Sessions restored with `--continue` rebuild the ledger from session usage. Cachemire
   marks restored rows and excludes them from savings because their pricing context is
-  unknown.
+  unknown. `/tree` rebuilds the active cache baseline from the selected path while
+  retaining the full session ledger.
 
 ## Understand the model behind the wording
 

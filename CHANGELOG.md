@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Cachemire: follow cache lineage through `/tree` navigation.** Rewinding or
+  switching branches now rebases the expected reusable prefix to the last
+  provider-billed prompt on the selected path. The intentional divergent tail no
+  longer produces a full-prefix break warning; provider usage remains authoritative
+  for the resolved cached and uncached split.
+
 ## 0.8.4 (2026-07-23)
 
 - **Cachemire: use the last pre-compaction prompt for cache-reuse shares.** The

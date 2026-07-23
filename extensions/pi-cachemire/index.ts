@@ -16,8 +16,8 @@ import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
 import { settleDanglingSend } from "./lifecycle.ts";
+import { activeLineageCause, branchLineageBaseline, latestBranchRefreshAt, restoreBranchRecords } from "./lineage.ts";
 import { promptTokens, renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
-
 /**
  * pi-cachemire — explains the cache and loop economics of a pi session.
  *
@@ -719,44 +719,6 @@ function renderLedger(
   return lines;
 }
 
-// --- ledger restore (so --continue sessions keep their totals) --------------------------
-
-function restoreFromMessages(messages: Array<Record<string, unknown>>): CallRecord[] {
-  const records: CallRecord[] = [];
-  let previousAt: number | undefined;
-  let expectedRead = 0;
-  for (const message of messages) {
-    if (message.role !== "assistant") continue;
-    const usage = message.usage as UsageLike | undefined;
-    if (!usage || (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0)) continue;
-    const at = typeof message.timestamp === "number" ? message.timestamp : 0;
-    const isFirst = records.length === 0;
-    const classification = classifyCall({
-      isFirst,
-      gapMs: previousAt !== undefined ? at - previousAt : undefined,
-      usage,
-      expectedRead,
-    });
-    if (classification.cause && classification.kind !== "cold" && classification.kind !== "hit") {
-      classification.cause = { kind: "restored", detail: "restored session (cause unknown)" };
-    }
-    records.push({
-      index: records.length + 1,
-      at,
-      gapMs: previousAt !== undefined ? at - previousAt : undefined,
-      usage,
-      expectedRead,
-      classification,
-      rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
-      costUsd: usage.cost?.total,
-      restored: true,
-    });
-    previousAt = at;
-    expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
-  }
-  return records;
-}
-
 // --- config ----------------------------------------------------------------------------
 
 function parseCachemireConfig(value: unknown): Partial<CachemireConfig> {
@@ -800,6 +762,8 @@ interface CachemireState {
   prevFingerprint?: RequestFingerprint;
   pendingFingerprint?: RequestFingerprint;
   pendingRequestAt?: number;
+  pendingPreviousCacheAt?: number;
+  pendingCacheGapMs?: number;
   prevCallRequestAt?: number;
   lastRequestAt?: number;
   window: CacheWindow;
@@ -818,6 +782,7 @@ interface CachemireState {
   providerLabel?: string;
   compacted: boolean;
   inCompaction: boolean;
+  treeRebased: boolean;
   /** Chat lines cachemire appended, with anchors for re-attachment after pi rebuilds. */
   anchored: AnchoredLine[];
   /** Cached chat container: rebuilds empty it of recognizable rows, but the instance
@@ -855,6 +820,7 @@ function state(): CachemireState {
       expectedRead: 0,
       compacted: false,
       inCompaction: false,
+      treeRebased: false,
       anchored: [],
       lineageStart: 0,
     };
@@ -926,8 +892,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (g.__piCachemireOwner !== undefined && !ownsState()) return;
     g.__piCachemireOwner = ownerToken;
     s.config = loadConfig(process.cwd());
+    s.treeRebased = false;
     const { messages } = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
-    s.records = restoreFromMessages(messages as unknown as Array<Record<string, unknown>>);
+    s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);
     let restoredModelId: string | undefined;
     for (let i = messages.length - 1; i >= 0 && restoredModelId === undefined; i--) {
       const message = messages[i]!;
@@ -985,7 +952,12 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("before_provider_request", async (event) => {
     if (!ownsState()) return;
     s.pendingFingerprint = fingerprintPayload(event.payload);
-    s.pendingRequestAt = Date.now();
+    const requestAt = Date.now();
+    if (s.pendingRequestAt === undefined) {
+      s.pendingPreviousCacheAt = s.lastRequestAt;
+      s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
+    }
+    s.pendingRequestAt = requestAt;
     // TTL anchor = request start: providers read/refresh/write cache entries while
     // processing the request input (entries become available once the response *begins*),
     // so the freshness window burns during generation — a long thinking block eats into it.
@@ -1009,10 +981,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
         isFirst: s.records.length === 0,
         inCompaction: s.inCompaction,
         compacted: s.compacted,
-        gapMs: s.prevCallRequestAt !== undefined ? s.pendingRequestAt - s.prevCallRequestAt : undefined,
+        gapMs: s.pendingCacheGapMs,
         window: s.window,
         expectedRead: s.expectedRead,
-        fingerprintCause: s.prevFingerprint ? diffFingerprints(s.prevFingerprint, s.pendingFingerprint) : undefined,
+        fingerprintCause: activeLineageCause(s.prevFingerprint, s.pendingFingerprint, s.treeRebased, diffFingerprints),
         rates: s.rates,
       });
       const material = prediction !== undefined && (
@@ -1065,6 +1037,20 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.run = { startedAt: Date.now(), calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, costUsd: 0 };
   });
 
+  pi.on("session_tree", async (event, ctx) => {
+    if (!ownsState()) return;
+    const entries = ctx.sessionManager.getEntries();
+    const { messages } = buildSessionContext(entries, event.newLeafId);
+    const baseline = branchLineageBaseline(messages);
+    const branchRootId = event.summaryEntry?.parentId ?? event.newLeafId;
+    const refreshAt = latestBranchRefreshAt(entries, branchRootId) ?? baseline?.at;
+    s.expectedRead = baseline?.promptTokens ?? 0;
+    s.cachedTokens = baseline?.promptTokens;
+    s.lastRequestAt = refreshAt;
+    s.treeRebased = true;
+    updateWidget();
+  });
+
   pi.on("session_before_compact", async () => {
     if (!ownsState()) return;
     s.inCompaction = true;
@@ -1086,10 +1072,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // Idle gap between the previous request (which refreshed the TTL) and this one.
     const requestAt = s.pendingRequestAt ?? now;
     const gapMs = s.prevCallRequestAt !== undefined ? requestAt - s.prevCallRequestAt : undefined;
+    const cacheGapMs = s.pendingCacheGapMs ?? gapMs;
 
-    const fingerprintCause = s.prevFingerprint && s.pendingFingerprint
-      ? diffFingerprints(s.prevFingerprint, s.pendingFingerprint)
-      : undefined;
+    const fingerprintCause = activeLineageCause(s.prevFingerprint, s.pendingFingerprint, s.treeRebased, diffFingerprints);
     // Any invalidating change re-keys the cache: records before it are a dead lineage
     // whose entries this prefix cannot read, and a 512-bucket collision with one would
     // name an unreadable entry. Conservative on purpose — a mutation that happened to
@@ -1109,7 +1094,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       : undefined;
     const classification = classifyCall({
       isFirst: s.records.length === 0,
-      gapMs,
+      gapMs: cacheGapMs,
       window: s.window,
       usage,
       expectedRead: s.expectedRead,
@@ -1134,12 +1119,15 @@ export default function piCachemire(pi: ExtensionAPI): void {
     };
     s.records.push(record);
     s.compacted = false;
+    s.treeRebased = false;
     s.prevFingerprint = s.pendingFingerprint ?? s.prevFingerprint;
     s.prevCallRequestAt = requestAt;
     // Usage arrived: the anchor this request claimed at send time is provider-confirmed.
     // Consume the pending pair — whatever is still pending at agent_end never got usage.
     s.pendingFingerprint = undefined;
     s.pendingRequestAt = undefined;
+    s.pendingPreviousCacheAt = undefined;
+    s.pendingCacheGapMs = undefined;
     s.expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
     s.cachedTokens = s.expectedRead;
     // Fresh usage re-baselines the currency: counts are now denominated in this model.
@@ -1188,9 +1176,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // the provider ever touched the cache, and the countdown would then be fiction.
     const settled = settleDanglingSend(s);
     if (settled.changed) {
-      s.lastRequestAt = settled.lastRequestAt;
+      s.lastRequestAt = s.pendingPreviousCacheAt;
       s.pendingRequestAt = undefined;
+      s.pendingPreviousCacheAt = undefined;
       s.pendingFingerprint = undefined;
+      s.pendingCacheGapMs = undefined;
       updateWidget();
     }
     const run = s.run;
@@ -1231,6 +1221,9 @@ export const internals = {
   renderBreakingLine,
   renderHeldLine,
   diffFingerprints,
+  activeLineageCause,
+  branchLineageBaseline,
+  latestBranchRefreshAt,
   matchPriorEntry,
   classifyCall,
   settleDanglingSend,
@@ -1247,7 +1240,7 @@ export const internals = {
   renderRunSummary,
   renderMissLine,
   renderLedger,
-  restoreFromMessages,
+  restoreFromMessages: (messages: Array<Record<string, unknown>>) => restoreBranchRecords(messages, classifyCall),
   loadConfig,
   DEFAULT_CONFIG,
 };
