@@ -22,17 +22,28 @@ import {
 
 const { buildSnapshot, renderSummary, renderCompact, renderExpanded } = internals;
 
+// Raw prompt counts include absolute fixture paths, so pin HOME while building the
+// snapshot to keep the goldens independent of the developer's home-directory length.
+const FIXTURE_HOME = "/home/pi";
+
 function fixtureSnapshot(model: ModelSummary): PrefixSnapshot {
-  const snapshot = buildSnapshot(
-    fakePi(),
-    () => fixtureSystemPrompt(),
-    undefined,
-    () => fixtureContextUsage,
-    () => model,
-    {},
-  );
-  snapshot.session = { ...fixtureSession };
-  return snapshot;
+  const previousHome = process.env.HOME;
+  process.env.HOME = FIXTURE_HOME;
+  try {
+    const snapshot = buildSnapshot(
+      fakePi(),
+      () => fixtureSystemPrompt(),
+      undefined,
+      () => fixtureContextUsage,
+      () => model,
+      {},
+    );
+    snapshot.session = { ...fixtureSession };
+    return snapshot;
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+  }
 }
 
 function rendered(lines: string[]): string {
