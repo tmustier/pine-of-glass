@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.8.5 (2026-07-25)
 
 - **Cachemire: follow cache lineage through `/tree` navigation.** Rewinding or
   switching branches now rebases the expected reusable prefix to the last
   provider-billed prompt on the selected path. The intentional divergent tail no
   longer produces a full-prefix break warning; provider usage remains authoritative
   for the resolved cached and uncached split.
+- **Tests: keep Contextimate render goldens portable.** Golden prompt counts now use
+  a fixed fixture home, so they remain stable across developer home-directory lengths.
 
 ## 0.8.4 (2026-07-23)
 
