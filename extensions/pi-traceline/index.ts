@@ -11,6 +11,7 @@ import {
   type AssistantRowLike,
   type AssistantRowPrototypeLike,
   type ContainerLike,
+  resultTextCharCount,
   type ToolArgsLike,
   type ToolRowDataLike,
   type ToolRowLike,
@@ -41,6 +42,7 @@ import {
   type DrillHost,
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
+import { resultImageFact } from "./image-fact.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 import {
@@ -342,19 +344,14 @@ function charSuffix(chars: number | undefined, columnLive = false): string {
   return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
 }
 
-function resultTextCharCount(comp: ToolRowDataLike | undefined): number | undefined {
-  const content = comp?.result?.content;
-  if (!Array.isArray(content)) return undefined;
-  return content.reduce((sum: number, block: unknown) => {
-    if (!block || typeof block !== "object") return sum;
-    const textBlock = block as { type?: unknown; text?: unknown };
-    if (textBlock.type === "text" && typeof textBlock.text === "string") return sum + textBlock.text.length;
-    return sum;
-  }, 0);
-}
-
 function resultCharSuffix(comp: ToolRowDataLike | undefined, facts: BlockFacts): string {
   return charSuffix(resultTextCharCount(comp), facts.sizeColumnLive);
+}
+
+// The image what-fact (§9.7, image-fact.ts): dim, never lighting the size column.
+function imageFactCell(comp: ToolRowDataLike | undefined): string {
+  const fact = resultImageFact(comp);
+  return fact ? dim(fact) : "";
 }
 
 const MUTATION_VERBS = new Set(["edit", "write"]);
@@ -427,10 +424,8 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
       if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
       if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
     }
-    size = Math.max(
-      size,
-      visibleWidth(recordRow(row) ? recordCharSuffix(row) : charSuffix(resultTextCharCount(row), sizeColumnLive)),
-    );
+    const cell = recordRow(row) ? recordCharSuffix(row) : imageFactCell(row) || charSuffix(resultTextCharCount(row), sizeColumnLive);
+    size = Math.max(size, visibleWidth(cell));
   }
   return { sizeColumnLive, diffColumns: { plus, minus, size } };
 }
@@ -583,7 +578,7 @@ function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY,
   // below warning severity.
   const inline = inlineMutationRow(comp);
   const diff = inline ? undefined : mutationDiffStats(comp);
-  const chars = inline ? "" : recordRow(comp) ? recordCharSuffix(comp) : resultCharSuffix(comp, facts);
+  const chars = inline ? "" : recordRow(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || resultCharSuffix(comp, facts);
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`

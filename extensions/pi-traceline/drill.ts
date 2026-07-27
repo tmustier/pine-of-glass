@@ -224,6 +224,7 @@ export function openPager(st: DrillState): void {
     )
     .catch(() => undefined)
     .finally(() => {
+      pager.dispose(); // kitty image ids are pager-scoped terminal state (§9.13)
       if (st.pager === pager) {
         st.pager = undefined;
         st.closePager = undefined;

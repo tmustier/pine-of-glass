@@ -41,6 +41,10 @@ export interface ToolRowDataLike {
   args?: ToolArgsLike;
   result?: ToolResultLike;
   isPartial?: unknown;
+  /** pi's inline-image setting for this row (tool-execution.ts); undefined means on. */
+  showImages?: unknown;
+  /** pi's kitty PNG conversions, a Map keyed by image-block index (tool-execution.ts). */
+  convertedImages?: unknown;
   /** pi's per-row expansion flag: written by setExpanded(), read for the zoom ladder (design language §9.12). */
   expanded?: unknown;
   cwd?: unknown;
@@ -89,6 +93,18 @@ export interface TracelineTuiLike {
   requestRender: (force?: boolean) => unknown;
   __tracelineRRWrapVersion?: number;
   __tracelineOriginalRequestRender?: (force?: boolean) => unknown;
+}
+
+/** Total text chars across a result's text blocks; undefined before a result exists. */
+export function resultTextCharCount(comp: ToolRowDataLike | undefined): number | undefined {
+  const content = comp?.result?.content;
+  if (!Array.isArray(content)) return undefined;
+  return content.reduce((sum: number, block: unknown) => {
+    if (!block || typeof block !== "object") return sum;
+    const textBlock = block as { type?: unknown; text?: unknown };
+    if (textBlock.type === "text" && typeof textBlock.text === "string") return sum + textBlock.text.length;
+    return sum;
+  }, 0);
 }
 
 /** A tool execution row: has setExpanded() and a toolName property. */

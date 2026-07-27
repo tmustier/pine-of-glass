@@ -1,17 +1,41 @@
 // The peek pager (design language §9.13): a full-screen overlay opened from drill mode.
 // The transcript beneath stays untouched, so esc returns to identical pixels. The panel
 // speaks the §8 header form, then anchors on the row's own trace line and shows the
-// full invocation (pi's call renderer, real newlines) and the complete result text,
-// each section under a dim label. A folded read run renders one invocation and result
-// section per call. Scrolling is offset-based line windowing; h/l switch to the
-// neighbouring numbered target without closing.
+// full invocation and the complete result, each section under a dim label. The pager is
+// the fidelity surface: everything the model saw, the reader can see here; the section
+// grammar (argument rows, image fact lines, foreign blocks) lives in
+// drill-pager-content.ts. Inline images mirror pi's own native tool row and are atomic
+// under the pager's offset-based line windowing: pixels render only when the whole cell
+// block is inside the viewport, a partially scrolled image shows its dim hint line
+// instead, and kitty image ids the pager allocated are deleted when it closes. A folded
+// read run renders one invocation and result section per call. Scrolling is offset-based
+// line windowing; h/l switch to the neighbouring numbered target without closing.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type KeyId, type TUI } from "@earendil-works/pi-tui";
+import {
+  Image,
+  deleteKittyImage,
+  getCapabilities,
+  matchesKey,
+  truncateToWidth,
+  type Component,
+  type KeyId,
+  type TUI,
+} from "@earendil-works/pi-tui";
 import type { ToolRowLike } from "../_lib/chat.ts";
-import { compactCount } from "../_lib/fmt.ts";
-import { ELLIPSIS, SEP, ink, type Tone } from "../_lib/style.ts";
+import { ELLIPSIS, SEP, ink } from "../_lib/style.ts";
 import { applyDigit, setSelected, togglePin, type DrillState } from "./drill.ts";
+import {
+  codeContextFor,
+  foreignBlockLine,
+  imageFactLine,
+  imagePixelSource,
+  invocationLines,
+  resultLabel,
+  textBlockLines,
+  type CodeContext,
+  type ImageBlockLike,
+} from "./drill-pager-content.ts";
 
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
@@ -21,12 +45,39 @@ const SECTION_INDENT = "    ";
 
 type TerminalSizeLike = { terminal?: { rows?: number } };
 
+type PagerImage = { start: number; lines: string[] };
+type PagerBody = { lines: string[]; images: PagerImage[] };
+type CachedImage = { data: string; comp: Image };
+
+// A crash mid-peek must not leave transmitted kitty images behind in the terminal:
+// the same bounded lifecycle as drill-mode mouse reporting (§9.13).
+const livePagers = new Set<DrillPager>();
+let exitGuardInstalled = false;
+
+function ensureExitGuard(): void {
+  if (exitGuardInstalled) return;
+  exitGuardInstalled = true;
+  process.on("exit", () => {
+    for (const pager of livePagers) pager.dispose();
+  });
+}
+
+function writeIgnoringErrors(sequence: string): void {
+  try {
+    process.stdout.write(sequence);
+  } catch {
+    // terminal already gone; nothing to clean up
+  }
+}
+
 export class DrillPager implements Component {
   private readonly st: DrillState;
   private scroll = 0;
   private tui: TerminalSizeLike | undefined;
   private lastRowIndex: number;
-  private cache: { row: unknown; result: unknown; width: number; lines: string[] } | undefined;
+  private cache: { row: unknown; result: unknown; width: number; viewport: number; body: PagerBody } | undefined;
+  private imageComps = new Map<string, CachedImage>();
+  private imageCompsViewport = 0;
 
   constructor(st: DrillState) {
     this.st = st;
@@ -78,6 +129,7 @@ export class DrillPager implements Component {
       this.lastRowIndex = st.selected;
       this.scroll = 0;
       this.cache = undefined;
+      this.disposeImages(); // the next row's blocks get fresh, correctly sized components
     }
     const fit = (line: string) => truncateToWidth(line, Math.max(1, width), ELLIPSIS);
     const row = st.rows[st.selected];
@@ -87,97 +139,174 @@ export class DrillPager implements Component {
     const hint = `  ${ink(theme, "dim", `esc close${SEP}j/k scroll${SEP}h/l switch row${SEP}p expand${SEP}g/G ends`)}`;
     if (!row) return [fit(head), fit(hint), fit(`  ${ink(theme, "dim", "row no longer available")}`)];
 
-    const body = this.bodyLines(row, width);
     const viewport = this.viewport();
-    this.scroll = Math.min(this.scroll, Math.max(0, body.length - viewport));
-    const view = body.slice(this.scroll, this.scroll + viewport);
+    const body = this.body(row, width, viewport);
+    this.scroll = Math.min(this.scroll, Math.max(0, body.lines.length - viewport));
+    const view = body.lines.slice(this.scroll, this.scroll + viewport);
+    // An inline image is atomic (§9.13): its escape-sequence block substitutes over its
+    // placeholder lines only when the whole block sits inside the window. A partial
+    // block keeps the placeholder hint; a sliced image sequence would overdraw chrome.
+    for (const image of body.images) {
+      if (image.start < this.scroll || image.start + image.lines.length > this.scroll + viewport) continue;
+      for (let i = 0; i < image.lines.length; i++) view[image.start - this.scroll + i] = image.lines[i]!;
+    }
     while (view.length < viewport) view.push(""); // cover the transcript to the full height
-    const from = body.length === 0 ? 0 : this.scroll + 1;
-    const to = Math.min(body.length, this.scroll + viewport);
-    const footer = `  ${ink(theme, "dim", `lines ${from}-${to} of ${body.length}`)}`;
-    return [head, hint, ...view, footer].map(fit);
+    const from = body.lines.length === 0 ? 0 : this.scroll + 1;
+    const to = Math.min(body.lines.length, this.scroll + viewport);
+    const footer = `  ${ink(theme, "dim", `lines ${from}-${to} of ${body.lines.length}`)}`;
+    return [fit(head), fit(hint), ...view, fit(footer)];
   }
 
-  private bodyLines(row: ToolRowLike, width: number): string[] {
+  private body(row: ToolRowLike, width: number, viewport: number): PagerBody {
     const streaming = (this.st.host.runRows(row) ?? [row]).some((call) => call.isPartial === true);
     const c = this.cache;
-    if (!streaming && c && c.row === row && c.result === row.result && c.width === width) return c.lines;
-    const lines = buildPagerBody(this.st, row, width);
-    this.cache = streaming ? undefined : { row, result: row.result, width, lines };
-    return lines;
+    if (!streaming && c && c.row === row && c.result === row.result && c.width === width && c.viewport === viewport) {
+      return c.body;
+    }
+    if (this.imageCompsViewport !== viewport) this.disposeImages(); // height caps are constructor-fixed
+    this.imageCompsViewport = viewport;
+    const body = this.buildBody(row, width, viewport);
+    this.cache = streaming ? undefined : { row, result: row.result, width, viewport, body };
+    return body;
   }
 
   invalidate(): void {
     this.cache = undefined;
   }
-}
 
-// --- body construction ------------------------------------------------------------------
-
-function buildPagerBody(st: DrillState, row: ToolRowLike, width: number): string[] {
-  const theme = st.host.theme();
-  const contentWidth = Math.max(20, width - SECTION_INDENT.length);
-  const lines: string[] = [...st.host.traceLines(row, width)];
-  const calls = st.host.runRows(row) ?? [row];
-  calls.forEach((call, index) => {
-    const callLabel = calls.length > 1 ? `${SEP}call ${index + 1} of ${calls.length}` : "";
-    lines.push("", `  ${ink(theme, "dim", `invocation${callLabel}`)}`);
-    for (const line of invocationLines(call, contentWidth)) lines.push(`${SECTION_INDENT}${line}`);
-    lines.push("", `  ${resultLabel(theme, st.host.statusTone(call), call)}`);
-    for (const line of resultLines(theme, call, contentWidth)) lines.push(`${SECTION_INDENT}${line}`);
-  });
-  return lines;
-}
-
-function invocationLines(call: ToolRowLike, width: number): string[] {
-  try {
-    const out = call.callRendererComponent?.render?.(width);
-    if (Array.isArray(out)) return out.map((line) => String(line));
-  } catch {
-    // Pi seam: a call renderer may throw mid-stream; fall through to the tool name.
+  /** Delete every kitty image id this pager allocated; idempotent, safe at exit. */
+  dispose(): void {
+    this.disposeImages();
+    livePagers.delete(this);
   }
-  return [typeof call.toolName === "string" ? call.toolName : "tool"];
-}
 
-function resultChars(call: ToolRowLike): number | undefined {
-  const content = call.result?.content;
-  if (!Array.isArray(content)) return undefined;
-  let sum = 0;
-  for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    const textBlock = block as { type?: unknown; text?: unknown };
-    if (textBlock.type === "text" && typeof textBlock.text === "string") sum += textBlock.text.length;
+  // --- body construction ----------------------------------------------------------------
+
+  private buildBody(row: ToolRowLike, width: number, viewport: number): PagerBody {
+    const st = this.st;
+    const theme = st.host.theme();
+    const contentWidth = Math.max(20, width - SECTION_INDENT.length);
+    const fit = (line: string) => truncateToWidth(line, Math.max(1, width), ELLIPSIS);
+    const lines: string[] = [...st.host.traceLines(row, width)];
+    const images: PagerImage[] = [];
+    const calls = st.host.runRows(row) ?? [row];
+    calls.forEach((call, callIndex) => {
+      const callLabel = calls.length > 1 ? `${SEP}call ${callIndex + 1} of ${calls.length}` : "";
+      lines.push("", `  ${ink(theme, "dim", `invocation${callLabel}`)}`);
+      for (const line of invocationLines(theme, call, contentWidth)) lines.push(fit(`${SECTION_INDENT}${line}`));
+      const code = codeContextFor(call);
+      lines.push("", `  ${resultLabel(theme, st.host.statusTone(call), call, code?.language)}`);
+      this.pushResult(call, callIndex, code, theme, width, contentWidth, viewport, lines, images);
+    });
+    return { lines, images };
   }
-  return sum;
-}
 
-function resultLabel(theme: Theme | undefined, tone: Tone, call: ToolRowLike): string {
-  const word = tone === "error" ? "failed" : tone === "success" ? "success" : "running";
-  const chars = resultChars(call);
-  const size = chars !== undefined ? ink(theme, "dim", `${SEP}${compactCount(chars)} ch`) : "";
-  return `${ink(theme, "dim", `result${SEP}`)}${ink(theme, tone, word)}${size}`;
-}
-
-function resultLines(theme: Theme | undefined, call: ToolRowLike, width: number): string[] {
-  const content = call.result?.content;
-  if (!Array.isArray(content)) return [ink(theme, "dim", "no output yet")];
-  const out: string[] = [];
-  for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    const textBlock = block as { type?: unknown; text?: unknown };
-    if (textBlock.type === "text" && typeof textBlock.text === "string") {
-      const text = textBlock.text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ");
-      for (const raw of text.split("\n")) {
-        if (raw.length === 0) {
-          out.push("");
-          continue;
-        }
-        for (const wrapped of wrapTextWithAnsi(raw, width)) out.push(wrapped);
-      }
-    } else {
-      out.push(ink(theme, "dim", `[${typeof textBlock.type === "string" ? textBlock.type : "block"}]`));
+  private pushResult(
+    call: ToolRowLike,
+    callIndex: number,
+    code: CodeContext | undefined,
+    theme: Theme | undefined,
+    width: number,
+    contentWidth: number,
+    viewport: number,
+    lines: string[],
+    images: PagerImage[],
+  ): void {
+    const fit = (line: string) => truncateToWidth(line, Math.max(1, width), ELLIPSIS);
+    const content = call.result?.content;
+    if (!Array.isArray(content)) {
+      lines.push(fit(`${SECTION_INDENT}${ink(theme, "dim", "no output yet")}`));
+      return;
     }
+    const before = lines.length;
+    let imageIndex = 0;
+    for (const block of content) {
+      if (!block || typeof block !== "object") continue;
+      const typed = block as { type?: unknown; text?: unknown };
+      if (typed.type === "text" && typeof typed.text === "string") {
+        for (const line of textBlockLines(theme, typed.text, contentWidth, code)) {
+          lines.push(line.length === 0 ? "" : fit(`${SECTION_INDENT}${line}`));
+        }
+      } else if (typed.type === "image") {
+        this.pushImage(call, callIndex, imageIndex++, block as ImageBlockLike, theme, width, contentWidth, viewport, lines, images);
+      } else {
+        lines.push(fit(`${SECTION_INDENT}${foreignBlockLine(theme, block)}`));
+      }
+    }
+    if (lines.length === before) lines.push(fit(`${SECTION_INDENT}${ink(theme, "dim", "(empty result)")}`));
   }
-  if (out.length === 0) out.push(ink(theme, "dim", "(empty result)"));
-  return out;
+
+  private pushImage(
+    call: ToolRowLike,
+    callIndex: number,
+    imageIndex: number,
+    block: ImageBlockLike,
+    theme: Theme | undefined,
+    width: number,
+    contentWidth: number,
+    viewport: number,
+    lines: string[],
+    images: PagerImage[],
+  ): void {
+    lines.push(truncateToWidth(`${SECTION_INDENT}${imageFactLine(theme, block)}`, Math.max(1, width), ELLIPSIS));
+    const source = imagePixelSource(call, imageIndex, block);
+    if (!source) return;
+    const comp = this.imageComponent(`${callIndex}:${imageIndex}`, source, theme, contentWidth, viewport);
+    let rendered: string[];
+    try {
+      rendered = comp.render(contentWidth).map((line) => (line.length > 0 ? `${SECTION_INDENT}${line}` : line));
+    } catch {
+      return; // Pi seam: a malformed payload keeps its fact line; pixels are best-effort.
+    }
+    if (rendered.length === 0) return;
+    // Placeholder lines hold the block's height in the scroll geometry; the hint sits on
+    // the first and last line so a partial block explains itself from either direction.
+    const hint = ink(theme, "dim", `${SECTION_INDENT}(image${SEP}scroll to view)`);
+    const start = lines.length;
+    for (let i = 0; i < rendered.length; i++) {
+      lines.push(i === 0 || i === rendered.length - 1 ? hint : "");
+    }
+    images.push({ start, lines: rendered });
+    livePagers.add(this);
+    ensureExitGuard();
+  }
+
+  // One Image component per result block, keyed by call and block index so kitty image
+  // ids survive re-renders; recreated when pi's async PNG conversion swaps the data in.
+  private imageComponent(
+    key: string,
+    source: { data: string; mimeType: string },
+    theme: Theme | undefined,
+    contentWidth: number,
+    viewport: number,
+  ): Image {
+    const cached = this.imageComps.get(key);
+    if (cached && cached.data === source.data) return cached.comp;
+    if (cached) deleteCompImage(cached.comp);
+    const comp = new Image(
+      source.data,
+      source.mimeType,
+      { fallbackColor: (s: string) => ink(theme, "dim", s) },
+      {
+        maxWidthCells: Math.max(10, contentWidth - 2),
+        // Fit inside the viewport (§9.13): full visibility must always be reachable,
+        // leaving room for the fact line above and one line of breathing space.
+        maxHeightCells: Math.max(4, viewport - 2),
+      },
+    );
+    this.imageComps.set(key, { data: source.data, comp });
+    return comp;
+  }
+
+  private disposeImages(): void {
+    if (this.imageComps.size === 0) return;
+    for (const cached of this.imageComps.values()) deleteCompImage(cached.comp);
+    this.imageComps.clear();
+  }
+}
+
+function deleteCompImage(comp: Image): void {
+  if (getCapabilities().images !== "kitty") return; // only kitty stores images by id
+  const id = comp.getImageId();
+  if (typeof id === "number") writeIgnoringErrors(deleteKittyImage(id));
 }
