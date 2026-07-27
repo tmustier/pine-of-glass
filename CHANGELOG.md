@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.1 (2026-07-27)
+
+- **Cachemire: follow the selected branch after `/tree`.** Cachemire now records
+  which session branch each billed provider request used. It compares the next
+  request with the selected branch's last billed prompt and accepts freshness only
+  from later requests with a compatible provider, model, cache window and prompt
+  structure. Returning to a warm branch works without letting an incompatible
+  sibling make it look younger. Restored sessions rebuild every branch's baseline
+  from saved provider usage and avoid freshness claims that need missing
+  request-time evidence.
+
 ## 0.9.0 (2026-07-27)
 
 - **Traceline: the peek pager is now the fidelity surface.** Everything the model
@@ -32,14 +43,6 @@
 
 ## 0.8.5 (2026-07-25)
 
-- **Cachemire: follow cache lineage through `/tree` navigation.** Every live billed
-  request now records its session path, provider, model, fingerprint, cache window and
-  provider usage. Before each send, Cachemire resolves the selected path's last billed
-  prompt and accepts freshness only from compatible descendants. Intentional suffix
-  divergence is ordinary prefix growth rather than a suppressed warning; model, system,
-  tool, thinking and earlier-history changes still invalidate normally. Restored
-  sessions rebuild all-branch baselines from persisted provider usage while withholding
-  fingerprint-only freshness claims.
 - **Tests: keep Contextimate render goldens portable.** Golden prompt counts now use
   a fixed fixture home, so they remain stable across developer home-directory lengths.
 
