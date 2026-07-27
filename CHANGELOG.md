@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.9.0 (2026-07-27)
+
+- **Traceline: the peek pager is now the fidelity surface.** Everything the model
+  saw, the reader can see under alt+t (design language §9.13):
+  - A tool with no call renderer of its own (papercut, MCP tools, most extension
+    tools) shows its complete arguments as aligned `key  value` rows instead of a
+    bare tool name: keys dim in one column, string values verbatim with wrapped
+    continuations hanging at the value column, nested objects as indented JSON.
+  - An image result always shows a fact line (`image · png · 1044×646 · 65.6k
+    bytes`); on kitty/iTerm2-capable terminals the pixels render inline, mirroring
+    Pi's native tool row (`showImages` honoured, Pi's kitty PNG conversions reused).
+    Images are atomic under scrolling: a partially visible block shows a dim
+    `scroll to view` hint, never a sliced escape sequence, and pager-allocated
+    kitty image ids are deleted on close.
+  - A result that provably is code renders as code, ink-only: a read whose path
+    names a code language gets Pi's own theme-derived syntax highlighting, a dim
+    line-number gutter counting from the call's offset, a language cell on the
+    result label, and wrapped lines that hang under the code's own indentation. A
+    bash command that is one plain `cat`/`sed`/`head`/`tail`/`bat` of a single
+    code file earns the same ink without the gutter; anything less certain stays
+    plain.
+- **Traceline: image results wear an honest trace fact.** A trace row whose result
+  carries an image shows a dim `png 1044×646` in the size cell's berth (§9.7)
+  instead of a misleadingly tiny text-only character count.
+- New contract suite `pi-pager-seams` pins every Pi seam the pager piggybacks on
+  (read image blocks, `convertedImages`, `showImages`, the kitty PNG guard, the
+  bare-name call fallback, the highlight exports, the pi-tui image API), and a new
+  real-Pi smoke (`npm run test:smoke:pager`) proves the argument grammar, image
+  fact line, offset gutter and live syntax ink end to end.
+
 ## 0.8.5 (2026-07-25)
 
 - **Cachemire: follow cache lineage through `/tree` navigation.** Rewinding or

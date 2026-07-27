@@ -1,6 +1,6 @@
 {
   "name": "pine-of-glass",
-  "version": "0.8.5",
+  "version": "0.9.0",
   "description": "Observability extensions for the Pi coding agent",
   "license": "MIT",
   "type": "module",
