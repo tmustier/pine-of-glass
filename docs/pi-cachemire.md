@@ -121,25 +121,36 @@ first-touch. The matcher turns that hand analysis into the default diagnosis.
 
 ## Tree navigation and branch lineages
 
-Pi sessions are trees, so Cachemire's reusable-prefix baseline follows the active
-branch. After `/tree`, it rebuilds that baseline from the selected path's last billed
-assistant message. The provider-reported `input + cacheRead + cacheWrite` for that
-historical call is the exact prompt-side comparison baseline for the selected path.
+Pi sessions are trees, so Cachemire resolves cache lineage from the active path before
+every provider request, not only after `/tree`. Each live billed request records the
+session leaf it serialized, the assistant entry it produced, prompt usage, request time,
+provider, model, cache window and payload fingerprint. Restoring a session rebuilds the
+provider-usage subset from every branch; request-time fingerprints remain deliberately
+in-memory only.
 
-The abandoned and selected histories necessarily differ after their common prefix.
-That authenticated tree transition is not treated as an ordinary history mutation:
-pricing the abandoned leaf's full prompt would claim that the common prefix broke when
-it did not. Structural differences in model, system prompt, tools or thinking parameters
-still take precedence and are reported normally. The exact size of the new divergent
-tail remains unknown before provider usage, so Cachemire does not invent an in-flight
-suffix bill. The resolved call then uses the provider's exact cache read and uncached
-input.
+The nearest billed call anchored on the active path supplies the comparison baseline.
+This is normally an assistant response on the path; selecting a user/request leaf can
+also recover a prior call made from that exact leaf. Its provider-reported
+`input + cacheRead + cacheWrite` is the exact provider-known prompt size for that
+selected path. Cachemire then considers later requests whose session paths descend from
+that response. A candidate can refresh the baseline only when it uses the same provider,
+model and cache window and the baseline's system, tools, thinking parameters and message
+hashes remain a prefix of the candidate payload. A
+newer sibling with another model or prompt shape therefore cannot make the selected
+lineage look young.
 
-This also rebases the clock's at-risk prompt size and freshness anchor. Cachemire finds
-the latest billed descendant whose request contained the selected branch root. Calls on
-a sibling branch can refresh their common ancestor, but cannot make the selected
-branch's private suffix younger. If the provider reports otherwise, the normal resolved
-miss path corrects the prediction.
+The next outgoing payload is checked against that same selected baseline. Continuing or
+editing after the selected point is ordinary suffix growth, so no history exception or
+one-call suppression flag is needed. A change inside the baseline still reports a
+history mutation; model, system, tool and thinking changes still take precedence. The
+size of the selected response and new divergent tail is not provider-known before the
+next usage arrives, so Cachemire withholds that suffix estimate rather than pricing the
+abandoned leaf. Provider usage then supplies the exact cached and uncached split.
+
+Restored snapshots have provider, model, prompt size and response timestamps but no
+payload fingerprints. They can establish the selected denominator and their own
+response-time freshness approximation, but Cachemire does not claim that another
+restored descendant refreshed them without fingerprint proof.
 
 ## The cause ladder
 
@@ -187,13 +198,14 @@ past your idle gap.
 
 Working state is in-memory and dies with the process. What survives an exit is exactly
 what the provider billed (usage on assistant messages in the session transcript), from
-which `--continue` rebuilds the ledger (and entry matching still works across a quick
-exit+resume, since prompt totals are recoverable). Request-time observations (payload
-fingerprints, request-start anchors, the observed `cache_control` TTL) exist only at
-the event boundary and are never persisted. Branch baselines are reconstructed from
-provider usage already stored on the active session path; restored rows say `cause unknown` rather
-than reconstruct a diagnosis from vibes, and cachemire writes nothing into session
-entries or exports (UI-only contract).
+which `--continue` rebuilds the active ledger and all-branch lineage baselines.
+Request-time observations (payload fingerprints, true request-start anchors and the
+observed `cache_control` TTL) exist only at the event boundary and are never persisted.
+After restore, Cachemire uses response timestamps as slightly optimistic anchor
+approximations, withholds compatibility claims that need a fingerprint, and restarts
+replica-entry matching from live calls. Restored rows say `cause unknown` rather than reconstruct a
+diagnosis from vibes. Cachemire writes nothing into session entries or exports (UI-only
+contract).
 
 Only the Pi extension instance with an interactive UI may own that process-global
 working state. A nested headless `AgentSession` still loads the extension, but its

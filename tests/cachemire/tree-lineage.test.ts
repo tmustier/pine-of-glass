@@ -3,9 +3,19 @@ import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import piCachemire, { internals } from "../../extensions/pi-cachemire/index.ts";
+import type { CacheLineageSnapshot, CacheWindow } from "../../extensions/pi-cachemire/types.ts";
 
-const { activeLineageCause, branchLineageBaseline, diffFingerprints, fingerprintPayload, latestBranchRefreshAt } = internals;
+const {
+  diffFingerprints,
+  findBranchBaseline,
+  fingerprintPayload,
+  hydrateLineageResponseIds,
+  predictBreak,
+  resolveCacheLineage,
+  restoreLineageSnapshots,
+} = internals;
 
+const WINDOW: CacheWindow = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" };
 type Handler = (...args: unknown[]) => unknown;
 
 function extensionProbe(): { handlers: Map<string, Handler[]>; commands: Map<string, Handler> } {
@@ -40,27 +50,71 @@ function usage(input: number, cacheRead: number, cacheWrite: number, output = 10
   };
 }
 
-function assistant(timestamp: number, prompt: number) {
+function assistant(timestamp: number, prompt: number, model = "claude-opus-4-8") {
   return {
     role: "assistant",
     content: [{ type: "text", text: "answer" }],
     provider: "anthropic",
-    model: "claude-opus-4-8",
+    model,
     stopReason: "stop",
     timestamp,
     usage: usage(2, prompt - 2, 0),
   };
 }
 
-function payload(messages: string[]) {
+function payload(
+  messages: string[],
+  options: { model?: string; system?: string; tools?: unknown[]; thinkingBudget?: number } = {},
+) {
   return {
-    model: "claude-opus-4-8",
-    system: [{ type: "text", text: "fixture", cache_control: { type: "ephemeral" } }],
+    model: options.model ?? "claude-opus-4-8",
+    system: [{ type: "text", text: options.system ?? "fixture", cache_control: { type: "ephemeral" } }],
     messages: messages.map((text) => ({ role: "user", content: [{ type: "text", text }] })),
+    ...(options.tools ? { tools: options.tools } : {}),
+    ...(options.thinkingBudget ? { thinking: { type: "enabled", budget_tokens: options.thinkingBudget } } : {}),
   };
 }
 
-function context(entries: unknown[], leafId: string, notifications: string[]) {
+function snapshotById(snapshots: CacheLineageSnapshot[], id: string): CacheLineageSnapshot {
+  return snapshots.find((snapshot) => snapshot.responseEntryId === id)!;
+}
+
+function branchedEntries(now = 30_000) {
+  return [
+    { type: "message", id: "root-user", parentId: null, message: { role: "user", content: "root", timestamp: 500 } },
+    { type: "message", id: "root", parentId: "root-user", message: assistant(1_000, 80_000) },
+    { type: "message", id: "left-user", parentId: "root", message: { role: "user", content: "left", timestamp: 2_000 } },
+    { type: "message", id: "left", parentId: "left-user", message: assistant(3_000, 100_000) },
+    { type: "message", id: "left-next-user", parentId: "left", message: { role: "user", content: "left next", timestamp: 4_000 } },
+    { type: "message", id: "left-next", parentId: "left-next-user", message: assistant(now, 110_000) },
+    { type: "message", id: "right-user", parentId: "root", message: { role: "user", content: "right", timestamp: 5_000 } },
+    { type: "message", id: "right", parentId: "right-user", message: assistant(20_000, 120_000) },
+  ];
+}
+
+function restored(entries: unknown[]): CacheLineageSnapshot[] {
+  return restoreLineageSnapshots(entries, () => WINDOW);
+}
+
+function resolve(
+  entries: unknown[],
+  snapshots: CacheLineageSnapshot[],
+  leaf: string,
+  current: ReturnType<typeof fingerprintPayload>,
+  model = "claude-opus-4-8",
+) {
+  return resolveCacheLineage({
+    entries,
+    activeLeafId: leaf,
+    snapshots,
+    currentProvider: "anthropic",
+    currentModel: model,
+    currentFingerprint: current,
+    compareFingerprints: diffFingerprints,
+  });
+}
+
+function context(entries: unknown[], leaf: { id: string }, notifications: string[]) {
   return {
     hasUI: true,
     ui: {
@@ -78,78 +132,179 @@ function context(entries: unknown[], leafId: string, notifications: string[]) {
     },
     sessionManager: {
       getEntries: () => entries,
-      getLeafId: () => leafId,
+      getLeafId: () => leaf.id,
     },
   };
 }
 
-test("branch baseline uses the selected path's last provider-billed prompt", () => {
-  const baseline = branchLineageBaseline([
-    assistant(1_000, 177_860),
-    { role: "assistant", timestamp: 2_000, usage: usage(0, 0, 0, 0) },
-  ])!;
-  assert.deepEqual(baseline, { promptTokens: 177_860, at: 1_000 });
-
-  // Observed rewind: the next request reused 177,858 and processed only 1,408
-  // uncached, rather than breaking the abandoned leaf's 179,294-token prompt.
-  assert.equal(177_858 / baseline.promptTokens > 0.99, true);
-  assert.equal(2 + 1_406, 1_408);
-  assert.equal(branchLineageBaseline([{ role: "user", content: "root" }]), undefined);
+test("restores every branch while selecting only the active path baseline", () => {
+  const entries = branchedEntries();
+  const snapshots = restored(entries);
+  assert.deepEqual(snapshots.map((snapshot) => snapshot.responseEntryId), ["root", "left", "left-next", "right"]);
+  assert.equal(findBranchBaseline(entries, "left", snapshots)?.promptTokens, 100_000);
+  assert.equal(findBranchBaseline(entries, "right", snapshots)?.promptTokens, 120_000);
+  assert.equal(
+    findBranchBaseline(entries, "left-user", snapshots)?.promptTokens,
+    100_000,
+    "a replay can reuse the prior provider call made from that exact request leaf",
+  );
+  assert.equal(findBranchBaseline(entries, null, snapshots), undefined);
+  const restoredResolution = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left"])));
+  assert.equal(restoredResolution.refresh?.responseEntryId, "left", "restored descendants lack compatibility proof");
 });
 
-test("branch freshness follows calls that actually contain the selected prefix", () => {
-  const entries = [
-    { type: "message", id: "root", parentId: null, message: assistant(1_000, 80_000) },
-    { type: "message", id: "left-user", parentId: "root", message: { role: "user", content: "left" } },
-    { type: "message", id: "left", parentId: "left-user", message: assistant(10_000, 100_000) },
-    { type: "message", id: "right-user", parentId: "root", message: { role: "user", content: "right" } },
-    { type: "message", id: "right", parentId: "right-user", message: assistant(20_000, 120_000) },
+test("links a live request snapshot after Pi persists its assistant response", () => {
+  const entries = branchedEntries();
+  const persisted = restored(entries)[0]!;
+  const live = { ...persisted, responseEntryId: undefined, fingerprint: fingerprintPayload(payload(["root"])) };
+  hydrateLineageResponseIds([live], entries, () => WINDOW);
+  assert.equal(live.responseEntryId, "root");
+  assert.ok(live.fingerprint);
+});
+
+test("returning to a warm branch uses its compatible descendants, not a sibling", () => {
+  const entries = branchedEntries(30_000);
+  const snapshots = restored(entries);
+  const root = snapshotById(snapshots, "root");
+  const left = snapshotById(snapshots, "left");
+  const leftNext = snapshotById(snapshots, "left-next");
+  const right = snapshotById(snapshots, "right");
+  root.fingerprint = fingerprintPayload(payload(["root"]));
+  left.fingerprint = fingerprintPayload(payload(["root", "left"]));
+  leftNext.fingerprint = fingerprintPayload(payload(["root", "left", "left next"]));
+  right.fingerprint = fingerprintPayload(payload(["root", "right"]));
+
+  const resolution = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left", "continued"])));
+  assert.equal(resolution.baseline, left);
+  assert.equal(resolution.refresh, leftNext);
+  assert.deepEqual(resolution.compatible, [left, leftNext]);
+  assert.equal(resolution.cause, undefined);
+});
+
+test("incompatible descendants cannot refresh the selected lineage", () => {
+  const entries = branchedEntries(40_000);
+  const tool = { name: "read", input_schema: { type: "object" } };
+  const baseOptions = { tools: [tool], thinkingBudget: 8_192 };
+  const variants = [
+    { ...baseOptions, system: "changed" },
+    { ...baseOptions, tools: [{ ...tool, description: "changed" }] },
+    { ...baseOptions, thinkingBudget: 16_384 },
+    { ...baseOptions, model: "claude-fable-5" },
   ];
-  assert.equal(latestBranchRefreshAt(entries, "left-user"), 10_000, "a sibling call cannot refresh this branch");
-  assert.equal(latestBranchRefreshAt(entries, "root"), 20_000, "both siblings refresh their common prefix");
-  assert.equal(latestBranchRefreshAt(entries, null), undefined);
+  for (const options of variants) {
+    const snapshots = restored(entries);
+    const left = snapshotById(snapshots, "left");
+    const leftNext = snapshotById(snapshots, "left-next");
+    left.fingerprint = fingerprintPayload(payload(["root", "left"], baseOptions));
+    leftNext.fingerprint = fingerprintPayload(payload(["root", "left", "left next"], options));
+    const current = fingerprintPayload(payload(["root", "left", "continued"], baseOptions));
+    const resolution = resolve(entries, snapshots, "left", current);
+    assert.equal(resolution.refresh, left);
+    assert.deepEqual(resolution.compatible, [left]);
+  }
+  for (const mutate of [
+    (snapshot: CacheLineageSnapshot) => { snapshot.provider = "openai"; },
+    (snapshot: CacheLineageSnapshot) => { snapshot.window = { kind: "contract", ttlMs: 60 * 60_000, source: "observed" }; },
+  ]) {
+    const snapshots = restored(entries);
+    const left = snapshotById(snapshots, "left");
+    const leftNext = snapshotById(snapshots, "left-next");
+    left.fingerprint = fingerprintPayload(payload(["root", "left"], baseOptions));
+    leftNext.fingerprint = fingerprintPayload(payload(["root", "left", "left next"], baseOptions));
+    mutate(leftNext);
+    const resolution = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left"], baseOptions)));
+    assert.deepEqual(resolution.compatible, [left]);
+  }
 });
 
-test("tree navigation suppresses only the intentional history divergence", () => {
-  const oldBranch = fingerprintPayload(payload(["base", "old branch"]));
-  const newBranch = fingerprintPayload(payload(["base", "new branch"]));
-  assert.equal(activeLineageCause(oldBranch, newBranch, true, diffFingerprints), undefined);
-  assert.equal(activeLineageCause(oldBranch, newBranch, false, diffFingerprints)?.kind, "history");
+test("suffix divergence is natural, while edited history and model changes still break", () => {
+  const entries = branchedEntries();
+  const snapshots = restored(entries);
+  const left = snapshotById(snapshots, "left");
+  left.fingerprint = fingerprintPayload(payload(["root", "left"]));
 
-  const changedSystem = fingerprintPayload({ ...payload(["base", "new branch"]), system: "changed" });
-  assert.equal(activeLineageCause(oldBranch, changedSystem, true, diffFingerprints)?.kind, "system");
+  const suffix = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left", "new suffix"])));
+  assert.equal(suffix.cause, undefined);
+  const edited = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "edited"])));
+  assert.equal(edited.cause?.kind, "history");
+  const switched = resolve(
+    entries,
+    snapshots,
+    "left",
+    fingerprintPayload(payload(["root", "left"], { model: "claude-fable-5" })),
+    "claude-fable-5",
+  );
+  assert.equal(switched.cause?.kind, "model");
 });
 
-test("session_tree rebases classification to the selected branch", async () => {
+test("a selected compaction checkpoint stays unsized before provider usage", () => {
+  const entries = [
+    ...branchedEntries(),
+    { type: "compaction", id: "compact", parentId: "left", summary: "short summary", timestamp: new Date().toISOString() },
+  ];
+  const snapshots = restored(entries);
+  const left = snapshotById(snapshots, "left");
+  left.fingerprint = fingerprintPayload(payload(["root", "left"]));
+  const resolution = resolve(entries, snapshots, "compact", fingerprintPayload(payload(["summary"])));
+  assert.equal(resolution.cause?.kind, "compaction");
+  const prediction = predictBreak({
+    isFirst: false,
+    inCompaction: false,
+    compacted: false,
+    expectedRead: resolution.baseline!.promptTokens,
+    fingerprintCause: resolution.cause,
+  });
+  assert.equal(prediction?.expectedRewriteTokens, undefined);
+});
+
+test("lineage-local freshness drives TTL prediction", () => {
+  const now = 10 * 60_000;
+  const entries = branchedEntries(now - 6 * 60_000);
+  const snapshots = restored(entries);
+  const left = snapshotById(snapshots, "left");
+  const leftNext = snapshotById(snapshots, "left-next");
+  left.fingerprint = fingerprintPayload(payload(["root", "left"]));
+  leftNext.fingerprint = fingerprintPayload(payload(["root", "left", "left next"]));
+  const resolution = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left", "continued"])));
+  const prediction = predictBreak({
+    isFirst: false,
+    inCompaction: false,
+    compacted: false,
+    gapMs: now - resolution.refresh!.requestAt,
+    window: resolution.refresh!.window,
+    expectedRead: resolution.baseline!.promptTokens,
+  });
+  assert.equal(prediction?.cause.kind, "ttl");
+  assert.equal(prediction?.expectedRewriteTokens, 100_000);
+});
+
+test("session_tree rebases classification to the selected provider-known prompt", async () => {
   const now = Date.now();
-  const baseAssistant = assistant(now - 3_000, 100_000);
-  const oldAssistant = assistant(now - 1_000, 200_000);
   const entries = [
     { type: "message", id: "user-base", parentId: null, timestamp: new Date(now - 4_000).toISOString(), message: { role: "user", content: "base", timestamp: now - 4_000 } },
-    { type: "message", id: "assistant-base", parentId: "user-base", timestamp: new Date(now - 3_000).toISOString(), message: baseAssistant },
+    { type: "message", id: "assistant-base", parentId: "user-base", timestamp: new Date(now - 3_000).toISOString(), message: assistant(now - 3_000, 100_000) },
     { type: "message", id: "user-old", parentId: "assistant-base", timestamp: new Date(now - 2_000).toISOString(), message: { role: "user", content: "old branch", timestamp: now - 2_000 } },
-    { type: "message", id: "assistant-old", parentId: "user-old", timestamp: new Date(now - 1_000).toISOString(), message: oldAssistant },
+    { type: "message", id: "assistant-old", parentId: "user-old", timestamp: new Date(now - 1_000).toISOString(), message: assistant(now - 1_000, 200_000) },
   ];
   const notifications: string[] = [];
+  const leaf = { id: "assistant-old" };
   const probe = extensionProbe();
-  const ctx = context(entries, "assistant-old", notifications);
+  const ctx = context(entries, leaf, notifications);
 
   await fire(probe, "session_start", {}, ctx);
   try {
-    // Establish a live fingerprint and the abandoned leaf's 200k prompt baseline.
-    await fire(probe, "before_provider_request", { payload: payload(["base", "old branch"]) });
-    await fire(probe, "message_end", { message: { ...oldAssistant, usage: usage(0, 200_000, 0) } });
+    leaf.id = "assistant-base";
+    await fire(probe, "session_tree", { newLeafId: leaf.id, oldLeafId: "assistant-old" }, ctx);
+    await fire(probe, "before_provider_request", { payload: payload(["base", "new branch"]) }, ctx);
+    await fire(probe, "before_provider_request", { payload: payload(["base", "new branch"]) }, ctx);
+    assert.equal(notifications.length, 0, "branching must not price the abandoned 200k leaf");
+    await fire(probe, "message_end", { message: { ...assistant(now, 100_000), usage: usage(0, 90_000, 10_000) } });
 
-    // Rewind to the 100k selected-branch baseline. A 90k read is a hit against this
-    // branch, but would be misclassified as a 45% partial against the abandoned 200k leaf.
-    await fire(probe, "session_tree", { newLeafId: "assistant-base", oldLeafId: "assistant-old" }, ctx);
-    await fire(probe, "before_provider_request", { payload: payload(["base", "new branch"]) });
-    assert.equal(notifications.length, 0, "intentional branch divergence must not emit a full-prefix warning");
-    await fire(probe, "message_end", { message: { ...baseAssistant, usage: usage(0, 90_000, 10_000) } });
-
+    await fire(probe, "before_provider_request", { payload: payload(["base", "new branch", "aborted suffix"]) }, ctx);
+    await fire(probe, "agent_end");
     await probe.commands.get("cache")?.("", ctx);
     assert.equal(notifications.length, 1);
-    assert.match(notifications[0]!, /\s4\s+.*● hit/);
+    assert.match(notifications[0]!, /\s3\s+.*● hit/);
   } finally {
     await fire(probe, "session_shutdown", {});
   }
