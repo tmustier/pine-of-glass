@@ -4,8 +4,8 @@
 // revive that cache entry, not the old model's).
 
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { CALIBRATION_MAX, CALIBRATION_MIN, forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
 import type { ToolShape } from "../_lib/tool-payloads.ts";
 import { findBranchBaseline } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
@@ -15,17 +15,33 @@ export type SwitchTarget = {
   provider: string;
   id: string;
   api: string;
-  contextWindow?: number;
   input?: readonly string[];
 };
+
+/** The active tool list in the shape the estimators price. */
+export function activeToolShapes(pi: Pick<ExtensionAPI, "getActiveTools" | "getAllTools">): ToolShape[] {
+  const active = new Set(pi.getActiveTools());
+  return pi.getAllTools()
+    .filter((tool) => active.has(tool.name))
+    .map((tool) => ({ name: tool.name, description: tool.description, schema: tool.parameters }));
+}
+
+/** The identity of the last billed call, when fully known; partial identities cannot
+ * pick a heuristic rule and are not calibration anchors. */
+export function billedSource(provider?: string, id?: string, api?: string): SwitchTarget | undefined {
+  return provider !== undefined && id !== undefined && api !== undefined ? { provider, id, api } : undefined;
+}
 
 export interface SwitchForecast {
   targetId: string;
   targetProvider: string;
-  /** Target context window, when the catalogue knows it. */
-  windowTokens?: number;
   /** Estimated first prompt in the target currency; absent when estimation failed. */
   estTokens?: number;
+  /** BLUF breakdown for the switched clock and notice (design language §7): the
+   * source's billed prompt and the estimated share of it the target never receives.
+   * Present only when that anchor calibrated the estimate, so all terms share one
+   * measured density. */
+  breakdown?: { anchorTokens: number; droppedThinking: number };
   /** Direct provider serialization vs a pi-messages gateway that may transform the
    * request upstream — gateways demote the wording to a rougher claim. */
   basis: "direct" | "gateway";
@@ -36,6 +52,9 @@ export interface SwitchForecast {
 
 export function computeSwitchForecast(args: {
   target: SwitchTarget;
+  /** The identity that last billed this history; its billed prompt tokens anchor a
+   * content-density calibration of the target estimate. */
+  source?: SwitchTarget;
   entries: SessionEntry[];
   activeLeafId: string | null;
   systemPromptChars: number;
@@ -45,15 +64,17 @@ export function computeSwitchForecast(args: {
   const forecast: SwitchForecast = {
     targetId: args.target.id,
     targetProvider: args.target.provider,
-    windowTokens: args.target.contextWindow,
     basis: args.target.api === "pi-messages" ? "gateway" : "direct",
   };
-  const targetSnapshots = args.snapshots.filter(
-    (snapshot) => snapshot.provider === args.target.provider && snapshot.model === args.target.id &&
-      (snapshot.api === undefined || snapshot.api === args.target.api),
+  const identitySnapshots = (model: SwitchTarget) => args.snapshots.filter(
+    (snapshot) => snapshot.provider === model.provider && snapshot.model === model.id &&
+      (snapshot.api === undefined || snapshot.api === model.api),
   );
-  const prior = findBranchBaseline(args.entries, args.activeLeafId, targetSnapshots);
+  const prior = findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.target));
   if (prior) forecast.prior = { requestAt: prior.requestAt, window: prior.window };
+  const sourceBaseline = args.source === undefined
+    ? undefined
+    : findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.source));
   let history: ForecastMessage[] | undefined;
   try {
     history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];
@@ -62,12 +83,26 @@ export function computeSwitchForecast(args: {
     // to an unsized "cold expected" clock, never break the model switch itself.
   }
   if (history) {
-    forecast.estTokens = forecastTargetPrompt({
+    const calibration = args.source !== undefined && sourceBaseline !== undefined
+      ? { source: args.source, billedPromptTokens: sourceBaseline.promptTokens }
+      : undefined;
+    const prompt = forecastTargetPrompt({
       history,
       systemPromptChars: args.systemPromptChars,
       tools: args.tools,
       target: args.target,
-    }).tokens;
+      calibration,
+    });
+    forecast.estTokens = prompt.tokens;
+    // A saturated clamp means the anchor cannot explain the estimate, only bound it:
+    // the headline stays calibrated but the signed story would be fiction.
+    if (calibration !== undefined && prompt.calibration !== undefined &&
+        prompt.calibration > CALIBRATION_MIN && prompt.calibration < CALIBRATION_MAX) {
+      forecast.breakdown = {
+        anchorTokens: calibration.billedPromptTokens,
+        droppedThinking: prompt.droppedThinkingTokens ?? 0,
+      };
+    }
   }
   return forecast;
 }

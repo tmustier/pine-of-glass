@@ -17,7 +17,7 @@ import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
 import type { ToolShape } from "../_lib/tool-payloads.ts";
 import { UNKNOWN_TTL_WARM_MS, UNKNOWN_WINDOW, cacheClock, toneFor, withinWarmHorizon, type ClockState } from "./clock.ts";
-import { computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
+import { activeToolShapes, billedSource, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
 import { restoreBranchRecords } from "./ledger.ts";
 import {
   cacheStateForLineage,
@@ -449,7 +449,7 @@ function predictBreak(args: {
   fingerprintCause?: CallCause;
   rates?: ModelRates;
   /** Target-currency estimate while a model switch is pending (issue #57). */
-  switchForecast?: { estTokens?: number; windowTokens?: number; basis: "direct" | "gateway"; priorMayBeWarm: boolean };
+  switchForecast?: Pick<SwitchForecast, "estTokens" | "basis" | "targetProvider" | "breakdown"> & { priorMayBeWarm: boolean };
 }): BreakPrediction | undefined {
   // Cold starts are healthy and the compaction summarizer call is labelled, not warned.
   if (args.isFirst || args.inCompaction || args.expectedRead <= 0) return undefined;
@@ -476,9 +476,10 @@ function predictBreak(args: {
       return {
         cause: args.fingerprintCause,
         estimatedRewriteTokens: forecast.estTokens,
-        targetWindowTokens: forecast.windowTokens,
         estimatedUsd: rewriteCostUsd(forecast.estTokens, args.rates),
         estimateBasis: forecast.basis,
+        targetProvider: forecast.targetProvider,
+        estimateBreakdown: forecast.breakdown,
       };
     }
     if (args.fingerprintCause.kind === "compaction") return { cause: args.fingerprintCause };
@@ -764,15 +765,13 @@ function refreshSwitchForecast(
     s.switchForecast = undefined;
     return;
   }
-  const active = new Set(pi.getActiveTools());
   s.switchForecast = computeSwitchForecast({
     target,
+    source: billedSource(s.lastCallProvider, s.lastCallModelId, s.lastCallApi),
     entries: ctx.sessionManager.getEntries(),
     activeLeafId,
     systemPromptChars: ctx.getSystemPrompt().length,
-    tools: pi.getAllTools()
-      .filter((tool) => active.has(tool.name))
-      .map((tool) => ({ name: tool.name, description: tool.description, schema: tool.parameters })),
+    tools: activeToolShapes(pi),
     snapshots: s.lineages,
   });
 }
@@ -894,9 +893,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         fingerprintCause: s.pendingFingerprintCause,
         rates: s.rates,
         switchForecast: s.switchForecast === undefined ? undefined : {
-          estTokens: s.switchForecast.estTokens,
-          windowTokens: s.switchForecast.windowTokens,
-          basis: s.switchForecast.basis,
+          ...s.switchForecast,
           priorMayBeWarm: s.switchForecast.prior !== undefined &&
             withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt),
         },

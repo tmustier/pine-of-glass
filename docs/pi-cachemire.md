@@ -11,10 +11,14 @@ Everything cachemire shows is four provider-general rules, which is the whole me
    last use). Generation time burns the window.
 2. **Scope**: a cache entry belongs to (provider, model, wire API, byte-exact prefix).
    Caches are per-model everywhere, so **any model switch means expected cold**. The
-   widget flips before you send anything, sized by a fresh estimate in the *target*
-   model's tokenizer: `cache cold expected · model switched · prompt ~96.4k of 272.0k
-   ctx (est)`. Through a gateway route (pi-messages) the upstream request shape is not
-   observable, so the label weakens to `(rough est · gateway route)`. One exception:
+   widget flips before you send anything and leads with the consequence, sized in the
+   *target* model's tokenizer: `cache cold expected · model switched · next send
+   ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking ·
+   est)`. The parenthetical starts from the source model's last billed prompt and
+   explains the change with signed terms that always sum to the headline; it appears
+   only when that billed anchor calibrated the estimate. Through a gateway route
+   (pi-messages) the upstream request shape is not observable, so the label weakens
+   to `(rough est · gateway route)` and the breakdown is withheld. One exception:
    switching *back* to a model whose own last billed call is still inside its
    freshness window says `cache may still be warm · last <model> call 2m ago · next
    send confirms`, because claiming cold there would be wrong as often as right.
@@ -24,7 +28,12 @@ Everything cachemire shows is four provider-general rules, which is the whole me
 4. **Currency**: exact token counts and $ are only shown in the tokenizer and price
    card that billed them. After a model switch the old exact count is never displayed
    against the new model. The forecast above is a labelled estimate in the target
-   model's tokenizer, priced from the target's own price card (tier-aware). Exact
+   model's tokenizer, priced from the target's own price card (tier-aware). The
+   estimate walks what the target will actually receive (pi drops cross-model
+   encrypted reasoning; readable summaries survive as text), and is density-calibrated
+   when possible: the source model billed this same history, so its billed/estimated
+   ratio corrects the shared denominators for content that tokenizes unusually (dense
+   numeric logs run ~2.1 chars/token on Claude against the 2.6 default). Exact
    numbers return with the first new-model usage, which re-baselines everything.
 
 ## When the clock starts

@@ -6,6 +6,7 @@
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import type { Tone } from "../_lib/style.ts";
 import type { SwitchForecast } from "./forecast.ts";
+import { renderSwitchBreakdown } from "./render.ts";
 import type { CacheWindow } from "./types.ts";
 
 export const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
@@ -67,11 +68,16 @@ export function cacheClock(input: ClockInput): ClockState {
     if (forecast?.estTokens === undefined) {
       return { phase: "cold", text: "cache cold expected \u00b7 model switched \u00b7 prompt size known at next send" };
     }
-    const scale = forecast.windowTokens !== undefined ? ` of ${compactCount(forecast.windowTokens)} ctx` : " tokens";
+    // BLUF (design language §7): the consequence first (the whole prompt goes uncached
+    // to the new provider), then the signed explanation from the source's billed prompt.
+    const breakdown = forecast.basis === "direct" && forecast.breakdown !== undefined
+      ? renderSwitchBreakdown(forecast.estTokens, forecast.breakdown)
+      : undefined;
     const confidence = forecast.basis === "gateway" ? "rough est \u00b7 gateway route" : "est";
     return {
       phase: "cold",
-      text: `cache cold expected \u00b7 model switched \u00b7 prompt ~${compactCount(forecast.estTokens)}${scale} (${confidence})`,
+      text: `cache cold expected \u00b7 model switched \u00b7 next send ~${compactCount(forecast.estTokens)} uncached` +
+        ` to ${forecast.targetProvider} (${breakdown !== undefined ? `${breakdown} \u00b7 ` : ""}${confidence})`,
     };
   }
   if (input.compacted) {

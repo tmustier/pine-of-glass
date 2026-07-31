@@ -86,7 +86,10 @@ export interface BreakPrediction {
   /** Heuristic size in the *target* currency for model switches (issue #57); rendered
    * with ~/est wording, never as a provider-exact count. */
   estimatedRewriteTokens?: number;
-  targetWindowTokens?: number;
+  /** Destination of the uncached send: the target model's provider. */
+  targetProvider?: string;
+  /** Signed BLUF terms explaining the estimate from the source's billed prompt. */
+  estimateBreakdown?: { anchorTokens: number; droppedThinking: number };
   estimatedUsd?: number;
   /** Gateway routes may transform the request upstream: demote the wording. */
   estimateBasis?: "direct" | "gateway";

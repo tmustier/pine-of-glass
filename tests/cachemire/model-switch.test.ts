@@ -16,7 +16,7 @@ const MIN = 60_000;
 
 const FORECAST = {
   targetId: "gpt-5.6-luna", targetProvider: "openai-codex",
-  windowTokens: 272_000, estTokens: 96_400, basis: "direct" as const,
+  estTokens: 96_400, basis: "direct" as const,
 };
 
 test("clock: model switch forecasts in the target currency, always marked est", () => {
@@ -24,13 +24,20 @@ test("clock: model switch forecasts in the target currency, always marked est", 
   // the stored count is in the old tokenizer's currency, so it is never shown.
   const switched = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true, switchForecast: FORECAST });
   assert.equal(switched.phase, "cold");
-  assert.equal(switched.text, "cache cold expected \u00b7 model switched \u00b7 prompt ~96.4k of 272.0k ctx (est)");
+  assert.equal(switched.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (est)");
   // Gateway routes may transform the request upstream: the claim is demoted.
   const gateway = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, basis: "gateway" } });
-  assert.equal(gateway.text, "cache cold expected \u00b7 model switched \u00b7 prompt ~96.4k of 272.0k ctx (rough est \u00b7 gateway route)");
-  // Unknown target window: tokens without a share claim.
-  const windowless = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, windowTokens: undefined } });
-  assert.equal(windowless.text, "cache cold expected \u00b7 model switched \u00b7 prompt ~96.4k tokens (est)");
+  assert.equal(gateway.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (rough est \u00b7 gateway route)");
+  // With a billed source anchor: BLUF breakdown in diff-stat style, terms summing to
+  // the headline (design language \u00a77).
+  const decomposed = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, breakdown: { anchorTokens: 80_100, droppedThinking: 2_100 } } });
+  assert.equal(decomposed.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking \u00b7 est)");
+  // Zero terms drop out entirely: an anchor that matches the estimate explains nothing.
+  const flat = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, breakdown: { anchorTokens: 96_400, droppedThinking: 0 } } });
+  assert.equal(flat.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (est)");
+  // Gateway routes withhold the breakdown: a rough number gets no precise explanation.
+  const gatewayDecomposed = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, basis: "gateway", breakdown: { anchorTokens: 80_100, droppedThinking: 2_100 } } });
+  assert.equal(gatewayDecomposed.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (rough est \u00b7 gateway route)");
   // Without an estimate the number is withheld outright (and stays out of the old currency).
   const untagged = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
   assert.equal(untagged.text, "cache cold expected \u00b7 model switched \u00b7 prompt size known at next send");
@@ -68,21 +75,29 @@ test("break prediction: model switch sized in the target currency, or silent whe
   // With a target-currency forecast: sized, est-marked, est-priced.
   const sized = predictBreak({
     ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
-    switchForecast: { estTokens: 96_400, windowTokens: 272_000, basis: "direct", priorMayBeWarm: false },
+    switchForecast: { estTokens: 96_400, basis: "direct", priorMayBeWarm: false, targetProvider: "openai-codex" },
   })!;
   assert.equal(sized.estimatedRewriteTokens, 96_400);
   assert.equal(sized.expectedRewriteTokens, undefined, "the old-currency size stays withheld");
   assert.equal(sized.estimatedUsd, 1.807_5); // 96.4k at $18.75/M write, still an estimate
   assert.equal(
     renderBreakingLine(sized),
-    "cache breaking \u00b7 re-writing ~96.4k of 272.0k ctx (est \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
+    "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (est \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
+  );
+  // With a billed anchor the notice explains itself in the same signed grammar.
+  assert.equal(
+    renderBreakingLine(predictBreak({
+      ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
+      switchForecast: { estTokens: 96_400, basis: "direct", priorMayBeWarm: false, targetProvider: "openai-codex", breakdown: { anchorTokens: 80_100, droppedThinking: 2_100 } },
+    })!),
+    "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking \u00b7 est \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
   );
   assert.equal(
     renderBreakingLine(predictBreak({
       ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
-      switchForecast: { estTokens: 96_400, basis: "gateway", priorMayBeWarm: false },
+      switchForecast: { estTokens: 96_400, basis: "gateway", priorMayBeWarm: false, targetProvider: "openai-codex" },
     })!),
-    "cache breaking \u00b7 re-writing ~96.4k (rough est \u00b7 gateway route \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
+    "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (rough est \u00b7 gateway route \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
   );
 
   // A\u2192B\u2192A switch-back with the target's own entry possibly warm: no in-flight claim \u2014
@@ -90,7 +105,7 @@ test("break prediction: model switch sized in the target currency, or silent whe
   assert.equal(
     predictBreak({
       ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
-      switchForecast: { estTokens: 96_400, basis: "direct", priorMayBeWarm: true },
+      switchForecast: { estTokens: 96_400, basis: "direct", priorMayBeWarm: true, targetProvider: "openai-codex" },
     }),
     undefined,
   );
@@ -100,7 +115,7 @@ test("break prediction: model switch sized in the target currency, or silent whe
   const tiered = predictBreak({
     ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
     rates: { ...RATES, tiers: [{ inputTokensAbove: 90_000, input: 30, output: 150, cacheRead: 3, cacheWrite: 37.5 }] },
-    switchForecast: { estTokens: 96_400, basis: "direct", priorMayBeWarm: false },
+    switchForecast: { estTokens: 96_400, basis: "direct", priorMayBeWarm: false, targetProvider: "openai-codex" },
   })!;
   assert.equal(tiered.estimatedUsd, 3.615); // 96.4k at the $37.50/M tier write rate
 });
@@ -134,7 +149,7 @@ function entriesFixture(): SessionEntry[] {
   ] as unknown as SessionEntry[];
 }
 
-const OPUS: SwitchTarget = { provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages", contextWindow: 200_000, input: ["text", "image"] };
+const OPUS: SwitchTarget = { provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages", input: ["text", "image"] };
 
 test("computeSwitchForecast: estimates from canonical history in the target currency", () => {
   const forecast = computeSwitchForecast({
@@ -147,7 +162,6 @@ test("computeSwitchForecast: estimates from canonical history in the target curr
   });
   assert.equal(forecast.targetId, "claude-opus-4-8");
   assert.equal(forecast.basis, "direct");
-  assert.equal(forecast.windowTokens, 200_000);
   // Claude 4.7+ heuristic (chars/2.6): 2.6k system + 2.6k user + 2.6k readable thinking
   // (converted to text cross-model) + 2.6k assistant text = 4000 tokens; the 2.6k-char
   // encrypted payload never reaches the anthropic target.
@@ -155,9 +169,36 @@ test("computeSwitchForecast: estimates from canonical history in the target curr
   assert.equal(forecast.prior, undefined);
 });
 
+test("computeSwitchForecast: a billed source anchor calibrates the estimate", () => {
+  const entries = [
+    { type: "message", id: "u1", parentId: null, timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: "b".repeat(5200), timestamp: 1_000 } },
+    { type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-01T10:00:05.000Z", message: {
+      role: "assistant", content: [{ type: "text", text: "a".repeat(2600) }],
+      api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.6-sol",
+      stopReason: "stop", timestamp: 5_000, usage: usage(2, 2_898, 0),
+    } },
+  ] as unknown as SessionEntry[];
+  const source: SwitchTarget = { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" };
+  const snapshot = {
+    requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
+    promptTokens: 2_925, cacheRead: 0, cacheWrite: 0,
+    provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses",
+  };
+  const base = { target: OPUS, source, entries, activeLeafId: "a1", systemPromptChars: 0, tools: [] };
+  // Source estimate (chars/4) of the 7.8k-char history is 1950; sol billed 2925 on
+  // this path → ratio 1.5. Target estimate 3000 (chars/2.6) → 4500.
+  const calibrated = computeSwitchForecast({ ...base, snapshots: [snapshot] });
+  assert.equal(calibrated.estTokens, 4_500);
+  assert.deepEqual(calibrated.breakdown, { anchorTokens: 2_925, droppedThinking: 0 });
+  // Without a billed anchor on the path the heuristic number stands alone, unexplained.
+  const plain = computeSwitchForecast({ ...base, snapshots: [] });
+  assert.equal(plain.estTokens, 3_000);
+  assert.equal(plain.breakdown, undefined);
+});
+
 test("computeSwitchForecast: gateway targets are labelled, not refused a number", () => {
   const forecast = computeSwitchForecast({
-    target: { provider: "radius", id: "auto", api: "pi-messages", contextWindow: 200_000 },
+    target: { provider: "radius", id: "auto", api: "pi-messages" },
     entries: entriesFixture(),
     activeLeafId: "a1",
     systemPromptChars: 0,
@@ -262,7 +303,9 @@ test("event flow: the same model over a different wire API is a switch", async (
 });
 
 test("event flow: a material estimated re-write posts one est-marked notice", async () => {
-  // 200k chars of history → ~77k estimated tokens, far above the 20k threshold.
+  // 200k chars of history, and the same id billed 80k through the other api: with
+  // identical heuristics on both sides, the density calibration anchors the estimate
+  // to the billed prompt exactly. Still far above the 20k threshold.
   const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200_000);
   const notifications: string[] = [];
   const widgets: string[] = [];
@@ -273,7 +316,7 @@ test("event flow: a material estimated re-write posts one est-marked notice", as
   try {
     await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
     assert.equal(notifications.length, 1, "a material estimated re-write must post a notice");
-    assert.match(notifications[0]!, /re-writing ~7[0-9]\.\dk of 200\.0k ctx \(est/);
+    assert.match(notifications[0]!, /sending ~80\.0k uncached to anthropic \(est/);
     assert.match(notifications[0]!, /model switched/);
   } finally {
     await fire(probe, "session_shutdown", {});

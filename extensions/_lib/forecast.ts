@@ -169,6 +169,38 @@ export interface PromptForecast {
   /** Estimated target-currency prompt tokens (harness + history). */
   tokens: number;
   heuristic: HeuristicNumbers;
+  /** Density correction applied from the source anchor, when one was trusted. */
+  calibration?: number;
+  /** Estimated tokens of source-billed encrypted reasoning the target never receives
+   * (priced at the source's calibrated density); present only alongside calibration. */
+  droppedThinkingTokens?: number;
+}
+
+// Static denominators miss content that tokenizes unusually (dense numeric logs run
+// ~2.1 chars/token on Claude vs the 2.6 default). The correction from a billed anchor
+// is bounded: past 2x/0.5x the anchor is more likely stale than the content special.
+// Exported so callers can tell a trusted correction from a saturated one: at the
+// bounds the anchor no longer explains the estimate, only limits it.
+export const CALIBRATION_MIN = 0.5;
+export const CALIBRATION_MAX = 2;
+// Encrypted reasoning payload chars are a size *convention*, not a measurement; when
+// they dominate the source serialization the billed/estimated ratio is meaningless.
+const CALIBRATION_MAX_REASONING_SHARE = 0.25;
+
+function estimatePrompt(
+  history: readonly ForecastMessage[],
+  systemPromptChars: number,
+  tools: ToolShape[],
+  model: TargetModel,
+): { tokens: number; heuristic: HeuristicNumbers; counts: HistoryForecast } {
+  const heuristic = builtInHeuristicForModel(model) ?? fallbackHeuristicNumbers();
+  const counts = forecastHistoryForTarget(history, model);
+  const historyChars = counts.textChars + counts.keptReasoningChars + counts.imageChars;
+  const tokens =
+    estimateCharsAsTokens(systemPromptChars, heuristic.textDenominator) +
+    estimateToolListTokens(tools, heuristic) +
+    estimateCharsAsTokens(historyChars, heuristic.sessionDenominator);
+  return { tokens, heuristic, counts };
 }
 
 /**
@@ -176,19 +208,39 @@ export interface PromptForecast {
  * the family text/tool heuristics, history under the session denominator, all in
  * the target model's currency. Callers must render the result as an estimate
  * (design language §4: ~ and est wording); it is never a provider-exact count.
+ *
+ * When a calibration anchor is given (the model that last billed this history and
+ * its real prompt tokens), the same estimate is run in the source currency and the
+ * billed/estimated ratio corrects the target number for this session's actual
+ * content density. The anchor is the nearest billed call on the path, typically one
+ * response behind the current history; the clamp bounds that drift.
  */
 export function forecastTargetPrompt(args: {
   history: readonly ForecastMessage[];
   systemPromptChars: number;
   tools: ToolShape[];
   target: TargetModel;
+  calibration?: { source: TargetModel; billedPromptTokens: number };
 }): PromptForecast {
-  const heuristic = builtInHeuristicForModel(args.target) ?? fallbackHeuristicNumbers();
-  const history = forecastHistoryForTarget(args.history, args.target);
-  const historyChars = history.textChars + history.keptReasoningChars + history.imageChars;
-  const tokens =
-    estimateCharsAsTokens(args.systemPromptChars, heuristic.textDenominator) +
-    estimateToolListTokens(args.tools, heuristic) +
-    estimateCharsAsTokens(historyChars, heuristic.sessionDenominator);
-  return { tokens, heuristic };
+  const target = estimatePrompt(args.history, args.systemPromptChars, args.tools, args.target);
+  const anchor = args.calibration;
+  if (anchor === undefined || anchor.billedPromptTokens <= 0 || !Number.isFinite(anchor.billedPromptTokens)) {
+    return { tokens: target.tokens, heuristic: target.heuristic };
+  }
+  const source = estimatePrompt(args.history, args.systemPromptChars, args.tools, anchor.source);
+  const sourceChars = source.counts.textChars + source.counts.keptReasoningChars + source.counts.imageChars;
+  if (source.tokens <= 0 || sourceChars <= 0 ||
+      source.counts.keptReasoningChars / sourceChars > CALIBRATION_MAX_REASONING_SHARE) {
+    return { tokens: target.tokens, heuristic: target.heuristic };
+  }
+  const ratio = Math.min(CALIBRATION_MAX, Math.max(CALIBRATION_MIN, anchor.billedPromptTokens / source.tokens));
+  // Signatures replay only to the model that produced them, so everything the source
+  // kept is dropped by a different target; a same-id target (cross-api) keeps it all.
+  const droppedChars = anchor.source.id === args.target.id ? 0 : source.counts.keptReasoningChars;
+  return {
+    tokens: Math.round(target.tokens * ratio),
+    heuristic: target.heuristic,
+    calibration: ratio,
+    droppedThinkingTokens: Math.round((droppedChars / source.heuristic.sessionDenominator) * ratio),
+  };
 }
