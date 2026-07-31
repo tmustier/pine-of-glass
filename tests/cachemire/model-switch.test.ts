@@ -16,7 +16,7 @@ const MIN = 60_000;
 
 const FORECAST = {
   targetId: "gpt-5.6-luna", targetProvider: "openai-codex",
-  windowTokens: 272_000, estTokens: 96_400, basis: "direct" as const, droppedReasoningChars: 0,
+  windowTokens: 272_000, estTokens: 96_400, basis: "direct" as const,
 };
 
 test("clock: model switch forecasts in the target currency, always marked est", () => {
@@ -152,7 +152,6 @@ test("computeSwitchForecast: estimates from canonical history in the target curr
   // (converted to text cross-model) + 2.6k assistant text = 4000 tokens; the 2.6k-char
   // encrypted payload never reaches the anthropic target.
   assert.equal(forecast.estTokens, 4_000);
-  assert.equal(forecast.droppedReasoningChars, 2_600);
   assert.equal(forecast.prior, undefined);
 });
 

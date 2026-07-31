@@ -29,8 +29,6 @@ export interface SwitchForecast {
   /** Direct provider serialization vs a pi-messages gateway that may transform the
    * request upstream — gateways demote the wording to a rougher claim. */
   basis: "direct" | "gateway";
-  /** Old-model reasoning payloads the target will never receive. */
-  droppedReasoningChars: number;
   /** The target model's own most recent path-compatible billed call, if any: its
    * cache entry (not the old model's) is what a switch-back could revive. */
   prior?: { requestAt: number; window?: CacheWindow };
@@ -47,9 +45,8 @@ export function computeSwitchForecast(args: {
   const forecast: SwitchForecast = {
     targetId: args.target.id,
     targetProvider: args.target.provider,
-    windowTokens: args.target.contextWindow && args.target.contextWindow > 0 ? args.target.contextWindow : undefined,
+    windowTokens: args.target.contextWindow,
     basis: args.target.api === "pi-messages" ? "gateway" : "direct",
-    droppedReasoningChars: 0,
   };
   const targetSnapshots = args.snapshots.filter(
     (snapshot) => snapshot.provider === args.target.provider && snapshot.model === args.target.id &&
@@ -65,14 +62,12 @@ export function computeSwitchForecast(args: {
     // to an unsized "cold expected" clock, never break the model switch itself.
   }
   if (history) {
-    const prompt = forecastTargetPrompt({
+    forecast.estTokens = forecastTargetPrompt({
       history,
       systemPromptChars: args.systemPromptChars,
       tools: args.tools,
       target: args.target,
-    });
-    forecast.estTokens = prompt.tokens;
-    forecast.droppedReasoningChars = prompt.droppedReasoningChars;
+    }).tokens;
   }
   return forecast;
 }

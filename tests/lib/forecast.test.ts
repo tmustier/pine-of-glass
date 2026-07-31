@@ -133,8 +133,6 @@ test("forecastTargetPrompt composes system, tools and history in target currency
   // 2600 system chars / 2.6 + (3500 + 1000 + 500) history chars / 2.6; the 2000-char
   // encrypted payload never reaches the anthropic target.
   assert.equal(forecast.tokens, 1000 + Math.ceil(5000 / 2.6));
-  assert.equal(forecast.droppedReasoningChars, 2000);
-  assert.equal(forecast.historyChars, 5000);
 });
 
 test("forecastTargetPrompt uses the cookbook tool formula for codex targets", () => {

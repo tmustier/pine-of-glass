@@ -168,9 +168,6 @@ export function forecastHistoryForTarget(messages: readonly ForecastMessage[], t
 export interface PromptForecast {
   /** Estimated target-currency prompt tokens (harness + history). */
   tokens: number;
-  historyChars: number;
-  droppedReasoningChars: number;
-  imageCount: number;
   heuristic: HeuristicNumbers;
 }
 
@@ -193,11 +190,5 @@ export function forecastTargetPrompt(args: {
     estimateCharsAsTokens(args.systemPromptChars, heuristic.textDenominator) +
     estimateToolListTokens(args.tools, heuristic) +
     estimateCharsAsTokens(historyChars, heuristic.sessionDenominator);
-  return {
-    tokens,
-    historyChars,
-    droppedReasoningChars: history.droppedReasoningChars,
-    imageCount: history.imageCount,
-    heuristic,
-  };
+  return { tokens, heuristic };
 }

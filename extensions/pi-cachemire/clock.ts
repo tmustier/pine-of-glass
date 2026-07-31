@@ -54,14 +54,14 @@ export function cacheClock(input: ClockInput): ClockState {
   if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
   if (input.modelSwitched) {
     const forecast = input.switchForecast;
-    const prior = forecast?.prior;
-    if (prior !== undefined && withinWarmHorizon(prior.window, input.now - prior.requestAt)) {
+    if (forecast !== undefined && forecast.prior !== undefined &&
+        withinWarmHorizon(forecast.prior.window, input.now - forecast.prior.requestAt)) {
       // The target model's own last billed call is inside its freshness window: a
       // switch-back may revive that entry, so "cold" would overclaim.
       return {
         phase: "warm-unknown",
-        text: `cache may still be warm \u00b7 last ${forecast!.targetId} call ` +
-          `${formatDuration(input.now - prior.requestAt)} ago \u00b7 next send confirms`,
+        text: `cache may still be warm \u00b7 last ${forecast.targetId} call ` +
+          `${formatDuration(input.now - forecast.prior.requestAt)} ago \u00b7 next send confirms`,
       };
     }
     if (forecast?.estTokens === undefined) {
