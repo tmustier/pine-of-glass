@@ -8,8 +8,31 @@ import { isJsonObject, positiveNumberValue, stringValue, type JsonValue } from "
 import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
+import {
+  builtInHeuristicForModel,
+  cleanDenominator,
+  estimateCharsAsTokens,
+  fallbackHeuristicNumbers,
+  type ModelSummary,
+} from "../_lib/heuristics.ts";
+import {
+  aggregateToolPayloadForShape,
+  arrayItemsSchema,
+  estimateOpenAIFunctionToolTokens,
+  estimateOpenAIToolDefinitionTokens,
+  getSchemaProperties,
+  getSchemaRequired,
+  OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR,
+  openAIResponsesToolPayload,
+  safeMinifiedJson,
+  schemaArrayItemProperties,
+  schemaPropertyDescription,
+  schemaPropertyEnum,
+  schemaPropertyType,
+  toolPayloadForShape,
+  toolPayloadLabel,
+} from "../_lib/tool-payloads.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
-import { BUILT_IN_HEURISTIC_RULES, type BuiltInHeuristicRule } from "./model-heuristics.ts";
 import {
   buildSessionBreakdown,
   estimateSessionBreakdown,
@@ -77,12 +100,6 @@ type PrefixSection = {
   denominator: number;
   compactRows?: ScanRow[];
   expanded: ExpandedContent;
-};
-
-type ModelSummary = {
-  provider: string;
-  id: string;
-  api: string;
 };
 
 type HeuristicProfile = Partial<Pick<ResolvedHeuristic, "label" | "textDenominator" | "sessionDenominator" | "toolDenominator" | "toolNumerator">>;
@@ -156,7 +173,6 @@ const PROJECT_INSTRUCTIONS_RE = /<project_instructions path="([^"]*)">\n([\s\S]*
 const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>/;
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 const DEFAULT_MODE: ViewMode = "summary";
-const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
 
 // The family accent (design language §3): theme-derived, used sparingly — the panel
 // brand, token figures, total rows, and the carried part of the context bar.
@@ -198,15 +214,10 @@ function formatPercent(value: number | null): string | undefined {
   return `${value.toFixed(1)}%`;
 }
 
-function cleanDenominator(value: unknown, fallback = 4): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
 // Denominators are sanitized once, at heuristic resolution (applyHeuristicPatch); by
-// the time one reaches a count it is a trusted positive number.
-function estimateCharsAsTokens(chars: number, denominator: number): number {
-  return Math.ceil(chars / denominator);
-}
+// the time one reaches a count it is a trusted positive number. The shared estimator
+// slice (denominators, payload shapes, the OpenAI tool formula) lives in
+// _lib/heuristics.ts so cachemire's model-switch forecast uses the same numbers.
 
 function formatDenominator(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
@@ -262,14 +273,6 @@ function unescapeXml(value: string): string {
 function safeJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2) ?? "undefined";
-  } catch (error) {
-    return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
-  }
-}
-
-function safeMinifiedJson(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? "undefined";
   } catch (error) {
     return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
   }
@@ -548,14 +551,7 @@ function ruleMatchesModel(rule: HeuristicRule, model?: ModelSummary): boolean {
 }
 
 function defaultHeuristic(): ResolvedHeuristic {
-  return {
-    label: "fallback chars/4",
-    source: "fallback",
-    textDenominator: 4,
-    sessionDenominator: 4,
-    toolDenominator: 4,
-    toolNumerator: "openai-responses",
-  };
+  return { ...fallbackHeuristicNumbers(), source: "fallback" };
 }
 
 function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | Partial<ResolvedHeuristic> | undefined, source: string): ResolvedHeuristic {
@@ -577,31 +573,6 @@ function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | 
     sessionDenominator: cleanDenominator(normalized.sessionDenominator, base.sessionDenominator),
     toolDenominator: cleanDenominator(normalized.toolDenominator, base.toolDenominator),
     toolNumerator: normalized.toolNumerator ?? base.toolNumerator,
-  };
-}
-
-function builtInRuleMatches(rule: BuiltInHeuristicRule, model: ModelSummary): boolean {
-  const provider = model.provider.toLowerCase();
-  const api = model.api.toLowerCase();
-  const providerOrApiMatches = rule.providerIncludes.some((entry) => provider.includes(entry))
-    || rule.apiEquals.includes(api);
-  const explicitRelayMatches = rule.relayedModelRoutes?.some(
-    (route) => provider.includes(route.providerIncludes) && api === route.apiEquals,
-  ) ?? false;
-  const modelMatches = rule.modelRegex ? rule.modelRegex.test(model.id.toLowerCase()) : true;
-  return (providerOrApiMatches || explicitRelayMatches) && modelMatches;
-}
-
-function builtInHeuristicForModel(model?: ModelSummary): Partial<ResolvedHeuristic> | undefined {
-  if (!model) return undefined;
-  const rule = BUILT_IN_HEURISTIC_RULES.find((candidate) => builtInRuleMatches(candidate, model));
-  if (!rule) return undefined;
-  return {
-    label: rule.label,
-    textDenominator: rule.textDenominator,
-    sessionDenominator: rule.sessionDenominator,
-    toolDenominator: rule.toolDenominator,
-    toolNumerator: rule.toolNumerator,
   };
 }
 
@@ -630,115 +601,6 @@ function resolveHeuristic(model: ModelSummary | undefined, config: ContextimateC
   );
 }
 
-function openAIResponsesToolPayload(tool: ToolSummary): unknown {
-  return {
-    type: "function",
-    name: tool.name,
-    description: tool.description,
-    parameters: tool.schema,
-    strict: null,
-  };
-}
-
-function openAIChatToolPayload(tool: ToolSummary): unknown {
-  return {
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.schema,
-      strict: null,
-    },
-  };
-}
-
-function anthropicToolPayload(tool: ToolSummary): unknown {
-  return {
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.schema,
-  };
-}
-
-function geminiToolPayload(tools: ToolSummary[]): unknown {
-  return {
-    functionDeclarations: tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parametersJsonSchema: tool.schema,
-    })),
-  };
-}
-
-function bedrockToolPayload(tool: ToolSummary): unknown {
-  return {
-    toolSpec: {
-      name: tool.name,
-      description: tool.description,
-      inputSchema: { json: tool.schema },
-    },
-  };
-}
-
-function rawToolPayload(tool: ToolSummary): unknown {
-  return {
-    name: tool.name,
-    description: tool.description,
-    parameters: tool.schema,
-    promptGuidelines: tool.promptGuidelines,
-  };
-}
-
-function toolPayloadForShape(tool: ToolSummary, shape: string): unknown {
-  switch (shape) {
-    case "openai-chat":
-    case "openai-completions":
-    case "mistral":
-      return openAIChatToolPayload(tool);
-    case "anthropic":
-      return anthropicToolPayload(tool);
-    case "gemini":
-    case "google":
-    case "vertex":
-      return { name: tool.name, description: tool.description, parametersJsonSchema: tool.schema };
-    case "bedrock":
-      return bedrockToolPayload(tool);
-    case "raw-schema":
-      return rawToolPayload(tool);
-    default:
-      return openAIResponsesToolPayload(tool);
-  }
-}
-
-function aggregateToolPayloadForShape(tools: ToolSummary[], shape: string): unknown {
-  if (shape === "gemini" || shape === "google" || shape === "vertex") return geminiToolPayload(tools);
-  return tools.map((tool) => toolPayloadForShape(tool, shape));
-}
-
-function toolPayloadLabel(shape: string): string {
-  switch (shape) {
-    case "openai-responses":
-    case "openai-codex-responses":
-      return "OpenAI Responses tool payload";
-    case "openai-chat":
-    case "openai-completions":
-    case "mistral":
-      return "OpenAI Chat tool payload";
-    case "anthropic":
-      return "Anthropic tool payload";
-    case "gemini":
-    case "google":
-    case "vertex":
-      return "Gemini/Vertex tool payload";
-    case "bedrock":
-      return "Bedrock tool payload";
-    case "raw-schema":
-      return "Raw tool schema payload";
-    default:
-      return `Unknown tool shape ${shape}; OpenAI Responses fallback`;
-  }
-}
-
 function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic): ToolNumeratorResult {
   const shape = heuristic.toolNumerator;
   if (shape === "openai-cookbook") {
@@ -756,49 +618,6 @@ function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic):
     content,
     chars: content.length,
   };
-}
-
-function trimFinalPeriod(text: string): string {
-  return text.endsWith(".") ? text.slice(0, -1) : text;
-}
-
-function getSchemaProperties(schema: unknown): Record<string, unknown> {
-  if (!isJsonObject(schema) || !isJsonObject(schema.properties)) return {};
-  return schema.properties;
-}
-
-function schemaPropertyType(property: unknown): string {
-  if (!isJsonObject(property)) return "object";
-  if (typeof property.type === "string") return property.type;
-  if (Array.isArray(property.type)) return property.type.filter((entry): entry is string => typeof entry === "string").join("|");
-  if (property.anyOf) return "anyOf";
-  if (property.oneOf) return "oneOf";
-  if (property.allOf) return "allOf";
-  return "object";
-}
-
-function schemaPropertyDescription(property: unknown): string {
-  if (!isJsonObject(property)) return "";
-  return typeof property.description === "string" ? trimFinalPeriod(property.description) : "";
-}
-
-function schemaPropertyEnum(property: unknown): JsonValue[] {
-  if (!isJsonObject(property) || !Array.isArray(property.enum)) return [];
-  return property.enum;
-}
-
-function schemaArrayItemProperties(property: unknown): Record<string, unknown> {
-  if (!isJsonObject(property)) return {};
-  return getSchemaProperties(property.items);
-}
-
-function getSchemaRequired(schema: unknown): string[] {
-  if (!isJsonObject(schema) || !Array.isArray(schema.required)) return [];
-  return schema.required.filter((entry): entry is string => typeof entry === "string");
-}
-
-function arrayItemsSchema(property: unknown): unknown {
-  return isJsonObject(property) ? property.items : undefined;
 }
 
 function collectToolFields(name: string, property: unknown, depth: number, required: boolean, out: ToolField[], maxDepth = 3): void {
@@ -833,63 +652,6 @@ function buildToolFields(schema: unknown): ToolField[] {
     collectToolFields(name, property, 0, requiredKeys.has(name), fields);
   }
   return fields;
-}
-
-function estimateOpenAIToolTextTokens(text: string): number {
-  return estimateCharsAsTokens(text.length, OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR);
-}
-
-function estimateOpenAIToolDefinitionTokens(tool: ToolSummary): number {
-  let tokens = 7;
-  tokens += estimateOpenAIToolTextTokens(`${tool.name}:${trimFinalPeriod(tool.description)}`);
-  const propertyEntries = Object.entries(getSchemaProperties(tool.schema));
-  if (propertyEntries.length > 0) tokens += 3;
-  for (const [propertyName, property] of propertyEntries) tokens += estimateOpenAIPropertyTokens(propertyName, property);
-  return tokens;
-}
-
-function estimateOpenAIPropertyTokens(propertyName: string, property: unknown): number {
-  const propInit = 3;
-  const propKey = 3;
-  const enumInit = -3;
-  const enumItem = 3;
-
-  let tokens = propKey;
-  const enumValues = schemaPropertyEnum(property);
-  if (enumValues.length > 0) {
-    tokens += enumInit;
-    for (const enumValue of enumValues) tokens += enumItem + estimateOpenAIToolTextTokens(String(enumValue));
-  }
-  tokens += estimateOpenAIToolTextTokens(`${propertyName}:${schemaPropertyType(property)}:${schemaPropertyDescription(property)}`);
-
-  const nestedEntries = Object.entries(getSchemaProperties(property));
-  if (nestedEntries.length > 0) {
-    tokens += propInit;
-    for (const [nestedName, nestedProperty] of nestedEntries) tokens += estimateOpenAIPropertyTokens(nestedName, nestedProperty);
-  }
-
-  const itemEntries = Object.entries(schemaArrayItemProperties(property));
-  if (itemEntries.length > 0) {
-    tokens += propInit;
-    for (const [itemName, itemProperty] of itemEntries) tokens += estimateOpenAIPropertyTokens(itemName, itemProperty);
-  }
-
-  return tokens;
-}
-
-function estimateOpenAIFunctionToolTokens(tools: ToolSummary[]): number {
-  // OpenAI's public token-counting docs say exact tool counts need the Responses
-  // input-token endpoint. For no-API-call startup estimates, use the older
-  // cookbook/tiktoken-style schema-summary formula: model-specific constants plus
-  // name/description/property summaries, not raw schema JSON. Current public
-  // tiktoken maps GPT-5 and GPT-4o families to o200k_base, so use the GPT-4o/GPT-5
-  // family constants. A synthetic schema ablation found chars/6.6 over these schema
-  // text fragments, plus recursive nested property counting, beats raw schema-char
-  // denominators on held-out mixed schemas while remaining dependency-free.
-  let tokens = 0;
-  for (const tool of tools) tokens += estimateOpenAIToolDefinitionTokens(tool);
-  if (tools.length > 0) tokens += 12;
-  return tokens;
 }
 
 function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristic): ToolDisplayEstimate {
