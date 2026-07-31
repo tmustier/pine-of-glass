@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { createHash } from "node:crypto";
@@ -15,6 +15,9 @@ import {
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
+import type { ToolShape } from "../_lib/tool-payloads.ts";
+import { UNKNOWN_TTL_WARM_MS, UNKNOWN_WINDOW, cacheClock, toneFor, withinWarmHorizon, type ClockState } from "./clock.ts";
+import { computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
 import { restoreBranchRecords } from "./ledger.ts";
 import {
   cacheStateForLineage,
@@ -105,7 +108,6 @@ function inferAnthropicTtlMs(env: Record<string, string | undefined> = process.e
 //              past it "cold" is definite even without a TTL contract)
 //   unknown  — anything else: soft language only
 const OPENAI_WINDOW: CacheWindow = { kind: "band", softMs: TTL_SHORT_MS, hardMs: TTL_LONG_MS };
-const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
 
 function windowForProvider(provider: string | undefined): CacheWindow | undefined {
   if (provider === "anthropic") return { kind: "contract", ttlMs: inferAnthropicTtlMs(), source: "inferred" };
@@ -182,7 +184,6 @@ function expiryCause(window: CacheWindow | undefined, gapMs: number | undefined)
   }
   return undefined;
 }
-const UNKNOWN_TTL_WARM_MS = 10 * 60 * 1000; // soft "likely cold" horizon for implicit caches
 const HIT_RATIO = 0.8;
 const MISS_RATIO = 0.2;
 
@@ -445,6 +446,8 @@ function predictBreak(args: {
   expectedRead: number;
   fingerprintCause?: CallCause;
   rates?: ModelRates;
+  /** Target-currency estimate while a model switch is pending (issue #57). */
+  switchForecast?: { estTokens?: number; windowTokens?: number; basis: "direct" | "gateway"; priorMayBeWarm: boolean };
 }): BreakPrediction | undefined {
   // Cold starts are healthy and the compaction summarizer call is labelled, not warned.
   if (args.isFirst || args.inCompaction || args.expectedRead <= 0) return undefined;
@@ -458,10 +461,25 @@ function predictBreak(args: {
     expectedUsd: rewriteCostUsd(args.expectedRead, args.rates),
   });
   if (args.fingerprintCause) {
-    // Model switches break the cache for certain (caches are per-model on every provider)
-    // but the stored size is denominated in the *old* model's tokenizer — withhold it
-    // rather than show a number in the wrong currency.
-    if (args.fingerprintCause.kind === "model" || args.fingerprintCause.kind === "compaction") return { cause: args.fingerprintCause };
+    // Model switches break the cache vs the *last* call for certain (caches are
+    // per-model on every provider), but the stored size is denominated in the old
+    // model's tokenizer — never show that number. When the shared heuristics produced
+    // a target-currency estimate, claim that instead, marked est. When the target
+    // model's own prior cache entry may still be warm (A→B→A), stay silent: the
+    // resolved line reports the truth when usage arrives.
+    if (args.fingerprintCause.kind === "model") {
+      const forecast = args.switchForecast;
+      if (forecast?.priorMayBeWarm) return undefined;
+      if (forecast?.estTokens === undefined) return { cause: args.fingerprintCause };
+      return {
+        cause: args.fingerprintCause,
+        estimatedRewriteTokens: forecast.estTokens,
+        targetWindowTokens: forecast.windowTokens,
+        estimatedUsd: rewriteCostUsd(forecast.estTokens, args.rates),
+        estimateBasis: forecast.basis,
+      };
+    }
+    if (args.fingerprintCause.kind === "compaction") return { cause: args.fingerprintCause };
     if (args.fingerprintCause.kind === "thinking") {
       // Anthropic documents this break (messages invalidate; system/tools stay cached), so
       // a contract window earns an in-flight claim — unsized, because the surviving
@@ -490,7 +508,11 @@ function uncachedCostUsd(usage: UsageLike, rates?: ModelRates): number | undefin
 
 function rewriteCostUsd(tokens: number, rates?: ModelRates): number | undefined {
   if (!rates) return undefined;
-  return (tokens * (rates.cacheWrite || rates.input)) / 1_000_000;
+  // Request-wide pricing tiers: the highest matching threshold prices the whole request.
+  const tier = (rates.tiers ?? [])
+    .filter((candidate) => tokens > candidate.inputTokensAbove)
+    .sort((a, b) => b.inputTokensAbove - a.inputTokensAbove)[0] ?? rates;
+  return (tokens * (tier.cacheWrite || tier.input)) / 1_000_000;
 }
 
 function sessionSavings(records: CallRecord[]): { actual: number; uncached: number; saved: number; pct: number } | undefined {
@@ -504,94 +526,6 @@ function sessionSavings(records: CallRecord[]): { actual: number; uncached: numb
 
 // All number formatting lives in _lib/fmt.ts (family number grammar); the test suite
 // reaches it through this module's internals surface.
-
-// --- cache clock (pure state → text; tones applied by the widget layer) -----------------
-
-export interface ClockState {
-  phase: "idle" | "fresh" | "closing" | "cold" | "stale" | "fading" | "warm-unknown" | "cold-unknown";
-  text: string;
-}
-
-export interface ClockInput {
-  now: number;
-  lastRequestAt?: number;
-  window?: CacheWindow;
-  cachedTokens?: number;
-  rewriteUsd?: number;
-  /** History was compacted since the last call: the next send re-writes regardless of TTL. */
-  compacted?: boolean;
-  /** Model changed since the last billed call: caches are per-model, so the cache is dead.
-   * The stored size is in the old tokenizer's currency, so it is shown only with an
-   * explicit old-model denomination tag (and no $, which would compound the error). */
-  modelSwitched?: boolean;
-  /** Currency tag for the stored size while modelSwitched: the model id that billed it. */
-  oldModelId?: string;
-  /** Thinking level changed since the last billed call. Material only under a contract
-   * window (Anthropic documents message-breakpoint invalidation; system/tools survive). */
-  thinkingChanged?: boolean;
-}
-
-function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number, qualifier = ""): string {
-  if (!cachedTokens) return "";
-  const bill = rewriteUsd !== undefined ? ` (~${formatUsd(rewriteUsd)})` : "";
-  return ` \u00b7 next send ${verb} ~${compactCount(cachedTokens)}${qualifier}${bill}`;
-}
-
-function cacheClock(input: ClockInput): ClockState {
-  if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
-  if (input.modelSwitched) {
-    const scale = input.cachedTokens && input.oldModelId
-      ? ` (~${compactCount(input.cachedTokens)} ${input.oldModelId} tokens)`
-      : "";
-    return { phase: "cold", text: `cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt${scale}` };
-  }
-  if (input.compacted) {
-    // The prefix the clock was timing no longer exists; TTL is moot until the next send.
-    return { phase: "stale", text: "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix" };
-  }
-  const since = input.now - input.lastRequestAt;
-  const window = input.window ?? UNKNOWN_WINDOW;
-  if (input.thinkingChanged && window.kind === "contract") {
-    // No survival promise here: docs say system/tools outlive *budget* changes, but a
-    // live adaptive-effort change on claude-fable-5 re-wrote 100% of the prompt.
-    return { phase: "stale", text: "cache stale \u00b7 thinking level changed \u00b7 next send re-writes the prompt" };
-  }
-  if (window.kind === "contract") {
-    const remaining = window.ttlMs - since;
-    if (remaining <= 0) {
-      return { phase: "cold", text: `cache cold${rewriteSuffix("re-writes", input.cachedTokens, input.rewriteUsd)}` };
-    }
-    // Coarse display above 90s so the widget only re-renders when the label changes.
-    const display = remaining > 90_000 ? Math.floor(remaining / 15_000) * 15_000 : remaining;
-    return {
-      phase: remaining <= 60_000 ? "closing" : "fresh",
-      text: `cache ${formatDuration(display)}`,
-    };
-  }
-  if (window.kind === "band") {
-    if (since > window.hardMs) {
-      // The hard cap is documented ("always removed within one hour of last use"), so
-      // past it "cold" is definite even without a per-request TTL contract.
-      const suffix = rewriteSuffix("re-sends", input.cachedTokens, input.rewriteUsd, " uncached");
-      return { phase: "cold", text: `cache cold (idle ${formatDuration(since)} > ${formatDuration(window.hardMs)} cap)${suffix}` };
-    }
-    if (since > window.softMs) {
-      const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd);
-      return {
-        phase: "fading",
-        text: `cache fading \u00b7 idle ${formatDuration(since)} of ${formatDuration(window.softMs)}\u2013${formatDuration(window.hardMs)} window${suffix}`,
-      };
-    }
-    return { phase: "warm-unknown", text: `cache likely warm \u00b7 ${formatDuration(since)} since last call` };
-  }
-  // Unknown window: no contract, only soft language — but past the soft horizon we still
-  // know exactly how much prompt would be re-sent uncached.
-  if (since > UNKNOWN_TTL_WARM_MS) {
-    const suffix = rewriteSuffix("re-sends", input.cachedTokens, input.rewriteUsd, " uncached");
-    return { phase: "cold-unknown", text: `cache likely cold (idle ${formatDuration(since)})${suffix}` };
-  }
-  return { phase: "warm-unknown", text: `cache likely warm \u00b7 ${formatDuration(since)} since last call` };
-}
 
 // --- ledger lines ----------------------------------------------------------------------
 
@@ -717,8 +651,14 @@ interface CachemireState {
   window: CacheWindow;
   /** Model id at the time of the last billed call — the currency of cachedTokens. */
   lastCallModelId?: string;
+  /** Provider/api that billed the last call: the same id through a different
+   * provider or wire api is a different cache (and possibly a different tokenizer). */
+  lastCallProvider?: string;
+  lastCallApi?: string;
   currentModelId?: string;
   modelSwitched: boolean;
+  /** Target-currency forecast while modelSwitched (issue #57); cleared by usage. */
+  switchForecast?: SwitchForecast;
   /** Thinking level at the last billed call vs now; mirrors the model-switch pair. */
   lastCallThinkingLevel?: string;
   currentThinkingLevel?: string;
@@ -770,18 +710,6 @@ function state(): CachemireState {
   return g.__piCachemire;
 }
 
-function toneFor(phase: ClockState["phase"]): Tone {
-  switch (phase) {
-    case "fresh":
-    case "warm-unknown":
-      return "success";
-    case "closing":
-      return "warning";
-    default: // cold, stale, cold-unknown, idle
-      return "dim";
-  }
-}
-
 // One-line loop-economics facts (design language §§1, 6): ◍ opens the line; the status
 // tone is theme-derived. These are transient signals, so the tone covers the whole line.
 function econLine(tone: Tone, text: string): string {
@@ -799,7 +727,7 @@ function updateWidget(now = Date.now()): void {
     rewriteUsd: s.cachedTokens !== undefined ? rewriteCostUsd(s.cachedTokens, s.rates) : undefined,
     compacted: s.compacted,
     modelSwitched: s.modelSwitched,
-    oldModelId: s.lastCallModelId,
+    switchForecast: s.switchForecast,
     thinkingChanged: s.thinkingChanged,
   });
   const text = clock.phase === "idle" ? "" : econLine(toneFor(clock.phase), clock.text);
@@ -820,6 +748,35 @@ function resolveNotice(text: string): void {
   s.pendingNotice.setText(text);
   s.pendingNotice = undefined;
   s.tui?.requestRender?.(true);
+}
+
+function activeToolShapes(pi: ExtensionAPI): ToolShape[] {
+  const active = new Set(pi.getActiveTools());
+  return pi.getAllTools()
+    .filter((tool) => active.has(tool.name))
+    .map((tool) => ({ name: tool.name, description: tool.description, schema: tool.parameters }));
+}
+
+/** Recompute (or clear) the switch forecast from the current canonical history. */
+function refreshSwitchForecast(
+  pi: ExtensionAPI,
+  ctx: Pick<ExtensionContext, "sessionManager" | "getSystemPrompt">,
+  activeLeafId: string | null,
+  target: SwitchTarget | undefined,
+): void {
+  const s = state();
+  if (!s.modelSwitched || !target) {
+    s.switchForecast = undefined;
+    return;
+  }
+  s.switchForecast = computeSwitchForecast({
+    target,
+    entries: ctx.sessionManager.getEntries(),
+    activeLeafId,
+    systemPromptChars: ctx.getSystemPrompt().length,
+    tools: activeToolShapes(pi),
+    snapshots: s.lineages,
+  });
 }
 
 // --- extension entry --------------------------------------------------------------------
@@ -852,6 +809,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
       baseline?.window ?? windowForProvider(model?.provider) ?? UNKNOWN_WINDOW,
     ));
     s.prevCallRequestAt = s.records.at(-1)?.at || undefined;
+    // A restored branch can already be mid-switch (billed by a different model than the
+    // current one); the forecast must exist before the first widget render.
+    refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
     s.lastCallThinkingLevel = s.currentThinkingLevel = pi.getThinkingLevel();
     s.compacted = false;
     s.inCompaction = false;
@@ -903,6 +863,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
     ));
     s.pendingFingerprintCause = resolution.cause;
     s.pendingLineageCandidates = resolution.compatible;
+    // Re-forecast at send time: the canonical history now includes the new user message.
+    refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), ctx.model);
     s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
     if (firstAttempt) s.pendingPreviousCacheAt = s.lastRequestAt;
     s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
@@ -934,6 +896,13 @@ export default function piCachemire(pi: ExtensionAPI): void {
         expectedRead: s.expectedRead,
         fingerprintCause: s.pendingFingerprintCause,
         rates: s.rates,
+        switchForecast: s.switchForecast === undefined ? undefined : {
+          estTokens: s.switchForecast.estTokens,
+          windowTokens: s.switchForecast.windowTokens,
+          basis: s.switchForecast.basis,
+          priorMayBeWarm: s.switchForecast.prior !== undefined &&
+            withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt),
+        },
       });
       const material = prediction !== undefined && (
         prediction.expectedRewriteTokens === undefined || // unsized (compaction/model/thinking): explicit user action, the notice is its explanation
@@ -949,20 +918,26 @@ export default function piCachemire(pi: ExtensionAPI): void {
     updateWidget();
   });
 
-  pi.on("model_select", async (event) => {
+  pi.on("model_select", async (event, ctx) => {
     if (!ownsState()) return;
     const model = event.model;
     s.rates = model.cost;
     s.modelLabel = `${model.provider}/${model.id}`;
     s.currentModelId = model.id;
-    // Caches are per-model on every provider; the stored token count is also in the old
-    // tokenizer's currency. Switching back before the next call revives both.
-    s.modelSwitched = s.lastCallModelId !== undefined && model.id !== s.lastCallModelId;
+    // Caches are per-model on every provider, and the same id through a different
+    // provider or wire api is a different cache too; the stored token count is also in
+    // the old tokenizer's currency. Switching back before the next call revives both.
+    s.modelSwitched = s.lastCallModelId !== undefined && (
+      model.id !== s.lastCallModelId ||
+      (s.lastCallProvider !== undefined && model.provider !== s.lastCallProvider) ||
+      (s.lastCallApi !== undefined && model.api !== s.lastCallApi)
+    );
     // Keep the freshness window honest across provider switches until the next
     // observation lands; an anthropic TTL observed from a live payload stays valid.
     if (!(model.provider === "anthropic" && s.window.kind === "contract" && s.window.source === "observed")) {
       s.window = windowForProvider(model.provider) ?? UNKNOWN_WINDOW;
     }
+    refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
     updateWidget();
   });
 
@@ -1000,6 +975,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
       compareFingerprints: diffFingerprints,
     });
     Object.assign(s, cacheStateForLineage(resolution, ctx.model?.provider, ctx.model?.id, s.window));
+    // Checking out a branch billed by another model is a switch in lineage terms.
+    refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
     updateWidget();
   });
 
@@ -1077,6 +1054,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       cacheWrite: usage.cacheWrite,
       provider: message.provider,
       model: message.model,
+      api: message.api,
       fingerprint: s.pendingFingerprint,
       window: s.pendingRequestWindow ?? s.window,
       recordIndex: record.index,
@@ -1097,7 +1075,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.pendingRequestWindow = undefined;
     // Fresh usage re-baselines the currency: counts are now denominated in this model.
     s.lastCallModelId = message.model ?? s.currentModelId ?? s.lastCallModelId;
+    s.lastCallProvider = message.provider ?? s.lastCallProvider;
+    s.lastCallApi = message.api ?? s.lastCallApi;
     s.modelSwitched = false;
+    s.switchForecast = undefined;
     s.lastCallThinkingLevel = s.currentThinkingLevel ?? s.lastCallThinkingLevel;
     s.thinkingChanged = false;
     // Keep the request-start anchor: resetting to response end here would credit the cache
@@ -1193,6 +1174,8 @@ export const internals = {
   UNKNOWN_WINDOW,
   predictBreak,
   renderBreakingLine,
+  computeSwitchForecast,
+  withinWarmHorizon,
   renderHeldLine,
   diffFingerprints,
   findBranchBaseline,

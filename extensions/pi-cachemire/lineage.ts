@@ -39,6 +39,7 @@ function billedSnapshotFromEntry(
     cacheWrite,
     provider,
     model: typeof entry.message.model === "string" ? entry.message.model : undefined,
+    api: typeof entry.message.api === "string" ? entry.message.api : undefined,
     window: windowForProvider(provider),
   };
 }
@@ -200,6 +201,8 @@ export function cacheStateForLineage(
   cachedTokens: number | undefined;
   lastRequestAt: number | undefined;
   lastCallModelId: string | undefined;
+  lastCallProvider: string | undefined;
+  lastCallApi: string | undefined;
   modelSwitched: boolean;
   window: CacheWindow;
 } {
@@ -209,6 +212,8 @@ export function cacheStateForLineage(
     cachedTokens: baseline?.promptTokens,
     lastRequestAt: refresh?.requestAt,
     lastCallModelId: baseline?.model,
+    lastCallProvider: baseline?.provider,
+    lastCallApi: baseline?.api,
     modelSwitched:
       (baseline?.provider !== undefined && currentProvider !== undefined && baseline.provider !== currentProvider) ||
       (baseline?.model !== undefined && currentModel !== undefined && baseline.model !== currentModel),

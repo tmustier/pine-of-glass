@@ -82,15 +82,8 @@ test("cache clock phases", () => {
   assert.equal(stale.phase, "stale");
   assert.equal(stale.text, "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix");
 
-  // Model switch: per-model caches everywhere — definite cold. The stored count is in
-  // the old tokenizer's currency, so it appears only with an explicit denomination tag
-  // (and never a $, which would compound the conversion error).
-  const switched = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true, oldModelId: "claude-fable-5" });
-  assert.equal(switched.phase, "cold");
-  assert.equal(switched.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt (~142.3k claude-fable-5 tokens)");
-  // Without a currency tag available the number is withheld outright.
-  const untagged = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
-  assert.equal(untagged.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt");
+  // Model-switch clock states (target-currency forecast, A→B→A warmth) live in
+  // tests/cachemire/model-switch.test.ts.
 
   // Thinking level change: Anthropic documents message-breakpoint invalidation with
   // system/tools surviving — a contract-backed stale state. Compaction outranks it.
@@ -268,13 +261,8 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   })!;
   assert.equal(tools.cause.kind, "tools");
 
-  // Model switch: certain break, but the size is in the old tokenizer — withheld.
-  const model = predictBreak({
-    ...base, gapMs: 1_000, window: CONTRACT_5M,
-    fingerprintCause: { kind: "model", detail: "model switched a \u2192 b" },
-  })!;
-  assert.equal(model.expectedRewriteTokens, undefined);
-  assert.equal(renderBreakingLine(model), "cache breaking \u00b7 re-writing the full prompt \u00b7 cause: model switched a \u2192 b");
+  // Model-switch predictions (sized target-currency estimates, warm-prior silence)
+  // live in tests/cachemire/model-switch.test.ts.
 
   // Thinking change: contract window (Anthropic, documented) predicts an unsized
   // re-write; a band window predicts nothing — effort is outside the prompt prefix.

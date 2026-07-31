@@ -26,6 +26,13 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
 export function renderBreakingLine(prediction: BreakPrediction): string {
   const size = prediction.expectedRewriteTokens
     ? ` \u00b7 re-writing ~${compactCount(prediction.expectedRewriteTokens)}${prediction.expectedUsd !== undefined ? ` (~${formatUsd(prediction.expectedUsd)})` : ""}`
+    : prediction.estimatedRewriteTokens !== undefined
+      // Model switch sized by the shared heuristics: the number is in the *target*
+      // currency and always wears est; gateway routes demote the wording further.
+      ? ` \u00b7 re-writing ~${compactCount(prediction.estimatedRewriteTokens)}` +
+        `${prediction.targetWindowTokens !== undefined ? ` of ${compactCount(prediction.targetWindowTokens)} ctx` : ""}` +
+        ` (${prediction.estimateBasis === "gateway" ? "rough est \u00b7 gateway route" : "est"}` +
+        `${prediction.estimatedUsd !== undefined ? ` \u00b7 ~${formatUsd(prediction.estimatedUsd)}` : ""})`
     : prediction.cause.kind === "compaction"
       ? " \u00b7 re-writing the new prefix"
       : prediction.cause.kind === "thinking"
