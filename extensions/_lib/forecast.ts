@@ -1,18 +1,9 @@
-// Target-model prompt forecasting (issue #57).
-//
-// After a model switch, the only honest token numbers are estimates in the *target*
-// model's currency: the old model's exact counts are in the wrong tokenizer and the
-// wrong serialization (pi drops or converts reasoning on cross-model handoffs). This
-// module estimates what pi's canonical history becomes for a target model: the
-// size-material subset of pi-ai's transformMessages, counted with the same family
-// denominators contextimate calibrated.
-//
-// The transform rules are deliberately a narrow local mirror, not a runtime import:
-// pi's extension loader only aliases pi-ai's compat surface (which does not export
-// transformMessages), and extensions resolve bare imports against their symlink
-// path, so a `pi-ai/api/transform-messages` import would only work in this repo's
-// dev layout. The contract suite runs in-repo where that import *does* resolve and
-// pins this mirror against the real function (tests/contract/pi-transform-messages).
+// Target-model prompt forecasting (issue #57): estimate what pi's canonical history
+// becomes for a target model, in that model's currency. The size-material rules of
+// pi-ai's transformMessages are mirrored locally because extensions cannot import it
+// at runtime (pi's loader only aliases the compat surface); the contract suite
+// (tests/contract/pi-transform-messages) compares this mirror against the real
+// function, so drift fails `npm test`.
 
 import {
   builtInHeuristicForModel,
@@ -30,16 +21,14 @@ export type TargetModel = ModelSummary & {
   input?: readonly string[];
 };
 
-// The message shapes below are the pi seam: callers pass convertToLlm() output
-// (pi-ai Message[]), typed structurally so _lib carries no pi-ai type dependency.
+// Callers pass convertToLlm() output (pi-ai Message[]), typed structurally so _lib
+// carries no pi-ai type dependency.
 type ForecastBlock = {
-  type?: string;
+  type: string;
   text?: string;
   thinking?: string;
   thinkingSignature?: string;
   redacted?: boolean;
-  data?: string;
-  mimeType?: string;
   id?: string;
   name?: string;
   arguments?: unknown;
@@ -47,8 +36,8 @@ type ForecastBlock = {
 };
 
 export type ForecastMessage = {
-  role?: string;
-  content?: unknown;
+  role: string;
+  content: unknown;
   provider?: string;
   api?: string;
   model?: string;
@@ -71,8 +60,10 @@ export interface HistoryForecast {
 
 // pi's compaction estimator counts an image as 4800 chars; reuse that convention
 // rather than inventing a second one (real image tokens are model-specific).
-const ESTIMATED_IMAGE_CHARS = 4800;
-const NON_VISION_PLACEHOLDER_CHARS = "(image omitted: model does not support images)".length;
+export const ESTIMATED_IMAGE_CHARS = 4800;
+// pi's transformMessages placeholders for non-vision targets, by message role.
+const NON_VISION_USER_PLACEHOLDER_CHARS = "(image omitted: model does not support images)".length;
+const NON_VISION_TOOL_PLACEHOLDER_CHARS = "(tool image omitted: model does not support images)".length;
 
 function sameModel(message: ForecastMessage, target: TargetModel): boolean {
   return message.provider === target.provider && message.api === target.api && message.model === target.id;
@@ -83,61 +74,59 @@ function blockList(content: unknown): ForecastBlock[] {
   return content.filter((block): block is ForecastBlock => typeof block === "object" && block !== null);
 }
 
-function reasoningPayloadChars(signature: string): number {
-  // Encrypted reasoning payloads replay verbatim; their char length is the honest
-  // size proxy (mirrors contextimate's session breakdown convention).
-  return signature.length;
-}
-
-function countImage(forecast: HistoryForecast, visionTarget: boolean): void {
-  forecast.imageCount += 1;
-  forecast.imageChars += visionTarget ? ESTIMATED_IMAGE_CHARS : NON_VISION_PLACEHOLDER_CHARS;
-}
-
-function countTextBlocks(forecast: HistoryForecast, content: unknown, visionTarget: boolean): void {
+// User and tool-result content. For non-vision targets pi collapses each *run* of
+// consecutive images into one role-specific placeholder.
+function countUserContent(forecast: HistoryForecast, content: unknown, visionTarget: boolean, placeholderChars: number): void {
   if (typeof content === "string") {
     forecast.textChars += content.length;
     return;
   }
+  let inImageRun = false;
   for (const block of blockList(content)) {
+    if (block.type === "image") {
+      forecast.imageCount += 1;
+      if (visionTarget) forecast.imageChars += ESTIMATED_IMAGE_CHARS;
+      else if (!inImageRun) forecast.imageChars += placeholderChars;
+      inImageRun = true;
+      continue;
+    }
+    inImageRun = false;
     if (block.type === "text") forecast.textChars += (block.text ?? "").length;
-    else if (block.type === "image") countImage(forecast, visionTarget);
   }
 }
 
 function countToolCall(forecast: HistoryForecast, block: ForecastBlock, isSame: boolean): void {
   // Tool calls replay as id/name/arguments; cross-model the thoughtSignature is
-  // stripped (pi-ai transformMessages), so it is never counted for a foreign target.
-  forecast.textChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments })?.length ?? 0;
-  if (isSame && typeof block.thoughtSignature === "string") {
-    forecast.keptReasoningChars += reasoningPayloadChars(block.thoughtSignature);
-  } else if (typeof block.thoughtSignature === "string") {
-    forecast.droppedReasoningChars += reasoningPayloadChars(block.thoughtSignature);
-  }
+  // stripped, so it is never counted for a foreign target. Encrypted payload char
+  // length is the size proxy throughout (contextimate's convention).
+  forecast.textChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }).length;
+  if (typeof block.thoughtSignature !== "string") return;
+  if (isSame) forecast.keptReasoningChars += block.thoughtSignature.length;
+  else forecast.droppedReasoningChars += block.thoughtSignature.length;
 }
 
 function countThinking(forecast: HistoryForecast, block: ForecastBlock, isSame: boolean): void {
   const signature = typeof block.thinkingSignature === "string" ? block.thinkingSignature : undefined;
-  const readable = (block.thinking ?? "").trim();
+  const readable = block.thinking ?? "";
   if (block.redacted) {
     // Redacted thinking is opaque encrypted content: replayed same-model, dropped otherwise.
     if (signature === undefined) return;
-    if (isSame) forecast.keptReasoningChars += reasoningPayloadChars(signature);
-    else forecast.droppedReasoningChars += reasoningPayloadChars(signature);
+    if (isSame) forecast.keptReasoningChars += signature.length;
+    else forecast.droppedReasoningChars += signature.length;
     return;
   }
   if (isSame) {
     // Same-model: signatures replay the encrypted payload (the readable summary is
     // not re-sent when a signature exists); signature-less readable thinking replays
-    // as text; empty blocks are skipped.
-    if (signature !== undefined) forecast.keptReasoningChars += reasoningPayloadChars(signature);
-    else if (readable.length > 0) forecast.keptReasoningChars += readable.length;
+    // as-is; blank blocks are skipped.
+    if (signature !== undefined) forecast.keptReasoningChars += signature.length;
+    else if (readable.trim().length > 0) forecast.keptReasoningChars += readable.length;
     return;
   }
-  // Cross-model: readable thinking becomes ordinary assistant text; the encrypted
-  // payload (if any) is dropped; empty blocks vanish.
-  if (readable.length > 0) forecast.textChars += readable.length;
-  if (signature !== undefined) forecast.droppedReasoningChars += reasoningPayloadChars(signature);
+  // Cross-model: readable thinking becomes ordinary assistant text (blank blocks
+  // vanish); the encrypted payload, if any, is dropped.
+  if (readable.trim().length > 0) forecast.textChars += readable.length;
+  if (signature !== undefined) forecast.droppedReasoningChars += signature.length;
 }
 
 /**
@@ -166,12 +155,12 @@ export function forecastHistoryForTarget(messages: readonly ForecastMessage[], t
         if (block.type === "thinking") countThinking(forecast, block, isSame);
         else if (block.type === "toolCall") countToolCall(forecast, block, isSame);
         else if (block.type === "text") forecast.textChars += (block.text ?? "").length;
-        else if (block.type === "image") countImage(forecast, visionTarget);
       }
       continue;
     }
     forecast.messageCount += 1;
-    countTextBlocks(forecast, message.content, visionTarget);
+    const placeholderChars = message.role === "toolResult" ? NON_VISION_TOOL_PLACEHOLDER_CHARS : NON_VISION_USER_PLACEHOLDER_CHARS;
+    countUserContent(forecast, message.content, visionTarget, placeholderChars);
   }
   return forecast;
 }

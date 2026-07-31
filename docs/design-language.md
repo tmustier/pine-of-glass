@@ -17,7 +17,7 @@ The extensions answer adjacent questions about the same agent loop:
 |---|---|---|---|
 | contextimate | static prefix | estimated tokens | what am I carrying? |
 | traceline | per tool call | exact chars | what did tools do? |
-| cachemire | per model call or turn | exact provider tokens and dollars | what did the loop cost, and why? |
+| cachemire | per model call or turn | exact provider tokens and dollars (estimated across a model switch) | what did the loop cost, and why? |
 | meantime | per stream segment | exact wall-clock ms | what happened in the meantime? |
 
 They should read as one instrument panel, not four apps that happen to share a repo.

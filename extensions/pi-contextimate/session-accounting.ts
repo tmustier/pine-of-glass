@@ -249,6 +249,9 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
     // `!!` bash messages that convertToLlm deliberately omits from provider context.
     breakdown.contextUsageEstimated = lastTrustedContextIndex !== messages.length - 1;
     const lastBilled = anchor?.role === "assistant"
+      && typeof anchor.provider === "string"
+      && typeof anchor.model === "string"
+      && typeof anchor.api === "string"
       ? { provider: anchor.provider, id: anchor.model, api: anchor.api }
       : undefined;
     return { breakdown, lastBilled };

@@ -1,11 +1,7 @@
-// Model-switch prompt forecast (issue #57): what will the *target* model receive?
-//
-// After /model, the only provider-exact numbers on hand are denominated in the old
-// model's tokenizer, so the clock and the break notice need an estimate in the target
-// currency instead. This module builds that estimate from pi's canonical history via
-// the shared family heuristics (_lib/forecast.ts), and checks whether the target model
-// itself has a path-compatible billed call whose cache entry may still be live (an
-// A→B→A switch-back is warm, not cold).
+// Model-switch prompt forecast (issue #57): estimate the prompt in the *target*
+// model's currency (the old model's exact counts are in the wrong tokenizer), and
+// find the target's own path-compatible billed call (an A→B→A switch-back may
+// revive that cache entry, not the old model's).
 
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
@@ -56,13 +52,19 @@ export function computeSwitchForecast(args: {
     droppedReasoningChars: 0,
   };
   const targetSnapshots = args.snapshots.filter(
-    (snapshot) => snapshot.provider === args.target.provider && snapshot.model === args.target.id,
+    (snapshot) => snapshot.provider === args.target.provider && snapshot.model === args.target.id &&
+      (snapshot.api === undefined || snapshot.api === args.target.api),
   );
   const prior = findBranchBaseline(args.entries, args.activeLeafId, targetSnapshots);
   if (prior) forecast.prior = { requestAt: prior.requestAt, window: prior.window };
+  let history: ForecastMessage[] | undefined;
   try {
-    const { messages } = buildSessionContext(args.entries, args.activeLeafId);
-    const history = convertToLlm(messages) as unknown as ForecastMessage[];
+    history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];
+  } catch {
+    // SAFETY: buildSessionContext/convertToLlm are pi seams; a shape drift must degrade
+    // to an unsized "cold expected" clock, never break the model switch itself.
+  }
+  if (history) {
     const prompt = forecastTargetPrompt({
       history,
       systemPromptChars: args.systemPromptChars,
@@ -71,9 +73,6 @@ export function computeSwitchForecast(args: {
     });
     forecast.estTokens = prompt.tokens;
     forecast.droppedReasoningChars = prompt.droppedReasoningChars;
-  } catch {
-    // SAFETY: buildSessionContext/convertToLlm are pi seams; a shape drift must degrade
-    // to an unsized "cold expected" clock, never break the model switch itself.
   }
   return forecast;
 }

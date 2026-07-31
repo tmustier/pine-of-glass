@@ -1493,6 +1493,8 @@ export default function piContextimate(pi: ExtensionAPI) {
 
   pi.on("message_end", async () => markDirty());
   pi.on("session_compact", async () => markDirty());
+  // Branch checkout can change the model that billed the latest usage (issue #58).
+  pi.on("session_tree", async () => markDirty());
 
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;

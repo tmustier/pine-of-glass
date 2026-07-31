@@ -19,8 +19,9 @@ be cheap or will re-bill the whole prefix.
 
 For Anthropic, the clock shows a contract-TTL countdown. It reads the observed
 `cache_control`, not config. For OpenAI, it shows a documented three-zone band. For
-unknown providers, it uses softer wording. The promised re-write size always uses
-provider-exact usage. It is never an estimate.
+unknown providers, it uses softer wording. The promised re-write size uses
+provider-exact usage, with one exception: after a model switch it is an estimate in
+the new model's tokenizer, and says so.
 
 ```
 ◍ cache 4m30s                                    (green → yellow under 60s)
@@ -130,9 +131,9 @@ Set `turnSummaryMinCalls` higher if you only want a ledger line for multi-call t
 
 Cachemire follows these rules:
 
-- All token and cost numbers come from provider-reported usage in assistant messages.
-  Cachemire does not estimate them. Forensic causes come from observed payload diffs.
-  Cachemire does not infer them.
+- Token and cost numbers come from provider-reported usage in assistant messages.
+  The one estimate is the model-switch forecast, which is always labelled `est`.
+  Forensic causes come from observed payload diffs. Cachemire does not infer them.
 - Everything Cachemire draws is UI-only. It does not enter LLM context, session
   entries or exports.
 - Freshness wording reflects how much is known. A contract TTL gets a definite
@@ -171,7 +172,7 @@ matching), the cause ladder and the state and lifecycle trade-offs.
 |---|---|---|---|
 | contextimate | static prefix | estimated tokens | what am I carrying? |
 | traceline | per tool call | exact chars | what did tools do? |
-| **cachemire** | per model call / turn | exact provider tokens & $ | what did the loop cost, and why? |
+| **cachemire** | per model call / turn | exact provider tokens & $ (est across a model switch) | what did the loop cost, and why? |
 
 The ledger starts with the family panel header (`[Cachemire]` in the theme accent).
 The shared `ink()` helper provides theme-derived tones. The `◍` / `○ ● ◑ ◌` glyphs

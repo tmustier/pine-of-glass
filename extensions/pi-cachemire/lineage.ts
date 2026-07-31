@@ -141,22 +141,31 @@ function descendantsOf(entries: readonly unknown[], rootId: string): Set<string>
   return descendants;
 }
 
+function changed(a: string | undefined, b: string | undefined): boolean {
+  return a !== undefined && b !== undefined && a !== b;
+}
+
 function identityCause(
   baseline: CacheLineageSnapshot,
   provider: string | undefined,
   model: string | undefined,
+  api: string | undefined,
 ): CallCause | undefined {
-  const providerChanged = baseline.provider !== undefined && provider !== undefined && baseline.provider !== provider;
-  const modelChanged = baseline.model !== undefined && model !== undefined && baseline.model !== model;
-  if (!providerChanged && !modelChanged) return undefined;
+  const providerChanged = changed(baseline.provider, provider);
+  const modelChanged = changed(baseline.model, model);
+  const apiChanged = changed(baseline.api, api);
+  if (!providerChanged && !modelChanged && !apiChanged) return undefined;
   const before = [baseline.provider, baseline.model].filter(Boolean).join("/") || "previous model";
   const after = [provider, model].filter(Boolean).join("/") || "current model";
-  return { kind: "model", detail: `model switched ${before} → ${after}` };
+  // Same provider/model over a different wire API is still a different cache.
+  const detail = providerChanged || modelChanged
+    ? `model switched ${before} → ${after}`
+    : `model switched ${before} (${baseline.api}) → ${after} (${api})`;
+  return { kind: "model", detail };
 }
 
 function sameIdentity(a: CacheLineageSnapshot, b: CacheLineageSnapshot): boolean {
-  return (a.provider === undefined || b.provider === undefined || a.provider === b.provider) &&
-    (a.model === undefined || b.model === undefined || a.model === b.model);
+  return !changed(a.provider, b.provider) && !changed(a.model, b.model) && !changed(a.api, b.api);
 }
 
 function sameWindow(a: CacheWindow | undefined, b: CacheWindow | undefined): boolean {
@@ -193,8 +202,7 @@ function pathContainsCompaction(
 /** Project a lineage resolution onto the cache clock's baseline state. */
 export function cacheStateForLineage(
   resolution: ResolvedCacheLineage,
-  currentProvider: string | undefined,
-  currentModel: string | undefined,
+  current: { provider?: string; model?: string; api?: string },
   fallbackWindow: CacheWindow,
 ): {
   expectedRead: number;
@@ -214,9 +222,11 @@ export function cacheStateForLineage(
     lastCallModelId: baseline?.model,
     lastCallProvider: baseline?.provider,
     lastCallApi: baseline?.api,
-    modelSwitched:
-      (baseline?.provider !== undefined && currentProvider !== undefined && baseline.provider !== currentProvider) ||
-      (baseline?.model !== undefined && currentModel !== undefined && baseline.model !== currentModel),
+    modelSwitched: baseline !== undefined && (
+      changed(baseline.provider, current.provider) ||
+      changed(baseline.model, current.model) ||
+      changed(baseline.api, current.api)
+    ),
     window: refresh?.window ?? fallbackWindow,
   };
 }
@@ -232,12 +242,13 @@ export function resolveCacheLineage(args: {
   snapshots: readonly CacheLineageSnapshot[];
   currentProvider?: string;
   currentModel?: string;
+  currentApi?: string;
   currentFingerprint?: RequestFingerprint;
   compareFingerprints: (baseline: RequestFingerprint, current: RequestFingerprint) => CallCause | undefined;
 }): ResolvedCacheLineage {
   const baseline = findBranchBaseline(args.entries, args.activeLeafId, args.snapshots);
   if (!baseline) return { compatible: [] };
-  let cause = identityCause(baseline, args.currentProvider, args.currentModel) ??
+  let cause = identityCause(baseline, args.currentProvider, args.currentModel, args.currentApi) ??
     (baseline.fingerprint && args.currentFingerprint
       ? args.compareFingerprints(baseline.fingerprint, args.currentFingerprint)
       : undefined);

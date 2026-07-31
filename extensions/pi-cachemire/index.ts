@@ -71,8 +71,10 @@ export type {
  *      multi-call turns) and a /cache command with the full per-call table plus actual vs
  *      counterfactual-uncached spend ("caching saved $X").
  *
- * Numbers are provider-exact (assistant-message usage) — never estimated. Display is
- * UI-only: nothing cachemire renders enters LLM context, session entries, or exports.
+ * Numbers are provider-exact (assistant-message usage), except after a model switch:
+ * the exact counts on hand are old-model currency, so the prompt is forecast in the
+ * target tokenizer and marked est (issue #57). Display is UI-only: nothing cachemire
+ * renders enters LLM context, session entries, or exports.
  * Anthropic gets the full treatment (explicit breakpoints, 5m/1h TTL, priced writes);
  * other providers degrade honestly to observed reads and soft "likely warm/cold" wording.
  */
@@ -750,13 +752,6 @@ function resolveNotice(text: string): void {
   s.tui?.requestRender?.(true);
 }
 
-function activeToolShapes(pi: ExtensionAPI): ToolShape[] {
-  const active = new Set(pi.getActiveTools());
-  return pi.getAllTools()
-    .filter((tool) => active.has(tool.name))
-    .map((tool) => ({ name: tool.name, description: tool.description, schema: tool.parameters }));
-}
-
 /** Recompute (or clear) the switch forecast from the current canonical history. */
 function refreshSwitchForecast(
   pi: ExtensionAPI,
@@ -769,12 +764,15 @@ function refreshSwitchForecast(
     s.switchForecast = undefined;
     return;
   }
+  const active = new Set(pi.getActiveTools());
   s.switchForecast = computeSwitchForecast({
     target,
     entries: ctx.sessionManager.getEntries(),
     activeLeafId,
     systemPromptChars: ctx.getSystemPrompt().length,
-    tools: activeToolShapes(pi),
+    tools: pi.getAllTools()
+      .filter((tool) => active.has(tool.name))
+      .map((tool) => ({ name: tool.name, description: tool.description, schema: tool.parameters })),
     snapshots: s.lineages,
   });
 }
@@ -804,8 +802,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     }
     Object.assign(s, cacheStateForLineage(
       { baseline, refresh: baseline, compatible: [] },
-      model?.provider,
-      model?.id,
+      { provider: model?.provider, model: model?.id, api: model?.api },
       baseline?.window ?? windowForProvider(model?.provider) ?? UNKNOWN_WINDOW,
     ));
     s.prevCallRequestAt = s.records.at(-1)?.at || undefined;
@@ -852,13 +849,13 @@ export default function piCachemire(pi: ExtensionAPI): void {
       snapshots: s.lineages,
       currentProvider: ctx.model?.provider,
       currentModel: ctx.model?.id ?? s.pendingFingerprint.model,
+      currentApi: ctx.model?.api,
       currentFingerprint: s.pendingFingerprint,
       compareFingerprints: diffFingerprints,
     });
     Object.assign(s, cacheStateForLineage(
       resolution,
-      ctx.model?.provider,
-      ctx.model?.id ?? s.pendingFingerprint.model,
+      { provider: ctx.model?.provider, model: ctx.model?.id ?? s.pendingFingerprint.model, api: ctx.model?.api },
       s.window,
     ));
     s.pendingFingerprintCause = resolution.cause;
@@ -904,10 +901,12 @@ export default function piCachemire(pi: ExtensionAPI): void {
             withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt),
         },
       });
+      const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;
+      const sizedUsd = prediction?.expectedUsd ?? prediction?.estimatedUsd;
       const material = prediction !== undefined && (
-        prediction.expectedRewriteTokens === undefined || // unsized (compaction/model/thinking): explicit user action, the notice is its explanation
-        prediction.expectedRewriteTokens >= s.config.missWarnTokens ||
-        (prediction.expectedUsd ?? 0) >= s.config.missWarnUsd
+        sizedTokens === undefined || // unsized (compaction/model/thinking): explicit user action, the notice is its explanation
+        sizedTokens >= s.config.missWarnTokens ||
+        (sizedUsd ?? 0) >= s.config.missWarnUsd
       );
       if (material) {
         const text = econLine("warning", renderBreakingLine(prediction));
@@ -971,10 +970,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
       snapshots: s.lineages,
       currentProvider: ctx.model?.provider,
       currentModel: ctx.model?.id,
+      currentApi: ctx.model?.api,
       currentFingerprint: baseline?.fingerprint,
       compareFingerprints: diffFingerprints,
     });
-    Object.assign(s, cacheStateForLineage(resolution, ctx.model?.provider, ctx.model?.id, s.window));
+    Object.assign(s, cacheStateForLineage(resolution, { provider: ctx.model?.provider, model: ctx.model?.id, api: ctx.model?.api }, s.window));
     // Checking out a branch billed by another model is a switch in lineage terms.
     refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
     updateWidget();

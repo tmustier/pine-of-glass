@@ -1,11 +1,12 @@
 // Model-switch forecasting (issue #57): the clock's target-currency states, the sized
-// break prediction, and computeSwitchForecast wiring over real pi session machinery.
+// break prediction, computeSwitchForecast wiring over real pi session machinery, and
+// the event flow from model_select through message_end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-cachemire/index.ts";
+import piCachemire, { internals } from "../../extensions/pi-cachemire/index.ts";
 import { computeSwitchForecast, type SwitchTarget } from "../../extensions/pi-cachemire/forecast.ts";
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 const { cacheClock, predictBreak, renderBreakingLine, restoreLineageSnapshots, withinWarmHorizon } = internals;
 
@@ -166,6 +167,118 @@ test("computeSwitchForecast: gateway targets are labelled, not refused a number"
   });
   assert.equal(forecast.basis, "gateway");
   assert.ok(forecast.estTokens !== undefined && forecast.estTokens > 0);
+});
+
+// --- event flow ---------------------------------------------------------------------------
+
+type Handler = (...args: unknown[]) => unknown;
+
+function extensionProbe(): { handlers: Map<string, Handler[]> } {
+  const handlers = new Map<string, Handler[]>();
+  const pi = {
+    on(event: string, handler: Handler): void {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+    },
+    registerCommand(): void {},
+    getThinkingLevel: () => "off",
+    getActiveTools: () => [],
+    getAllTools: () => [],
+  } as unknown as ExtensionAPI;
+  piCachemire(pi);
+  return { handlers };
+}
+
+async function fire(probe: ReturnType<typeof extensionProbe>, event: string, ...args: unknown[]): Promise<void> {
+  for (const handler of probe.handlers.get(event) ?? []) await handler(...args);
+}
+
+function billedAssistant(model: string, api: string, prompt: number, userChars: number) {
+  return [
+    { type: "message", id: "u1", parentId: null, timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: "q".repeat(userChars), timestamp: 1_000 } },
+    { type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-01T10:00:05.000Z", message: {
+      role: "assistant", content: [{ type: "text", text: "answer" }], provider: "anthropic", api, model,
+      stopReason: "stop", timestamp: Date.now(), usage: usage(2, prompt - 2, 0),
+    } },
+  ];
+}
+
+function probeContext(entries: unknown[], api: string, notifications: string[], widgets: string[]) {
+  return {
+    hasUI: true,
+    ui: {
+      theme: undefined,
+      setWidget(_key: string, widget?: unknown): void {
+        // Cachemire also registers a TUI-capture hook through setWidget; only record
+        // real widget lines.
+        if (typeof widget === "function") widget({ requestRender: () => {} });
+        else widgets.push(Array.isArray(widget) ? widget.join("\n") : "");
+      },
+      notify(text: string): void {
+        notifications.push(text);
+      },
+    },
+    model: {
+      id: "claude-opus-4-8", provider: "anthropic", api, reasoning: false, contextWindow: 200_000,
+      cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    },
+    sessionManager: { getEntries: () => entries, getLeafId: () => "a1" },
+    getSystemPrompt: () => "",
+  };
+}
+
+const ANTHROPIC_PAYLOAD = {
+  model: "claude-opus-4-8",
+  system: [{ type: "text", text: "fixture", cache_control: { type: "ephemeral" } }],
+  messages: [{ role: "user", content: [{ type: "text", text: "next" }] }],
+};
+
+test("event flow: the same model over a different wire API is a switch", async () => {
+  // Baseline billed over anthropic-messages; the session resumes on bedrock-anthropic.
+  const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200);
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const probe = extensionProbe();
+  const ctx = probeContext(entries, "bedrock-anthropic", notifications, widgets);
+
+  await fire(probe, "session_start", {}, ctx);
+  try {
+    assert.match(widgets.at(-1)!, /model switched/, "an API-only switch must flip the clock at session_start");
+    assert.match(widgets.at(-1)!, /\(est\)/, "the forecast must be marked as an estimate");
+
+    // Send time: the tiny estimated re-write is below the materiality thresholds, so
+    // no break notice is posted (the widget already explains the switch).
+    await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
+    assert.equal(notifications.length, 0, "an immaterial estimated re-write must not post a notice");
+    assert.match(widgets.at(-1)!, /model switched/);
+
+    // Usage billed over the new API re-baselines: the switch state clears.
+    await fire(probe, "message_end", { message: {
+      role: "assistant", content: [], provider: "anthropic", api: "bedrock-anthropic", model: "claude-opus-4-8",
+      stopReason: "stop", timestamp: Date.now(), usage: usage(80_000, 0, 0),
+    } });
+    assert.doesNotMatch(widgets.at(-1)!, /model switched/, "fresh usage must re-baseline the currency");
+  } finally {
+    await fire(probe, "session_shutdown", {});
+  }
+});
+
+test("event flow: a material estimated re-write posts one est-marked notice", async () => {
+  // 200k chars of history → ~77k estimated tokens, far above the 20k threshold.
+  const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200_000);
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const probe = extensionProbe();
+  const ctx = probeContext(entries, "bedrock-anthropic", notifications, widgets);
+
+  await fire(probe, "session_start", {}, ctx);
+  try {
+    await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
+    assert.equal(notifications.length, 1, "a material estimated re-write must post a notice");
+    assert.match(notifications[0]!, /re-writing ~7[0-9]\.\dk of 200\.0k ctx \(est/);
+    assert.match(notifications[0]!, /model switched/);
+  } finally {
+    await fire(probe, "session_shutdown", {});
+  }
 });
 
 test("computeSwitchForecast: finds the target's own prior call on the active path only", () => {

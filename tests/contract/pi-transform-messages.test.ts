@@ -1,15 +1,15 @@
-// Contract tests: the size-material rules of pi-ai's transformMessages that
-// _lib/forecast.ts mirrors for the model-switch prompt forecast (issue #57).
-// The forecast cannot import transformMessages at runtime (pi's loader only aliases
-// the compat surface, and compiled binaries have no filesystem resolution), so this
-// suite pins the mirror against the real function through the repo's node_modules.
-// When one of these fails after `pi update`, update extensions/_lib/forecast.ts to match.
+// Contract: _lib/forecast.ts mirrors the size-material rules of pi-ai's
+// transformMessages. The forecast cannot import that function at runtime (pi's loader
+// only aliases the compat surface), so this suite runs BOTH implementations over the
+// same histories and compares the resulting material char counts. When a case fails
+// after `pi update`, update extensions/_lib/forecast.ts to match the real transform.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import type { Message, Model, Api } from "@earendil-works/pi-ai";
 
+import { ESTIMATED_IMAGE_CHARS, forecastHistoryForTarget, type ForecastMessage } from "../../extensions/_lib/forecast.ts";
 import { assistantMessage } from "../helpers.ts";
 
 function fakeModel(overrides: Partial<Model<Api>> = {}): Model<Api> {
@@ -28,93 +28,132 @@ function fakeModel(overrides: Partial<Model<Api>> = {}): Model<Api> {
   } as Model<Api>;
 }
 
-const anthropicModel = fakeModel({
-  id: "claude-opus-4-8",
-  api: "anthropic-messages",
-  provider: "anthropic",
-  contextWindow: 200_000,
-});
-
 type AssistantContent = Extract<Message, { role: "assistant" }>["content"];
 
-function contentTypes(message: Message): string[] {
-  return Array.isArray(message.content)
-    ? (message.content as Array<{ type: string }>).map((block) => block.type)
-    : [];
+// The forecast's char conventions applied to real transform *output*: text and
+// tool-call structure verbatim, encrypted payloads at signature length, images at
+// pi's flat estimate. Applying one convention to both sides isolates the transform
+// rules themselves — any drop/convert/skip disagreement shifts the totals apart.
+function materialCharsOfTransform(messages: Message[]): number {
+  let chars = 0;
+  for (const message of messages) {
+    if (typeof message.content === "string") {
+      chars += message.content.length;
+      continue;
+    }
+    for (const block of message.content) {
+      if (block.type === "text") chars += block.text.length;
+      else if (block.type === "image") chars += ESTIMATED_IMAGE_CHARS;
+      else if (block.type === "toolCall") {
+        chars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }).length;
+        chars += block.thoughtSignature?.length ?? 0;
+      } else if (block.type === "thinking") {
+        chars += block.thinkingSignature !== undefined ? block.thinkingSignature.length : block.thinking.length;
+      }
+    }
+  }
+  return chars;
 }
 
-test("cross-model transform: readable thinking becomes text, encrypted payloads drop", () => {
-  // A Sol-style turn switching to Luna: same provider+api, different model id.
-  const solTurn = assistantMessage(
-    [
-      { type: "thinking", thinking: "readable summary", thinkingSignature: "ENCRYPTED" },
-      { type: "thinking", thinking: "", thinkingSignature: "SIGNATURE-ONLY" },
-      { type: "text", text: "the answer" },
-    ] as AssistantContent,
-    { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol" },
-  );
-  const out = transformMessages([solTurn], fakeModel());
-  assert.equal(out.length, 1, "cross-model turns are transformed, not dropped");
-  assert.deepEqual(
-    contentTypes(out[0]),
-    ["text", "text"],
-    "readable thinking must convert to text and signature-only thinking must vanish — forecast countThinking mirrors this",
-  );
-  const texts = (out[0].content as Array<{ type: string; text?: string }>).map((block) => block.text);
-  assert.ok(texts[0]?.includes("readable summary"), "converted thinking keeps the readable chars the forecast counts");
-  assert.equal(texts[1], "the answer");
-});
+function materialCharsOfForecast(messages: Message[], model: Model<Api>): number {
+  const forecast = forecastHistoryForTarget(messages as unknown as ForecastMessage[], {
+    provider: model.provider,
+    id: model.id,
+    api: model.api,
+    input: model.input,
+  });
+  return forecast.textChars + forecast.keptReasoningChars + forecast.imageChars;
+}
 
-test("cross-model transform: redacted thinking is dropped entirely", () => {
-  const turn = assistantMessage(
-    [
-      { type: "thinking", thinking: "", thinkingSignature: "REDACTED-PAYLOAD", redacted: true },
-      { type: "text", text: "visible" },
-    ] as AssistantContent,
-    { provider: "anthropic", api: "anthropic-messages", model: "claude-opus-4-8" },
+function assertMirror(messages: Message[], model: Model<Api>, label: string): void {
+  assert.equal(
+    materialCharsOfForecast(messages, model),
+    materialCharsOfTransform(transformMessages(messages, model)),
+    `forecast disagrees with transformMessages: ${label}`,
   );
-  const out = transformMessages([turn], fakeModel());
-  assert.deepEqual(contentTypes(out[0]), ["text"], "redacted thinking must drop cross-model — forecast droppedReasoningChars mirrors this");
-});
+}
 
-test("same-model transform: signature-bearing thinking is kept for replay", () => {
-  const turn = assistantMessage(
-    [{ type: "thinking", thinking: "readable", thinkingSignature: "ENCRYPTED" }, { type: "text", text: "hi" }] as AssistantContent,
-    { provider: "anthropic", api: "anthropic-messages", model: "claude-opus-4-8" },
-  );
-  const out = transformMessages([turn], anthropicModel);
-  assert.deepEqual(contentTypes(out[0]), ["thinking", "text"], "same-model thinking must survive — forecast keptReasoningChars mirrors this");
-});
-
-test("cross-model transform: toolCall thoughtSignature is stripped", () => {
-  const turn = assistantMessage(
-    [
-      { type: "toolCall", id: "t1", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "TOOL-THOUGHT" },
-    ] as AssistantContent,
-    { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol", stopReason: "toolUse" },
-  );
-  const out = transformMessages([turn], fakeModel());
-  const call = (out[0].content as Array<{ type: string; thoughtSignature?: string }>).find((block) => block.type === "toolCall");
-  assert.ok(call, "tool call survives cross-model");
-  assert.equal(call.thoughtSignature, undefined, "thoughtSignature must strip cross-model — forecast never counts it for a foreign target");
-});
-
-test("transform skips aborted and error assistant turns", () => {
-  const messages: Message[] = [
-    { role: "user", content: "hello", timestamp: 1 } as Message,
+// A history exercising every transform rule at once. Tool calls have matching
+// results (orphans get synthetic results pi inserts and the forecast deliberately
+// ignores — pinned separately below).
+function richHistory(): Message[] {
+  return [
+    { role: "user", content: "plain string user message", timestamp: 1 } as Message,
+    {
+      role: "user",
+      timestamp: 2,
+      content: [
+        { type: "text", text: "before images" },
+        { type: "image", data: "aGk=", mimeType: "image/png" },
+        { type: "image", data: "aGk=", mimeType: "image/png" }, // consecutive: one placeholder when non-vision
+        { type: "text", text: "between" },
+        { type: "image", data: "aGk=", mimeType: "image/png" }, // new run: second placeholder
+      ],
+    } as Message,
+    assistantMessage(
+      [
+        { type: "thinking", thinking: "readable summary", thinkingSignature: "ENCRYPTED-SOL-PAYLOAD" },
+        { type: "thinking", thinking: "", thinkingSignature: "SIGNATURE-ONLY" },
+        { type: "thinking", thinking: "   \n  ", thinkingSignature: undefined }, // blank: vanishes even same-model
+        { type: "thinking", thinking: "", thinkingSignature: "REDACTED", redacted: true },
+        { type: "toolCall", id: "t1", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "TOOL-THOUGHT" },
+      ] as AssistantContent,
+      { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol", stopReason: "toolUse" },
+    ),
+    {
+      role: "toolResult",
+      toolCallId: "t1",
+      toolName: "read",
+      content: [
+        { type: "text", text: "tool result text" },
+        { type: "image", data: "aGk=", mimeType: "image/png" }, // tool placeholder differs from user placeholder
+      ],
+      isError: false,
+      timestamp: 4,
+    } as Message,
     assistantMessage([{ type: "text", text: "half an answer" }] as AssistantContent, { stopReason: "aborted" }),
     assistantMessage([{ type: "text", text: "failed" }] as AssistantContent, { stopReason: "error", errorMessage: "boom" }),
+    assistantMessage(
+      [{ type: "thinking", thinking: "unsigned readable thinking" }, { type: "text", text: "the answer" }] as AssistantContent,
+      { provider: "anthropic", api: "anthropic-messages", model: "claude-opus-4-8" },
+    ),
   ];
-  const out = transformMessages(messages, anthropicModel);
-  assert.equal(out.filter((message) => message.role === "assistant").length, 0, "aborted/error turns must vanish — forecast skips them");
+}
+
+test("mirror: cross-model transform to a vision target", () => {
+  assertMirror(richHistory(), fakeModel(), "sol/opus history → luna");
 });
 
-test("non-vision target: images become placeholder text", () => {
-  const messages: Message[] = [
-    { role: "user", content: [{ type: "image", data: "aGk=", mimeType: "image/png" }], timestamp: 1 } as Message,
+test("mirror: cross-model transform to a non-vision target (image placeholders)", () => {
+  assertMirror(richHistory(), fakeModel({ input: ["text"] }), "sol/opus history → non-vision luna");
+});
+
+test("mirror: same-model replay keeps reasoning payloads", () => {
+  const opus = fakeModel({ id: "claude-opus-4-8", api: "anthropic-messages", provider: "anthropic", contextWindow: 200_000 });
+  assertMirror(richHistory(), opus, "sol/opus history → opus (opus turns replay)");
+  const sol = fakeModel({ id: "gpt-5.6-sol" });
+  assertMirror(richHistory(), sol, "sol/opus history → sol (sol turns replay)");
+});
+
+test("cross-model drops are the encrypted payloads, nothing else", () => {
+  const forecast = forecastHistoryForTarget(richHistory() as unknown as ForecastMessage[], {
+    provider: "openai-codex", id: "gpt-5.6-luna", api: "openai-codex-responses",
+  });
+  // ENCRYPTED-SOL-PAYLOAD + SIGNATURE-ONLY + REDACTED + TOOL-THOUGHT
+  assert.equal(forecast.droppedReasoningChars, 21 + 14 + 8 + 12);
+});
+
+test("known divergence: pi synthesizes results for orphaned tool calls; the forecast ignores them", () => {
+  const orphaned = [
+    assistantMessage(
+      [{ type: "toolCall", id: "t9", name: "bash", arguments: { command: "ls" } }] as AssistantContent,
+      { stopReason: "toolUse" },
+    ),
   ];
-  const out = transformMessages(messages, fakeModel({ input: ["text"] }));
-  const types = contentTypes(out[0]);
-  assert.ok(!types.includes("image"), "images must not reach a non-vision target");
-  assert.ok(types.includes("text"), "a small text placeholder replaces the image — forecast counts placeholder chars");
+  const synthetic = transformMessages(orphaned, fakeModel()).filter((message) => message.role === "toolResult");
+  assert.equal(synthetic.length, 1, "pi must still synthesize a result — otherwise the forecast's omission is wrong");
+  assert.ok(
+    materialCharsOfTransform(synthetic) < 100,
+    "a synthetic result must stay immaterial for the forecast to keep ignoring it",
+  );
 });
