@@ -30,4 +30,5 @@
 ◍ cache broke · re-wrote 153.0k of 153.2k prompt (100%) · $2.97 · cause: idle 7m00s > 5m TTL
 ◍ cache partial · read 90.0k of 152.1k expected · re-wrote 62.1k (41% of prompt) · cause: unknown (provider-side eviction?)
 ◍ cache held · read 150.3k of 150.3k expected · prefix stayed warm
+◍ cache held · read 28.2k (100% of prompt) · the new model already had the prefix cached
 ◍ turn: 3 calls · 4m30s · read 450.9k (99.5% cached) · wrote 3.6k · out 1.2k · $0.18

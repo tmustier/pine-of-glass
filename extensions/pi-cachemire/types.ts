@@ -48,6 +48,10 @@ export interface CallRecord {
   expectedRead: number;
   classification: CallClassification;
   rewroteTokens: number;
+  /** Usage arrived through a different model identity than the tracked expectation:
+   * expectedRead is denominated in the previous model's tokenizer and must never be
+   * composed with this call's counts (design language §7). */
+  switched?: boolean;
   postCompaction?: { modelSwitched: boolean };
   costUsd?: number;
   uncachedUsd?: number;

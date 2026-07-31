@@ -213,7 +213,14 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   tense: `cache breaking · sending ~32.4k uncached to anthropic (20.7k +13.8k
   tokenizer -2.1k dropped thinking · est · ~$0.41) · cause: model switched
   openai-codex/gpt-5.6-sol → anthropic/claude-fable-5`; the resolved line stays
-  past tense and provider-exact (`cache broke · re-wrote 28.2k …`)
+  past tense and provider-exact (`cache broke · re-wrote 28.2k …`). Resolution
+  obeys the same currency rule: the pre-switch expectation is denominated in the
+  old model's tokenizer, so a switched call is classified and rendered against its
+  own billed prompt only. A switched send that lands warm (a twin session's
+  identical prefix, or the model's own surviving entry) reads `cache held · read
+  28.2k (100% of prompt) · the new model already had the prefix cached`, never
+  `read 28.2k of 20.6k expected`, which composes two currencies into an impossible
+  137% claim
 - certainty ladder: contract-backed evidence gets definite words (`cache cold`);
   a documented band gets hedged words (`cache fading`); an unknown provider gets
   `likely`. Never write definite words on soft evidence

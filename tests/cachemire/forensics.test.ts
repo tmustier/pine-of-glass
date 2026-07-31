@@ -171,6 +171,20 @@ test("classification ladder", () => {
   assert.equal(classifyCall({ isFirst: true, usage: usage(0), expectedRead: 0 }).kind, "cold");
   assert.equal(classifyCall({ isFirst: false, usage: usage(95_000), expectedRead: 100_000 }).kind, "hit");
 
+  // After a model switch expectedRead is old-currency: the call's own prompt is the
+  // denominator (a full warm read is a hit, not the 137% the old expectation implies).
+  const switchedUsage = { input: 200, output: 500, cacheRead: 28_200, cacheWrite: 0 };
+  assert.equal(classifyCall({ isFirst: false, usage: switchedUsage, expectedRead: 20_600, modelSwitched: true }).kind, "hit");
+  const switchedMiss = classifyCall({
+    isFirst: false,
+    usage: { input: 200, output: 500, cacheRead: 0, cacheWrite: 28_200 },
+    expectedRead: 20_600,
+    modelSwitched: true,
+    fingerprintCause: { kind: "model", detail: "model switched a \u2192 b" },
+  });
+  assert.equal(switchedMiss.kind, "miss");
+  assert.equal(switchedMiss.cause?.kind, "model");
+
   const ttlMiss = classifyCall({
     isFirst: false,
     gapMs: 6.7 * MIN,

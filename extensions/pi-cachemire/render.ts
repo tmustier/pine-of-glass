@@ -95,9 +95,13 @@ export function renderMissLine(record: CallRecord): string {
   if (isPostCompaction(record)) return renderCompactionLine(record);
   const prompt = promptTokens(record.usage);
   const pct = prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}% of prompt)` : "";
+  // After a model switch the stored expectation is old-currency: the call's own
+  // prompt is the only denominator its read may be composed with (design language §7).
+  const readOf = record.switched
+    ? `read ${compactCount(record.usage.cacheRead)} of ${compactCount(prompt)} prompt`
+    : `read ${compactCount(record.usage.cacheRead)} of ${compactCount(record.expectedRead)} expected`;
   const what = record.classification.kind === "partial"
-    ? `cache partial \u00b7 read ${compactCount(record.usage.cacheRead)} of ${compactCount(record.expectedRead)} expected` +
-      ` \u00b7 re-wrote ${compactCount(record.rewroteTokens)}${pct}`
+    ? `cache partial \u00b7 ${readOf} \u00b7 re-wrote ${compactCount(record.rewroteTokens)}${pct}`
     : `cache broke \u00b7 re-wrote ${compactCount(record.rewroteTokens)} of ${compactCount(prompt)} prompt` +
       `${prompt > 0 ? ` (${Math.round((record.rewroteTokens / prompt) * 100)}%)` : ""}` +
       `${record.costUsd !== undefined ? ` \u00b7 ${formatUsd(record.costUsd)}` : ""}`;
@@ -108,6 +112,15 @@ export function renderMissLine(record: CallRecord): string {
 // shared-prefix warmth (another session with the same harness prefix kept it alive).
 export function renderHeldLine(record: CallRecord): string {
   if (isPostCompaction(record)) return renderCompactionLine(record);
+  if (record.switched) {
+    // The old expectation is denominated in the previous model's tokenizer, so it is
+    // never composed with this read. Warmth this session did not write (a twin session's
+    // identical prefix, or the model's own surviving entry) is the only warm-switch story.
+    const prompt = promptTokens(record.usage);
+    const share = prompt > 0 ? ` (${Math.round((record.usage.cacheRead / prompt) * 100)}% of prompt)` : "";
+    return `cache held \u00b7 read ${compactCount(record.usage.cacheRead)}${share}` +
+      " \u00b7 the new model already had the prefix cached";
+  }
   return `cache held \u00b7 read ${compactCount(record.usage.cacheRead)} of ${compactCount(record.expectedRead)} expected` +
     " \u00b7 prefix stayed warm";
 }

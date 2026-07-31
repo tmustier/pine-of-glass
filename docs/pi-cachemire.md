@@ -212,6 +212,16 @@ held` (green) appears when a predicted break did not happen, usually shared-pref
 warmth: another session with the same harness prefix kept the early breakpoints alive
 past your idle gap.
 
+Resolution across a model switch follows the currency rule too. The stored
+expectation is denominated in the previous model's tokenizer, so the first call
+after a switch is classified and rendered against its own billed prompt only:
+`cache held · read 28.2k (100% of prompt) · the new model already had the prefix
+cached` (a twin session's identical prefix, or the model's own surviving entry),
+never `read 28.2k of 20.6k expected`, which would compose two currencies into an
+impossible >100% claim. Restored-session ledgers apply the same rule, and a
+restored call whose model identity differs from the previous billed call keeps
+`model switched …` as its cause instead of `restored (cause unknown)`.
+
 ## State and lifecycle
 
 Working state is in-memory and dies with the process. What survives an exit is exactly

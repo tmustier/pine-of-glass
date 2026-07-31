@@ -88,6 +88,7 @@ test("cachemire ledger and one-line surfaces golden", () => {
     `\u25cd ${renderMissLine(RECORDS[3]!)}`,
     `\u25cd ${renderMissLine(RECORDS[2]!)}`,
     `\u25cd ${renderHeldLine(RECORDS[1]!)}`,
+    `\u25cd ${renderHeldLine({ index: 9, at: 0, usage: { input: 0, output: 400, cacheRead: 28_200, cacheWrite: 0 }, expectedRead: 20_600, classification: { kind: "hit" }, rewroteTokens: 0, switched: true })}`,
     `\u25cd ${renderRunSummary({ startedAt: 0, calls: 3, input: 2_400, cacheRead: 450_900, cacheWrite: 3_600, output: 1_200, costUsd: 0.18 }, 4 * MIN + 30_000)}`,
   ];
 

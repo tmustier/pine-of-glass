@@ -220,22 +220,29 @@ async function scenario(fixture) {
   }
 
   phase = "4/7  adversarial: abort fable's first response mid-stream";
-  const noticesBefore = (captureText(true).match(/cache (breaking|broke)/g) ?? []).length;
+  const noticesBefore = (captureText(true).match(/cache (breaking|broke|held)/g) ?? []).length;
   sendText("Count from 1 to 400, one number per line, no other text.");
   await waitFor("break notice posts at send (est, model switch cause)",
-    () => (captureText(true).match(/cache (breaking|broke)/g) ?? []).length > noticesBefore, { timeoutMs: 60000 });
+    () => (captureText(true).match(/cache (breaking|broke|held)/g) ?? []).length > noticesBefore, { timeoutMs: 60000 });
   {
     // Newest notice only: sol's own resolved cold-start line sits higher in scrollback.
     // Long notices wrap, so rejoin the matched line with its continuations.
     const all = captureText(true).split("\n");
     let idx = -1;
-    for (let i = all.length - 1; i >= 0; i--) if (/cache (breaking|broke)/.test(all[i])) { idx = i; break; }
+    for (let i = all.length - 1; i >= 0; i--) if (/cache (breaking|broke|held)/.test(all[i])) { idx = i; break; }
     const notice = idx === -1 ? "" : all.slice(idx, idx + 3).join(" ");
     if (notice.includes("cache breaking")) {
       check("notice: BLUF, sized in target currency, est-marked",
         /cache breaking \u00b7 sending ~[\d.]+k uncached to anthropic \(.*est/.test(notice), notice);
     }
-    check("notice: cause names the switch", /cause: model switched/.test(notice), notice);
+    if (notice.includes("cache held")) {
+      // Back-to-back runs leave anthropic's cache warm for the identical fixture prefix:
+      // the resolved line must speak fable's own currency, never sol's 20.6k expectation.
+      check("notice: switched send resolved warm in its own currency only",
+        /cache held \u00b7 read [\d.]+k \(\d+% of prompt\) \u00b7 the new model already had the prefix cached/.test(notice), notice);
+    } else {
+      check("notice: cause names the switch", /cause: model switched/.test(notice), notice);
+    }
   }
   await sleep(2200); // let fable start streaming
   sendKey("Escape");
@@ -258,16 +265,6 @@ async function scenario(fixture) {
 
   phase = "5/7  a completed fable call re-baselines everything";
   await sendPromptAndWait("Reply with exactly: hello from fable", "fable completes");
-  {
-    // Forecast accuracy against billed reality: the resolve line names the real write.
-    const rewrote = [...captureText(true).matchAll(/re-wrote ([\d.]+)k of [\d.]+k prompt/g)];
-    const realTokens = rewrote.length > 0 ? Number(rewrote[rewrote.length - 1][1]) : undefined;
-    if (forecastTokens && realTokens) {
-      const ratio = forecastTokens / realTokens;
-      check(`forecast accuracy: ~${forecastTokens}k est vs ${realTokens}k billed (${ratio.toFixed(2)}x)`,
-        ratio > 0.55 && ratio < 1.8);
-    }
-  }
   await waitFor("clock re-baselines to fable's contract window", (t) => {
     const line = widgetLine(t);
     return /\u25cd cache \d/.test(line) && !/model switched/.test(line) && !/likely/.test(line);
@@ -277,6 +274,15 @@ async function scenario(fixture) {
     const row = await inspectPanel("re-baselined");
     check("re-baseline: share of the window returns", /% \//.test(row), row);
     check("re-baseline: pre-switch naming gone", !row.includes("pre-switch"), row);
+    // Forecast accuracy against billed reality, in fable's own currency: the panel's
+    // re-baselined total is that prompt whether it was re-written or read back warm
+    // (a stray sol re-wrote line must never be the comparator — wrong currency).
+    const realTokens = Number(row.match(/Total request\s+([\d.]+)k tokens/)?.[1]);
+    if (forecastTokens && realTokens) {
+      const ratio = forecastTokens / realTokens;
+      check(`forecast accuracy: ~${forecastTokens}k est vs ${realTokens}k billed (${ratio.toFixed(2)}x)`,
+        ratio > 0.55 && ratio < 1.8);
+    }
   }
 
   phase = "6/7  A\u2192B\u2192A: switch back inside sol's warm window";
@@ -295,7 +301,11 @@ async function scenario(fixture) {
   await sendPromptAndWait("Reply with exactly: done", "sol confirms", 120000);
   await sendCommand("/cache");
   const ledger = await waitFor("ledger renders", (t) => /cache & loop ledger/.test(t), { timeoutMs: 30000, scrollback: true });
-  check("ledger: the fable miss is attributed to the model switch", /model switched/.test(ledger));
+  // Two honest outcomes for fable's first call: a miss attributed to the switch, or a
+  // warm hold (the aborted send's write served it) whose resolved line told the story.
+  const heldWarm = /the new model already had the prefix cached/.test(captureText(true));
+  check(`ledger: fable's first call attributed (${heldWarm ? "warm hold" : "switch miss"})`,
+    /model switched/.test(ledger) || heldWarm);
   check("ledger: multiple calls recorded", (ledger.match(/\u25cf|\u25cb|\u25d1|\u25cc/g) ?? []).length >= 3);
   await sleep(4500); // hold the ledger for the video
 

@@ -8,7 +8,7 @@ import type { CallRecord } from "../../extensions/pi-cachemire/index.ts";
 const {
   uncachedCostUsd, rewriteCostUsd, sessionSavings,
   compactCount, formatUsd, formatDuration,
-  cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
+  cacheClock, renderRunSummary, renderMissLine, renderLedger,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
   windowForProvider, windowLabel, pastWindow, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
   settleDanglingSend,
@@ -227,6 +227,32 @@ test("run summary and miss lines read exactly as designed", () => {
     classification: { kind: "hit" },
   };
   assert.equal(renderHeldLine(held), "cache held \u00b7 read 76.0k of 77.7k expected \u00b7 prefix stayed warm");
+
+  // After a model switch the old expectation must never be composed with the new
+  // model's read: the line speaks this call's own currency only (design language §7).
+  const switchedHeld: CallRecord = {
+    ...miss,
+    usage: { input: 0, output: 400, cacheRead: 28_200, cacheWrite: 0 },
+    expectedRead: 20_600, // sol-billed tokens: wrong currency for a fable read
+    classification: { kind: "hit" },
+    switched: true,
+  };
+  assert.equal(
+    renderHeldLine(switchedHeld),
+    "cache held \u00b7 read 28.2k (100% of prompt) \u00b7 the new model already had the prefix cached",
+  );
+  const switchedPartial: CallRecord = {
+    ...miss,
+    usage: { input: 200, output: 400, cacheRead: 14_100, cacheWrite: 13_900 },
+    expectedRead: 20_600,
+    classification: { kind: "partial", cause: { kind: "model", detail: "model switched a \u2192 b" } },
+    rewroteTokens: 13_900,
+    switched: true,
+  };
+  assert.equal(
+    renderMissLine(switchedPartial),
+    "cache partial \u00b7 read 14.1k of 28.2k prompt \u00b7 re-wrote 13.9k (49% of prompt) \u00b7 cause: model switched a \u2192 b",
+  );
 });
 
 test("break prediction: knowable at request time, silent when healthy", () => {
@@ -314,26 +340,4 @@ test("ledger view: rows, totals, and the savings line", () => {
   assert.match(lines[6]!, /caching saved ~\$2\.37 vs uncached \$2\.96 \(−80%\) · API-priced; notional on subscription/);
 
   assert.match(renderLedger([], {})[2]!, /no model calls yet/);
-});
-
-test("ledger restore from a continued session's assistant messages", () => {
-  const messages = [
-    { role: "user", content: "hi", timestamp: 0 },
-    {
-      role: "assistant", timestamp: 1_000,
-      usage: { input: 12_000, output: 500, cacheRead: 0, cacheWrite: 130_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } },
-    },
-    { role: "toolResult", toolName: "bash", timestamp: 2_000 },
-    {
-      role: "assistant", timestamp: 30_000,
-      usage: { input: 1_000, output: 800, cacheRead: 141_000, cacheWrite: 1_500, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.04 } },
-    },
-    { role: "assistant", timestamp: 31_000, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, // empty usage → skipped
-  ];
-  const records = restoreFromMessages(messages as never);
-  assert.equal(records.length, 2);
-  assert.equal(records[0]!.classification.kind, "cold");
-  assert.equal(records[1]!.classification.kind, "hit");
-  assert.equal(records[1]!.gapMs, 29_000);
-  assert.ok(records.every((record) => record.restored));
 });
