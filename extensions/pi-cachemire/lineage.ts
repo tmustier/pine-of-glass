@@ -175,7 +175,9 @@ function sameWindow(a: CacheWindow | undefined, b: CacheWindow | undefined): boo
   return a.kind === "unknown" && b.kind === "unknown";
 }
 
-function pathContainsCompaction(
+/** Whether a compaction checkpoint sits between the baseline call and the leaf: the
+ * prefix that call cached no longer exists, so nothing can revive its entry. */
+export function pathContainsCompaction(
   entries: readonly unknown[],
   leafId: string | null,
   baseline: CacheLineageSnapshot,

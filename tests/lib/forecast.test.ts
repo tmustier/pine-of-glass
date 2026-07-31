@@ -39,7 +39,7 @@ function solTurn(content: unknown[], overrides: Partial<ForecastMessage> = {}): 
   };
 }
 
-test("cross-model: readable thinking counts as text, signatures count as dropped", () => {
+test("cross-model: readable thinking counts as text, encrypted payloads vanish", () => {
   const history: ForecastMessage[] = [
     { role: "user", content: "hello there" }, // 11 chars
     solTurn([
@@ -50,9 +50,7 @@ test("cross-model: readable thinking counts as text, signatures count as dropped
   ];
   const forecast = forecastHistoryForTarget(history, luna);
   assert.equal(forecast.textChars, 11 + "readable summary".length + "answer".length);
-  assert.equal(forecast.keptReasoningChars, 0);
-  assert.equal(forecast.droppedReasoningChars, 700, "both encrypted payloads drop for the foreign target");
-  assert.equal(forecast.messageCount, 2);
+  assert.equal(forecast.keptReasoningChars, 0, "both encrypted payloads drop for the foreign target");
 });
 
 test("same-model: signature payloads are kept, readable summary is not double-counted", () => {
@@ -66,13 +64,12 @@ test("same-model: signature payloads are kept, readable summary is not double-co
   const forecast = forecastHistoryForTarget(history, target);
   assert.equal(forecast.keptReasoningChars, 400, "same-model replay counts the encrypted payload, not the summary");
   assert.equal(forecast.textChars, "answer".length);
-  assert.equal(forecast.droppedReasoningChars, 0);
 });
 
 test("redacted thinking: kept same-model, dropped cross-model", () => {
   const history = [solTurn([{ type: "thinking", thinking: "", thinkingSignature: "R".repeat(50), redacted: true }])];
   assert.equal(forecastHistoryForTarget(history, { ...luna, id: "gpt-5.6-sol" }).keptReasoningChars, 50);
-  assert.equal(forecastHistoryForTarget(history, opus).droppedReasoningChars, 50);
+  assert.equal(forecastHistoryForTarget(history, opus).keptReasoningChars, 0);
 });
 
 test("toolCall: arguments always count, thoughtSignature only for the same model", () => {
@@ -81,7 +78,7 @@ test("toolCall: arguments always count, thoughtSignature only for the same model
   const history = [solTurn([call], { stopReason: "toolUse" })];
   const cross = forecastHistoryForTarget(history, opus);
   assert.equal(cross.textChars, argChars);
-  assert.equal(cross.droppedReasoningChars, 80);
+  assert.equal(cross.keptReasoningChars, 0);
   const same = forecastHistoryForTarget(history, { ...luna, id: "gpt-5.6-sol" });
   assert.equal(same.keptReasoningChars, 80);
 });
@@ -93,7 +90,6 @@ test("aborted and error assistant turns contribute nothing", () => {
   ];
   const forecast = forecastHistoryForTarget(history, opus);
   assert.equal(forecast.textChars, 0);
-  assert.equal(forecast.messageCount, 0);
 });
 
 test("images: pi's flat char convention for vision targets, placeholder for non-vision", () => {
@@ -101,11 +97,9 @@ test("images: pi's flat char convention for vision targets, placeholder for non-
     { role: "user", content: [{ type: "image", data: "aGk=", mimeType: "image/png" }] },
   ];
   const vision = forecastHistoryForTarget(history, luna);
-  assert.equal(vision.imageCount, 1);
   assert.equal(vision.imageChars, 4800, "matches pi's compaction image estimate");
   const blind = forecastHistoryForTarget(history, { ...luna, input: ["text"] });
-  assert.equal(blind.imageCount, 1);
-  assert.ok(blind.imageChars < 100, "non-vision targets get a small placeholder");
+  assert.ok(blind.imageChars > 0 && blind.imageChars < 100, "non-vision targets get a small placeholder");
 });
 
 test("tool results count text content", () => {

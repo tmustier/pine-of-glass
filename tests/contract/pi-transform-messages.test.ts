@@ -135,12 +135,10 @@ test("mirror: same-model replay keeps reasoning payloads", () => {
   assertMirror(richHistory(), sol, "sol/opus history → sol (sol turns replay)");
 });
 
-test("cross-model drops are the encrypted payloads, nothing else", () => {
-  const forecast = forecastHistoryForTarget(richHistory() as unknown as ForecastMessage[], {
-    provider: "openai-codex", id: "gpt-5.6-luna", api: "openai-codex-responses",
-  });
-  // ENCRYPTED-SOL-PAYLOAD + SIGNATURE-ONLY + REDACTED + TOOL-THOUGHT
-  assert.equal(forecast.droppedReasoningChars, 21 + 14 + 8 + 12);
+test("fully foreign target: every encrypted payload is immaterial to the real transform too", () => {
+  // luna appears in no message, so ENCRYPTED-SOL-PAYLOAD, SIGNATURE-ONLY, REDACTED and
+  // TOOL-THOUGHT must all drop — from the mirror and from transformMessages alike.
+  assertMirror(richHistory(), fakeModel(), "sol/opus history → luna (all payloads drop)");
 });
 
 test("known divergence: pi synthesizes results for orphaned tool calls; the forecast ignores them", () => {

@@ -7,7 +7,7 @@ import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-age
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { CALIBRATION_MAX, CALIBRATION_MIN, forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
 import type { ToolShape } from "../_lib/tool-payloads.ts";
-import { findBranchBaseline } from "./lineage.ts";
+import { findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
 
 /** The slice of pi's Model the forecast reads; ctx.model / event.model satisfy it. */
@@ -66,15 +66,22 @@ export function computeSwitchForecast(args: {
     targetProvider: args.target.provider,
     basis: args.target.api === "pi-messages" ? "gateway" : "direct",
   };
-  const identitySnapshots = (model: SwitchTarget) => args.snapshots.filter(
+  // Cache identity is provider+id+api (same id via a different wire API is a
+  // different cache), so warmth candidates need an exact api. A density anchor only
+  // needs the tokenizer, so a pre-api snapshot (missing api) still calibrates.
+  const identitySnapshots = (model: SwitchTarget, api: "exact" | "lenient") => args.snapshots.filter(
     (snapshot) => snapshot.provider === model.provider && snapshot.model === model.id &&
-      (snapshot.api === undefined || snapshot.api === model.api),
+      (snapshot.api === model.api || (api === "lenient" && snapshot.api === undefined)),
   );
-  const prior = findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.target));
-  if (prior) forecast.prior = { requestAt: prior.requestAt, window: prior.window };
+  const prior = findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.target, "exact"));
+  // A compaction after the prior call rewrote the prefix its cache entry covered; a
+  // switch-back cannot revive it, so the warmth hint is withheld rather than hedged.
+  if (prior && !pathContainsCompaction(args.entries, args.activeLeafId, prior)) {
+    forecast.prior = { requestAt: prior.requestAt, window: prior.window };
+  }
   const sourceBaseline = args.source === undefined
     ? undefined
-    : findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.source));
+    : findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.source, "lenient"));
   let history: ForecastMessage[] | undefined;
   try {
     history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];

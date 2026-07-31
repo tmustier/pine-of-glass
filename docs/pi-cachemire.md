@@ -22,6 +22,10 @@ Everything cachemire shows is four provider-general rules, which is the whole me
    switching *back* to a model whose own last billed call is still inside its
    freshness window says `cache may still be warm · last <model> call 2m ago · next
    send confirms`, because claiming cold there would be wrong as often as right.
+   The hint is deliberately hedged (the payload may have changed in ways only the
+   next send reveals) and gated: the prior call must match on provider, model *and*
+   wire API, with no compaction on the path since; either failing means its cache
+   entry cannot be revived, and the state stays `cache cold expected`.
 3. **Window**: strength varies by provider: Anthropic has a contract TTL (observed,
    else inferred), OpenAI a documented band (soft ~5m / hard 1h), everyone else is
    unknown. Wording always matches the strength: countdown / fading / likely.
