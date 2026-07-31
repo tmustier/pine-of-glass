@@ -36,6 +36,7 @@ import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import {
   buildSessionBreakdown,
   estimateSessionBreakdown,
+  scanSession,
   type SessionBreakdown,
   type SessionEstimate,
   type SessionSource,
@@ -150,6 +151,10 @@ type PrefixSnapshot = {
   model?: ModelSummary;
   session?: SessionBreakdown;
   contextUsage?: ContextUsage;
+  /** Set when pi's exact usage was billed by a different model than the current one
+   * (issue #58): the count is old-currency, the window is new-currency, and the two
+   * must not be composed. Cleared by the first post-switch usage. */
+  preSwitchUsage?: { billedModel: string };
 };
 
 type ContextimateTui = {
@@ -268,14 +273,6 @@ function unescapeXml(value: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&lt;/g, "<")
     .replace(/&amp;/g, "&");
-}
-
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? "undefined";
-  } catch (error) {
-    return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
-  }
 }
 
 function normalizeBlankLines(text: string): string {
@@ -772,8 +769,12 @@ function buildSnapshot(
   if (skillsSection) sections.push(skillsSection);
   if (toolsSection) sections.push(toolsSection);
 
-  const session = buildSessionBreakdown(sessionManager);
+  const { breakdown: session, lastBilled } = scanSession(sessionManager);
   const contextUsage = getContextUsage?.();
+  const preSwitchUsage = contextUsage && lastBilled && model &&
+    (lastBilled.provider !== model.provider || lastBilled.id !== model.id || lastBilled.api !== model.api)
+    ? { billedModel: lastBilled.id }
+    : undefined;
 
   const signature = [
     systemPrompt.length,
@@ -784,9 +785,10 @@ function buildSnapshot(
     pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
     session ? `${session.thinkingSummaryChars}:${session.reasoningTokens ?? "unreported"}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
+    preSwitchUsage ? `pre-switch:${preSwitchUsage.billedModel}` : "currency-ok",
   ].join("|");
 
-  return { signature, sections, tools, heuristic, model, session, contextUsage };
+  return { signature, sections, tools, heuristic, model, session, contextUsage, preSwitchUsage };
 }
 
 function sectionTokens(section: PrefixSection): number {
@@ -977,7 +979,9 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
   return estimateSessionBreakdown(snapshot.session, {
     denominator: snapshot.heuristic.sessionDenominator,
     harnessTokens: totalTokens(snapshot),
-    contextTokens: snapshot.contextUsage?.tokens,
+    // A pre-switch count is denominated in the old model, so it cannot anchor
+    // target-currency session accounting.
+    contextTokens: snapshot.preSwitchUsage ? undefined : snapshot.contextUsage?.tokens,
   });
 }
 
@@ -1062,6 +1066,22 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
   );
   const usage = snapshot.contextUsage;
   if (usage && usage.tokens !== null) {
+    if (snapshot.preSwitchUsage) {
+      // The provider-backed portion is in the old model's currency (issue #58).
+      // Name it without dividing by the new window; preserve Pi's estimate marker
+      // when trailing local messages have been added after that billed response.
+      const usageEstimated = snapshot.session.contextUsageEstimated;
+      rows.push(renderMetricRow({
+        label: "Total request",
+        tokens: usage.tokens,
+        exact: !usageEstimated,
+        emphasis: true,
+        detail: usageEstimated
+          ? `(pre-switch total \u00b7 ${snapshot.preSwitchUsage.billedModel} usage + Pi est.)`
+          : `(pre-switch usage \u00b7 ${snapshot.preSwitchUsage.billedModel} tokens)`,
+      }, theme, layout));
+      return rows;
+    }
     const percent = formatPercent(usage.percent);
     const window = usage.contextWindow > 0 ? contextWindowLabel(usage.contextWindow) : undefined;
     const usageEstimated = snapshot.session.contextUsageEstimated;

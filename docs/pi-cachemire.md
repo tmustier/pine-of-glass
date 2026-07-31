@@ -9,18 +9,24 @@ Everything cachemire shows is four provider-general rules, which is the whole me
 1. **Anchor**: the freshness clock starts at *request processing* (both Anthropic and
    OpenAI create/refresh entries while reading the input; "inactivity" is measured from
    last use). Generation time burns the window.
-2. **Scope**: a cache entry belongs to (provider, model, byte-exact prefix). Caches are
-   per-model everywhere, so **any model switch means definite cold**: the widget flips
-   *before you send anything*, sized in the only currency it has, explicitly tagged:
-   `cache cold · model switched · next send re-writes the full prompt (~222.9k
-   claude-fable-5 tokens)`.
+2. **Scope**: a cache entry belongs to (provider, model, wire api, byte-exact prefix).
+   Caches are per-model everywhere, so **any model switch means expected cold**: the
+   widget flips *before you send anything*, sized by a fresh estimate in the *target*
+   model's currency: `cache cold expected · model switched · prompt ~96.4k of 272.0k
+   ctx (est)`. Through a gateway route (pi-messages) the upstream request shape is not
+   observable, so the claim demotes itself to `(rough est · gateway route)`. One
+   exception keeps the scope rule honest: switching *back* to a model whose own last
+   billed call is still inside its freshness window says `cache may still be warm ·
+   last <model> call 2m ago · next send confirms` instead of overclaiming cold.
 3. **Window**: strength varies by provider: Anthropic has a contract TTL (observed,
    else inferred), OpenAI a documented band (soft ~5m / hard 1h), everyone else is
    unknown. Wording always matches the strength: countdown / fading / likely.
-4. **Currency**: token counts and $ are only ever shown in the tokenizer and price card
-   that billed them. After a model switch the stored size keeps its old-model tag and
-   gets no $ (which would compound the conversion error) until the first new-model usage
-   re-baselines it. Exactness arrives one call later, the only honest time it can.
+4. **Currency**: exact token counts and $ are only ever shown in the tokenizer and
+   price card that billed them. After a model switch the old-currency exact count is
+   never displayed against the new model; the forecast above is an explicit estimate
+   in the target currency (est-marked, and $-priced only from the target's own price
+   card, tier-aware). Exactness arrives one call later, when the first new-model usage
+   re-baselines everything, the only honest time it can.
 
 ## When the clock starts
 

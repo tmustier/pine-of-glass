@@ -1,6 +1,7 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { ModelSummary } from "../_lib/heuristics.ts";
 import { keepsAllClaudeThinking, keepsAllOpenAIReasoning } from "./model-heuristics.ts";
 
 const OPENAI_REASONING_REPLAY_APIS = new Set([
@@ -18,6 +19,12 @@ export type SessionBreakdown = {
   messageCount: number;
   /** Pi's current total includes a local estimate after the last trusted assistant usage. */
   contextUsageEstimated: boolean;
+};
+
+export type SessionScan = {
+  breakdown?: SessionBreakdown;
+  /** Identity behind the last assistant usage that Pi trusts for its context total. */
+  lastBilled?: ModelSummary;
 };
 
 export type SessionEstimate = {
@@ -125,13 +132,13 @@ function hasReasoningCarrier(message: AssistantMessage): boolean {
   return message.content.some((block) => block.type === "thinking" && Boolean(block.thinkingSignature));
 }
 
-export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
-  if (!sessionManager) return undefined;
+export function scanSession(sessionManager?: SessionSource): SessionScan {
+  if (!sessionManager) return {};
   // Session entries are arbitrary historical content; a malformed session should cost
   // the session rows, not the whole panel.
   try {
     const { messages } = buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId());
-    if (messages.length === 0) return undefined;
+    if (messages.length === 0) return {};
 
     const llmMessages = convertToLlm(messages);
     const breakdown: SessionBreakdown = {
@@ -241,8 +248,15 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
     // Pi estimates every raw context message after the last trusted usage, including
     // `!!` bash messages that convertToLlm deliberately omits from provider context.
     breakdown.contextUsageEstimated = lastTrustedContextIndex !== messages.length - 1;
-    return breakdown;
+    const lastBilled = anchor?.role === "assistant"
+      ? { provider: anchor.provider, id: anchor.model, api: anchor.api }
+      : undefined;
+    return { breakdown, lastBilled };
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
+  return scanSession(sessionManager).breakdown;
 }

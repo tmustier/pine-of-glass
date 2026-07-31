@@ -149,14 +149,16 @@ Cachemire follows these rules:
 Cachemire uses 4 provider-general rules:
 
 - The freshness **anchor** is request processing. Generation time uses up the window.
-- The cache **scope** is the provider, model and byte-exact prefix. Any model switch
-  therefore means the cache will definitely be cold before you send anything.
+- The cache **scope** is the provider, model, wire api and byte-exact prefix. A model
+  switch therefore means the cache is expected cold before you send anything, and the
+  widget forecasts the prompt in the *target* model's currency (est-marked). Switching
+  back to a model whose own cache may still be warm says so instead.
 - The **window** has different strengths for each provider. Anthropic has a contract
   TTL, OpenAI has a documented band and the window is unknown for other providers.
   The wording
   reflects that strength.
-- The **currency** rule shows tokens and $ only in the tokenizer and price card that
-  billed them.
+- The **currency** rule shows exact tokens and $ only in the tokenizer and price card
+  that billed them; cross-model sizes are explicit estimates in the target currency.
 
 Read [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for the full model and its
 evidence. It covers clock-anchor and aborted-send semantics, thinking-level cache
