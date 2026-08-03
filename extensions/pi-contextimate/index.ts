@@ -1303,14 +1303,12 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
     const usageEstimated = snapshot.session.contextUsageEstimated;
     const context = percent && window ? usageEstimated ? percent : `${percent} / ${window} ctx` : "";
     const provenance = request.corrected ? usageEstimated ? "Pi est. + prior reasoning" : "Pi + prior reasoning" : usageEstimated ? "Pi est." : "";
+    const compactProvenance = request.corrected ? usageEstimated ? "Pi est. + prior" : "Pi + prior" : provenance;
     const detail = `(${[context, provenance].filter(Boolean).join(" · ") || "Pi usage"})`;
-    rows.push(renderMetricRow({
-      label: "Total request",
-      tokens: request.tokens,
-      exact: !usageEstimated,
-      emphasis: true,
-      detail,
-    }, theme, layout));
+    const compactDetail = `(${[percent, compactProvenance].filter(Boolean).join(" · ") || "Pi usage"})`;
+    const metric = { label: "Total request", tokens: request.tokens, exact: !usageEstimated, emphasis: true, detail };
+    const requestRow = renderMetricRow(metric, theme, layout);
+    rows.push(stripAnsi(requestRow).length <= width ? requestRow : renderMetricRow({ ...metric, detail: compactDetail }, theme, layout));
     rows.push(...(usage.contextWindow > 0 ? renderContextBar(snapshot, usage, estimate, request.tokens, theme, width) : []));
   }
   return rows;

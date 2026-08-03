@@ -71,6 +71,10 @@ test("OpenAI history omitted by provider usage is added once to Contextimate's r
   );
   const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
   assert.match(rendered, /Total request\s+50\.6k tokens \(25\.3% \/ 200k ctx · Pi \+ prior reasoning\)/);
+  const narrowRequest = stripAnsi(renderSummary(snapshot, plainTheme, 80).join("\n"))
+    .split("\n").find((line) => line.includes("Total request"))!;
+  assert.ok(narrowRequest.length <= 80);
+  assert.match(narrowRequest, /\(25\.3% · Pi \+ prior\)$/);
   const estimated = stripAnsi(renderSummary(
     snapshotWith({ ...correctedSession, contextUsageEstimated: true }, usage),
     plainTheme,
