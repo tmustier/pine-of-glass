@@ -59,6 +59,33 @@ test("with Pi usage: total anchors to (Pi current − estimated harness) and res
   assert.equal(tiny.unattributedTokens, 0);
 });
 
+test("OpenAI history omitted by provider usage is added once to Pi's request total", () => {
+  const correctedSession = { ...session, providerOmittedReasoningTokens: 600 };
+  const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
+  const snapshot = snapshotWith(correctedSession, usage);
+  const estimate = buildSessionEstimate(snapshot)!;
+  assert.equal(
+    estimate.totalTokens,
+    Math.max(0, Math.round(50600 - totalTokens(snapshot))),
+    "the session total uses Pi plus exact omitted reasoning",
+  );
+  const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
+  assert.match(rendered, /Total request\s+50\.6k tokens \(25\.3% \/ 200k ctx · Pi \+ reasoning\)/);
+  const estimated = stripAnsi(renderSummary(
+    snapshotWith({ ...correctedSession, contextUsageEstimated: true }, usage),
+    plainTheme,
+    120,
+  ).join("\n"));
+  assert.match(estimated, /Total request\s+~50\.6k tokens \(25\.3% · Pi est\. \+ reasoning\)/);
+
+  const heuristic = buildSessionEstimate(snapshotWith(correctedSession, undefined))!;
+  assert.equal(
+    heuristic.totalTokens,
+    Math.ceil((1200 + 5200 + 1300) / 2.6) + 12000,
+    "the fallback already contains the full reasoning row and must not double-add it",
+  );
+});
+
 test("without Pi usage (or null tokens): heuristic fallback over all session chars", () => {
   for (const usage of [undefined, { tokens: null, contextWindow: 200000, percent: null }]) {
     const estimate = buildSessionEstimate(snapshotWith(session, usage))!;

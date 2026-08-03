@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import {
   keepsAllClaudeThinking,
-  keepsAllOpenAIReasoning,
+  openAIUsageIncludesHistoricalReasoning,
 } from "../../extensions/pi-contextimate/model-heuristics.ts";
 import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
@@ -48,12 +48,12 @@ test("Claude thinking-retention boundaries follow Anthropic's model policy", () 
   ]) assert.equal(keepsAllClaudeThinking(lastTurnOnly), false, lastTurnOnly);
 });
 
-test("OpenAI reasoning-retention boundaries follow the effective context default", () => {
-  for (const keepAll of ["gpt-5.6", "gpt-5.6-sol", "openai/gpt-5-6-20260801", "gpt-6"]) {
-    assert.equal(keepsAllOpenAIReasoning(keepAll), true, keepAll);
+test("OpenAI historical-reasoning usage boundaries follow measured server totals", () => {
+  for (const included of ["gpt-5.6", "gpt-5.6-sol", "openai/gpt-5-6-20260801", "gpt-6"]) {
+    assert.equal(openAIUsageIncludesHistoricalReasoning(included), true, included);
   }
-  for (const currentTurn of ["gpt-5.5", "gpt-5-20250807", "o3", "gpt-oss-120b"]) {
-    assert.equal(keepsAllOpenAIReasoning(currentTurn), false, currentTurn);
+  for (const omitted of ["gpt-5.5", "gpt-5-20250807", "o3", "gpt-oss-120b"]) {
+    assert.equal(openAIUsageIncludesHistoricalReasoning(omitted), false, omitted);
   }
 });
 

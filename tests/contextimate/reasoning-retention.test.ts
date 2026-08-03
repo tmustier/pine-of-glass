@@ -49,6 +49,7 @@ test("Claude reasoning follows keep-all, current-turn and exact-identity boundar
   const keepAllBreakdown = buildSessionBreakdown(keepAll)!;
   assert.equal(keepAllBreakdown.thinkingSummaryChars, 0, "exact retained reasoning covers the summary");
   assert.equal(keepAllBreakdown.reasoningTokens, 825, "Fable keeps every same-model turn");
+  assert.equal(keepAllBreakdown.providerOmittedReasoningTokens, undefined);
   assert.equal(keepAllBreakdown.contextUsageEstimated, false);
 
   keepAll.appendMessage({ role: "user", content: "trailing", timestamp: 3 });
@@ -95,7 +96,7 @@ test("Claude reasoning follows keep-all, current-turn and exact-identity boundar
   assert.equal(buildSessionBreakdown(relay)!.reasoningTokens, 700, "relay usage stays exact");
 });
 
-test("OpenAI uses encrypted carriers and the model's effective context default", () => {
+test("OpenAI matches Codex replay and provider-total accounting", () => {
   const allTurns = SessionManager.inMemory("/tmp/contextimate-codex-thinking");
   allTurns.appendMessage(assistantMessage(
     [{ type: "thinking", thinking: "summary", thinkingSignature: encryptedReasoning("rs_1") }],
@@ -113,7 +114,8 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
   ));
   const allTurnsBreakdown = buildSessionBreakdown(allTurns)!;
   assert.equal(allTurnsBreakdown.thinkingSummaryChars, 0, "opaque carriers are not sized as text");
-  assert.equal(allTurnsBreakdown.reasoningTokens, 1000, "GPT-5.6 defaults to all turns");
+  assert.equal(allTurnsBreakdown.reasoningTokens, 1000, "GPT-5.6 usage includes replayed reasoning");
+  assert.equal(allTurnsBreakdown.providerOmittedReasoningTokens, undefined);
 
   const currentTurn = SessionManager.inMemory("/tmp/contextimate-openai-current-turn");
   currentTurn.appendMessage(assistantMessage(
@@ -129,7 +131,13 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
     [{ type: "text", text: "done" }],
     { api: "openai-responses", provider: "openai", model: "gpt-5.5", usage: usageWithReasoning(40, 90) },
   ));
-  assert.equal(buildSessionBreakdown(currentTurn)!.reasoningTokens, 90, "older models default to current turn");
+  const currentTurnBreakdown = buildSessionBreakdown(currentTurn)!;
+  assert.equal(currentTurnBreakdown.reasoningTokens, 690, "Codex counts every replayed encrypted item");
+  assert.equal(
+    currentTurnBreakdown.providerOmittedReasoningTokens,
+    600,
+    "pre-5.6 provider totals omit reasoning before the latest user boundary",
+  );
 
   const ordinaryTextItem = SessionManager.inMemory("/tmp/contextimate-openai-text-signature");
   ordinaryTextItem.appendMessage(assistantMessage(
@@ -171,7 +179,9 @@ test("Gemini accumulates exact reasoning behind valid replay signatures", () => 
       usage: usageWithReasoning(50, 2000, 1024),
     },
   ));
-  assert.equal(buildSessionBreakdown(gemini)!.reasoningTokens, 650);
+  const geminiBreakdown = buildSessionBreakdown(gemini)!;
+  assert.equal(geminiBreakdown.reasoningTokens, 650);
+  assert.equal(geminiBreakdown.providerOmittedReasoningTokens, undefined);
 
   const toolCarrier = SessionManager.inMemory("/tmp/contextimate-gemini-tool-signature");
   toolCarrier.appendMessage(assistantMessage(
@@ -239,4 +249,22 @@ test("reported prompt usage rejects impossible historical attribution", () => {
     },
   ));
   assert.equal(buildSessionBreakdown(totalOnlyPrompt)!.reasoningTokens, 60);
+
+  const codexMixed = SessionManager.inMemory("/tmp/contextimate-codex-mixed-history");
+  codexMixed.appendMessage(assistantMessage(
+    [{ type: "thinking", thinking: "old", thinkingSignature: encryptedReasoning("rs_old") }],
+    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.5", usage: usageWithReasoning(600) },
+  ));
+  codexMixed.appendMessage({ role: "user", content: "next", timestamp: 2 });
+  codexMixed.appendMessage(assistantMessage(
+    [{ type: "thinking", thinking: "tool", thinkingSignature: encryptedReasoning("rs_tool") }],
+    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.5", usage: usageWithReasoning(900) },
+  ));
+  codexMixed.appendMessage(assistantMessage(
+    [{ type: "text", text: "done" }],
+    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.5", usage: usageWithReasoning(100, 100) },
+  ));
+  const codexBreakdown = buildSessionBreakdown(codexMixed)!;
+  assert.equal(codexBreakdown.reasoningTokens, 700, "impossible current-turn history is rejected independently");
+  assert.equal(codexBreakdown.providerOmittedReasoningTokens, 600, "verified pre-boundary history remains exact");
 });

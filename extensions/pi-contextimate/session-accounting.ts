@@ -1,7 +1,7 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { keepsAllClaudeThinking, keepsAllOpenAIReasoning } from "./model-heuristics.ts";
+import { keepsAllClaudeThinking, openAIUsageIncludesHistoricalReasoning } from "./model-heuristics.ts";
 
 const OPENAI_REASONING_REPLAY_APIS = new Set([
   "openai-responses",
@@ -12,8 +12,10 @@ const GOOGLE_REASONING_REPLAY_APIS = new Set(["google-generative-ai", "google-ve
 
 export type SessionBreakdown = {
   thinkingSummaryChars: number;
-  /** Exact reported reasoning retained in the provider usage anchoring Pi's total. */
+  /** Exact provider-reported reasoning carried by the active request history. */
   reasoningTokens?: number;
+  /** Exact historical reasoning that OpenAI Codex adds outside its reported total. */
+  providerOmittedReasoningTokens?: number;
   toolOutputChars: number;
   messageChars: number;
   messageCount: number;
@@ -32,6 +34,15 @@ export type SessionEstimate = {
   denominator: number;
 };
 
+export function accountProviderContext(
+  session: SessionBreakdown | undefined,
+  tokens: number | null | undefined,
+): { tokens: number; corrected: boolean } | undefined {
+  if (typeof tokens !== "number") return undefined;
+  const omitted = session?.providerOmittedReasoningTokens ?? 0;
+  return { tokens: tokens + omitted, corrected: omitted > 0 };
+}
+
 export function estimateSessionBreakdown(
   session: SessionBreakdown,
   options: { denominator: number; harnessTokens: number; contextTokens?: number | null },
@@ -43,9 +54,10 @@ export function estimateSessionBreakdown(
   const attributedTokens = toolOutputTokens + messageTokens + thinkingSummaryTokens + (session.reasoningTokens ?? 0);
   const heuristicTotal = estimate(session.toolOutputChars + session.messageChars + session.thinkingSummaryChars)
     + (session.reasoningTokens ?? 0);
-  const piTotal = options.contextTokens === null || options.contextTokens === undefined
-    ? undefined
-    : Math.max(0, Math.round(options.contextTokens - options.harnessTokens));
+  const accountedContext = accountProviderContext(session, options.contextTokens);
+  const piTotal = accountedContext
+    ? Math.max(0, Math.round(accountedContext.tokens - options.harnessTokens))
+    : undefined;
   const totalTokens = piTotal ?? heuristicTotal;
   return {
     totalTokens,
@@ -160,14 +172,17 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       }
     }
 
-    // Pi reports generated reasoning per response and the next prompt only as one aggregate.
-    // Signed replay carriers plus each provider's effective retention policy identify the
-    // historical exact counts; the aggregate prompt total is the final conservation check.
+    // Pi reports each generated reasoning count exactly. OpenAI Codex replays every
+    // encrypted reasoning item, but its pre-5.6 usage omits items before the latest
+    // user boundary. Match Codex's own active-context accounting by adding those exact
+    // historical counts outside Pi's total. Other retained history must conserve against
+    // the aggregate prompt buckets that are supposed to contain it.
     const exactReasoningIndices = new Set<number>();
-    const historicalReasoningIndices = new Set<number>();
+    const reportedHistoricalReasoningIndices = new Set<number>();
     const strippedThinkingIndices = new Set<number>();
     let exactReasoningTokens = 0;
-    let historicalReasoningTokens = 0;
+    let reportedHistoricalReasoningTokens = 0;
+    let providerOmittedReasoningTokens = 0;
     let hasExactReasoning = false;
     const anchor = llmMessages[lastTrustedUsageIndex];
     if (anchor?.role === "assistant") {
@@ -179,13 +194,12 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
         || anchor.model.toLowerCase().includes("claude");
       const anchorIsOpenAI = OPENAI_REASONING_REPLAY_APIS.has(anchor.api);
       const anchorIsGoogle = GOOGLE_REASONING_REPLAY_APIS.has(anchor.api);
+      const openAIUsageIncludesHistory = anchorIsOpenAI
+        && openAIUsageIncludesHistoricalReasoning(anchor.model);
       const keepsRetainedHistory = anchorIsClaude
         ? keepsAllClaudeThinking(anchor.model)
-        : anchorIsOpenAI
-          ? keepsAllOpenAIReasoning(anchor.model)
-          : anchorIsGoogle;
-      const keepsCurrentTurn = anchorIsClaude || anchorIsOpenAI;
-      const historyStart = keepsRetainedHistory ? 0 : keepsCurrentTurn ? turnStart : lastTrustedUsageIndex;
+        : anchorIsOpenAI || anchorIsGoogle;
+      const historyStart = keepsRetainedHistory ? 0 : anchorIsClaude ? turnStart : lastTrustedUsageIndex;
       for (const index of trustedAssistantIndices) {
         if (index > lastTrustedUsageIndex) continue;
         const message = llmMessages[index]!;
@@ -200,20 +214,26 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
         exactReasoningTokens += tokens;
         hasExactReasoning = true;
         exactReasoningIndices.add(index);
-        if (index !== lastTrustedUsageIndex) {
-          historicalReasoningTokens += tokens;
-          historicalReasoningIndices.add(index);
+        if (index === lastTrustedUsageIndex) continue;
+        if (anchorIsOpenAI && !openAIUsageIncludesHistory && index < turnStart) {
+          providerOmittedReasoningTokens += tokens;
+        } else {
+          reportedHistoricalReasoningTokens += tokens;
+          reportedHistoricalReasoningIndices.add(index);
         }
       }
       const promptBuckets = anchor.usage.input + anchor.usage.cacheRead + anchor.usage.cacheWrite;
       const reportedPromptTokens = Math.max(promptBuckets, anchor.usage.totalTokens - anchor.usage.output, 0);
-      if (historicalReasoningTokens > reportedPromptTokens) {
-        exactReasoningTokens -= historicalReasoningTokens;
-        for (const index of historicalReasoningIndices) exactReasoningIndices.delete(index);
+      if (reportedHistoricalReasoningTokens > reportedPromptTokens) {
+        exactReasoningTokens -= reportedHistoricalReasoningTokens;
+        for (const index of reportedHistoricalReasoningIndices) exactReasoningIndices.delete(index);
         hasExactReasoning = exactReasoningIndices.size > 0;
       }
     }
     if (hasExactReasoning) breakdown.reasoningTokens = exactReasoningTokens;
+    if (providerOmittedReasoningTokens > 0) {
+      breakdown.providerOmittedReasoningTokens = providerOmittedReasoningTokens;
+    }
 
     for (let index = 0; index < llmMessages.length; index++) {
       const message = llmMessages[index]!;

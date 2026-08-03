@@ -45,8 +45,8 @@ export function keepsAllClaudeThinking(modelId: string): boolean {
     || /mythos[-.]?preview/.test(id);
 }
 
-/** OpenAI's default all-turns reasoning context starts with the GPT-5.6 family. */
-export function keepsAllOpenAIReasoning(modelId: string): boolean {
+/** Pi's GPT-5.6 usage includes replayed history; earlier OpenAI totals omit it. */
+export function openAIUsageIncludesHistoricalReasoning(modelId: string): boolean {
   return familyAtLeast(modelId, "gpt", 5, 6);
 }
 

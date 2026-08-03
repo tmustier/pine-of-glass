@@ -9,15 +9,17 @@
 - **Contextimate: make accounting uncertainty visible.** The former
   `Other / reasoning` residual is now `Unattributed`, so static-prefix error cannot
   masquerade as model reasoning. `Reasoning context` sums exact `usage.reasoning`
-  values for signed blocks retained by the provider response anchoring Pi's total,
-  including reported zero. Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet
-  4.6+ histories follow Anthropic's keep-all policy; older Claude families keep only
-  the current assistant turn. Gemini histories follow valid thought signatures. GPT-5.6
-  Responses histories follow OpenAI's all-turns default; earlier models keep the current
-  turn. Pi's exact prompt total rejects impossible historical attribution, including
-  cached input. Summaries not covered by exact counts remain a clearly estimated
-  `Thinking summaries` row, and opaque signatures are never sized as tokens.
-  `Total request` keeps `~` when Pi includes local estimates for trailing messages.
+  values for signed blocks carried by the active request, including reported zero.
+  Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet 4.6+ histories follow
+  Anthropic's keep-all policy; older Claude families keep only the current assistant
+  turn. Gemini histories follow valid thought signatures. OpenAI Responses and Codex
+  histories follow OpenAI Codex's own accounting: every replayed encrypted item counts,
+  and exact pre-5.6 reasoning omitted by API totals is added once to `Total request`.
+  GPT-5.6 totals already include that history. Exact prompt totals reject impossible
+  attribution only where the provider says history is already included, including cached
+  input. Summaries not covered by exact counts remain a clearly estimated `Thinking
+  summaries` row, and opaque signatures are never sized as tokens. `Total request` keeps
+  `~` when Pi includes local estimates for trailing messages.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled
   calibration.

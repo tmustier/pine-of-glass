@@ -11,8 +11,7 @@ import { compactCount } from "../_lib/fmt.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import { BUILT_IN_HEURISTIC_RULES, type BuiltInHeuristicRule } from "./model-heuristics.ts";
 import {
-  buildSessionBreakdown,
-  estimateSessionBreakdown,
+  buildSessionBreakdown, accountProviderContext, estimateSessionBreakdown,
   type SessionBreakdown,
   type SessionEstimate,
   type SessionSource,
@@ -1020,7 +1019,7 @@ function buildSnapshot(
     JSON.stringify(config),
     pi.getActiveTools().join(","),
     pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
-    session ? `${session.thinkingSummaryChars}:${session.reasoningTokens ?? "unreported"}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
+    session ? `${session.thinkingSummaryChars}:${session.reasoningTokens ?? "unreported"}:${session.providerOmittedReasoningTokens ?? 0}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
   ].join("|");
 
@@ -1247,17 +1246,15 @@ function harnessDetail(snapshot: PrefixSnapshot): string {
 
 // One stacked bar under Total request: the carried part (harness + session) in accent,
 // free window dim — the half-second "how full am I?" answer.
-function renderContextBar(snapshot: PrefixSnapshot, estimate: SessionEstimate, theme: Theme, width: number): string[] {
-  const usage = snapshot.contextUsage;
-  if (!usage || usage.tokens === null || usage.contextWindow <= 0) return [];
-  const free = Math.max(0, usage.contextWindow - usage.tokens);
+function renderContextBar(snapshot: PrefixSnapshot, usage: ContextUsage, estimate: SessionEstimate, requestTokens: number, theme: Theme, width: number): string[] {
+  const free = Math.max(0, usage.contextWindow - requestTokens);
   const legend =
     `harness ~${compactCount(totalTokens(snapshot))}${SEP}session ~${compactCount(estimate.totalTokens)}${SEP}free ${compactCount(free)}`;
   const room = Math.max(0, width - 4 - legend.length - 2);
   const sameLine = room >= 12;
   const barWidth = Math.min(28, Math.max(12, sameLine ? room : width - 4));
-  const carried = Math.min(1, Math.max(0, usage.tokens / usage.contextWindow));
-  const filled = Math.min(barWidth, Math.max(usage.tokens > 0 ? 1 : 0, Math.round(carried * barWidth)));
+  const carried = Math.min(1, Math.max(0, requestTokens / usage.contextWindow));
+  const filled = Math.min(barWidth, Math.max(requestTokens > 0 ? 1 : 0, Math.round(carried * barWidth)));
   const bar = `${accent(theme, "█".repeat(filled))}${theme.fg("dim", "▒".repeat(barWidth - filled))}`;
   return sameLine
     ? [`  ${bar}  ${theme.fg("dim", legend)}`]
@@ -1299,20 +1296,22 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
     }, theme, layout),
   );
   const usage = snapshot.contextUsage;
-  if (usage && usage.tokens !== null) {
-    const percent = formatPercent(usage.percent);
+  const request = accountProviderContext(snapshot.session, usage?.tokens);
+  if (usage && request) {
+    const percent = formatPercent(usage.contextWindow > 0 ? (request.tokens / usage.contextWindow) * 100 : null);
     const window = usage.contextWindow > 0 ? contextWindowLabel(usage.contextWindow) : undefined;
     const usageEstimated = snapshot.session.contextUsageEstimated;
+    const context = percent && window ? usageEstimated ? percent : `${percent} / ${window} ctx` : "";
+    const provenance = request.corrected ? usageEstimated ? "Pi est. + reasoning" : "Pi + reasoning" : usageEstimated ? "Pi est." : "";
+    const detail = `(${[context, provenance].filter(Boolean).join(" · ") || "Pi usage"})`;
     rows.push(renderMetricRow({
       label: "Total request",
-      tokens: usage.tokens,
+      tokens: request.tokens,
       exact: !usageEstimated,
       emphasis: true,
-      detail: percent && window
-        ? usageEstimated ? `(${percent} · Pi est.)` : `(${percent} / ${window} ctx)`
-        : usageEstimated ? "(Pi est.)" : "(Pi usage)",
+      detail,
     }, theme, layout));
-    rows.push(...renderContextBar(snapshot, estimate, theme, width));
+    rows.push(...(usage.contextWindow > 0 ? renderContextBar(snapshot, usage, estimate, request.tokens, theme, width) : []));
   }
   return rows;
 }
@@ -1328,7 +1327,8 @@ function summaryTokenLayout(snapshot: PrefixSnapshot): TokenLabelLayout {
     sessionEstimate.unattributedTokens,
   );
   if (sessionEstimate?.reasoningTokens !== undefined) values.push(sessionEstimate.reasoningTokens);
-  if (typeof snapshot.contextUsage?.tokens === "number") values.push(snapshot.contextUsage.tokens);
+  const request = accountProviderContext(snapshot.session, snapshot.contextUsage?.tokens);
+  if (request) values.push(request.tokens);
   return tokenLabelLayout(values);
 }
 
