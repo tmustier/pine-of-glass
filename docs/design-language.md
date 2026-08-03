@@ -235,10 +235,11 @@ A residual is an accounting gap, not a diagnosis. Contextimate calls it
 `Unattributed`, never `reasoning`, and labels it `(accounting gap)`. Provider-reported
 reasoning retained by the response anchoring Pi's total gets an exact `Reasoning
 context` row, including a reported zero. Exact counts accumulate across same-model
-signed history when that model preserves prior thinking; model changes and stripping
-policies stop the accumulation. Provider-generated summaries not covered by exact
-retained reasoning get a separate estimated `Thinking summaries` row; opaque signatures
-are never sized as reasoning.
+signed history when that model preserves prior thinking. Model changes and current-turn
+policies stop the accumulation. Historical reasoning must fit inside the exact reported
+prompt total across input, cache reads and cache writes. Provider-generated summaries
+not covered by exact retained reasoning get a separate estimated `Thinking summaries`
+row; opaque signatures are never sized as reasoning.
 The remaining gap can still include prefix-estimation error, provider overhead, images,
 opaque replay carriers and reasoning when no breakdown was reported. If Pi's context
 total includes local estimates for messages after the last provider usage, the total

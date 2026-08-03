@@ -12,9 +12,11 @@
   values for signed blocks retained by the provider response anchoring Pi's total,
   including reported zero. Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet
   4.6+ histories follow Anthropic's keep-all policy; older Claude families keep only
-  the current assistant turn. Signed OpenAI Responses and Codex history also accumulates
-  exact reported reasoning. Summaries not covered by exact counts remain a clearly
-  estimated `Thinking summaries` row, and opaque signatures are never sized as tokens.
+  the current assistant turn. Gemini histories follow valid thought signatures. GPT-5.6
+  Responses histories follow OpenAI's all-turns default; earlier models keep the current
+  turn. Pi's exact prompt total rejects impossible historical attribution, including
+  cached input. Summaries not covered by exact counts remain a clearly estimated
+  `Thinking summaries` row, and opaque signatures are never sized as tokens.
   `Total request` keeps `~` when Pi includes local estimates for trailing messages.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled

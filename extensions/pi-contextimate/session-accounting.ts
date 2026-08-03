@@ -1,13 +1,14 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { keepsAllClaudeThinking } from "./model-heuristics.ts";
+import { keepsAllClaudeThinking, keepsAllOpenAIReasoning } from "./model-heuristics.ts";
 
 const OPENAI_REASONING_REPLAY_APIS = new Set([
   "openai-responses",
   "azure-openai-responses",
   "openai-codex-responses",
 ]);
+const GOOGLE_REASONING_REPLAY_APIS = new Set(["google-generative-ai", "google-vertex"]);
 
 export type SessionBreakdown = {
   thinkingSummaryChars: number;
@@ -99,7 +100,34 @@ function sameModel(left: AssistantMessage, right: AssistantMessage): boolean {
   return left.provider === right.provider && left.api === right.api && left.model === right.model;
 }
 
+function validGoogleSignature(signature: string | undefined): boolean {
+  return Boolean(signature && signature.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(signature));
+}
+
+function hasEncryptedOpenAIReasoning(signature: string | undefined): boolean {
+  if (!signature) return false;
+  try {
+    const item: unknown = JSON.parse(signature);
+    if (!item || typeof item !== "object") return false;
+    const encryptedContent = (item as { encrypted_content?: unknown }).encrypted_content;
+    return typeof encryptedContent === "string" && encryptedContent.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function hasReasoningCarrier(message: AssistantMessage): boolean {
+  if (GOOGLE_REASONING_REPLAY_APIS.has(message.api)) {
+    return message.content.some((block) => {
+      if (block.type === "thinking") return validGoogleSignature(block.thinkingSignature);
+      if (block.type === "toolCall") return validGoogleSignature(block.thoughtSignature);
+      return validGoogleSignature(block.textSignature);
+    });
+  }
+  if (OPENAI_REASONING_REPLAY_APIS.has(message.api)) {
+    return message.content.some((block) => block.type === "thinking"
+      && hasEncryptedOpenAIReasoning(block.thinkingSignature));
+  }
   return message.content.some((block) => block.type === "thinking" && Boolean(block.thinkingSignature));
 }
 
@@ -132,13 +160,14 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       }
     }
 
-    // Pi sends signed reasoning back intact only for an exact provider/API/model match.
-    // The latest response's reasoning is current output. Earlier exact counts are added
-    // only where the provider documents retained reasoning as input: Anthropic's
-    // model-specific policy and OpenAI Responses reasoning-item replay.
+    // Pi reports generated reasoning per response and the next prompt only as one aggregate.
+    // Signed replay carriers plus each provider's effective retention policy identify the
+    // historical exact counts; the aggregate prompt total is the final conservation check.
     const exactReasoningIndices = new Set<number>();
+    const historicalReasoningIndices = new Set<number>();
     const strippedThinkingIndices = new Set<number>();
     let exactReasoningTokens = 0;
+    let historicalReasoningTokens = 0;
     let hasExactReasoning = false;
     const anchor = llmMessages[lastTrustedUsageIndex];
     if (anchor?.role === "assistant") {
@@ -148,14 +177,15 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       }
       const anchorIsClaude = anchor.api === "anthropic-messages"
         || anchor.model.toLowerCase().includes("claude");
+      const anchorIsOpenAI = OPENAI_REASONING_REPLAY_APIS.has(anchor.api);
+      const anchorIsGoogle = GOOGLE_REASONING_REPLAY_APIS.has(anchor.api);
       const keepsRetainedHistory = anchorIsClaude
         ? keepsAllClaudeThinking(anchor.model)
-        : OPENAI_REASONING_REPLAY_APIS.has(anchor.api);
-      const historyStart = keepsRetainedHistory
-        ? 0
-        : anchorIsClaude
-          ? turnStart
-          : lastTrustedUsageIndex;
+        : anchorIsOpenAI
+          ? keepsAllOpenAIReasoning(anchor.model)
+          : anchorIsGoogle;
+      const keepsCurrentTurn = anchorIsClaude || anchorIsOpenAI;
+      const historyStart = keepsRetainedHistory ? 0 : keepsCurrentTurn ? turnStart : lastTrustedUsageIndex;
       for (const index of trustedAssistantIndices) {
         if (index > lastTrustedUsageIndex) continue;
         const message = llmMessages[index]!;
@@ -170,6 +200,17 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
         exactReasoningTokens += tokens;
         hasExactReasoning = true;
         exactReasoningIndices.add(index);
+        if (index !== lastTrustedUsageIndex) {
+          historicalReasoningTokens += tokens;
+          historicalReasoningIndices.add(index);
+        }
+      }
+      const promptBuckets = anchor.usage.input + anchor.usage.cacheRead + anchor.usage.cacheWrite;
+      const reportedPromptTokens = Math.max(promptBuckets, anchor.usage.totalTokens - anchor.usage.output, 0);
+      if (historicalReasoningTokens > reportedPromptTokens) {
+        exactReasoningTokens -= historicalReasoningTokens;
+        for (const index of historicalReasoningIndices) exactReasoningIndices.delete(index);
+        hasExactReasoning = exactReasoningIndices.size > 0;
       }
     }
     if (hasExactReasoning) breakdown.reasoningTokens = exactReasoningTokens;

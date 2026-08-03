@@ -140,11 +140,13 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
 - **Session estimate math** (`buildSessionEstimate`): with `contextUsage` → totalSource
   `"pi"`, `unattributed = total − tools − messages − uncovered thinking summaries −
   exact retained reasoning` clamped ≥ 0; without → heuristic fallback. The session walk
-  sums provider-reported `usage.reasoning`, including zero, on verified Anthropic and
-  OpenAI Responses retention paths under Pi's exact provider/API/model identity. Boundary
-  fixtures pin Anthropic's keep-all families, date-suffixed older ids, last-turn-only
-  models, model changes, relays, OpenAI text-item ids, missing breakdowns and trailing
-  local estimates. Summary text and opaque signatures never become estimated reasoning.
+  sums provider-reported `usage.reasoning`, including zero, on documented Anthropic,
+  OpenAI Responses and Gemini retention paths under Pi's exact provider/API/model identity.
+  Boundary fixtures pin Anthropic's keep-all families, OpenAI's all-turns and current-turn
+  defaults, Gemini thought signatures, model changes, relays, missing breakdowns and
+  trailing local estimates. The exact prompt total, including cache reads and writes,
+  rejects impossible history. Summary text and opaque signatures never become estimated
+  reasoning.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.

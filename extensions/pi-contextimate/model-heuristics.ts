@@ -45,6 +45,11 @@ export function keepsAllClaudeThinking(modelId: string): boolean {
     || /mythos[-.]?preview/.test(id);
 }
 
+/** OpenAI's default all-turns reasoning context starts with the GPT-5.6 family. */
+export function keepsAllOpenAIReasoning(modelId: string): boolean {
+  return familyAtLeast(modelId, "gpt", 5, 6);
+}
+
 export const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
   {
     label: "Modern Claude heuristic",

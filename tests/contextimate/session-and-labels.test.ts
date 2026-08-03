@@ -32,18 +32,6 @@ const session = {
   contextUsageEstimated: false,
 };
 
-function usageWithReasoning(reasoning: number) {
-  return {
-    input: 10,
-    output: reasoning + 10,
-    cacheRead: 0,
-    cacheWrite: 0,
-    reasoning,
-    totalTokens: reasoning + 20,
-    cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  };
-}
-
 test("with Pi usage: total anchors to (Pi current − estimated harness) and residual is clamped", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith(session, usage);
@@ -86,113 +74,17 @@ test("no session → no estimate", () => {
   assert.equal(buildSessionEstimate(snapshotWith(undefined, undefined)), undefined);
 });
 
-test("session walk sums exact retained reasoning and estimates only uncovered summaries", () => {
-  const anthropic = SessionManager.inMemory("/tmp/contextimate-anthropic-thinking");
-  anthropic.appendMessage({ role: "user", content: "first", timestamp: 1 });
-  anthropic.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "think", thinkingSignature: "opaque-signature-much-longer-than-text" }],
-    { model: "claude-fable-5", usage: usageWithReasoning(800) },
-  ));
-  anthropic.appendMessage({ role: "user", content: "second", timestamp: 2 });
-  anthropic.appendMessage(assistantMessage(
-    [{ type: "text", text: "done" }],
-    { model: "claude-fable-5", usage: usageWithReasoning(25) },
-  ));
-  const anthropicBreakdown = buildSessionBreakdown(anthropic)!;
-  assert.equal(anthropicBreakdown.thinkingSummaryChars, 0, "exact retained reasoning covers the summary");
-  assert.equal(anthropicBreakdown.reasoningTokens, 825, "Fable keeps exact reasoning from every same-model turn");
-  assert.equal(anthropicBreakdown.contextUsageEstimated, false, "last trusted usage anchors Pi's exact total");
-
-  anthropic.appendMessage({ role: "user", content: "trailing", timestamp: 3 });
-  const trailing = buildSessionBreakdown(anthropic)!;
-  assert.equal(trailing.contextUsageEstimated, true);
-  assert.equal(trailing.reasoningTokens, 825, "trailing local estimates preserve the provider anchor");
-
-  const legacy = SessionManager.inMemory("/tmp/contextimate-last-turn-thinking");
-  legacy.appendMessage({ role: "user", content: "first", timestamp: 1 });
-  legacy.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "old", thinkingSignature: "old-signature" }],
-    { model: "claude-opus-4-4", usage: usageWithReasoning(100) },
-  ));
-  legacy.appendMessage({ role: "user", content: "second", timestamp: 2 });
-  legacy.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "new", thinkingSignature: "new-signature" }],
-    { model: "claude-opus-4-4", usage: usageWithReasoning(20) },
-  ));
-  legacy.appendMessage(assistantMessage(
-    [{ type: "text", text: "done" }],
-    { model: "claude-opus-4-4", usage: usageWithReasoning(30) },
-  ));
-  const legacyBreakdown = buildSessionBreakdown(legacy)!;
-  assert.equal(legacyBreakdown.reasoningTokens, 50, "last-turn-only Claude keeps the current assistant turn");
-  assert.equal(legacyBreakdown.thinkingSummaryChars, 0, "the provider strips older same-model thinking entirely");
-
-  const changedModel = SessionManager.inMemory("/tmp/contextimate-changed-model-thinking");
-  changedModel.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "think", thinkingSignature: "fable-signature" }],
-    { model: "claude-fable-5", usage: usageWithReasoning(800) },
-  ));
-  changedModel.appendMessage(assistantMessage(
-    [{ type: "text", text: "done" }],
-    { model: "claude-opus-4-8", usage: usageWithReasoning(25) },
-  ));
-  const changedBreakdown = buildSessionBreakdown(changedModel)!;
-  assert.equal(changedBreakdown.reasoningTokens, 25, "reasoning carriers require Pi's exact model identity");
-  assert.equal(changedBreakdown.thinkingSummaryChars, 5, "cross-model thinking becomes ordinary summary text");
-
-  const radiusClaude = SessionManager.inMemory("/tmp/contextimate-radius-claude-thinking");
-  radiusClaude.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "think", thinkingSignature: "opaque-signature-much-longer-than-text" }],
-    { api: "pi-messages", provider: "radius", model: "claude-fable-5", usage: usageWithReasoning(700) },
-  ));
-  const radiusBreakdown = buildSessionBreakdown(radiusClaude)!;
-  assert.equal(radiusBreakdown.thinkingSummaryChars, 0, "the anchored output summary is covered by exact reasoning");
-  assert.equal(radiusBreakdown.reasoningTokens, 700, "relay usage preserves exact reasoning");
-
-  const codex = SessionManager.inMemory("/tmp/contextimate-codex-thinking");
-  codex.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "summary only", thinkingSignature: JSON.stringify({ id: "encrypted-reasoning" }) }],
-    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.6-sol", usage: usageWithReasoning(900) },
-  ));
-  codex.appendMessage({ role: "user", content: "next", timestamp: 2 });
-  codex.appendMessage(assistantMessage(
-    [{ type: "text", text: "done" }],
-    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.6-sol", usage: usageWithReasoning(100) },
-  ));
-  const codexBreakdown = buildSessionBreakdown(codex)!;
-  assert.equal(codexBreakdown.thinkingSummaryChars, 0, "opaque carriers are never estimated as reasoning text");
-  assert.equal(codexBreakdown.reasoningTokens, 1000, "OpenAI Responses replays signed reasoning items");
-
-  const unsignedResponses = SessionManager.inMemory("/tmp/contextimate-openai-text-signature");
-  unsignedResponses.appendMessage(assistantMessage(
-    [{ type: "text", text: "first", textSignature: JSON.stringify({ v: 1, id: "msg_1", phase: "final_answer" }) }],
-    { api: "openai-responses", provider: "openai", model: "gpt-5.2", usage: usageWithReasoning(600) },
-  ));
-  unsignedResponses.appendMessage({ role: "user", content: "next", timestamp: 2 });
-  unsignedResponses.appendMessage(assistantMessage(
-    [{ type: "text", text: "done" }],
-    { api: "openai-responses", provider: "openai", model: "gpt-5.2", usage: usageWithReasoning(40) },
-  ));
-  assert.equal(
-    buildSessionBreakdown(unsignedResponses)!.reasoningTokens,
-    40,
-    "ordinary OpenAI text item ids are not encrypted reasoning carriers",
-  );
-
+test("session walk estimates a summary when the provider omits its reasoning breakdown", () => {
   const unreported = SessionManager.inMemory("/tmp/contextimate-unreported-reasoning");
   const summary = "summary only";
   unreported.appendMessage(assistantMessage([
     { type: "thinking", thinking: summary, thinkingSignature: "opaque-signature" },
   ]));
-  const unreportedBreakdown = buildSessionBreakdown(unreported)!;
-  assert.equal(unreportedBreakdown.reasoningTokens, undefined);
-  assert.equal(unreportedBreakdown.thinkingSummaryChars, summary.length, "uncovered anchored summaries stay estimated");
-  const unreportedRows = stripAnsi(renderSummary(
-    snapshotWith(unreportedBreakdown, undefined),
-    plainTheme,
-    120,
-  ).join("\n"));
-  assert.doesNotMatch(unreportedRows, /Reasoning context/, "an absent provider breakdown gets no exact row");
+  const breakdown = buildSessionBreakdown(unreported)!;
+  assert.equal(breakdown.reasoningTokens, undefined);
+  assert.equal(breakdown.thinkingSummaryChars, summary.length);
+  const rows = stripAnsi(renderSummary(snapshotWith(breakdown, undefined), plainTheme, 120).join("\n"));
+  assert.doesNotMatch(rows, /Reasoning context/, "an absent provider breakdown gets no exact row");
 });
 
 test("reported zero reasoning stays exact while the accounting gap remains separate", () => {

@@ -47,7 +47,8 @@ How to read the numbers:
 - the first row says `Runtime system prompt` because Pi assembles that prompt at runtime from its base prompt plus tool and extension contributions; expanded view attributes the part it can verify
 - `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand
 - each expanded tool header shows where the tool came from: its config scope and defining file, or `builtin`
-- `Reasoning context` sums provider-reported exact counts for signed reasoning retained by the response anchoring Pi's total; same-model keep-all Claude histories accumulate across turns, while summaries not covered by an exact count remain estimated separately as `Thinking summaries`
+- `Reasoning context` sums provider-reported exact counts for signed reasoning retained by the response anchoring Pi's total; it follows Claude and OpenAI's model-specific retention defaults and Gemini's valid thought signatures
+- Pi's exact prompt total, including cache reads and writes, rejects historical attribution that cannot fit; summaries not covered by exact counts remain estimated separately as `Thinking summaries`
 - opaque signatures are never treated as token-sized text, and cross-model reasoning is not counted as retained
 - `Unattributed` is the remaining accounting gap and can include prefix-estimation error, provider overhead, images and reasoning when the provider reports no breakdown
 
