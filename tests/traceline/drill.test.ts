@@ -270,10 +270,13 @@ test("a folded read run is one numbered target", () => {
 
   // §9.9's sibling-file dir fold is also one target, carried by its first row.
   const sibling = toolComp({ args: { path: "/tmp/demo/sibling.ts" } });
-  enterDrillMode(makeHost([page1, page2, sibling]));
+  const calls: CustomCall[] = [];
+  enterDrillMode(makeHost([page1, page2, sibling], calls));
   const dirFold = drillState()!;
   assert.equal(dirFold.rows.length, 1, "a sibling dir fold is one target");
   assert.equal(dirFold.rows[0], page1, "the dir fold's carrier is its first row");
+  calls[0]!.component.handleInput!("p");
+  assert.ok([page1, page2, sibling].every((row) => row.expanded === true), "pin expands every member of a folded target");
 });
 
 // --- mouse -------------------------------------------------------------------------------

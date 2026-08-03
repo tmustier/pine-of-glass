@@ -45,6 +45,7 @@ import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact } from "./image-fact.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
+import { adjacentReadGroups, combinedResultChars, foldedStatus, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
 import {
   captureWriteSnapshot,
   diffStatsFromContents,
@@ -445,8 +446,13 @@ function blockSizeColumnLive(comp: ToolRowLike): boolean {
 function blockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: number): number {
   let widest = 0;
   for (const row of rows) {
-    const run = readRun(row);
-    const suffix = run ? foldedReadSuffix(run.rows, facts) : toolFactSuffix(row, available, facts);
+    const read = readRun(row);
+    const repeated = read ? undefined : repetitionRun(row);
+    const suffix = read
+      ? foldedReadSuffix(read.rows, facts)
+      : repeated
+        ? charSuffix(combinedResultChars(repeated.rows), facts.sizeColumnLive)
+        : toolFactSuffix(row, available, facts);
     widest = Math.max(widest, visibleWidth(suffix));
   }
   return widest > 0 ? widest + 2 : 0;
@@ -1254,54 +1260,36 @@ function sameDirReadRows(comp: ToolRowLike): { rows: ToolRowLike[]; index: numbe
   return { rows, index: selfIndex };
 }
 
-// One file inside a run: the maximal sequence of adjacent same-path calls. A file
-// whose combined landed result reaches warning severity is a breakout (§9.9): it
-// keeps its own row — a pagination fold when paged — rather than melting into the
-// dir fold. Running calls (no result yet) count nothing; when the result lands, the
-// per-render recompute pops a ballooning file out of the fold on its own.
-type ReadFileGroup = { rows: ToolRowLike[]; breakout: boolean };
-
-function readFileGroups(rows: ToolRowLike[]): ReadFileGroup[] {
-  const grouped: { path: string; rows: ToolRowLike[] }[] = [];
-  for (const row of rows) {
-    const path = String(row?.args?.path ?? "");
-    const last = grouped[grouped.length - 1];
-    if (last && last.path === path) last.rows.push(row);
-    else grouped.push({ path, rows: [row] });
-  }
-  return grouped.map((group) => {
-    let combined = 0;
-    for (const row of group.rows) combined += resultTextCharCount(row) ?? 0;
-    return { rows: group.rows, breakout: combined >= sizeThresholds.warning };
-  });
+// Recompute read groups as results land so ballooning files never disappear.
+function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
+  const run = sameDirReadRows(comp); return run ? groupedReadRun(run, sizeThresholds.warning) : undefined;
 }
 
-// comp's fold unit: a breakout file is a unit of its own; maximal sequences of
-// adjacent sub-warning files merge into one dir-fold unit. A unit folds only when it
-// spans more than one call — a lone sub-warning read beside breakouts renders alone,
-// and a single unpaged read renders exactly as before.
-function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
-  const run = sameDirReadRows(comp);
-  if (!run) return undefined;
-  const units: { rows: ToolRowLike[]; start: number; breakout: boolean }[] = [];
-  let offset = 0;
-  for (const group of readFileGroups(run.rows)) {
-    const open = units[units.length - 1];
-    if (!group.breakout && open && !open.breakout) open.rows.push(...group.rows);
-    else units.push({ rows: [...group.rows], start: offset, breakout: group.breakout });
-    offset += group.rows.length;
-  }
-  const unit = units.find((u) => run.index >= u.start && run.index < u.start + u.rows.length);
-  if (!unit || unit.rows.length < 2) return undefined;
-  return { rows: unit.rows, index: run.index - unit.start };
+// Reads, mutations, records and images carry facts a generic count cannot preserve.
+function repetitionKey(comp: ToolRowLike): string | undefined {
+  if (comp.expanded === true || toolLabel(comp.toolName) === "read") return undefined;
+  if (inlineMutationRow(comp) || recordRow(comp) || resultImageFact(comp)) return undefined;
+  return stripAnsi(invocationInk(comp)).trim() || undefined;
+}
+
+function repetitionRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
+  const found = componentLocation(comp); return found ? groupedRepetitionRun(comp, found.sibs, repetitionKey) : undefined;
+}
+
+function foldedRepetitionLine(rows: ToolRowLike[], width: number): string {
+  const carrier = rows[0]!;
+  const display = rows.find((row) => toolStatus(row) === "error") ?? carrier;
+  const blockRows = blockToolRows(carrier);
+  const facts = blockFacts(blockRows);
+  const available = traceRowAvailable(width);
+  const body = `${invocationInk(display, available)}${dim(` ×${rows.length}`)}`;
+  const suffix = charSuffix(combinedResultChars(rows), facts.sizeColumnLive);
+  return fitTraceRow(carrier, foldedStatus(rows, toolStatus), body, suffix,
+    blockSuffixReserve(blockRows, facts, available), width);
 }
 
 function foldedReadSuffix(rows: ToolRowDataLike[], facts: BlockFacts): string {
-  let total: number | undefined;
-  for (const row of rows) {
-    const chars = resultTextCharCount(row);
-    if (chars !== undefined) total = (total ?? 0) + chars;
-  }
+  const total = combinedResultChars(rows);
   const calls = `${rows.length} calls`;
   const sizeCell = charSuffix(total, facts.sizeColumnLive);
   return total === undefined || !sizeCell ? dim(calls) : `${dim(`${calls}${SEP}`)}${sizeCell}`;
@@ -1354,11 +1342,10 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
       : verbInk(last, "read");
 
   type FoldCell = { ink: string; plain: string };
-  const cells: FoldCell[] = readFileGroups(rows).map((group) => {
-    const groupPath = String(group.rows[0]?.args?.path ?? "");
-    const base = groupPath.slice(groupPath.lastIndexOf("/") + 1);
+  const cells: FoldCell[] = adjacentReadGroups(rows).map((group) => {
+    const base = group.path.slice(group.path.lastIndexOf("/") + 1);
     const ranges = group.rows
-      .map((row) => lineRange(row?.args).slice(1))
+      .map((row) => lineRange(row.args).slice(1))
       .filter(Boolean)
       .join(",");
     const rangeText = ranges ? `:${ranges}` : "";
@@ -1480,11 +1467,17 @@ function leadingBlank(comp: ToolRowDataLike): boolean {
 // One row's worth of one-line output: folded-run handling plus the group-spacing rule.
 // Shared by the prototype patch and the test suites.
 function renderTraceRow(comp: ToolRowLike, width: number): string[] {
-  const run = readRun(comp);
-  if (run) {
-    if (run.index > 0) return []; // a later call: the unit's first row carries the fold
-    const lines = foldedReadLines(run.rows, width);
+  const read = readRun(comp);
+  if (read) {
+    if (read.index > 0) return []; // a later call: the unit's first row carries the fold
+    const lines = foldedReadLines(read.rows, width);
     return leadingBlank(comp) ? ["", ...lines] : lines;
+  }
+  const repeated = repetitionRun(comp);
+  if (repeated) {
+    if (repeated.index > 0) return [];
+    const line = foldedRepetitionLine(repeated.rows, width);
+    return leadingBlank(comp) ? ["", line] : [line];
   }
   const line = oneLine(comp, width);
   return leadingBlank(comp) ? ["", line] : [line];
@@ -1653,6 +1646,8 @@ export const internals = {
   foldBashPreamble,
   previousBashRow,
   readRun,
+  repetitionRun,
+  foldedRepetitionLine,
   dedupeThinkingLabels,
   // typed test/dev accessors for traceline's Pi seam globals
   setTracelineChat,
@@ -1687,15 +1682,20 @@ export default function piTraceline(pi: ExtensionAPI) {
       }
     },
     traceLines: (comp, width) => {
-      const run = readRun(comp);
-      return run && run.index === 0 ? foldedReadLines(run.rows, width) : [oneLine(comp, width)];
+      const read = readRun(comp);
+      if (read?.index === 0) return foldedReadLines(read.rows, width);
+      const repeated = repetitionRun(comp);
+      return repeated?.index === 0 ? [foldedRepetitionLine(repeated.rows, width)] : [oneLine(comp, width)];
     },
     runRows: (comp) => {
-      const run = readRun(comp);
-      return run && run.index === 0 ? run.rows : undefined;
+      const read = readRun(comp);
+      if (read?.index === 0) return read.rows;
+      const repeated = repetitionRun(comp);
+      return repeated?.index === 0 ? repeated.rows : undefined;
     },
-    // Only one-line mode folds reads away; in native mode every row is its own target.
-    hiddenByFold: (comp) => displayMode() === "oneLine" && (readRun(comp)?.index ?? 0) > 0,
+    // Only one-line mode folds rows away; in native mode every row is its own target.
+    hiddenByFold: (comp) =>
+      displayMode() === "oneLine" && ((readRun(comp)?.index ?? 0) > 0 || (repetitionRun(comp)?.index ?? 0) > 0),
     statusTone,
     mouse: config.drillMouse !== false,
   });

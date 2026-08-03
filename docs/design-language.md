@@ -409,11 +409,21 @@ row stays on the exact grid and can never overflow. Rows that fit their budget
 simply end early, like prose. A mid-token cut beside a dim ellipsis is legible;
 a wandering ellipsis column is not.
 
-### 9.9 Folded reads
+### 9.9 Repetition folds
 
-Consecutive reads fold into one entity, at two granularities sharing one
-grammar (both adopted against a 400-session corpus of real transcripts, per
-§10):
+Calls in one assistant step whose compact invocation lines are identical fold into
+one row with a dim multiplication count: `mcp call linear_save_issue ×22`. The
+visible invocation is the fold key, not the complete arguments: when Traceline cannot
+show how calls differ, repeating the same line adds no information. Calls from separate
+assistant steps never merge. The folded row sums landed result sizes; any running call
+keeps it running, and any failed call makes it an error. Expanded rows, reads, file
+mutations, image results and record rows do not participate because their individual
+rendering carries information the generic fold cannot preserve. An expanded row also
+splits a fold, so no aggregate crosses a native-rendered block. Ctrl+T restores every
+native row.
+
+Consecutive reads use a richer fold at two granularities sharing one grammar (both
+adopted against a 400-session corpus of real transcripts, per §10):
 
 - paginated reads of one file merge their ranges:
   `read …/index.ts:1-200,201-400 · 2 calls · 37.0k ch`

@@ -37,6 +37,7 @@ export interface ToolCallRendererLike {
 }
 
 export interface ToolRowDataLike {
+  toolCallId?: unknown;
   toolName?: unknown;
   args?: ToolArgsLike;
   result?: ToolResultLike;
