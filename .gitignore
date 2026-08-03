@@ -12,4 +12,3 @@ pi-contextimate-*/
 *.summary.json
 pi-contextimate-*-results.json
 .worktrees/
-artifacts/

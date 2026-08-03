@@ -61,7 +61,13 @@ function probeContext(entries: unknown[], api: string, notifications: string[], 
       id: "claude-opus-4-8", provider: "anthropic", api, reasoning: false, contextWindow: 200_000,
       cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
     },
-    sessionManager: { getEntries: () => entries, getLeafId: () => "a1" },
+    sessionManager: {
+      getEntries: () => entries,
+      getLeafId: () => {
+        const last = entries.at(-1);
+        return typeof last === "object" && last !== null && "id" in last && typeof last.id === "string" ? last.id : null;
+      },
+    },
     getSystemPrompt: () => "",
   };
 }
@@ -71,6 +77,23 @@ const ANTHROPIC_PAYLOAD = {
   system: [{ type: "text", text: "fixture", cache_control: { type: "ephemeral" } }],
   messages: [{ role: "user", content: [{ type: "text", text: "next" }] }],
 };
+
+test("event flow: an aborted first send clears its speculative cache clock", async () => {
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const probe = extensionProbe();
+  const ctx = probeContext([], "anthropic-messages", notifications, widgets);
+
+  await fire(probe, "session_start", {}, ctx);
+  try {
+    await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
+    assert.notEqual(widgets.at(-1), "", "the in-flight request starts the cache clock");
+    await fire(probe, "agent_end");
+    assert.equal(widgets.at(-1), "", "an abort without usage must not leave a fictitious TTL anchor");
+  } finally {
+    await fire(probe, "session_shutdown", {});
+  }
+});
 
 test("event flow: the same model over a different wire API is a switch", async () => {
   // Baseline billed over anthropic-messages; the session resumes on bedrock-anthropic.

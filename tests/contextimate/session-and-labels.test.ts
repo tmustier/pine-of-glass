@@ -169,6 +169,7 @@ test("pre-switch usage names its old currency without losing Pi's estimate marke
         output: 10,
         cacheRead: 40_000,
         cacheWrite: 0,
+        reasoning: 600,
         totalTokens: 40_012,
         cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       },
@@ -186,10 +187,12 @@ test("pre-switch usage names its old currency without losing Pi's estimate marke
 
   const switched = build();
   assert.deepEqual(switched.preSwitchUsage, { billedModel: "gpt-5.6-sol" });
-  assert.equal(buildSessionEstimate(switched)!.totalSource, "heuristic");
+  const switchedEstimate = buildSessionEstimate(switched)!;
+  assert.equal(switchedEstimate.totalSource, "heuristic");
+  assert.equal(switchedEstimate.reasoningTokens, undefined, "old-model reasoning cannot be reused in the target currency");
   const exact = stripAnsi(renderSummary(switched, plainTheme, 80).join("\n"));
   assert.match(exact, /Total request\s+50\.0k tokens\s+\(pre-switch usage · gpt-5\.6-sol tokens\)/);
-  assert.doesNotMatch(exact, /\/ 200k ctx|free /, "old tokens must not use the new model's window");
+  assert.doesNotMatch(exact, /Reasoning context|\/ 200k ctx|free /, "old counts must not use the new model's currency");
 
   manager.appendMessage({ role: "user", content: "next question", timestamp: 3 });
   const estimated = build();

@@ -5,7 +5,7 @@
 // tokens the same bytes are likely to be. Contextimate layers user config on top;
 // these numbers are the built-in floor both extensions share.
 
-export type ToolNumeratorKind =
+type ToolNumeratorKind =
   | "anthropic"
   | "openai-cookbook"
   | "openai-responses"
@@ -29,7 +29,7 @@ export type HeuristicNumbers = {
   toolNumerator: ToolNumeratorKind;
 };
 
-export type BuiltInHeuristicRule = HeuristicNumbers & {
+type BuiltInHeuristicRule = HeuristicNumbers & {
   providerIncludes: string[];
   apiEquals: string[];
   /** Explicit model relays whose model id still identifies the downstream tokenizer. */
@@ -78,7 +78,7 @@ export function keepsAllOpenAIReasoning(modelId: string): boolean {
   return familyAtLeast(modelId, "gpt", 5, 6);
 }
 
-export const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
+const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
   {
     label: "Claude 4.7+ heuristic",
     providerIncludes: ["anthropic"],
@@ -177,7 +177,7 @@ export const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
   },
 ];
 
-export function builtInRuleMatches(rule: BuiltInHeuristicRule, model: ModelSummary): boolean {
+function builtInRuleMatches(rule: BuiltInHeuristicRule, model: ModelSummary): boolean {
   const provider = model.provider.toLowerCase();
   const api = model.api.toLowerCase();
   const providerOrApiMatches = rule.providerIncludes.some((entry) => provider.includes(entry))

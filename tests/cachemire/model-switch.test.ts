@@ -189,7 +189,7 @@ test("computeSwitchForecast: a billed source anchor calibrates the estimate", ()
   const source: SwitchTarget = { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" };
   const snapshot = {
     requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
-    promptTokens: 2_925, cacheRead: 0, cacheWrite: 0,
+    promptTokens: 2_925,
     provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses",
   };
   const base = { target: OPUS, source, entries, activeLeafId: "a1", systemPromptChars: 0, tools: [] };
@@ -230,7 +230,7 @@ test("computeSwitchForecast: a switch-back prior needs an exact api and an uncom
   const sol: SwitchTarget = { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" };
   const snapshot = {
     requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
-    promptTokens: 80_000, cacheRead: 0, cacheWrite: 0,
+    promptTokens: 80_000,
     provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses", window: BAND,
   };
   const base = { target: sol, entries: entriesFixture(), activeLeafId: "a1", systemPromptChars: 0, tools: [] };

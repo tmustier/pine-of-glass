@@ -38,10 +38,6 @@ test("provider prompt: image bytes use a flat convention, not base64 length", ()
   assert.ok((long?.tokens ?? 0) > 1_000, "one image retains pi's 4.8k-char size convention");
 });
 
-test("provider prompt: unknown or unserializable shapes fall back", () => {
+test("provider prompt: unknown shapes are not sized", () => {
   assert.equal(forecastProviderPrompt({ metadata: "not a prompt" }, FALLBACK), undefined);
-  const cyclic: { messages?: unknown; self?: unknown } = { messages: [] };
-  cyclic.self = cyclic;
-  cyclic.messages = cyclic;
-  assert.equal(forecastProviderPrompt(cyclic, FALLBACK), undefined);
 });

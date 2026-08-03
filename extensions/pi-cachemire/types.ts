@@ -108,8 +108,6 @@ export interface CacheLineageSnapshot {
   responseAt: number;
   requestAt: number;
   promptTokens: number;
-  cacheRead: number;
-  cacheWrite: number;
   provider?: string;
   model?: string;
   /** Wire API that billed this call; same id via a different api is a different cache. */

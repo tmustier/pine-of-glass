@@ -16,7 +16,6 @@ const luna: TargetModel = {
   provider: "openai-codex",
   id: "gpt-5.6-luna",
   api: "openai-codex-responses",
-  contextWindow: 272_000,
   input: ["text", "image"],
 };
 
@@ -24,7 +23,6 @@ const opus: TargetModel = {
   provider: "anthropic",
   id: "claude-opus-4-8",
   api: "anthropic-messages",
-  contextWindow: 200_000,
   input: ["text", "image"],
 };
 

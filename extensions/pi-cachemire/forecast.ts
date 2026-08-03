@@ -1,7 +1,5 @@
-// Model-switch prompt forecast (issue #57): estimate the prompt in the *target*
-// model's currency (the old model's exact counts are in the wrong tokenizer), and
-// find the target's own path-compatible billed call (an A→B→A switch-back may
-// revive that cache entry, not the old model's).
+// Estimate switched prompts in the target model's currency and find any
+// path-compatible cache entry from an earlier call to that target.
 
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
@@ -11,7 +9,6 @@ import type { ToolShape } from "../_lib/tool-payloads.ts";
 import { findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
 
-/** The slice of pi's Model the forecast reads; ctx.model / event.model satisfy it. */
 export type SwitchTarget = {
   provider: string;
   id: string;
@@ -19,18 +16,11 @@ export type SwitchTarget = {
   input?: readonly string[];
 };
 
-/** The active tool list in the shape the estimators price. */
 export function activeToolShapes(pi: Pick<ExtensionAPI, "getActiveTools" | "getAllTools">): ToolShape[] {
   const active = new Set(pi.getActiveTools());
   return pi.getAllTools()
     .filter((tool) => active.has(tool.name))
     .map((tool) => ({ name: tool.name, description: tool.description, schema: tool.parameters }));
-}
-
-/** The identity of the last billed call, when fully known; partial identities cannot
- * pick a heuristic rule and are not calibration anchors. */
-export function billedSource(provider?: string, id?: string, api?: string): SwitchTarget | undefined {
-  return provider !== undefined && id !== undefined && api !== undefined ? { provider, id, api } : undefined;
 }
 
 export interface SwitchForecast {

@@ -4,7 +4,7 @@ import { keyText } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
-import { isJsonObject, positiveNumberValue, stringValue, type JsonValue } from "../_lib/boundary.ts";
+import { isJsonObject, positiveNumberValue, stringValue } from "../_lib/boundary.ts";
 import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
@@ -27,7 +27,6 @@ import {
   safeMinifiedJson,
   schemaArrayItemProperties,
   schemaPropertyDescription,
-  schemaPropertyEnum,
   schemaPropertyType,
   toolPayloadForShape,
   toolPayloadLabel,
@@ -976,11 +975,12 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
 
 function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undefined {
   if (!snapshot.session) return undefined;
-  return estimateSessionBreakdown(snapshot.session, {
+  const session = snapshot.preSwitchUsage
+    ? { ...snapshot.session, reasoningTokens: undefined }
+    : snapshot.session;
+  return estimateSessionBreakdown(session, {
     denominator: snapshot.heuristic.sessionDenominator,
     harnessTokens: totalTokens(snapshot),
-    // A pre-switch count is denominated in the old model, so it cannot anchor
-    // target-currency session accounting.
     contextTokens: snapshot.preSwitchUsage ? undefined : snapshot.contextUsage?.tokens,
   });
 }
@@ -1426,9 +1426,7 @@ function setMode(mode: ViewMode): void {
 export const internals = {
   // system-prompt parsing
   PROJECT_CONTEXT_RE,
-  PROJECT_INSTRUCTIONS_RE,
   AVAILABLE_SKILLS_RE,
-  SKILL_RE,
   RESOURCE_HEADER_RE,
   getPromptRemainder,
   parseSkills,
@@ -1454,7 +1452,6 @@ export const internals = {
   estimatedTokenLabel,
   estimatedTokenField,
   exactTokenLabel,
-  renderMetricRow,
   // proportion (design language §8)
   ctxShareLabel,
   contextWindowLabel,

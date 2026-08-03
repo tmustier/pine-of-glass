@@ -14,7 +14,6 @@ import {
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
-import type { ToolShape } from "../_lib/tool-payloads.ts";
 import {
   TTL_LONG_MS,
   TTL_SHORT_MS,
@@ -26,8 +25,8 @@ import {
   pastWindow,
   stripCacheControl,
 } from "./classify.ts";
-import { UNKNOWN_TTL_WARM_MS, UNKNOWN_WINDOW, cacheClock, toneFor, withinWarmHorizon, type ClockState } from "./clock.ts";
-import { activeToolShapes, billedSource, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
+import { UNKNOWN_WINDOW, cacheClock, toneFor, withinWarmHorizon } from "./clock.ts";
+import { activeToolShapes, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
 import { restoreBranchRecords } from "./ledger.ts";
 import {
   cacheStateForLineage,
@@ -36,7 +35,6 @@ import {
   resolveCacheLineage,
   restoreLineageSnapshots,
 } from "./lineage.ts";
-import { settleDanglingSend } from "./lifecycle.ts";
 import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
 import type {
   BreakPrediction,
@@ -395,7 +393,7 @@ interface CachemireState {
   prevCallRequestAt?: number;
   lastRequestAt?: number;
   window: CacheWindow;
-  /** Model id at the time of the last billed call — the currency of cachedTokens. */
+  /** Model id at the time of the last billed call, and therefore of expectedRead. */
   lastCallModelId?: string;
   /** Provider/api that billed the last call: the same id through a different
    * provider or wire api is a different cache (and possibly a different tokenizer). */
@@ -410,7 +408,6 @@ interface CachemireState {
   currentThinkingLevel?: string;
   thinkingChanged: boolean;
   expectedRead: number;
-  cachedTokens?: number;
   rates?: ModelRates;
   modelLabel?: string;
   providerLabel?: string;
@@ -469,8 +466,8 @@ function updateWidget(now = Date.now()): void {
     now,
     lastRequestAt: s.lastRequestAt,
     window: s.window,
-    cachedTokens: s.cachedTokens,
-    rewriteUsd: s.cachedTokens !== undefined ? rewriteCostUsd(s.cachedTokens, s.rates) : undefined,
+    cachedTokens: s.expectedRead,
+    rewriteUsd: s.expectedRead > 0 ? rewriteCostUsd(s.expectedRead, s.rates) : undefined,
     compacted: s.compacted,
     modelSwitched: s.modelSwitched,
     switchForecast: s.switchForecast,
@@ -509,9 +506,12 @@ function refreshSwitchForecast(
     s.switchForecast = undefined;
     return;
   }
+  const source = s.lastCallProvider !== undefined && s.lastCallModelId !== undefined && s.lastCallApi !== undefined
+    ? { provider: s.lastCallProvider, id: s.lastCallModelId, api: s.lastCallApi }
+    : undefined;
   s.switchForecast = computeSwitchForecast({
     target,
-    source: billedSource(s.lastCallProvider, s.lastCallModelId, s.lastCallApi),
+    source,
     entries: ctx.sessionManager.getEntries(),
     activeLeafId,
     systemPromptChars: ctx.getSystemPrompt().length,
@@ -562,7 +562,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.pendingRequestAt = s.pendingPreviousCacheAt = s.pendingCacheGapMs = undefined;
     s.pendingRequestLeafId = undefined;
     s.pendingRequestWindow = undefined;
-    if (!ctx.hasUI) return;
     s.ui = ctx.ui;
     s.theme = ctx.ui.theme;
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
@@ -795,8 +794,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
       responseAt: typeof message.timestamp === "number" ? message.timestamp : now,
       requestAt,
       promptTokens: promptSize,
-      cacheRead: usage.cacheRead,
-      cacheWrite: usage.cacheWrite,
       provider: message.provider,
       model: message.model,
       api: message.api,
@@ -815,7 +812,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.pendingPreviousCacheAt = undefined;
     s.pendingCacheGapMs = undefined;
     s.expectedRead = promptSize;
-    s.cachedTokens = promptSize;
     s.window = s.pendingRequestWindow ?? s.window;
     s.pendingRequestWindow = undefined;
     // Fresh usage re-baselines the currency: counts are now denominated in this model.
@@ -865,13 +861,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
 
   pi.on("agent_end", async () => {
     if (!ownsState()) return;
-    // A notice whose call never produced usage (abort/error) must not dangle as "breaking".
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
-    // Same honesty for the clock: a send that never produced usage must not keep the TTL
-    // anchor it optimistically claimed at request start — a fast abort can cancel before
-    // the provider ever touched the cache, and the countdown would then be fiction.
-    const settled = settleDanglingSend(s);
-    if (settled.changed) {
+    if (s.pendingRequestAt !== undefined) {
       s.lastRequestAt = s.pendingPreviousCacheAt;
       s.pendingRequestAt = undefined;
       s.pendingRequestLeafId = undefined;
@@ -914,12 +905,9 @@ export const internals = {
   windowForProvider,
   windowLabel,
   pastWindow,
-  expiryCause,
   OPENAI_WINDOW,
-  UNKNOWN_WINDOW,
   predictBreak,
   renderBreakingLine,
-  computeSwitchForecast,
   withinWarmHorizon,
   renderHeldLine,
   diffFingerprints,
@@ -929,7 +917,6 @@ export const internals = {
   restoreLineageSnapshots,
   matchPriorEntry,
   classifyCall,
-  settleDanglingSend,
   uncachedCostUsd,
   rewriteCostUsd,
   sessionSavings,
@@ -944,6 +931,5 @@ export const internals = {
   renderMissLine,
   renderLedger,
   restoreFromMessages: (messages: Array<Record<string, unknown>>) => restoreBranchRecords(messages, classifyCall),
-  loadConfig,
   DEFAULT_CONFIG,
 };

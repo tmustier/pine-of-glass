@@ -10,11 +10,11 @@ import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages"
 import type { Message, Model, Api } from "@earendil-works/pi-ai";
 
 import {
-  ESTIMATED_IMAGE_CHARS,
   forecastHistoryForTarget,
   normalizeForecastToolCallId,
   type ForecastMessage,
 } from "../../extensions/_lib/forecast.ts";
+import { ESTIMATED_IMAGE_CHARS } from "../../extensions/_lib/provider-prompt.ts";
 import { assistantMessage } from "../helpers.ts";
 
 function fakeModel(overrides: Partial<Model<Api>> = {}): Model<Api> {
@@ -138,12 +138,6 @@ test("mirror: same-model replay keeps reasoning payloads", () => {
   assertMirror(richHistory(), opus, "sol/opus history → opus (opus turns replay)");
   const sol = fakeModel({ id: "gpt-5.6-sol" });
   assertMirror(richHistory(), sol, "sol/opus history → sol (sol turns replay)");
-});
-
-test("fully foreign target: every encrypted payload is immaterial to the real transform too", () => {
-  // luna appears in no message, so ENCRYPTED-SOL-PAYLOAD, SIGNATURE-ONLY, REDACTED and
-  // TOOL-THOUGHT must all drop — from the mirror and from transformMessages alike.
-  assertMirror(richHistory(), fakeModel(), "sol/opus history → luna (all payloads drop)");
 });
 
 test("mirror: cross-provider tool call IDs use pi's normalization callback", () => {

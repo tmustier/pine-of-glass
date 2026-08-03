@@ -1,10 +1,4 @@
-// Shared provider tool-payload shapes and tool-token estimators for the family.
-//
-// The estimators count tools the way each provider actually receives them: shaped
-// minified payloads under a family char/token denominator, or the OpenAI
-// cookbook-style schema-summary formula where that is the better-validated method.
-// Split from _lib/heuristics.ts (which owns the family denominator rules) so each
-// file stays inside its agent context budget.
+// Provider-shaped tool payloads and token estimators shared by the family.
 
 import { isJsonObject, type JsonValue } from "./boundary.ts";
 import { estimateCharsAsTokens, type HeuristicNumbers } from "./heuristics.ts";
@@ -23,7 +17,7 @@ export const OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR = 6.6;
 
 // --- JSON schema readers shared by the tool estimators -----------------------------------
 
-export function trimFinalPeriod(text: string): string {
+function trimFinalPeriod(text: string): string {
   return text.endsWith(".") ? text.slice(0, -1) : text;
 }
 
@@ -47,7 +41,7 @@ export function schemaPropertyDescription(property: unknown): string {
   return typeof property.description === "string" ? trimFinalPeriod(property.description) : "";
 }
 
-export function schemaPropertyEnum(property: unknown): JsonValue[] {
+function schemaPropertyEnum(property: unknown): JsonValue[] {
   if (!isJsonObject(property) || !Array.isArray(property.enum)) return [];
   return property.enum;
 }
@@ -86,60 +80,34 @@ export function openAIResponsesToolPayload(tool: ToolShape): unknown {
   };
 }
 
-export function openAIChatToolPayload(tool: ToolShape): unknown {
-  return {
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.schema,
-      strict: null,
-    },
-  };
-}
-
-export function anthropicToolPayload(tool: ToolShape): unknown {
-  return {
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.schema,
-  };
-}
-
-export function geminiToolPayload(tools: ToolShape[]): unknown {
-  return {
-    functionDeclarations: tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parametersJsonSchema: tool.schema,
-    })),
-  };
-}
-
-export function bedrockToolPayload(tool: ToolShape): unknown {
-  return {
-    toolSpec: {
-      name: tool.name,
-      description: tool.description,
-      inputSchema: { json: tool.schema },
-    },
-  };
-}
-
 export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: string[] }, shape: string): unknown {
   switch (shape) {
     case "openai-chat":
     case "openai-completions":
     case "mistral":
-      return openAIChatToolPayload(tool);
+      return {
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.schema,
+          strict: null,
+        },
+      };
     case "anthropic":
-      return anthropicToolPayload(tool);
+      return { name: tool.name, description: tool.description, input_schema: tool.schema };
     case "gemini":
     case "google":
     case "vertex":
       return { name: tool.name, description: tool.description, parametersJsonSchema: tool.schema };
     case "bedrock":
-      return bedrockToolPayload(tool);
+      return {
+        toolSpec: {
+          name: tool.name,
+          description: tool.description,
+          inputSchema: { json: tool.schema },
+        },
+      };
     case "raw-schema":
       return {
         name: tool.name,
@@ -153,7 +121,15 @@ export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: strin
 }
 
 export function aggregateToolPayloadForShape(tools: Array<ToolShape & { promptGuidelines?: string[] }>, shape: string): unknown {
-  if (shape === "gemini" || shape === "google" || shape === "vertex") return geminiToolPayload(tools);
+  if (shape === "gemini" || shape === "google" || shape === "vertex") {
+    return {
+      functionDeclarations: tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parametersJsonSchema: tool.schema,
+      })),
+    };
+  }
   return tools.map((tool) => toolPayloadForShape(tool, shape));
 }
 

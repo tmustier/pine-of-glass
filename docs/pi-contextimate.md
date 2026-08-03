@@ -2,7 +2,7 @@
 
 `[Contextimate]` is an inspector, not a billing ledger. Its job is to explain why a session is large and which component is responsible, accurately enough to act on. Every heuristic number carries a `~`. `Total request` drops the marker only when Pi's current total comes entirely from the latest trusted provider usage; local estimates for trailing messages keep it.
 
-This note records the counting policy, the evidence behind it, and the user configuration. Live provider profiles are in `extensions/pi-contextimate/model-heuristics.ts`, formula constants are in `extensions/pi-contextimate/index.ts`, and active-path accounting is in `extensions/pi-contextimate/session-accounting.ts`. This note explains why they hold the values they do; it does not duplicate them.
+This note records the counting policy, the evidence behind it, and the user configuration. Live provider profiles are in `extensions/_lib/heuristics.ts`, tool formulas are in `extensions/_lib/tool-payloads.ts`, and active-path accounting is in `extensions/pi-contextimate/session-accounting.ts`. This note explains why they hold the values they do; it does not duplicate them.
 
 ## Count what the provider sees
 
@@ -86,7 +86,7 @@ Summaries not covered by exact retained reasoning are estimated separately as `T
 
 After compaction, Pi deliberately reports usage as unknown until the next assistant response arrives. The panel then falls back to its heuristic estimate and labels the whole total as heuristic.
 
-After a model switch, Pi's exact count is still in the *previous* model's tokenizer while the window belongs to the new one. Mixing the two would produce a made-up percentage. The panel names the currency instead: `Total request` keeps the exact count but its detail becomes `(pre-switch usage · gpt-5.6-sol tokens)`, the window share and context bar are withheld, and the session split falls back to the heuristic. The first post-switch response re-baselines everything.
+After a model switch, Pi's exact count is still in the *previous* model's tokenizer while the window belongs to the new one. Mixing the two would produce a made-up percentage. The panel names the currency instead: `Total request` keeps the exact count but its detail becomes `(pre-switch usage · gpt-5.6-sol tokens)`, that total's window share and context bar are withheld, and the session split falls back to the heuristic. The first post-switch response re-baselines everything.
 
 Upstream Codex ([`openai/codex` at `0c5ccd1`](https://github.com/openai/codex/tree/0c5ccd18abda96efaed9e94e26ffe22def5e28ed)) chooses differently: after compaction it writes a purely local estimate into its active-context number (base instructions at chars ÷ 4, per-item serialized-JSON byte estimates, special cases for encrypted reasoning blobs, encrypted tool outputs and images). Contextimate does not copy this, because a provider-usage field that sometimes holds local guesses can no longer be trusted as provider usage. Pi's explicit unknown plus a labelled heuristic keeps the two sources honest. The full annotated comparison, with line-level citations to the Codex source, is in git history (`docs/pi-contextimate-codex-context-accounting.md`).
 

@@ -1,9 +1,5 @@
-// Target-model prompt forecasting (issue #57): estimate what pi's canonical history
-// becomes for a target model, in that model's currency. The size-material rules of
-// pi-ai's transformMessages are mirrored locally because extensions cannot import it
-// at runtime (pi's loader only aliases the compat surface); the contract suite
-// (tests/contract/pi-transform-messages) compares this mirror against the real
-// function, so drift fails `npm test`.
+// Estimate canonical history in a target model's currency. This mirrors the
+// size-material rules of pi-ai's transformMessages; the contract suite compares both.
 
 import {
   builtInHeuristicForModel,
@@ -15,11 +11,7 @@ import {
 import { ESTIMATED_IMAGE_CHARS, type ProviderPromptForecast } from "./provider-prompt.ts";
 import { estimateToolListTokens, type ToolShape } from "./tool-payloads.ts";
 
-export { ESTIMATED_IMAGE_CHARS } from "./provider-prompt.ts";
-
-/** Target identity + capabilities; the slice of pi-ai's Model the forecast needs. */
 export type TargetModel = ModelSummary & {
-  contextWindow?: number;
   /** Model input modalities; images are placeholdered for non-vision targets. */
   input?: readonly string[];
 };
@@ -47,13 +39,9 @@ export type ForecastMessage = {
   stopReason?: string;
 };
 
-export interface HistoryForecast {
-  /** Text the target will receive: user/assistant text, tool calls/results, and
-   * readable reasoning converted to plain text on cross-model handoffs. */
+interface HistoryForecast {
   textChars: number;
-  /** Same-model reasoning replayed as-is (encrypted payloads, or readable text). */
   keptReasoningChars: number;
-  /** Images at pi's own flat per-image char convention (compaction's estimate). */
   imageChars: number;
 }
 
@@ -211,14 +199,10 @@ export function forecastHistoryForTarget(messages: readonly ForecastMessage[], t
   return forecast;
 }
 
-export interface PromptForecast {
-  /** Estimated target-currency prompt tokens (harness + history). */
+interface PromptForecast {
   tokens: number;
   heuristic: HeuristicNumbers;
-  /** Density correction applied from the source anchor, when one was trusted. */
   calibration?: number;
-  /** Estimated tokens of source-billed encrypted reasoning the target never receives
-   * (priced at the source's calibrated density); present only alongside calibration. */
   droppedThinkingTokens?: number;
 }
 
@@ -278,8 +262,7 @@ export function forecastTargetPrompt(args: {
   }
   const source = estimatePrompt(args.history, args.systemPromptChars, args.tools, anchor.source);
   const sourceChars = source.counts.textChars + source.counts.keptReasoningChars + source.counts.imageChars;
-  if (source.tokens <= 0 || sourceChars <= 0 ||
-      source.counts.keptReasoningChars / sourceChars > CALIBRATION_MAX_REASONING_SHARE) {
+  if (sourceChars <= 0 || source.counts.keptReasoningChars / sourceChars > CALIBRATION_MAX_REASONING_SHARE) {
     return { tokens: target.tokens, heuristic: target.heuristic };
   }
   const ratio = Math.min(CALIBRATION_MAX, Math.max(CALIBRATION_MIN, anchor.billedPromptTokens / source.tokens));

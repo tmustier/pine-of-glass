@@ -46,8 +46,6 @@ function billedSnapshotFromEntry(
     responseAt,
     requestAt,
     promptTokens: input + cacheRead + cacheWrite,
-    cacheRead,
-    cacheWrite,
     provider,
     model: typeof entry.message.model === "string" ? entry.message.model : undefined,
     api: typeof entry.message.api === "string" ? entry.message.api : undefined,
@@ -237,7 +235,6 @@ export function cacheStateForLineage(
   fallbackWindow: CacheWindow,
 ): {
   expectedRead: number;
-  cachedTokens: number | undefined;
   lastRequestAt: number | undefined;
   lastCallModelId: string | undefined;
   lastCallProvider: string | undefined;
@@ -248,7 +245,6 @@ export function cacheStateForLineage(
   const { baseline, refresh } = resolution;
   return {
     expectedRead: baseline?.promptTokens ?? 0,
-    cachedTokens: baseline?.promptTokens,
     lastRequestAt: refresh?.requestAt,
     lastCallModelId: baseline?.model,
     lastCallProvider: baseline?.provider,
