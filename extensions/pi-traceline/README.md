@@ -133,8 +133,10 @@ Traceline only shows an outcome when the tool output proves it happened. It does
 
 ## Keep repeated work compact
 
-Traceline folds adjacent rows when repetition would hide the useful difference:
+Traceline folds rows when repetition would hide the useful difference:
 
+- identical compact invocations within one assistant step become one counted row, for
+  example `mcp call linear_save_issue ×22`; separate steps stay separate
 - repeated `cd`, environment assignment and setup prefixes become `⋯`
 - paginated reads of one file become one row with all ranges, the call count and total size
 - consecutive reads of sibling files become one row: the shared directory prints once,

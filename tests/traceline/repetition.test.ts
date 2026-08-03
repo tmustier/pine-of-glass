@@ -16,6 +16,7 @@ const {
   oneLine,
   bashPreambleRun,
   foldBashPreamble,
+  renderTraceRow,
   setTracelineChat,
   setTracelineThemeGetter,
 } = internals;
@@ -39,12 +40,67 @@ function bashComp(command: string): ToolRowLike {
   } as ToolRowLike;
 }
 
+function mcpComp(id: string, resultChars: number, isError = false): ToolRowLike {
+  return {
+    toolName: "mcp",
+    args: { tool: "linear_save_issue", args: { id } },
+    result: { content: [{ type: "text", text: "x".repeat(resultChars) }], isError },
+    isPartial: false,
+    render: () => [],
+    setExpanded: () => {},
+    callRendererComponent: { render: () => ["mcp call linear_save_issue"] },
+  } as ToolRowLike;
+}
+
 const proseBefore = (rows: ToolRowLike[]) => assistantBefore(rows, [{ type: "text", text: "now let me check" }]);
 const collapsedThinkingBefore = (row: ToolRowLike) => assistantBefore([row], [{ type: "thinking", thinking: "hmm" }], true);
 
 beforeEach(() => {
   setTracelineChat(undefined);
   setTracelineThemeGetter(undefined);
+});
+
+test("identical compact invocations in one assistant step fold with a count and combined size", () => {
+  const a = mcpComp("NEXSELL-1", 700);
+  const b = mcpComp("NEXSELL-2", 800);
+  const c = mcpComp("NEXSELL-3", 900);
+  setTracelineChat({ children: [assistantBefore([a, b, c]), a, b, c] });
+
+  const first = renderTraceRow(a, 100);
+  const visible = stripAnsi(first.at(-1)!);
+  assert.ok(visible.includes("mcp call linear_save_issue ×3"), visible);
+  assert.ok(visible.endsWith("2.4k ch"), `landed result sizes sum: ${visible}`);
+  assert.deepEqual(renderTraceRow(b, 100), [], "later repeated calls render nothing");
+});
+
+test("identical invocations in separate assistant steps stay separate", () => {
+  const a = mcpComp("NEXSELL-1", 200);
+  const b = mcpComp("NEXSELL-2", 300);
+  setTracelineChat({ children: [assistantBefore([a]), a, assistantBefore([b]), b] });
+
+  assert.ok(!stripAnsi(renderTraceRow(a, 100).at(-1)!).includes("×"));
+  assert.ok(!stripAnsi(renderTraceRow(b, 100).at(-1)!).includes("×"));
+});
+
+test("an expanded row splits a same-step repetition fold", () => {
+  const a = mcpComp("NEXSELL-1", 100);
+  const expanded = { ...mcpComp("NEXSELL-2", 100), expanded: true } as ToolRowLike;
+  const c = mcpComp("NEXSELL-3", 100);
+  setTracelineChat({ children: [assistantBefore([a, expanded, c]), a, expanded, c] });
+
+  assert.ok(!stripAnsi(renderTraceRow(a, 100).at(-1)!).includes("×"));
+  assert.ok(!stripAnsi(renderTraceRow(c, 100).at(-1)!).includes("×"));
+});
+
+test("a failed member makes the folded repetition visibly fail", () => {
+  const ok = mcpComp("NEXSELL-1", 100);
+  const failed = mcpComp("NEXSELL-2", 100, true);
+  setTracelineChat({ children: [assistantBefore([ok, failed]), ok, failed] });
+
+  const line = renderTraceRow(ok, 100).at(-1)!;
+  assert.ok(line.includes("\x1b[31m›"), "the folded bullet is red when any call failed");
+  assert.ok(line.includes("\x1b[31m\x1b[1mmcp"), "the folded invocation keeps error emphasis");
+  assert.ok(stripAnsi(line).includes("×2"));
 });
 
 test("leading set drops on first appearance; repeated context folds to a dim ⋯", () => {

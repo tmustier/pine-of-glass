@@ -163,7 +163,8 @@ export function togglePin(st: DrillState): void {
   const row = st.rows[st.selected];
   if (!row) return;
   try {
-    row.setExpanded(row.expanded !== true);
+    const expanded = row.expanded !== true;
+    for (const member of st.host.runRows(row) ?? [row]) member.setExpanded(expanded);
   } catch {
     // Pi seam: never let a pin toggle break the mode.
   }
