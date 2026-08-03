@@ -139,17 +139,9 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   skills/context blocks degrades to a single system section.
 - **Session estimate math** (`buildSessionEstimate`): with `contextUsage` → totalSource
   `"pi"`, `unattributed = total − tools − messages − uncovered thinking summaries −
-  exact retained reasoning` clamped ≥ 0; without → heuristic fallback. The session walk
-  sums provider-reported `usage.reasoning`, including zero, on documented Anthropic,
-  OpenAI Responses and Gemini retention paths under Pi's exact provider/API/model identity.
-  Boundary fixtures pin Anthropic's keep-all families, OpenAI's server-included and
-  provider-omitted histories, Gemini thought signatures, model changes, relays, missing
-  breakdowns and trailing local estimates. A raw GPT-5.5 Codex fixture pins the observed
-  598 input + 5 output total and restores the 216 replayed reasoning tokens absent from
-  every usage field. Other OpenAI pre-5.6 fixtures apply the same model boundary. The
-  exact prompt total, including cache reads and writes, rejects impossible history only
-  on paths where the provider includes it. Summary text and opaque signatures never become estimated
-  reasoning.
+  exact retained reasoning` clamped ≥ 0; without → heuristic fallback. Fixtures cover
+  provider retention boundaries, model changes, signed Gemini carriers, missing
+  breakdowns, trailing estimates and the measured GPT-5.3 to GPT-5.5 Codex correction.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.

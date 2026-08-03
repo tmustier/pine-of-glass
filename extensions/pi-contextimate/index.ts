@@ -192,11 +192,6 @@ function tokenLabelLayout(tokens: number[]): TokenLabelLayout {
   return { unitWidth, fieldWidth: Math.max(0, ...rawLabels.map((label) => label.length)) };
 }
 
-function formatPercent(value: number | null): string | undefined {
-  if (value === null || !Number.isFinite(value)) return undefined;
-  return `${value.toFixed(1)}%`;
-}
-
 function cleanDenominator(value: unknown, fallback = 4): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
@@ -256,14 +251,6 @@ function unescapeXml(value: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&lt;/g, "<")
     .replace(/&amp;/g, "&");
-}
-
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? "undefined";
-  } catch (error) {
-    return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
-  }
 }
 
 function safeMinifiedJson(value: unknown): string {
@@ -600,7 +587,7 @@ function builtInHeuristicForModel(model?: ModelSummary): Partial<ResolvedHeurist
     textDenominator: rule.textDenominator,
     sessionDenominator: rule.sessionDenominator,
     toolDenominator: rule.toolDenominator,
-    toolNumerator: rule.toolNumerator,
+    toolNumerator: model.api === "openai-completions" ? "openai-chat" : rule.toolNumerator,
   };
 }
 
@@ -1019,7 +1006,7 @@ function buildSnapshot(
     JSON.stringify(config),
     pi.getActiveTools().join(","),
     pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
-    session ? `${session.thinkingSummaryChars}:${session.reasoningTokens ?? "unreported"}:${session.providerOmittedReasoningTokens ?? 0}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
+    session ? JSON.stringify(session) : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
   ].join("|");
 
@@ -1262,8 +1249,8 @@ function renderContextBar(snapshot: PrefixSnapshot, usage: ContextUsage, estimat
 }
 
 function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number, layout?: TokenLabelLayout): string[] {
-  const estimate = buildSessionEstimate(snapshot);
-  if (!snapshot.session || !estimate) return [];
+  if (!snapshot.session) return [];
+  const estimate = buildSessionEstimate(snapshot)!;
   const sessionShare = ctxShareLabel(estimate.totalTokens, snapshot.contextUsage, { estimate: true });
   const provenance = estimate.totalSource === "pi" ? "Pi-based" : "heuristic fallback";
   const rows = [
@@ -1298,14 +1285,18 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
   const usage = snapshot.contextUsage;
   const request = accountProviderContext(snapshot.session, usage?.tokens);
   if (usage && request) {
-    const percent = formatPercent(usage.contextWindow > 0 ? (request.tokens / usage.contextWindow) * 100 : null);
-    const window = usage.contextWindow > 0 ? contextWindowLabel(usage.contextWindow) : undefined;
+    const percent = usage.contextWindow > 0
+      ? `${((request.tokens / usage.contextWindow) * 100).toFixed(1)}%`
+      : undefined;
     const usageEstimated = snapshot.session.contextUsageEstimated;
-    const context = percent && window ? usageEstimated ? percent : `${percent} / ${window} ctx` : "";
-    const provenance = request.corrected ? usageEstimated ? "Pi est. + prior reasoning" : "Pi + prior reasoning" : usageEstimated ? "Pi est." : "";
-    const compactProvenance = request.corrected ? usageEstimated ? "Pi est. + prior" : "Pi + prior" : provenance;
+    const context = percent && !usageEstimated
+      ? `${percent} / ${contextWindowLabel(usage.contextWindow)} ctx`
+      : percent;
+    const provenance = request.corrected
+      ? `Pi${usageEstimated ? " est." : ""} + prior reasoning`
+      : usageEstimated ? "Pi est." : "";
     const detail = `(${[context, provenance].filter(Boolean).join(" · ") || "Pi usage"})`;
-    const compactDetail = `(${[percent, compactProvenance].filter(Boolean).join(" · ") || "Pi usage"})`;
+    const compactDetail = `(${[percent, provenance.replace(" reasoning", "")].filter(Boolean).join(" · ") || "Pi usage"})`;
     const metric = { label: "Total request", tokens: request.tokens, exact: !usageEstimated, emphasis: true, detail };
     const requestRow = renderMetricRow(metric, theme, layout);
     rows.push(stripAnsi(requestRow).length <= width ? requestRow : renderMetricRow({ ...metric, detail: compactDetail }, theme, layout));

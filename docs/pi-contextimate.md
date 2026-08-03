@@ -27,7 +27,7 @@ Divisors were measured with Anthropic's `messages/count_tokens` endpoint and con
 
 The decisive finding: Claude 4.7 changed tokenizer accounting. The identical captured Pi request counts 29,258 input tokens on `claude-opus-4-5` and 40,758 on `claude-opus-4-7`, and the count endpoint matched live accounting within 15 tokens. Against real Pi startup material this puts Claude 4.5/4.6 near chars ÷ 3.5 to 3.8 and Claude 4.7/4.8 near chars ÷ 2.6. OpenAI-Codex markdown-ish system text measured close to chars ÷ 4.
 
-A follow-up count on 3 August 2026 established the modern family boundary. One byte-identical Pi payload counted 17,382 tokens on both `claude-fable-5` and `claude-opus-4-8`; `claude-opus-5` differed by only 4 once-per-tool-block overhead tokens and had the same 16,116-token system count. Contextimate therefore applies the modern Claude text profile to Fable 5 and the named Claude 5 families, including explicit Radius and OpenRouter relays whose model ids identify that downstream tokenizer. Bedrock Claude uses the same model-family text ratio while retaining its own provider payload shape and unmeasured tool divisor.
+A follow-up count on 3 August 2026 established the modern family boundary. One byte-identical Pi payload counted 17,382 tokens on both `claude-fable-5` and `claude-opus-4-8`; `claude-opus-5` differed by only 4 once-per-tool-block overhead tokens and had the same 16,116-token system count. Contextimate therefore applies the modern Claude text profile to Fable 5 and the named Claude 5 families, including explicit Radius and OpenRouter relays whose model ids identify that downstream tokenizer. Tool payload counting still follows the route: OpenRouter uses Chat Completions and Bedrock uses its own payload shape.
 
 Divisors depend on content shape: repetitive prose tokenizes around chars ÷ 7, JSON-ish text heavier, markdown heavier still. The shipped values are calibrated to Pi-shaped material (system prompts, AGENTS.md, skill index), not universal constants.
 
@@ -57,34 +57,30 @@ In the UI, a formula-counted tools row says `OpenAI formula · schema text ÷ 6.
 
 ## Session rows and the total
 
-`Total request` normally uses Pi's own `ctx.getContextUsage()`: the latest trusted provider-reported total plus a small local estimate for anything after it. Contextimate scans the same active message path: the total has no `~` when every component is exact, and keeps `~` when one or more trailing messages make Pi add a local estimate. One measured exception follows OpenAI Codex itself: pre-5.6 Codex totals omit earlier encrypted reasoning, so Contextimate adds the exact historical `usage.reasoning` counts that Pi still carries.
+`Total request` uses Pi's latest trusted provider total plus its local estimate for any trailing messages. It keeps `~` while that local estimate is present.
 
-The session split anchors on that total and claims only what it can count:
+The session split anchors on that total:
 
 ```text
 Tool outputs:        y         estimated from provider-shaped tool output chars
 Messages:            z         estimated from visible message text and tool-call structure
-Thinking summaries:  s         estimated from summaries not covered by exact retained reasoning
-Reasoning context:   r         exact reported reasoning carried by the active request
+Thinking summaries:  s         estimated from uncovered summaries
+Reasoning context:   r         exact reasoning carried by the request
 Unattributed:        x-y-z-s-r remaining accounting gap
-Total session:       x         adjusted request total minus the estimated static prefix
+Total session:       x         request total minus the estimated static prefix
 ```
 
-The `thinking` text saved by Pi can be a provider-generated summary, not the model's full internal reasoning. Contextimate never estimates reasoning from that text or from an opaque signature. `Reasoning context` sums exact `usage.reasoning` values carried by the active request. The current response's reasoning appears as output. Earlier responses count only when Pi replays a valid signed carrier under a verified provider path.
+Pi's saved `thinking` text can be a provider summary rather than the model's full reasoning. Contextimate only calls provider-reported `usage.reasoning` exact. Earlier responses count when Pi replays a valid signed carrier for the same provider, API and model. Reported zero remains exact.
 
-Pi reports the next prompt as one total split across uncached input, cache reads and cache writes. It does not identify historical reasoning within those buckets. Where the provider says those buckets already include retained history, Contextimate checks that the historical reasoning fits their exact sum; impossible attribution stays `Unattributed`. Measured pre-5.6 Codex totals are the exception: earlier encrypted reasoning is absent from the server total, so Contextimate adds it once instead of rejecting it. A reported zero remains exact.
+Anthropic's [thinking block preservation policy](https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-block-preservation-by-model) keeps all prior thinking turns for Opus 4.5 and later, Sonnet 4.6 and later, Fable 5, Mythos 5 and Mythos Preview. Earlier Claude families keep the current assistant turn only. Compaction removes reasoning that leaves Pi's active path.
 
-Retention is model-specific and knowable. Anthropic's [thinking block preservation policy](https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-block-preservation-by-model) keeps all prior thinking turns for Claude Opus 4.5 and later Opus models, Sonnet 4.6 and later Sonnet models, Fable 5, Mythos 5 and Mythos Preview. Contextimate sums every reported same-model reasoning count on the active path for those models, including supported relays and Bedrock routes. Earlier Claude families keep only reasoning from the current assistant turn because the API strips older blocks. Compaction naturally removes reasoning that is no longer on Pi's active message path.
+Pi also stores and replays OpenAI encrypted reasoning items. [OpenAI Codex](https://github.com/openai/codex/blob/8922a784fe6aa80683fe97c2dcdfdc361478aa7f) adds reasoning before the latest user boundary when the server omits it. Contextimate uses Pi's exact stored counts instead of estimating from encrypted length.
 
-OpenAI reasoning is knowable in Pi. Pi stores each response's exact `usage.reasoning` and encrypted carrier, then replays valid carriers for the same provider, API and model. [OpenAI Codex does the same](https://github.com/openai/codex/blob/8922a784fe6aa80683fe97c2dcdfdc361478aa7f). It [adds reasoning before the latest user boundary](https://github.com/openai/codex/blob/8922a784fe6aa80683fe97c2dcdfdc361478aa7f/codex-rs/core/src/context_manager/history.rs#L263-L315) when the API total omits it. Contextimate uses Pi's exact stored counts instead of Codex's encrypted-length estimate.
+A raw GPT-5.5 probe showed the omission directly: Turn 1 generated 216 reasoning tokens; Turn 2 replayed them but reported 598 input, 5 output, 0 new reasoning and 603 total. Pi 0.83.0 probes found the same result on available Codex models from GPT-5.3 to GPT-5.5. GPT-5.6 already includes replayed history.
 
-Raw GPT-5.5 usage confirmed there is no hidden token bucket. Turn 1 generated 216 reasoning tokens. Turn 2 replayed the encrypted item, but reported `input_tokens: 598`, `output_tokens: 5`, `reasoning_tokens: 0` and `total_tokens: 603`. No other usage field or response header contained the missing 216 tokens.
+Contextimate corrects the measured GPT-5.3 to GPT-5.5 Codex routes only. Ordinary OpenAI and Azure Responses still attribute valid retained reasoning, but their totals remain unchanged pending direct probes. The correction does not affect Pi's native context display or compaction. OpenAI's [`current_turn` policy](https://platform.openai.com/docs/guides/reasoning#preserve-reasoning-across-calls) and cache status are separate.
 
-GPT-5.6 totals already include replayed history. Earlier Codex totals omit reasoning before the latest user boundary, so Contextimate adds those exact counts once. Pi 0.83.0 probes found the same omission on every available Codex model from GPT-5.3 to GPT-5.5. Ordinary and Azure Responses use the same rule in Contextimate pending direct probes. The [`current_turn` policy](https://platform.openai.com/docs/guides/reasoning#preserve-reasoning-across-calls) controls model-visible reasoning. Cache status is separate.
-
-This correction changes Contextimate's panel only. Pi's own context display and automatic compaction still use the uncorrected provider total.
-
-Google's [thinking policy](https://ai.google.dev/gemini-api/docs/thinking#thought-signatures) requires stateless clients to resend thought blocks and signatures. Pi does this for valid signatures from the same provider, API and model. Contextimate treats the matching exact `thoughtsTokenCount` values as retained, bounded by the reported prompt total. This follows Google's documented replay requirement; a direct prompt-delta calibration remains pending. Other providers' historical reasoning stays unattributed until their retained-token semantics are measured. The current response's exact reported reasoning still appears.
+Google's [thinking policy](https://ai.google.dev/gemini-api/docs/thinking#thought-signatures) requires stateless clients to resend thought blocks and signatures. Pi does this for valid signatures from the same provider, API and model, so Contextimate retains their exact `thoughtsTokenCount` values. Direct prompt-delta calibration remains pending. Other providers' historical reasoning stays unattributed until their replay rules are known.
 
 Summaries not covered by exact retained reasoning are estimated separately as `Thinking summaries`. This includes Claude thinking that Pi converts to ordinary text after a model change, and a current block whose session usage has no reasoning breakdown. Opaque carriers and redacted signatures are never converted from bytes or characters into supposed token counts. Missing provider breakdowns remain part of `Unattributed` rather than becoming estimated reasoning.
 

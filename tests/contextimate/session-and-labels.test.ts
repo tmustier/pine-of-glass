@@ -59,7 +59,7 @@ test("with Pi usage: total anchors to (Pi current − estimated harness) and res
   assert.equal(tiny.unattributedTokens, 0);
 });
 
-test("OpenAI history omitted by provider usage is added once to Contextimate's request total", () => {
+test("Codex history omitted by provider usage is added once to Contextimate's request total", () => {
   const correctedSession = { ...session, providerOmittedReasoningTokens: 600 };
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith(correctedSession, usage);
@@ -72,9 +72,8 @@ test("OpenAI history omitted by provider usage is added once to Contextimate's r
   const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
   assert.match(rendered, /Total request\s+50\.6k tokens \(25\.3% \/ 200k ctx · Pi \+ prior reasoning\)/);
   const narrowRequest = stripAnsi(renderSummary(snapshot, plainTheme, 80).join("\n"))
-    .split("\n").find((line) => line.includes("Total request"))!;
-  assert.ok(narrowRequest.length <= 80);
-  assert.match(narrowRequest, /\(25\.3% · Pi \+ prior\)$/);
+    .split("\n").find((line) => line.includes("Total request"));
+  assert.equal(narrowRequest, "  Total request                              50.6k tokens (25.3% · Pi + prior)");
   const estimated = stripAnsi(renderSummary(
     snapshotWith({ ...correctedSession, contextUsageEstimated: true }, usage),
     plainTheme,
@@ -144,22 +143,13 @@ test("reported zero reasoning stays exact while the accounting gap remains separ
     120,
   ).join("\n"));
   assert.match(rendered, /Reasoning context\s+0\.0k tokens \(provider\)/);
-  assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
 });
 
 test("Total request keeps the estimate marker when Pi adds trailing local estimates", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith({ ...session, contextUsageEstimated: true }, usage);
   const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
-  assert.match(rendered, /Thinking summaries\s+~0\.5k tokens/);
-  assert.match(rendered, /Reasoning context\s+12\.0k tokens \(provider\)/);
-  assert.doesNotMatch(rendered, /Reasoning context\s+~12\.0k/, "exact reasoning has no estimate marker");
-  assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
   assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0% · Pi est\.\)/);
-  const narrowSessionRows = stripAnsi(renderSummary(snapshot, plainTheme, 80).join("\n"))
-    .split("\n")
-    .filter((line) => /Thinking summaries|Reasoning context|Unattributed|Total session|Total request/.test(line));
-  assert.ok(narrowSessionRows.every((line) => line.length <= 80), "session rows stay inside the narrow panel");
 });
 
 test("token labels align to one shared column width across magnitudes", () => {

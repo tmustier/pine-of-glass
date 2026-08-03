@@ -1,7 +1,7 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { keepsAllClaudeThinking, openAIUsageIncludesHistoricalReasoning } from "./model-heuristics.ts";
+import type { AssistantMessage, ImageContent, TextContent } from "@earendil-works/pi-ai";
+import { codexUsageOmitsHistoricalReasoning, keepsAllClaudeThinking } from "./model-heuristics.ts";
 
 const OPENAI_REASONING_REPLAY_APIS = new Set([
   "openai-responses",
@@ -77,35 +77,14 @@ export type SessionSource = {
   getLeafId(): string | null;
 };
 
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? "undefined";
-  } catch (error) {
-    return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
-  }
-}
-
-function countTextContent(content: unknown): number {
+function countTextContent(content: string | Array<TextContent | ImageContent>): number {
   if (typeof content === "string") return content.length;
-  if (!Array.isArray(content)) return 0;
-  return content.reduce((sum, block) => {
-    if (!block || typeof block !== "object") return sum;
-    const typed = block as { type?: string; text?: string; data?: string; mimeType?: string };
-    if (typed.type === "text") return sum + (typed.text ?? "").length;
-    if (typed.type === "image") return sum + `[image:${typed.mimeType ?? "unknown"}:${typed.data?.length ?? 0} chars]`.length;
-    return sum;
-  }, 0);
-}
-
-function countToolCallContent(block: unknown): number {
-  if (!block || typeof block !== "object") return 0;
-  const toolCall = block as { id?: string; name?: string; arguments?: unknown };
-  return safeJson({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }).length;
-}
-
-function reportedReasoning(message: AssistantMessage): number | undefined {
-  const tokens = message.usage.reasoning;
-  return typeof tokens === "number" && Number.isFinite(tokens) && tokens >= 0 ? tokens : undefined;
+  return content.reduce(
+    (sum, block) => sum + (block.type === "text"
+      ? block.text.length
+      : `[image:${block.mimeType}:${block.data.length} chars]`.length),
+    0,
+  );
 }
 
 function sameModel(left: AssistantMessage, right: AssistantMessage): boolean {
@@ -143,6 +122,12 @@ function hasReasoningCarrier(message: AssistantMessage): boolean {
   return message.content.some((block) => block.type === "thinking" && Boolean(block.thinkingSignature));
 }
 
+function hasTrustedUsage(message: AssistantMessage): boolean {
+  const usage = message.usage;
+  return message.stopReason !== "aborted" && message.stopReason !== "error"
+    && (usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite) > 0;
+}
+
 export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
   if (!sessionManager) return undefined;
   // Session entries are arbitrary historical content; a malformed session should cost
@@ -159,33 +144,18 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       messageCount: messages.length,
       contextUsageEstimated: true,
     };
-    const trustedAssistantIndices: number[] = [];
-    let lastTrustedUsageIndex = -1;
-    for (let index = 0; index < llmMessages.length; index++) {
-      const message = llmMessages[index]!;
-      if (message.role !== "assistant") continue;
-      const usage = message.usage;
-      const usageTokens = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-      if (message.stopReason !== "aborted" && message.stopReason !== "error" && usageTokens > 0) {
-        trustedAssistantIndices.push(index);
-        lastTrustedUsageIndex = index;
-      }
+    let lastTrustedUsageIndex = llmMessages.length - 1;
+    while (lastTrustedUsageIndex >= 0) {
+      const message = llmMessages[lastTrustedUsageIndex]!;
+      if (message.role === "assistant" && hasTrustedUsage(message)) break;
+      lastTrustedUsageIndex--;
     }
 
-    // Pi reports each generated reasoning count exactly. OpenAI Codex replays every
-    // encrypted reasoning item, but its pre-5.6 usage omits items before the latest
-    // user boundary. Raw SSE verifies the Codex route; ordinary and Azure Responses
-    // assume the same model behavior pending direct probes. Match Codex's own
-    // active-context accounting by adding those exact historical counts outside Pi's
-    // total. Other retained history must conserve against the prompt buckets meant to
-    // contain it.
+    // Measured GPT-5.3 to GPT-5.5 Codex usage omits prior-turn reasoning.
     const exactReasoningIndices = new Set<number>();
-    const reportedHistoricalReasoningIndices = new Set<number>();
     const strippedThinkingIndices = new Set<number>();
     let exactReasoningTokens = 0;
-    let reportedHistoricalReasoningTokens = 0;
     let providerOmittedReasoningTokens = 0;
-    let hasExactReasoning = false;
     const anchor = llmMessages[lastTrustedUsageIndex];
     if (anchor?.role === "assistant") {
       let turnStart = 0;
@@ -196,43 +166,30 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
         || anchor.model.toLowerCase().includes("claude");
       const anchorIsOpenAI = OPENAI_REASONING_REPLAY_APIS.has(anchor.api);
       const anchorIsGoogle = GOOGLE_REASONING_REPLAY_APIS.has(anchor.api);
-      const openAIUsageIncludesHistory = anchorIsOpenAI
-        && openAIUsageIncludesHistoricalReasoning(anchor.model);
       const keepsRetainedHistory = anchorIsClaude
         ? keepsAllClaudeThinking(anchor.model)
         : anchorIsOpenAI || anchorIsGoogle;
       const historyStart = keepsRetainedHistory ? 0 : anchorIsClaude ? turnStart : lastTrustedUsageIndex;
-      for (const index of trustedAssistantIndices) {
-        if (index > lastTrustedUsageIndex) continue;
+      for (let index = 0; index <= lastTrustedUsageIndex; index++) {
         const message = llmMessages[index]!;
-        if (message.role !== "assistant" || !sameModel(message, anchor)) continue;
+        if (message.role !== "assistant" || !hasTrustedUsage(message) || !sameModel(message, anchor)) continue;
         if (index < historyStart) {
           if (anchorIsClaude) strippedThinkingIndices.add(index);
           continue;
         }
         if (index !== lastTrustedUsageIndex && !hasReasoningCarrier(message)) continue;
-        const tokens = reportedReasoning(message);
-        if (tokens === undefined) continue;
+        const tokens = message.usage.reasoning;
+        if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens < 0) continue;
         exactReasoningTokens += tokens;
-        hasExactReasoning = true;
         exactReasoningIndices.add(index);
-        if (index === lastTrustedUsageIndex) continue;
-        if (anchorIsOpenAI && !openAIUsageIncludesHistory && index < turnStart) {
+        if (index < turnStart && anchor.provider === "openai-codex"
+          && anchor.api === "openai-codex-responses"
+          && codexUsageOmitsHistoricalReasoning(anchor.model)) {
           providerOmittedReasoningTokens += tokens;
-        } else {
-          reportedHistoricalReasoningTokens += tokens;
-          reportedHistoricalReasoningIndices.add(index);
         }
       }
-      const promptBuckets = anchor.usage.input + anchor.usage.cacheRead + anchor.usage.cacheWrite;
-      const reportedPromptTokens = Math.max(promptBuckets, anchor.usage.totalTokens - anchor.usage.output, 0);
-      if (reportedHistoricalReasoningTokens > reportedPromptTokens) {
-        exactReasoningTokens -= reportedHistoricalReasoningTokens;
-        for (const index of reportedHistoricalReasoningIndices) exactReasoningIndices.delete(index);
-        hasExactReasoning = exactReasoningIndices.size > 0;
-      }
     }
-    if (hasExactReasoning) breakdown.reasoningTokens = exactReasoningTokens;
+    if (exactReasoningIndices.size > 0) breakdown.reasoningTokens = exactReasoningTokens;
     if (providerOmittedReasoningTokens > 0) {
       breakdown.providerOmittedReasoningTokens = providerOmittedReasoningTokens;
     }
@@ -246,9 +203,7 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       if (message.role === "assistant") {
         for (const block of message.content) {
           if (block.type === "thinking") {
-            // Thinking text is a provider-generated summary, not the full reasoning.
-            // Estimate summaries only when exact retained reasoning does not already
-            // cover the block; opaque signatures are never treated as token-sized text.
+            // Estimate summaries only when no exact token count covers them.
             const claudeSummary = message.api === "anthropic-messages"
               || message.model.toLowerCase().includes("claude");
             const plainSummary = !block.thinkingSignature;
@@ -257,7 +212,11 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
               breakdown.thinkingSummaryChars += (block.thinking ?? "").length;
             }
           } else if (block.type === "toolCall") {
-            breakdown.messageChars += countToolCallContent(block);
+            breakdown.messageChars += JSON.stringify({
+              id: block.id,
+              name: block.name,
+              arguments: block.arguments,
+            }, null, 2).length;
           } else {
             breakdown.messageChars += countTextContent([block]);
           }

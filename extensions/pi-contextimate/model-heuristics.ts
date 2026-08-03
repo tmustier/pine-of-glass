@@ -45,9 +45,9 @@ export function keepsAllClaudeThinking(modelId: string): boolean {
     || /mythos[-.]?preview/.test(id);
 }
 
-/** Measured Codex boundary: GPT-5.6 usage includes replayed history; earlier totals omit it. */
-export function openAIUsageIncludesHistoricalReasoning(modelId: string): boolean {
-  return familyAtLeast(modelId, "gpt", 5, 6);
+export function codexUsageOmitsHistoricalReasoning(modelId: string): boolean {
+  const version = modelId.toLowerCase().match(/gpt[-.]?5[-.](\d{1,2})(?=$|[-.:@])/);
+  return version !== null && Number(version[1]) >= 3 && Number(version[1]) < 6;
 }
 
 export const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [

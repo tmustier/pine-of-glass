@@ -4,25 +4,13 @@
 
 - **Contextimate: recognise the modern Claude tokenizer across routes.** Fable 5,
   Opus 5 and explicit modern Claude models relayed through Radius or OpenRouter now
-  use the same measured profile as Claude 4.7/4.8. Bedrock retains its own payload
-  shape.
-- **Contextimate: make accounting uncertainty visible.** The former
-  `Other / reasoning` residual is now `Unattributed`, so static-prefix error cannot
-  masquerade as model reasoning. `Reasoning context` sums exact `usage.reasoning`
-  values for signed blocks carried by the active request, including reported zero.
-  Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet 4.6+ histories follow
-  Anthropic's keep-all policy; older Claude families keep only the current assistant
-  turn. Gemini histories follow valid thought signatures. OpenAI Responses and Codex
-  histories follow OpenAI Codex's own accounting: every replayed encrypted item counts,
-  and exact pre-5.6 reasoning omitted by API totals is added once to `Total request`.
-  Raw usage verifies the omission on the Codex route; ordinary and Azure Responses assume
-  the same behavior pending direct probes. GPT-5.6 totals already include that history.
-  This corrects Contextimate only; Pi's context display and automatic compaction remain
-  unchanged. Exact prompt totals reject impossible attribution only where the provider
-  says history is already included, including cached input. Summaries not covered by exact
-  counts remain a clearly estimated `Thinking summaries` row, and opaque signatures are
-  never sized as tokens. `Total request` keeps `~` when Pi includes local estimates for
-  trailing messages.
+  use the same measured text profile as Claude 4.7/4.8. Tool payloads remain
+  route-specific.
+- **Contextimate: make accounting uncertainty visible.** `Reasoning context` shows
+  exact retained reasoning, `Thinking summaries` shows estimates and `Unattributed`
+  shows the remaining accounting gap. Contextimate corrects tested GPT-5.3 to GPT-5.5
+  Codex totals that omit prior reasoning; GPT-5.6 totals are already complete. Pi's native context
+  display and compaction are unchanged.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled
   calibration.

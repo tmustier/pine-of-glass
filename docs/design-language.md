@@ -232,21 +232,12 @@ A panel ends with one blank line, so the next chat block never abuts it. This is
 §5's "one blank before a group", supplied by the panel because pi does not.
 
 A residual is an accounting gap, not a diagnosis. Contextimate calls it
-`Unattributed`, never `reasoning`, and labels it `(accounting gap)`. Provider-reported
-reasoning carried by the active request gets an exact `Reasoning context` row,
-including a reported zero. Exact counts accumulate across verified same-model signed
-history. Model changes stop the accumulation; Claude's current-turn policy also strips
-older blocks. Historical reasoning must fit inside the exact reported prompt total
-across input, cache reads and cache writes when the provider includes it there. Measured
-pre-5.6 Codex totals are the explicit exception: add omitted encrypted history once to
-Contextimate's request total and label its provenance `Pi + prior reasoning` (`Pi + prior`
-at narrow widths). This does not change Pi's own display or compaction. Provider-generated summaries not covered by
-exact reasoning get a separate estimated `Thinking summaries` row; opaque signatures
-are never sized as reasoning.
-The remaining gap can still include prefix-estimation error, provider overhead, images,
-opaque replay carriers and reasoning when no breakdown was reported. If Pi's context
-total includes local estimates for messages after the last provider usage, the total
-keeps its `~`.
+`Unattributed` and labels it `(accounting gap)`. Exact provider counts use
+`Reasoning context`; summary estimates use `Thinking summaries`.
+
+A corrected Codex total says `Pi + prior reasoning`, shortened to `Pi + prior` when
+space is tight. Totals that include local estimates keep their `~`. The detailed
+accounting policy belongs in [`docs/pi-contextimate.md`](./pi-contextimate.md).
 
 In expanded audit views:
 

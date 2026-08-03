@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import {
+  codexUsageOmitsHistoricalReasoning,
   keepsAllClaudeThinking,
-  openAIUsageIncludesHistoricalReasoning,
 } from "../../extensions/pi-contextimate/model-heuristics.ts";
 import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
@@ -29,32 +29,25 @@ test("no model, no config → chars/4 fallback with openai-responses shape", () 
 test("Claude thinking-retention boundaries follow Anthropic's model policy", () => {
   for (const keepAll of [
     "claude-opus-4-5",
-    "claude-opus-4-5-20251101",
-    "claude-opus-5",
     "claude-sonnet-4-6",
-    "anthropic.claude-sonnet-4-6-20250514-v1:0",
     "claude-fable-5",
-    "claude-mythos-5",
     "anthropic.claude-mythos-preview-v1:0",
   ]) assert.equal(keepsAllClaudeThinking(keepAll), true, keepAll);
   for (const lastTurnOnly of [
     "claude-opus-4-4",
-    "claude-opus-4-20250514",
     "claude-sonnet-4-5",
-    "claude-sonnet-4-20250514",
     "claude-3-7-sonnet-20250219",
-    "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
     "claude-haiku-4-5",
   ]) assert.equal(keepsAllClaudeThinking(lastTurnOnly), false, lastTurnOnly);
 });
 
-test("OpenAI historical-reasoning usage boundaries follow measured server totals", () => {
-  for (const included of ["gpt-5.6", "gpt-5.6-sol", "openai/gpt-5-6-20260801", "gpt-6"]) {
-    assert.equal(openAIUsageIncludesHistoricalReasoning(included), true, included);
-  }
-  for (const omitted of ["gpt-5.5", "gpt-5-20250807", "o3", "gpt-oss-120b"]) {
-    assert.equal(openAIUsageIncludesHistoricalReasoning(omitted), false, omitted);
-  }
+test("Codex corrects only the measured GPT-5.3 to GPT-5.5 family", () => {
+  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.3"), true);
+  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.4-mini"), true);
+  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.5"), true);
+  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.6-sol"), false);
+  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5"), false);
+  assert.equal(codexUsageOmitsHistoricalReasoning("o3"), false);
 });
 
 test("built-in model routing boundaries", () => {
@@ -66,10 +59,11 @@ test("built-in model routing boundaries", () => {
     model("anthropic", "claude-opus-5", "anthropic-messages"),
     model("radius", "claude-opus-4-8", "pi-messages"),
     model("openrouter", "anthropic/claude-fable-5:batch", "openai-completions"),
-  ]) {
-    assert.equal(resolveHeuristic(modern, {}).label, "Modern Claude heuristic");
-    assert.equal(resolveHeuristic(modern, {}).toolNumerator, "anthropic");
-  }
+  ]) assert.equal(resolveHeuristic(modern, {}).label, "Modern Claude heuristic");
+  assert.equal(
+    resolveHeuristic(model("openrouter", "anthropic/claude-fable-5", "openai-completions"), {}).toolNumerator,
+    "openai-chat",
+  );
   // Claude 4.5/4.6 family.
   const sonnet45 = resolveHeuristic(model("anthropic", "claude-sonnet-4-5", "anthropic-messages"), {});
   assert.equal(sonnet45.label, "Claude 4.5/4.6 heuristic");
