@@ -63,6 +63,7 @@ test("built-in model routing boundaries", () => {
   assert.equal(resolveHeuristic(anthropicModel, {}).textDenominator, 2.6);
   for (const modern of [
     model("anthropic", "claude-fable-5", "anthropic-messages"),
+    model("anthropic", "claude-fable-5-20260801", "anthropic-messages"),
     model("anthropic", "claude-opus-5", "anthropic-messages"),
     model("anthropic", "claude-opus-4-9", "anthropic-messages"),
     model("radius", "claude-opus-4-8", "pi-messages"),

@@ -9,18 +9,39 @@ Everything cachemire shows is four provider-general rules, which is the whole me
 1. **Anchor**: the freshness clock starts at *request processing* (both Anthropic and
    OpenAI create/refresh entries while reading the input; "inactivity" is measured from
    last use). Generation time burns the window.
-2. **Scope**: a cache entry belongs to (provider, model, byte-exact prefix). Caches are
-   per-model everywhere, so **any model switch means definite cold**: the widget flips
-   *before you send anything*, sized in the only currency it has, explicitly tagged:
-   `cache cold · model switched · next send re-writes the full prompt (~222.9k
-   claude-fable-5 tokens)`.
+2. **Scope**: a cache entry belongs to (provider, model, wire API, byte-exact prefix).
+   Caches are per-model everywhere, so **any model switch means expected cold**. The
+   widget flips before you send anything and leads with the consequence, sized in the
+   *target* model's tokenizer: `cache cold expected · model switched · next send
+   ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking ·
+   est)`. The parenthetical starts from the source model's last billed prompt and
+   explains the change with signed terms that always sum to the headline; it appears
+   only when that billed anchor calibrated the estimate. Through a gateway route
+   (pi-messages) the upstream request shape is not observable, so the label weakens
+   to `(rough est · gateway route)` and the breakdown is withheld. One exception:
+   switching *back* to a model whose own last billed call is still inside its
+   freshness window says `cache may still be warm · last <model> call 2m ago · next
+   send confirms`, because claiming cold there would be wrong as often as right.
+   The hint is deliberately hedged (the payload may have changed in ways only the
+   next send reveals) and gated: the prior call must match on provider, model *and*
+   wire API, with no compaction on the path since; either failing means its cache
+   entry cannot be revived, and the state stays `cache cold expected`.
 3. **Window**: strength varies by provider: Anthropic has a contract TTL (observed,
    else inferred), OpenAI a documented band (soft ~5m / hard 1h), everyone else is
    unknown. Wording always matches the strength: countdown / fading / likely.
-4. **Currency**: token counts and $ are only ever shown in the tokenizer and price card
-   that billed them. After a model switch the stored size keeps its old-model tag and
-   gets no $ (which would compound the conversion error) until the first new-model usage
-   re-baselines it. Exactness arrives one call later, the only honest time it can.
+4. **Currency**: exact token counts and $ are only shown in the tokenizer and price
+   card that billed them. After a model switch the old exact count is never displayed
+   against the new model. The forecast above is a labelled estimate in the target
+   model's tokenizer, priced from the target's own price card (tier-aware). The
+   estimate walks what the target will actually receive (pi drops cross-model
+   encrypted reasoning; readable summaries survive as text). Before send this comes
+   from canonical history; at `before_provider_request`, recognized prompt fields from
+   the provider payload Cachemire observes replace it, so normalization and earlier
+   payload transforms are reflected. It is density-calibrated when an exact provider,
+   API and model match proves the source model billed this same history, so its
+   billed/estimated ratio corrects the shared denominators for content that tokenizes
+   unusually (dense numeric logs run ~2.1 chars/token on Claude against the 2.6 default). Exact
+   numbers return with the first new-model usage, which re-baselines everything.
 
 ## When the clock starts
 
@@ -148,9 +169,9 @@ next usage arrives, so Cachemire withholds that suffix estimate rather than pric
 abandoned leaf. Provider usage then supplies the exact cached and uncached split.
 
 Restored snapshots have provider, model, prompt size and response timestamps but no
-payload fingerprints. They can establish the selected denominator and their own
-response-time freshness approximation, but Cachemire does not claim that another
-restored descendant refreshed them without fingerprint proof.
+payload fingerprints or persisted request event. Their parent session entry supplies a
+request-time approximation when available, with response time as fallback. Cachemire
+does not claim that another restored descendant refreshed them without fingerprint proof.
 
 ## The cause ladder
 
@@ -194,6 +215,16 @@ held` (green) appears when a predicted break did not happen, usually shared-pref
 warmth: another session with the same harness prefix kept the early breakpoints alive
 past your idle gap.
 
+Resolution across a model switch follows the currency rule too. The stored
+expectation is denominated in the previous model's tokenizer, so the first call
+after a switch is classified and rendered against its own billed prompt only:
+`cache held · read 28.2k (100% of prompt) · the new model already had the prefix
+cached` (a twin session's identical prefix, or the model's own surviving entry),
+never `read 28.2k of 20.6k expected`, which would compose two currencies into an
+impossible >100% claim. Restored-session ledgers apply the same rule, and a
+restored call whose model identity differs from the previous billed call keeps
+`model switched …` as its cause instead of `restored (cause unknown)`.
+
 ## State and lifecycle
 
 Working state is in-memory and dies with the process. What survives an exit is exactly
@@ -201,8 +232,8 @@ what the provider billed (usage on assistant messages in the session transcript)
 which `--continue` rebuilds the active ledger and all-branch lineage baselines.
 Request-time observations (payload fingerprints, true request-start anchors and the
 observed `cache_control` TTL) exist only at the event boundary and are never persisted.
-After restore, Cachemire uses response timestamps as slightly optimistic anchor
-approximations, withholds compatibility claims that need a fingerprint, and restarts
+After restore, Cachemire approximates request start from the parent session entry and
+falls back to response time, withholds compatibility claims that need a fingerprint, and restarts
 replica-entry matching from live calls. Restored rows say `cause unknown` rather than reconstruct a
 diagnosis from vibes. Cachemire writes nothing into session entries or exports (UI-only
 contract).

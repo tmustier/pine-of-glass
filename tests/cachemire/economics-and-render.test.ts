@@ -8,10 +8,9 @@ import type { CallRecord } from "../../extensions/pi-cachemire/index.ts";
 const {
   uncachedCostUsd, rewriteCostUsd, sessionSavings,
   compactCount, formatUsd, formatDuration,
-  cacheClock, renderRunSummary, renderMissLine, renderLedger, restoreFromMessages,
+  cacheClock, renderRunSummary, renderMissLine, renderLedger,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
   windowForProvider, windowLabel, pastWindow, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
-  settleDanglingSend,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -82,15 +81,8 @@ test("cache clock phases", () => {
   assert.equal(stale.phase, "stale");
   assert.equal(stale.text, "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix");
 
-  // Model switch: per-model caches everywhere — definite cold. The stored count is in
-  // the old tokenizer's currency, so it appears only with an explicit denomination tag
-  // (and never a $, which would compound the conversion error).
-  const switched = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true, oldModelId: "claude-fable-5" });
-  assert.equal(switched.phase, "cold");
-  assert.equal(switched.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt (~142.3k claude-fable-5 tokens)");
-  // Without a currency tag available the number is withheld outright.
-  const untagged = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
-  assert.equal(untagged.text, "cache cold \u00b7 model switched \u00b7 next send re-writes the full prompt");
+  // Model-switch clock states (target-currency forecast, A→B→A warmth) live in
+  // tests/cachemire/model-switch.test.ts.
 
   // Thinking level change: Anthropic documents message-breakpoint invalidation with
   // system/tools surviving — a contract-backed stale state. Compaction outranks it.
@@ -100,28 +92,6 @@ test("cache clock phases", () => {
   // Effort lives outside OpenAI's prompt prefix: a band window makes no claim.
   const bandThinking = cacheClock({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true });
   assert.equal(bandThinking.text, "cache likely warm \u00b7 3m since last call");
-});
-
-test("aborted sends roll the TTL anchor back to the last billed request", () => {
-  // before_provider_request optimistically re-anchors the clock at the in-flight request;
-  // usage confirms it (message_end consumes the pending pair). A send that ends with no
-  // usage — fast abort or error — proves nothing about the cache, so the anchor must
-  // return to the last provider-confirmed refresh instead of counting a fictitious TTL.
-  assert.deepEqual(
-    settleDanglingSend({ pendingRequestAt: 100_000, prevCallRequestAt: 40_000, lastRequestAt: 100_000 }),
-    { changed: true, lastRequestAt: 40_000 },
-  );
-  // First-ever send aborted: no cache was ever confirmed — the anchor clears and the
-  // clock hides (cacheClock without lastRequestAt is the idle phase).
-  const firstAbort = settleDanglingSend({ pendingRequestAt: 100_000, prevCallRequestAt: undefined, lastRequestAt: 100_000 });
-  assert.deepEqual(firstAbort, { changed: true, lastRequestAt: undefined });
-  assert.equal(cacheClock({ now: 200_000, lastRequestAt: firstAbort.lastRequestAt, window: CONTRACT_5M }).phase, "idle");
-  // Consumed pending (usage arrived, or the turn aborted during a tool run): no rollback —
-  // the anchor of the last billed call stands.
-  assert.deepEqual(
-    settleDanglingSend({ pendingRequestAt: undefined, prevCallRequestAt: 40_000, lastRequestAt: 40_000 }),
-    { changed: false, lastRequestAt: 40_000 },
-  );
 });
 
 test("openai band: warm → fading → hard-cap cold", () => {
@@ -234,6 +204,32 @@ test("run summary and miss lines read exactly as designed", () => {
     classification: { kind: "hit" },
   };
   assert.equal(renderHeldLine(held), "cache held \u00b7 read 76.0k of 77.7k expected \u00b7 prefix stayed warm");
+
+  // After a model switch the old expectation must never be composed with the new
+  // model's read: the line speaks this call's own currency only (design language §7).
+  const switchedHeld: CallRecord = {
+    ...miss,
+    usage: { input: 0, output: 400, cacheRead: 28_200, cacheWrite: 0 },
+    expectedRead: 20_600, // sol-billed tokens: wrong currency for a fable read
+    classification: { kind: "hit" },
+    switched: true,
+  };
+  assert.equal(
+    renderHeldLine(switchedHeld),
+    "cache held \u00b7 read 28.2k (100% of prompt) \u00b7 the new model already had the prefix cached",
+  );
+  const switchedPartial: CallRecord = {
+    ...miss,
+    usage: { input: 200, output: 400, cacheRead: 14_100, cacheWrite: 13_900 },
+    expectedRead: 20_600,
+    classification: { kind: "partial", cause: { kind: "model", detail: "model switched a \u2192 b" } },
+    rewroteTokens: 13_900,
+    switched: true,
+  };
+  assert.equal(
+    renderMissLine(switchedPartial),
+    "cache partial \u00b7 read 14.1k of 28.2k prompt \u00b7 re-wrote 13.9k (49% of prompt) \u00b7 cause: model switched a \u2192 b",
+  );
 });
 
 test("break prediction: knowable at request time, silent when healthy", () => {
@@ -268,13 +264,8 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   })!;
   assert.equal(tools.cause.kind, "tools");
 
-  // Model switch: certain break, but the size is in the old tokenizer — withheld.
-  const model = predictBreak({
-    ...base, gapMs: 1_000, window: CONTRACT_5M,
-    fingerprintCause: { kind: "model", detail: "model switched a \u2192 b" },
-  })!;
-  assert.equal(model.expectedRewriteTokens, undefined);
-  assert.equal(renderBreakingLine(model), "cache breaking \u00b7 re-writing the full prompt \u00b7 cause: model switched a \u2192 b");
+  // Model-switch predictions (sized target-currency estimates, warm-prior silence)
+  // live in tests/cachemire/model-switch.test.ts.
 
   // Thinking change: contract window (Anthropic, documented) predicts an unsized
   // re-write; a band window predicts nothing — effort is outside the prompt prefix.
@@ -326,26 +317,4 @@ test("ledger view: rows, totals, and the savings line", () => {
   assert.match(lines[6]!, /caching saved ~\$2\.37 vs uncached \$2\.96 \(−80%\) · API-priced; notional on subscription/);
 
   assert.match(renderLedger([], {})[2]!, /no model calls yet/);
-});
-
-test("ledger restore from a continued session's assistant messages", () => {
-  const messages = [
-    { role: "user", content: "hi", timestamp: 0 },
-    {
-      role: "assistant", timestamp: 1_000,
-      usage: { input: 12_000, output: 500, cacheRead: 0, cacheWrite: 130_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } },
-    },
-    { role: "toolResult", toolName: "bash", timestamp: 2_000 },
-    {
-      role: "assistant", timestamp: 30_000,
-      usage: { input: 1_000, output: 800, cacheRead: 141_000, cacheWrite: 1_500, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.04 } },
-    },
-    { role: "assistant", timestamp: 31_000, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }, // empty usage → skipped
-  ];
-  const records = restoreFromMessages(messages as never);
-  assert.equal(records.length, 2);
-  assert.equal(records[0]!.classification.kind, "cold");
-  assert.equal(records[1]!.classification.kind, "hit");
-  assert.equal(records[1]!.gapMs, 29_000);
-  assert.ok(records.every((record) => record.restored));
 });

@@ -154,6 +154,63 @@ test("trailing excluded bash keeps Pi's estimate marker", () => {
   assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0% · Pi est\.\)/);
 });
 
+test("pre-switch usage names its old currency without losing Pi's estimate marker", () => {
+  const manager = SessionManager.inMemory("/tmp/contextimate-pre-switch-currency");
+  manager.appendMessage({ role: "user", content: "hello", timestamp: 1 });
+  manager.appendMessage(assistantMessage(
+    [{ type: "text", text: "old-model answer" }],
+    {
+      provider: "openai-codex",
+      api: "openai-codex-responses",
+      model: "gpt-5.6-sol",
+      timestamp: 2,
+      usage: {
+        input: 2,
+        output: 10,
+        cacheRead: 40_000,
+        cacheWrite: 0,
+        reasoning: 600,
+        totalTokens: 40_012,
+        cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    },
+  ));
+  const usage = { tokens: 50_000, contextWindow: 200_000, percent: 25 };
+  const build = () => buildSnapshot(
+    fakePi(),
+    () => fixtureSystemPrompt(),
+    manager,
+    () => usage,
+    () => anthropicModel,
+    {},
+  );
+
+  const switched = build();
+  assert.deepEqual(switched.preSwitchUsage, { billedModel: "gpt-5.6-sol" });
+  const switchedEstimate = buildSessionEstimate(switched)!;
+  assert.equal(switchedEstimate.totalSource, "heuristic");
+  assert.equal(switchedEstimate.reasoningTokens, undefined, "old-model reasoning cannot be reused in the target currency");
+  const exact = stripAnsi(renderSummary(switched, plainTheme, 80).join("\n"));
+  assert.match(exact, /Total request\s+50\.0k tokens\s+\(pre-switch usage · gpt-5\.6-sol tokens\)/);
+  assert.doesNotMatch(exact, /Reasoning context|\/ 200k ctx|free /, "old counts must not use the new model's currency");
+
+  manager.appendMessage({ role: "user", content: "next question", timestamp: 3 });
+  const estimated = build();
+  assert.equal(estimated.session!.contextUsageEstimated, true);
+  assert.match(
+    stripAnsi(renderSummary(estimated, plainTheme, 120).join("\n")),
+    /Total request\s+~50\.0k tokens \(pre-switch total · gpt-5\.6-sol usage \+ Pi est\.\)/,
+  );
+
+  manager.appendMessage(assistantMessage(
+    [{ type: "text", text: "aborted" }],
+    { stopReason: "aborted", timestamp: 4 },
+  ));
+  assert.deepEqual(build().preSwitchUsage, { billedModel: "gpt-5.6-sol" });
+  manager.appendMessage(assistantMessage([{ type: "text", text: "new-model answer" }], { timestamp: 5 }));
+  assert.equal(build().preSwitchUsage, undefined, "the first trusted target response re-baselines the currency");
+});
+
 test("token labels align to one shared column width across magnitudes", () => {
   const values = [12, 950, 64321, 1234567];
   const layout = tokenLabelLayout(values);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import piCachemire, { internals } from "../../extensions/pi-cachemire/index.ts";
+import { cacheStateForLineage } from "../../extensions/pi-cachemire/lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "../../extensions/pi-cachemire/types.ts";
 
 const {
@@ -55,6 +56,7 @@ function assistant(timestamp: number, prompt: number, model = "claude-opus-4-8")
     role: "assistant",
     content: [{ type: "text", text: "answer" }],
     provider: "anthropic",
+    api: "anthropic-messages",
     model,
     stopReason: "stop",
     timestamp,
@@ -109,6 +111,7 @@ function resolve(
     snapshots,
     currentProvider: "anthropic",
     currentModel: model,
+    currentApi: "anthropic-messages",
     currentFingerprint: current,
     compareFingerprints: diffFingerprints,
   });
@@ -127,6 +130,7 @@ function context(entries: unknown[], leaf: { id: string }, notifications: string
     model: {
       id: "claude-opus-4-8",
       provider: "anthropic",
+      api: "anthropic-messages",
       reasoning: false,
       cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
     },
@@ -181,6 +185,24 @@ test("returning to a warm branch uses its compatible descendants, not a sibling"
   assert.equal(resolution.cause, undefined);
 });
 
+test("an unknown restored API withholds refresh proof without inventing a model switch", () => {
+  const entries = branchedEntries();
+  const snapshots = restored(entries);
+  const left = snapshotById(snapshots, "left");
+  left.api = undefined;
+  left.fingerprint = fingerprintPayload(payload(["root", "left"]));
+  const resolution = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left"])));
+  assert.equal(resolution.cause, undefined, "missing history is not positive switch evidence");
+  assert.deepEqual(resolution.compatible, [], "unknown identity cannot prove a warm entry or compatible descendants");
+  const cacheState = cacheStateForLineage(
+    resolution,
+    { provider: "anthropic", model: "claude-opus-4-8", api: "anthropic-messages" },
+    WINDOW,
+  );
+  assert.equal(cacheState.modelSwitched, false);
+  assert.equal(cacheState.lastRequestAt, undefined, "unknown identity cannot restore a freshness clock");
+});
+
 test("incompatible descendants cannot refresh the selected lineage", () => {
   const entries = branchedEntries(40_000);
   const tool = { name: "read", input_schema: { type: "object" } };
@@ -204,6 +226,7 @@ test("incompatible descendants cannot refresh the selected lineage", () => {
   }
   for (const mutate of [
     (snapshot: CacheLineageSnapshot) => { snapshot.provider = "openai"; },
+    (snapshot: CacheLineageSnapshot) => { snapshot.api = undefined; },
     (snapshot: CacheLineageSnapshot) => { snapshot.window = { kind: "contract", ttlMs: 60 * 60_000, source: "observed" }; },
   ]) {
     const snapshots = restored(entries);

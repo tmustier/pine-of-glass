@@ -19,8 +19,12 @@ be cheap or will re-bill the whole prefix.
 
 For Anthropic, the clock shows a contract-TTL countdown. It reads the observed
 `cache_control`, not config. For OpenAI, it shows a documented three-zone band. For
-unknown providers, it uses softer wording. The promised re-write size always uses
-provider-exact usage. It is never an estimate.
+unknown providers, it uses softer wording. The promised re-write size uses
+provider-exact usage, with one exception: after a model switch it is an estimate in
+the new model's tokenizer, and says so. The pre-send clock estimates canonical history;
+at send time Cachemire re-sizes recognized system, tool and message fields from the
+provider payload it observes, including pi normalization and earlier payload transforms.
+Gateway estimates stay rough because an upstream rewrite can still change them.
 
 ```
 ◍ cache 4m30s                                    (green → yellow under 60s)
@@ -130,9 +134,9 @@ Set `turnSummaryMinCalls` higher if you only want a ledger line for multi-call t
 
 Cachemire follows these rules:
 
-- All token and cost numbers come from provider-reported usage in assistant messages.
-  Cachemire does not estimate them. Forensic causes come from observed payload diffs.
-  Cachemire does not infer them.
+- Token and cost numbers come from provider-reported usage in assistant messages.
+  The one estimate is the model-switch forecast, which is always labelled `est`.
+  Forensic causes come from observed payload diffs. Cachemire does not infer them.
 - Everything Cachemire draws is UI-only. It does not enter LLM context, session
   entries or exports.
 - Freshness wording reflects how much is known. A contract TTL gets a definite
@@ -141,22 +145,26 @@ Cachemire follows these rules:
 - Sessions restored with `--continue` rebuild the active ledger and all-branch cache
   baselines from session usage. Cachemire marks restored rows and excludes them from
   savings because their pricing context is unknown. Payload fingerprints are not
-  persisted, so restored branches use their own response-time anchor approximation until
-  live requests provide compatibility evidence.
+  persisted. Restored branches use the parent session entry as the request-time anchor
+  when available, and fall back to response time; live requests replace that approximation
+  with observed request timing and payload compatibility evidence.
 
 ## Understand the model behind the wording
 
 Cachemire uses 4 provider-general rules:
 
 - The freshness **anchor** is request processing. Generation time uses up the window.
-- The cache **scope** is the provider, model and byte-exact prefix. Any model switch
-  therefore means the cache will definitely be cold before you send anything.
+- The cache **scope** is the provider, model, wire API and byte-exact prefix. Warmth and
+  model-switch calibration require all 3 identity fields to match. A model switch
+  therefore means the cache is expected cold before you send anything, and the
+  widget forecasts the prompt in the *target* model's currency (est-marked). Switching
+  back to a model whose own cache may still be warm says so instead.
 - The **window** has different strengths for each provider. Anthropic has a contract
   TTL, OpenAI has a documented band and the window is unknown for other providers.
   The wording
   reflects that strength.
-- The **currency** rule shows tokens and $ only in the tokenizer and price card that
-  billed them.
+- The **currency** rule shows exact tokens and $ only in the tokenizer and price card
+  that billed them; cross-model sizes are explicit estimates in the target currency.
 
 Read [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for the full model and its
 evidence. It covers clock-anchor and aborted-send semantics, thinking-level cache
@@ -169,7 +177,7 @@ matching), the cause ladder and the state and lifecycle trade-offs.
 |---|---|---|---|
 | contextimate | static prefix | estimated tokens | what am I carrying? |
 | traceline | per tool call | exact chars | what did tools do? |
-| **cachemire** | per model call / turn | exact provider tokens & $ | what did the loop cost, and why? |
+| **cachemire** | per model call / turn | exact provider tokens & $ (est across a model switch) | what did the loop cost, and why? |
 
 The ledger starts with the family panel header (`[Cachemire]` in the theme accent).
 The shared `ink()` helper provides theme-derived tones. The `◍` / `○ ● ◑ ◌` glyphs

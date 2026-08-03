@@ -17,7 +17,7 @@ The extensions answer adjacent questions about the same agent loop:
 |---|---|---|---|
 | contextimate | static prefix | estimated tokens | what am I carrying? |
 | traceline | per tool call | exact chars | what did tools do? |
-| cachemire | per model call or turn | exact provider tokens and dollars | what did the loop cost, and why? |
+| cachemire | per model call or turn | exact provider tokens and dollars (estimated across a model switch) | what did the loop cost, and why? |
 | meantime | per stream segment | exact wall-clock ms | what happened in the meantime? |
 
 They should read as one instrument panel, not four apps that happen to share a repo.
@@ -195,6 +195,39 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   compatibility. The
   intentional suffix divergence is therefore ordinary prefix growth, not a suppressed
   mutation; withhold a divergent-tail estimate until provider usage makes it exact
+- a model switch re-prices the conversation; the wording leads with the consequence
+  (the whole prompt goes uncached to the new provider) and then explains it:
+  `cache cold expected · model switched · next send ~32.4k uncached to anthropic
+  (20.7k +13.8k tokenizer -2.1k dropped thinking · est)`. The headline is the
+  estimated first prompt in the target model's currency. Before a send, it estimates
+  canonical history; at `before_provider_request`, recognized system, tool and message
+  fields from the observed provider payload replace that target estimate so pi
+  normalization and earlier payload transforms are reflected. Request options and image base64
+  are never sized as text. Unknown payload shapes retain the canonical estimate, and
+  gateway routes remain rough because the gateway can still rewrite them upstream.
+  Calibration and warmth anchors require exact provider, API and model identity. The
+  parenthetical starts from the source model's last billed prompt and explains the
+  change as signed terms
+  in diff-stat style (§9.7): `tokenizer` is the re-count of retained content,
+  computed as the residual on display-rounded values so the terms always sum to the
+  headline, and `dropped thinking` is the source-billed encrypted reasoning the
+  target never receives, priced at the source's measured density. Zero terms drop
+  out like a diff stat's zero side. The breakdown appears only when a billed source
+  anchor calibrated the estimate inside the trusted correction bounds (a saturated
+  clamp bounds the number without explaining it); otherwise the line degrades to `next send ~32.4k
+  uncached to anthropic (est)`, and gateway routes stay `(rough est · gateway
+  route)` with no breakdown. The send-time notice keeps the grammar in progressive
+  tense: `cache breaking · sending ~32.4k uncached to anthropic (20.7k +13.8k
+  tokenizer -2.1k dropped thinking · est · ~$0.41) · cause: model switched
+  openai-codex/gpt-5.6-sol → anthropic/claude-fable-5`; the resolved line stays
+  past tense and provider-exact (`cache broke · re-wrote 28.2k …`). Resolution
+  obeys the same currency rule: the pre-switch expectation is denominated in the
+  old model's tokenizer, so a switched call is classified and rendered against its
+  own billed prompt only. A switched send that lands warm (a twin session's
+  identical prefix, or the model's own surviving entry) reads `cache held · read
+  28.2k (100% of prompt) · the new model already had the prefix cached`, never
+  `read 28.2k of 20.6k expected`, which composes two currencies into an impossible
+  137% claim
 - certainty ladder: contract-backed evidence gets definite words (`cache cold`);
   a documented band gets hedged words (`cache fading`); an unknown provider gets
   `likely`. Never write definite words on soft evidence

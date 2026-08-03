@@ -11,6 +11,9 @@ export interface ModelRates {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  /** Request-wide pricing tiers (mirrors pi-ai's ModelCost): the highest matching
+   * inputTokensAbove threshold prices the whole request. */
+  tiers?: Array<{ inputTokensAbove: number; input: number; output: number; cacheRead: number; cacheWrite: number }>;
 }
 
 export interface RequestFingerprint {
@@ -45,6 +48,10 @@ export interface CallRecord {
   expectedRead: number;
   classification: CallClassification;
   rewroteTokens: number;
+  /** Usage arrived through a different model identity than the tracked expectation:
+   * expectedRead is denominated in the previous model's tokenizer and must never be
+   * composed with this call's counts (design language §7). */
+  switched?: boolean;
   postCompaction?: { modelSwitched: boolean };
   costUsd?: number;
   uncachedUsd?: number;
@@ -80,6 +87,16 @@ export interface BreakPrediction {
   /** Last provider-known prompt size; absent when token currency or the new prefix is unknown. */
   expectedRewriteTokens?: number;
   expectedUsd?: number;
+  /** Heuristic size in the *target* currency for model switches (issue #57); rendered
+   * with ~/est wording, never as a provider-exact count. */
+  estimatedRewriteTokens?: number;
+  /** Destination of the uncached send: the target model's provider. */
+  targetProvider?: string;
+  /** Signed BLUF terms explaining the estimate from the source's billed prompt. */
+  estimateBreakdown?: { anchorTokens: number; droppedThinking: number };
+  estimatedUsd?: number;
+  /** Gateway routes may transform the request upstream: demote the wording. */
+  estimateBasis?: "direct" | "gateway";
 }
 
 /** One provider-billed request anchored to the session path it serialized. */
@@ -91,10 +108,10 @@ export interface CacheLineageSnapshot {
   responseAt: number;
   requestAt: number;
   promptTokens: number;
-  cacheRead: number;
-  cacheWrite: number;
   provider?: string;
   model?: string;
+  /** Wire API that billed this call; same id via a different api is a different cache. */
+  api?: string;
   fingerprint?: RequestFingerprint;
   window?: CacheWindow;
   /** Chronological ledger row for live calls; restored all-branch snapshots omit it. */
