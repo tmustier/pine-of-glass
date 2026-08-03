@@ -199,8 +199,15 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   (the whole prompt goes uncached to the new provider) and then explains it:
   `cache cold expected · model switched · next send ~32.4k uncached to anthropic
   (20.7k +13.8k tokenizer -2.1k dropped thinking · est)`. The headline is the
-  estimated first prompt in the target model's currency. The parenthetical starts
-  from the source model's last billed prompt and explains the change as signed terms
+  estimated first prompt in the target model's currency. Before a send, it estimates
+  canonical history; at `before_provider_request`, recognized system, tool and message
+  fields from the observed provider payload replace that target estimate so pi
+  normalization and earlier payload transforms are reflected. Request options and image base64
+  are never sized as text. Unknown payload shapes retain the canonical estimate, and
+  gateway routes remain rough because the gateway can still rewrite them upstream.
+  Calibration and warmth anchors require exact provider, API and model identity. The
+  parenthetical starts from the source model's last billed prompt and explains the
+  change as signed terms
   in diff-stat style (§9.7): `tokenizer` is the re-count of retained content,
   computed as the residual on display-rounded values so the terms always sum to the
   headline, and `dropped thinking` is the source-billed encrypted reasoning the

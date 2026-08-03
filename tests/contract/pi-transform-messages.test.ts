@@ -9,7 +9,12 @@ import assert from "node:assert/strict";
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import type { Message, Model, Api } from "@earendil-works/pi-ai";
 
-import { ESTIMATED_IMAGE_CHARS, forecastHistoryForTarget, type ForecastMessage } from "../../extensions/_lib/forecast.ts";
+import {
+  ESTIMATED_IMAGE_CHARS,
+  forecastHistoryForTarget,
+  normalizeForecastToolCallId,
+  type ForecastMessage,
+} from "../../extensions/_lib/forecast.ts";
 import { assistantMessage } from "../helpers.ts";
 
 function fakeModel(overrides: Partial<Model<Api>> = {}): Model<Api> {
@@ -139,6 +144,31 @@ test("fully foreign target: every encrypted payload is immaterial to the real tr
   // luna appears in no message, so ENCRYPTED-SOL-PAYLOAD, SIGNATURE-ONLY, REDACTED and
   // TOOL-THOUGHT must all drop — from the mirror and from transformMessages alike.
   assertMirror(richHistory(), fakeModel(), "sol/opus history → luna (all payloads drop)");
+});
+
+test("mirror: cross-provider tool call IDs use pi's normalization callback", () => {
+  const originalId = `call|${"+/=".repeat(180)}`;
+  const history = [
+    assistantMessage(
+      [{ type: "toolCall", id: originalId, name: "read", arguments: { path: "/tmp/x" } }] as AssistantContent,
+      { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol", stopReason: "toolUse" },
+    ),
+    {
+      role: "toolResult", toolCallId: originalId, toolName: "read",
+      content: [{ type: "text", text: "result" }], isError: false, timestamp: 4,
+    } as Message,
+  ];
+  const target = fakeModel({ id: "claude-opus-4-8", api: "anthropic-messages", provider: "anthropic" });
+  const transformed = transformMessages(history, target, (id, model, source) =>
+    normalizeForecastToolCallId(id, model, source as unknown as ForecastMessage));
+  const firstBlock = (transformed[0] as Extract<Message, { role: "assistant" }>).content[0];
+  assert.equal(firstBlock?.type, "toolCall");
+  assert.equal(firstBlock?.type === "toolCall" ? firstBlock.id.length : 0, 64);
+  assert.equal(
+    materialCharsOfForecast(history, target),
+    materialCharsOfTransform(transformed),
+    "the forecast must count the normalized wire ID, not the 545-char source ID",
+  );
 });
 
 test("known divergence: pi synthesizes results for orphaned tool calls; the forecast ignores them", () => {

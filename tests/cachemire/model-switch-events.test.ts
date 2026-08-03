@@ -102,10 +102,9 @@ test("event flow: the same model over a different wire API is a switch", async (
   }
 });
 
-test("event flow: a material estimated re-write posts one est-marked notice", async () => {
-  // 200k chars of history, and the same id billed 80k through the other api: with
-  // identical heuristics on both sides, the density calibration anchors the estimate
-  // to the billed prompt exactly. Still far above the 20k threshold.
+test("event flow: send-time payload replaces a stale material history forecast", async () => {
+  // Canonical history is large, but the observed transformed payload is tiny. Send-time
+  // sizing must follow what is actually leaving pi and suppress the stale warning.
   const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200_000);
   const notifications: string[] = [];
   const widgets: string[] = [];
@@ -114,8 +113,29 @@ test("event flow: a material estimated re-write posts one est-marked notice", as
 
   await fire(probe, "session_start", {}, ctx);
   try {
+    assert.match(widgets.at(-1)!, /next send ~80\.0k/, "pre-send selection uses canonical history");
     await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
-    assert.equal(notifications.length, 1, "a material estimated re-write must post a notice");
+    assert.equal(notifications.length, 0, "the tiny observed payload is below the notice threshold");
+    assert.doesNotMatch(widgets.at(-1)!, /next send ~80\.0k/, "the clock is refreshed from provider fields");
+  } finally {
+    await fire(probe, "session_shutdown", {});
+  }
+});
+
+test("event flow: a material provider payload posts one est-marked notice", async () => {
+  const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200_000);
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const probe = extensionProbe();
+  const ctx = probeContext(entries, "bedrock-anthropic", notifications, widgets);
+
+  await fire(probe, "session_start", {}, ctx);
+  try {
+    await fire(probe, "before_provider_request", { payload: {
+      ...ANTHROPIC_PAYLOAD,
+      messages: [{ role: "user", content: [{ type: "text", text: "x".repeat(200_000) }] }],
+    } }, ctx);
+    assert.equal(notifications.length, 1, "a material observed payload must post a notice");
     assert.match(notifications[0]!, /sending ~80\.0k uncached to anthropic \(est/);
     assert.match(notifications[0]!, /model switched/);
   } finally {

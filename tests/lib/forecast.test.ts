@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   forecastHistoryForTarget,
   forecastTargetPrompt,
+  normalizeForecastToolCallId,
   type ForecastMessage,
   type TargetModel,
 } from "../../extensions/_lib/forecast.ts";
@@ -70,6 +71,28 @@ test("redacted thinking: kept same-model, dropped cross-model", () => {
   const history = [solTurn([{ type: "thinking", thinking: "", thinkingSignature: "R".repeat(50), redacted: true }])];
   assert.equal(forecastHistoryForTarget(history, { ...luna, id: "gpt-5.6-sol" }).keptReasoningChars, 50);
   assert.equal(forecastHistoryForTarget(history, opus).keptReasoningChars, 0);
+});
+
+test("cross-provider tool IDs follow target API wire constraints", () => {
+  const source: ForecastMessage = {
+    role: "assistant", content: [], provider: "foreign", api: "foreign-api", model: "old",
+  };
+  const id = "call|foreign/item";
+  assert.equal(normalizeForecastToolCallId(id, opus, source), "call_foreign_item");
+  assert.equal(
+    normalizeForecastToolCallId(id, { provider: "mistral", id: "mistral-large", api: "mistral-conversations" }, source),
+    "1ca52kv1m",
+  );
+  assert.equal(normalizeForecastToolCallId(id, { provider: "openai", id: "gpt", api: "openai-responses" }, source), "call|fc_16ipy761458vd9");
+  assert.equal(
+    normalizeForecastToolCallId(id, { provider: "azure-openai-responses", id: "gpt", api: "openai-responses" }, source),
+    "call_foreign_item",
+    "Azure is an allowed Responses carrier only on the Azure wire API",
+  );
+  assert.equal(
+    normalizeForecastToolCallId(id, { provider: "azure-openai-responses", id: "gpt", api: "azure-openai-responses" }, source),
+    "call|fc_16ipy761458vd9",
+  );
 });
 
 test("toolCall: arguments always count, thoughtSignature only for the same model", () => {
@@ -210,7 +233,8 @@ test("calibration: dropped-thinking term prices what the source billed but the t
   ];
   // Source serialization: 2800 text + 800 kept payload chars (share 0.22, inside the
   // guard). Source estimate ceil(3600/4) = 900; billed 1350 → ratio 1.5. Dropped
-  // thinking: 800/4 × 1.5 = 300 for a cross-model target; a same-id target keeps it.
+  // thinking: 800/4 × 1.5 = 300 for any different identity; only the exact source
+  // provider, API and model keeps it.
   const cross = forecastTargetPrompt({
     history, systemPromptChars: 0, tools: [], target: opus,
     calibration: { source: solSource, billedPromptTokens: 1350 },
@@ -222,4 +246,9 @@ test("calibration: dropped-thinking term prices what the source billed but the t
     calibration: { source: solSource, billedPromptTokens: 1350 },
   });
   assert.equal(sameId.droppedThinkingTokens, 0);
+  const sameIdOtherApi = forecastTargetPrompt({
+    history, systemPromptChars: 0, tools: [], target: { ...luna, id: "gpt-5.6-sol", api: "openai-responses" },
+    calibration: { source: solSource, billedPromptTokens: 1350 },
+  });
+  assert.equal(sameIdOtherApi.droppedThinkingTokens, 300);
 });

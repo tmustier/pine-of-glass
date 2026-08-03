@@ -153,6 +153,12 @@ function entriesFixture(): SessionEntry[] {
 
 const OPUS: SwitchTarget = { provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages", input: ["text", "image"] };
 
+test("restored lineage anchors freshness at the parent request, not response end", () => {
+  const restored = restoreLineageSnapshots(entriesFixture(), () => BAND);
+  assert.equal(restored[0]?.requestAt, 1_000);
+  assert.equal(restored[0]?.responseAt, 5_000);
+});
+
 test("computeSwitchForecast: estimates from canonical history in the target currency", () => {
   const forecast = computeSwitchForecast({
     target: OPUS,
@@ -192,13 +198,32 @@ test("computeSwitchForecast: a billed source anchor calibrates the estimate", ()
   const calibrated = computeSwitchForecast({ ...base, snapshots: [snapshot] });
   assert.equal(calibrated.estTokens, 4_500);
   assert.deepEqual(calibrated.breakdown, { anchorTokens: 2_925, droppedThinking: 0 });
-  // A pre-api snapshot (older cachemire state) still anchors: the tokenizer is the
-  // model's, not the wire's.
-  assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: undefined }] }).estTokens, 4_500);
+  // A pre-api snapshot cannot be attributed to the exact provider route, so it does
+  // not calibrate the target currency.
+  assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: undefined }] }).estTokens, 3_000);
   // Without a billed anchor on the path the heuristic number stands alone, unexplained.
   const plain = computeSwitchForecast({ ...base, snapshots: [] });
   assert.equal(plain.estTokens, 3_000);
   assert.equal(plain.breakdown, undefined);
+});
+
+test("computeSwitchForecast: send-time provider fields replace stale canonical sizing", () => {
+  const forecast = computeSwitchForecast({
+    target: OPUS,
+    entries: entriesFixture(),
+    activeLeafId: "a1",
+    systemPromptChars: 2_600,
+    tools: [],
+    snapshots: [],
+    providerPayload: {
+      model: OPUS.id,
+      system: "s".repeat(2_600),
+      messages: "m".repeat(2_600),
+      tools: [],
+      metadata: "ignored".repeat(100_000),
+    },
+  });
+  assert.equal(forecast.estTokens, 2_000, "only the observed 5.2k prompt chars are priced at 2.6 chars/token");
 });
 
 test("computeSwitchForecast: a switch-back prior needs an exact api and an uncompacted path", () => {

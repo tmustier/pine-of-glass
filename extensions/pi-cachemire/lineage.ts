@@ -11,9 +11,20 @@ function nonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+function persistedEntryAt(entry: unknown): number | undefined {
+  if (!isJsonObject(entry)) return undefined;
+  if (isJsonObject(entry.message)) {
+    const messageAt = nonNegativeNumber(entry.message.timestamp);
+    if (messageAt !== undefined) return messageAt;
+  }
+  const entryAt = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+  return Number.isFinite(entryAt) && entryAt >= 0 ? entryAt : undefined;
+}
+
 function billedSnapshotFromEntry(
   entry: unknown,
   windowForProvider: (provider: string | undefined) => CacheWindow | undefined,
+  entryTimes: ReadonlyMap<string, number>,
 ): CacheLineageSnapshot | undefined {
   if (
     !isJsonObject(entry) || entry.type !== "message" || typeof entry.id !== "string" ||
@@ -25,15 +36,15 @@ function billedSnapshotFromEntry(
   const cacheWrite = nonNegativeNumber(entry.message.usage.cacheWrite);
   if (input === undefined || output === undefined || cacheRead === undefined || cacheWrite === undefined) return undefined;
   if (input === 0 && output === 0 && cacheRead === 0 && cacheWrite === 0) return undefined;
-  const messageAt = nonNegativeNumber(entry.message.timestamp);
-  const entryAt = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
-  const responseAt = messageAt ?? (Number.isFinite(entryAt) ? entryAt : 0);
+  const responseAt = persistedEntryAt(entry) ?? 0;
+  const parentAt = typeof entry.parentId === "string" ? entryTimes.get(entry.parentId) : undefined;
+  const requestAt = parentAt !== undefined && parentAt <= responseAt ? parentAt : responseAt;
   const provider = typeof entry.message.provider === "string" ? entry.message.provider : undefined;
   return {
     requestLeafId: typeof entry.parentId === "string" ? entry.parentId : null,
     responseEntryId: entry.id,
     responseAt,
-    requestAt: responseAt,
+    requestAt,
     promptTokens: input + cacheRead + cacheWrite,
     cacheRead,
     cacheWrite,
@@ -44,13 +55,24 @@ function billedSnapshotFromEntry(
   };
 }
 
+function persistedEntryTimes(entries: readonly unknown[]): Map<string, number> {
+  const times = new Map<string, number>();
+  for (const entry of entries) {
+    if (!isJsonObject(entry) || typeof entry.id !== "string") continue;
+    const at = persistedEntryAt(entry);
+    if (at !== undefined) times.set(entry.id, at);
+  }
+  return times;
+}
+
 /** Restore every normal provider call in the session tree, not only the active branch. */
 export function restoreLineageSnapshots(
   entries: readonly unknown[],
   windowForProvider: (provider: string | undefined) => CacheWindow | undefined,
 ): CacheLineageSnapshot[] {
+  const entryTimes = persistedEntryTimes(entries);
   return entries
-    .map((entry) => billedSnapshotFromEntry(entry, windowForProvider))
+    .map((entry) => billedSnapshotFromEntry(entry, windowForProvider, entryTimes))
     .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined);
 }
 
@@ -61,6 +83,7 @@ function responseLinkKey(snapshot: CacheLineageSnapshot): string {
     snapshot.promptTokens,
     snapshot.provider,
     snapshot.model,
+    snapshot.api,
   ]);
 }
 
@@ -72,9 +95,10 @@ export function hydrateLineageResponseIds(
 ): void {
   const unresolved = snapshots.filter((snapshot) => snapshot.responseEntryId === undefined);
   if (unresolved.length === 0) return;
+  const entryTimes = persistedEntryTimes(entries);
   const persisted = new Map(
     entries
-      .map((entry) => billedSnapshotFromEntry(entry, windowForProvider))
+      .map((entry) => billedSnapshotFromEntry(entry, windowForProvider, entryTimes))
       .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined)
       .map((snapshot) => [responseLinkKey(snapshot), snapshot]),
   );
@@ -160,12 +184,17 @@ function identityCause(
   // Same provider/model over a different wire API is still a different cache.
   const detail = providerChanged || modelChanged
     ? `model switched ${before} → ${after}`
-    : `model switched ${before} (${baseline.api}) → ${after} (${api})`;
+    : `model switched ${before} (${baseline.api ?? "unknown API"}) → ${after} (${api ?? "unknown API"})`;
   return { kind: "model", detail };
 }
 
+function hasCompleteIdentity(snapshot: CacheLineageSnapshot): boolean {
+  return snapshot.provider !== undefined && snapshot.model !== undefined && snapshot.api !== undefined;
+}
+
 function sameIdentity(a: CacheLineageSnapshot, b: CacheLineageSnapshot): boolean {
-  return !changed(a.provider, b.provider) && !changed(a.model, b.model) && !changed(a.api, b.api);
+  return hasCompleteIdentity(a) && hasCompleteIdentity(b) &&
+    a.provider === b.provider && a.model === b.model && a.api === b.api;
 }
 
 function sameWindow(a: CacheWindow | undefined, b: CacheWindow | undefined): boolean {
@@ -261,6 +290,12 @@ export function resolveCacheLineage(args: {
     cause = { kind: "compaction", detail: "selected path contains a compaction checkpoint" };
   }
   if (cause) return { baseline, refresh: baseline, compatible: [], cause };
+  // Missing identity is not positive switch evidence, but it cannot prove warmth or
+  // descendant compatibility either. Keep the billed denominator and withhold time.
+  if (!hasCompleteIdentity(baseline) || args.currentProvider === undefined ||
+      args.currentModel === undefined || args.currentApi === undefined) {
+    return { baseline, compatible: [] };
+  }
 
   const descendants = baseline.responseEntryId
     ? descendantsOf(args.entries, baseline.responseEntryId)

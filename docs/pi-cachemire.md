@@ -34,10 +34,13 @@ Everything cachemire shows is four provider-general rules, which is the whole me
    against the new model. The forecast above is a labelled estimate in the target
    model's tokenizer, priced from the target's own price card (tier-aware). The
    estimate walks what the target will actually receive (pi drops cross-model
-   encrypted reasoning; readable summaries survive as text), and is density-calibrated
-   when possible: the source model billed this same history, so its billed/estimated
-   ratio corrects the shared denominators for content that tokenizes unusually (dense
-   numeric logs run ~2.1 chars/token on Claude against the 2.6 default). Exact
+   encrypted reasoning; readable summaries survive as text). Before send this comes
+   from canonical history; at `before_provider_request`, recognized prompt fields from
+   the provider payload Cachemire observes replace it, so normalization and earlier
+   payload transforms are reflected. It is density-calibrated when an exact provider,
+   API and model match proves the source model billed this same history, so its
+   billed/estimated ratio corrects the shared denominators for content that tokenizes
+   unusually (dense numeric logs run ~2.1 chars/token on Claude against the 2.6 default). Exact
    numbers return with the first new-model usage, which re-baselines everything.
 
 ## When the clock starts
@@ -166,9 +169,9 @@ next usage arrives, so Cachemire withholds that suffix estimate rather than pric
 abandoned leaf. Provider usage then supplies the exact cached and uncached split.
 
 Restored snapshots have provider, model, prompt size and response timestamps but no
-payload fingerprints. They can establish the selected denominator and their own
-response-time freshness approximation, but Cachemire does not claim that another
-restored descendant refreshed them without fingerprint proof.
+payload fingerprints or persisted request event. Their parent session entry supplies a
+request-time approximation when available, with response time as fallback. Cachemire
+does not claim that another restored descendant refreshed them without fingerprint proof.
 
 ## The cause ladder
 
@@ -229,8 +232,8 @@ what the provider billed (usage on assistant messages in the session transcript)
 which `--continue` rebuilds the active ledger and all-branch lineage baselines.
 Request-time observations (payload fingerprints, true request-start anchors and the
 observed `cache_control` TTL) exist only at the event boundary and are never persisted.
-After restore, Cachemire uses response timestamps as slightly optimistic anchor
-approximations, withholds compatibility claims that need a fingerprint, and restarts
+After restore, Cachemire approximates request start from the parent session entry and
+falls back to response time, withholds compatibility claims that need a fingerprint, and restarts
 replica-entry matching from live calls. Restored rows say `cause unknown` rather than reconstruct a
 diagnosis from vibes. Cachemire writes nothing into session entries or exports (UI-only
 contract).

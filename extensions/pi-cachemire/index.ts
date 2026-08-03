@@ -502,6 +502,7 @@ function refreshSwitchForecast(
   ctx: Pick<ExtensionContext, "sessionManager" | "getSystemPrompt">,
   activeLeafId: string | null,
   target: SwitchTarget | undefined,
+  providerPayload?: unknown,
 ): void {
   const s = state();
   if (!s.modelSwitched || !target) {
@@ -516,6 +517,7 @@ function refreshSwitchForecast(
     systemPromptChars: ctx.getSystemPrompt().length,
     tools: activeToolShapes(pi),
     snapshots: s.lineages,
+    providerPayload,
   });
 }
 
@@ -602,8 +604,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     ));
     s.pendingFingerprintCause = resolution.cause;
     s.pendingLineageCandidates = resolution.compatible;
-    // Re-forecast at send time: the canonical history now includes the new user message.
-    refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), ctx.model);
+    // Re-forecast at send time from the actual provider body. This captures pi's
+    // normalization and payload transforms; unknown shapes fall back to history.
+    refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), ctx.model, event.payload);
     s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
     if (firstAttempt) s.pendingPreviousCacheAt = s.lastRequestAt;
     s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;

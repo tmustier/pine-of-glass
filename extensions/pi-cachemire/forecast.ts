@@ -6,6 +6,7 @@
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { CALIBRATION_MAX, CALIBRATION_MIN, forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
+import { forecastProviderPrompt } from "../_lib/provider-prompt.ts";
 import type { ToolShape } from "../_lib/tool-payloads.ts";
 import { findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
@@ -60,20 +61,20 @@ export function computeSwitchForecast(args: {
   systemPromptChars: number;
   tools: ToolShape[];
   snapshots: readonly CacheLineageSnapshot[];
+  /** Final local provider body, when called from before_provider_request. */
+  providerPayload?: unknown;
 }): SwitchForecast {
   const forecast: SwitchForecast = {
     targetId: args.target.id,
     targetProvider: args.target.provider,
     basis: args.target.api === "pi-messages" ? "gateway" : "direct",
   };
-  // Cache identity is provider+id+api (same id via a different wire API is a
-  // different cache), so warmth candidates need an exact api. A density anchor only
-  // needs the tokenizer, so a pre-api snapshot (missing api) still calibrates.
-  const identitySnapshots = (model: SwitchTarget, api: "exact" | "lenient") => args.snapshots.filter(
-    (snapshot) => snapshot.provider === model.provider && snapshot.model === model.id &&
-      (snapshot.api === model.api || (api === "lenient" && snapshot.api === undefined)),
+  // Cache/accounting attribution is exact provider+id+api. A missing or different
+  // wire API cannot name either a warm entry or a calibration anchor.
+  const identitySnapshots = (model: SwitchTarget) => args.snapshots.filter(
+    (snapshot) => snapshot.provider === model.provider && snapshot.model === model.id && snapshot.api === model.api,
   );
-  const prior = findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.target, "exact"));
+  const prior = findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.target));
   // A compaction after the prior call rewrote the prefix its cache entry covered; a
   // switch-back cannot revive it, so the warmth hint is withheld rather than hedged.
   if (prior && !pathContainsCompaction(args.entries, args.activeLeafId, prior)) {
@@ -81,7 +82,7 @@ export function computeSwitchForecast(args: {
   }
   const sourceBaseline = args.source === undefined
     ? undefined
-    : findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.source, "lenient"));
+    : findBranchBaseline(args.entries, args.activeLeafId, identitySnapshots(args.source));
   let history: ForecastMessage[] | undefined;
   try {
     history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];
@@ -98,6 +99,9 @@ export function computeSwitchForecast(args: {
       systemPromptChars: args.systemPromptChars,
       tools: args.tools,
       target: args.target,
+      providerPrompt: args.providerPayload === undefined
+        ? undefined
+        : forecastProviderPrompt(args.providerPayload, args.target),
       calibration,
     });
     forecast.estTokens = prompt.tokens;

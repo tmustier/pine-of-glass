@@ -80,19 +80,6 @@ export function keepsAllOpenAIReasoning(modelId: string): boolean {
 
 export const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
   {
-    // 5-generation ids end in -5 (claude-fable-5, claude-opus-5), optionally with a
-    // date suffix. claude-opus-4-5 and claude-3-5-* must keep their own rules: the
-    // \w+ segment cannot span a hyphen, so 4-5/3-5 ids never reach the trailing -5.
-    label: "Claude 5 heuristic",
-    providerIncludes: ["anthropic"],
-    apiEquals: ["anthropic-messages"],
-    modelRegex: /claude-\w+-5(?:-\d+)?$/,
-    textDenominator: 2.6,
-    sessionDenominator: 2.6,
-    toolDenominator: 2.6,
-    toolNumerator: "anthropic",
-  },
-  {
     label: "Claude 4.7+ heuristic",
     providerIncludes: ["anthropic"],
     apiEquals: ["anthropic-messages"],

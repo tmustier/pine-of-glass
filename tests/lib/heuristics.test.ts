@@ -7,10 +7,10 @@ import { builtInHeuristicForModel } from "../../extensions/_lib/heuristics.ts";
 
 const anthropic = (id: string) => ({ provider: "anthropic", id, api: "anthropic-messages" });
 
-test("claude 5-generation ids get the Claude 5 heuristic", () => {
-  assert.equal(builtInHeuristicForModel(anthropic("claude-fable-5"))?.label, "Claude 5 heuristic");
-  assert.equal(builtInHeuristicForModel(anthropic("claude-opus-5"))?.label, "Claude 5 heuristic");
-  assert.equal(builtInHeuristicForModel(anthropic("claude-opus-5-20260601"))?.label, "Claude 5 heuristic");
+test("claude 5-generation ids keep the Claude 4.7+ tokenizer profile", () => {
+  assert.equal(builtInHeuristicForModel(anthropic("claude-fable-5"))?.label, "Claude 4.7+ heuristic");
+  assert.equal(builtInHeuristicForModel(anthropic("claude-opus-5"))?.label, "Claude 4.7+ heuristic");
+  assert.equal(builtInHeuristicForModel(anthropic("claude-opus-5-20260601"))?.label, "Claude 4.7+ heuristic");
   assert.equal(builtInHeuristicForModel(anthropic("claude-fable-5"))?.sessionDenominator, 2.6);
 });
 

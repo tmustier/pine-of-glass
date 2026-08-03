@@ -153,6 +153,21 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
 - **Snapshot signature**: identical inputs → identical signature; changing the active tool
   set, model, config, or session chars each changes it (render-cache invalidation).
 
+### cachemire
+
+- **Model-switch currency**: target forecasts never classify provider usage against an
+  old-model token count. Calibration and switch-back warmth require exact provider, API
+  and model identity; compaction invalidates prior warmth.
+- **Send-time prompt sizing**: recognized Anthropic, OpenAI, Google and `pi-messages`
+  payloads count only system, tool and message fields. Tests pin transformed-payload
+  precedence, metadata exclusion, flat image sizing and canonical-history fallback.
+  The `transformMessages` contract also passes a nontrivial normalization callback,
+  while unit fixtures pin known per-API outputs, so cross-provider tool IDs are counted
+  at their wire-safe length rather than raw length.
+- **Restored freshness**: persisted lineage uses the parent entry timestamp as its
+  request anchor and response time only as fallback, so long generations do not restore
+  an artificially fresh cache.
+
 ### meantime
 
 - **Segment and resolution arithmetic**: the bare stream start does not set TTFT;

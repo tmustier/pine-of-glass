@@ -21,7 +21,10 @@ For Anthropic, the clock shows a contract-TTL countdown. It reads the observed
 `cache_control`, not config. For OpenAI, it shows a documented three-zone band. For
 unknown providers, it uses softer wording. The promised re-write size uses
 provider-exact usage, with one exception: after a model switch it is an estimate in
-the new model's tokenizer, and says so.
+the new model's tokenizer, and says so. The pre-send clock estimates canonical history;
+at send time Cachemire re-sizes recognized system, tool and message fields from the
+provider payload it observes, including pi normalization and earlier payload transforms.
+Gateway estimates stay rough because an upstream rewrite can still change them.
 
 ```
 ◍ cache 4m30s                                    (green → yellow under 60s)
@@ -142,16 +145,18 @@ Cachemire follows these rules:
 - Sessions restored with `--continue` rebuild the active ledger and all-branch cache
   baselines from session usage. Cachemire marks restored rows and excludes them from
   savings because their pricing context is unknown. Payload fingerprints are not
-  persisted, so restored branches use their own response-time anchor approximation until
-  live requests provide compatibility evidence.
+  persisted. Restored branches use the parent session entry as the request-time anchor
+  when available, and fall back to response time; live requests replace that approximation
+  with observed request timing and payload compatibility evidence.
 
 ## Understand the model behind the wording
 
 Cachemire uses 4 provider-general rules:
 
 - The freshness **anchor** is request processing. Generation time uses up the window.
-- The cache **scope** is the provider, model, wire api and byte-exact prefix. A model
-  switch therefore means the cache is expected cold before you send anything, and the
+- The cache **scope** is the provider, model, wire API and byte-exact prefix. Warmth and
+  model-switch calibration require all 3 identity fields to match. A model switch
+  therefore means the cache is expected cold before you send anything, and the
   widget forecasts the prompt in the *target* model's currency (est-marked). Switching
   back to a model whose own cache may still be warm says so instead.
 - The **window** has different strengths for each provider. Anthropic has a contract

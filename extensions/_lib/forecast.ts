@@ -12,7 +12,10 @@ import {
   type HeuristicNumbers,
   type ModelSummary,
 } from "./heuristics.ts";
+import { ESTIMATED_IMAGE_CHARS, type ProviderPromptForecast } from "./provider-prompt.ts";
 import { estimateToolListTokens, type ToolShape } from "./tool-payloads.ts";
+
+export { ESTIMATED_IMAGE_CHARS } from "./provider-prompt.ts";
 
 /** Target identity + capabilities; the slice of pi-ai's Model the forecast needs. */
 export type TargetModel = ModelSummary & {
@@ -54,9 +57,6 @@ export interface HistoryForecast {
   imageChars: number;
 }
 
-// pi's compaction estimator counts an image as 4800 chars; reuse that convention
-// rather than inventing a second one (real image tokens are model-specific).
-export const ESTIMATED_IMAGE_CHARS = 4800;
 // pi's transformMessages placeholders for non-vision targets, by message role.
 const NON_VISION_USER_PLACEHOLDER_CHARS = "(image omitted: model does not support images)".length;
 const NON_VISION_TOOL_PLACEHOLDER_CHARS = "(tool image omitted: model does not support images)".length;
@@ -90,11 +90,76 @@ function countUserContent(forecast: HistoryForecast, content: unknown, visionTar
   }
 }
 
-function countToolCall(forecast: HistoryForecast, block: ForecastBlock, isSame: boolean): void {
+function shortHash(value: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    h1 = Math.imul(h1 ^ code, 2_654_435_761);
+    h2 = Math.imul(h2 ^ code, 1_597_334_677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2_246_822_507) ^ Math.imul(h2 ^ (h2 >>> 13), 3_266_489_909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2_246_822_507) ^ Math.imul(h1 ^ (h1 >>> 13), 3_266_489_909);
+  return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+}
+
+function normalizedIdPart(value: string, limit = 64): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, limit).replace(/_+$/, "");
+}
+
+/** Mirror pi-ai's cross-provider ID normalization for the APIs Cachemire can size
+ * before provider serialization. The send-time payload remains authoritative. */
+export function normalizeForecastToolCallId(id: string, target: TargetModel, source: ForecastMessage): string {
+  if (target.api === "anthropic-messages" || target.api === "bedrock-converse-stream") {
+    return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  }
+  if (target.api === "google-generative-ai" || target.api === "google-vertex") {
+    return target.id.startsWith("claude-") || target.id.startsWith("gpt-oss-")
+      ? id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64)
+      : id;
+  }
+  if (target.api === "mistral-conversations") {
+    const normalized = id.replace(/[^a-zA-Z0-9]/g, "");
+    return normalized.length === 9 ? normalized : shortHash(normalized || id).replace(/[^a-zA-Z0-9]/g, "").slice(0, 9);
+  }
+  if (target.api === "openai-completions") {
+    if (!id.includes("|")) return target.provider === "openai" ? id.slice(0, 40) : id;
+    const separator = id.indexOf("|");
+    const callId = id.slice(0, separator).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const itemId = id.slice(separator + 1).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const combined = itemId.length > 0 ? `${callId}_${itemId}` : callId;
+    if (combined.length <= 40) return combined;
+    const hash = shortHash(id).slice(0, 8);
+    return `${callId.slice(0, Math.max(1, 39 - hash.length))}_${hash}`;
+  }
+  if (["openai-responses", "azure-openai-responses", "openai-codex-responses"].includes(target.api)) {
+    const allowedProviders = target.api === "azure-openai-responses"
+      ? ["openai", "openai-codex", "opencode", "azure-openai-responses"]
+      : ["openai", "openai-codex", "opencode"];
+    const allowedProvider = allowedProviders.includes(target.provider);
+    if (!allowedProvider || !id.includes("|")) return normalizedIdPart(id);
+    const [callId = "", itemId = ""] = id.split("|");
+    const normalizedCall = normalizedIdPart(callId);
+    const foreign = source.provider !== target.provider || source.api !== target.api;
+    let normalizedItem = foreign ? `fc_${shortHash(itemId)}` : normalizedIdPart(itemId);
+    if (!normalizedItem.startsWith("fc_")) normalizedItem = normalizedIdPart(`fc_${normalizedItem}`);
+    return `${normalizedCall}|${normalizedItem}`;
+  }
+  return id;
+}
+
+function countToolCall(
+  forecast: HistoryForecast,
+  block: ForecastBlock,
+  isSame: boolean,
+  source: ForecastMessage,
+  target: TargetModel,
+): void {
   // Tool calls replay as id/name/arguments; cross-model the thoughtSignature is
-  // stripped, so it only counts for its own model. Encrypted payload char length is
-  // the size proxy throughout (contextimate's convention).
-  forecast.textChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }).length;
+  // stripped and provider serializers normalize the id. Encrypted payload char length
+  // is the size proxy throughout (contextimate's convention).
+  const id = !isSame && typeof block.id === "string" ? normalizeForecastToolCallId(block.id, target, source) : block.id;
+  forecast.textChars += JSON.stringify({ id, name: block.name, arguments: block.arguments }).length;
   if (isSame && typeof block.thoughtSignature === "string") forecast.keptReasoningChars += block.thoughtSignature.length;
 }
 
@@ -135,7 +200,7 @@ export function forecastHistoryForTarget(messages: readonly ForecastMessage[], t
       const isSame = sameModel(message, target);
       for (const block of blockList(message.content)) {
         if (block.type === "thinking") countThinking(forecast, block, isSame);
-        else if (block.type === "toolCall") countToolCall(forecast, block, isSame);
+        else if (block.type === "toolCall") countToolCall(forecast, block, isSame, message, target);
         else if (block.type === "text") forecast.textChars += (block.text ?? "").length;
       }
       continue;
@@ -187,8 +252,10 @@ function estimatePrompt(
 /**
  * Estimate the full first prompt to a target model: system prompt and tools under
  * the family text/tool heuristics, history under the session denominator, all in
- * the target model's currency. Callers must render the result as an estimate
- * (design language §4: ~ and est wording); it is never a provider-exact count.
+ * the target model's currency. At send time, providerPrompt replaces that canonical
+ * target estimate with the observed wire fields while retaining source calibration.
+ * Callers must render the result as an estimate (design language §4: ~ and est
+ * wording); it is never a provider-exact count.
  *
  * When a calibration anchor is given (the model that last billed this history and
  * its real prompt tokens), the same estimate is run in the source currency and the
@@ -201,9 +268,10 @@ export function forecastTargetPrompt(args: {
   systemPromptChars: number;
   tools: ToolShape[];
   target: TargetModel;
+  providerPrompt?: ProviderPromptForecast;
   calibration?: { source: TargetModel; billedPromptTokens: number };
 }): PromptForecast {
-  const target = estimatePrompt(args.history, args.systemPromptChars, args.tools, args.target);
+  const target = args.providerPrompt ?? estimatePrompt(args.history, args.systemPromptChars, args.tools, args.target);
   const anchor = args.calibration;
   if (anchor === undefined || anchor.billedPromptTokens <= 0 || !Number.isFinite(anchor.billedPromptTokens)) {
     return { tokens: target.tokens, heuristic: target.heuristic };
@@ -215,9 +283,10 @@ export function forecastTargetPrompt(args: {
     return { tokens: target.tokens, heuristic: target.heuristic };
   }
   const ratio = Math.min(CALIBRATION_MAX, Math.max(CALIBRATION_MIN, anchor.billedPromptTokens / source.tokens));
-  // Signatures replay only to the model that produced them, so everything the source
-  // kept is dropped by a different target; a same-id target (cross-api) keeps it all.
-  const droppedChars = anchor.source.id === args.target.id ? 0 : source.counts.keptReasoningChars;
+  // Signatures replay only to the exact provider, API and model that produced them.
+  const sameIdentity = anchor.source.provider === args.target.provider &&
+    anchor.source.api === args.target.api && anchor.source.id === args.target.id;
+  const droppedChars = sameIdentity ? 0 : source.counts.keptReasoningChars;
   return {
     tokens: Math.round(target.tokens * ratio),
     heuristic: target.heuristic,
