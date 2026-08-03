@@ -48,7 +48,8 @@ How to read the numbers:
 - `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand
 - each expanded tool header shows where the tool came from: its config scope and defining file, or `builtin`
 - `Reasoning context` sums provider-reported exact counts for signed reasoning carried by the active request; it follows Claude's model-specific retention policy, OpenAI Codex's encrypted-history accounting and Gemini's valid thought signatures
-- OpenAI pre-5.6 API totals omit older encrypted reasoning, so Contextimate follows Codex and adds those exact historical counts to `Total request`; prompt totals, including cache reads and writes, reject impossible attribution only where the provider already includes history
+- tested pre-5.6 OpenAI Codex totals omit earlier reasoning, so Contextimate adds those exact stored counts once; ordinary and Azure Responses use the same rule pending direct probes
+- this corrects Contextimate's panel only; Pi's own context display and automatic compaction still use the uncorrected provider total
 - summaries not covered by exact counts remain estimated separately as `Thinking summaries`
 - opaque signatures are never treated as token-sized text, and cross-model reasoning is not counted as retained
 - `Unattributed` is the remaining accounting gap and can include prefix-estimation error, provider overhead, images and reasoning when the provider reports no breakdown

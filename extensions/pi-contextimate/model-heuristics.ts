@@ -45,7 +45,7 @@ export function keepsAllClaudeThinking(modelId: string): boolean {
     || /mythos[-.]?preview/.test(id);
 }
 
-/** Pi's GPT-5.6 usage includes replayed history; earlier OpenAI totals omit it. */
+/** Measured Codex boundary: GPT-5.6 usage includes replayed history; earlier totals omit it. */
 export function openAIUsageIncludesHistoricalReasoning(modelId: string): boolean {
   return familyAtLeast(modelId, "gpt", 5, 6);
 }

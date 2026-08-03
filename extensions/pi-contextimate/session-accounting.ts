@@ -174,9 +174,11 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
 
     // Pi reports each generated reasoning count exactly. OpenAI Codex replays every
     // encrypted reasoning item, but its pre-5.6 usage omits items before the latest
-    // user boundary. Match Codex's own active-context accounting by adding those exact
-    // historical counts outside Pi's total. Other retained history must conserve against
-    // the aggregate prompt buckets that are supposed to contain it.
+    // user boundary. Raw SSE verifies the Codex route; ordinary and Azure Responses
+    // assume the same model behavior pending direct probes. Match Codex's own
+    // active-context accounting by adding those exact historical counts outside Pi's
+    // total. Other retained history must conserve against the prompt buckets meant to
+    // contain it.
     const exactReasoningIndices = new Set<number>();
     const reportedHistoricalReasoningIndices = new Set<number>();
     const strippedThinkingIndices = new Set<number>();

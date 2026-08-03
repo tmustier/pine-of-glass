@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
+import { accountProviderContext } from "../../extensions/pi-contextimate/session-accounting.ts";
 import { assistantMessage } from "../helpers.ts";
 
 const { buildSessionBreakdown } = internals;
@@ -96,6 +97,34 @@ test("Claude reasoning follows keep-all, current-turn and exact-identity boundar
   assert.equal(buildSessionBreakdown(relay)!.reasoningTokens, 700, "relay usage stays exact");
 });
 
+test("raw GPT-5.5 Codex usage restores replayed reasoning exactly once", () => {
+  const session = SessionManager.inMemory("/tmp/contextimate-raw-codex-usage");
+  session.appendMessage(assistantMessage(
+    [{ type: "thinking", thinking: "summary", thinkingSignature: encryptedReasoning("rs_raw") }],
+    {
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      usage: { ...usageWithReasoning(216, 578), output: 228, totalTokens: 806 },
+    },
+  ));
+  session.appendMessage({ role: "user", content: "next", timestamp: 2 });
+  session.appendMessage(assistantMessage(
+    [{ type: "text", text: "OK" }],
+    {
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      usage: { ...usageWithoutReasoning(598, 5), reasoning: 0 },
+    },
+  ));
+
+  const breakdown = buildSessionBreakdown(session)!;
+  assert.equal(breakdown.reasoningTokens, 216);
+  assert.equal(breakdown.providerOmittedReasoningTokens, 216);
+  assert.deepEqual(accountProviderContext(breakdown, 603), { tokens: 819, corrected: true });
+});
+
 test("OpenAI matches Codex replay and provider-total accounting", () => {
   const allTurns = SessionManager.inMemory("/tmp/contextimate-codex-thinking");
   allTurns.appendMessage(assistantMessage(
@@ -136,7 +165,7 @@ test("OpenAI matches Codex replay and provider-total accounting", () => {
   assert.equal(
     currentTurnBreakdown.providerOmittedReasoningTokens,
     600,
-    "pre-5.6 provider totals omit reasoning before the latest user boundary",
+    "ordinary Responses assumes the measured pre-5.6 Codex boundary pending a direct probe",
   );
 
   const ordinaryTextItem = SessionManager.inMemory("/tmp/contextimate-openai-text-signature");

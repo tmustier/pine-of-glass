@@ -237,11 +237,12 @@ reasoning carried by the active request gets an exact `Reasoning context` row,
 including a reported zero. Exact counts accumulate across verified same-model signed
 history. Model changes stop the accumulation; Claude's current-turn policy also strips
 older blocks. Historical reasoning must fit inside the exact reported prompt total
-across input, cache reads and cache writes when the provider includes it there. OpenAI
-pre-5.6 totals are the explicit exception: follow Codex by adding omitted encrypted
-history once to the request total. Provider-generated summaries not covered by exact
-reasoning get a separate estimated `Thinking summaries` row; opaque signatures are
-never sized as reasoning.
+across input, cache reads and cache writes when the provider includes it there. Measured
+pre-5.6 Codex totals are the explicit exception: add omitted encrypted history once to
+Contextimate's request total and label its provenance `Pi + prior reasoning`. This does
+not change Pi's own display or compaction. Provider-generated summaries not covered by
+exact reasoning get a separate estimated `Thinking summaries` row; opaque signatures
+are never sized as reasoning.
 The remaining gap can still include prefix-estimation error, provider overhead, images,
 opaque replay carriers and reasoning when no breakdown was reported. If Pi's context
 total includes local estimates for messages after the last provider usage, the total

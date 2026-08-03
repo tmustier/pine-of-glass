@@ -15,11 +15,14 @@
   turn. Gemini histories follow valid thought signatures. OpenAI Responses and Codex
   histories follow OpenAI Codex's own accounting: every replayed encrypted item counts,
   and exact pre-5.6 reasoning omitted by API totals is added once to `Total request`.
-  GPT-5.6 totals already include that history. Exact prompt totals reject impossible
-  attribution only where the provider says history is already included, including cached
-  input. Summaries not covered by exact counts remain a clearly estimated `Thinking
-  summaries` row, and opaque signatures are never sized as tokens. `Total request` keeps
-  `~` when Pi includes local estimates for trailing messages.
+  Raw usage verifies the omission on the Codex route; ordinary and Azure Responses assume
+  the same behavior pending direct probes. GPT-5.6 totals already include that history.
+  This corrects Contextimate only; Pi's context display and automatic compaction remain
+  unchanged. Exact prompt totals reject impossible attribution only where the provider
+  says history is already included, including cached input. Summaries not covered by exact
+  counts remain a clearly estimated `Thinking summaries` row, and opaque signatures are
+  never sized as tokens. `Total request` keeps `~` when Pi includes local estimates for
+  trailing messages.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled
   calibration.

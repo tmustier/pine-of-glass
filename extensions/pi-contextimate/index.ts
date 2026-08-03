@@ -1302,7 +1302,7 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
     const window = usage.contextWindow > 0 ? contextWindowLabel(usage.contextWindow) : undefined;
     const usageEstimated = snapshot.session.contextUsageEstimated;
     const context = percent && window ? usageEstimated ? percent : `${percent} / ${window} ctx` : "";
-    const provenance = request.corrected ? usageEstimated ? "Pi est. + reasoning" : "Pi + reasoning" : usageEstimated ? "Pi est." : "";
+    const provenance = request.corrected ? usageEstimated ? "Pi est. + prior reasoning" : "Pi + prior reasoning" : usageEstimated ? "Pi est." : "";
     const detail = `(${[context, provenance].filter(Boolean).join(" · ") || "Pi usage"})`;
     rows.push(renderMetricRow({
       label: "Total request",

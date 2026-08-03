@@ -59,7 +59,7 @@ test("with Pi usage: total anchors to (Pi current − estimated harness) and res
   assert.equal(tiny.unattributedTokens, 0);
 });
 
-test("OpenAI history omitted by provider usage is added once to Pi's request total", () => {
+test("OpenAI history omitted by provider usage is added once to Contextimate's request total", () => {
   const correctedSession = { ...session, providerOmittedReasoningTokens: 600 };
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith(correctedSession, usage);
@@ -70,13 +70,13 @@ test("OpenAI history omitted by provider usage is added once to Pi's request tot
     "the session total uses Pi plus exact omitted reasoning",
   );
   const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
-  assert.match(rendered, /Total request\s+50\.6k tokens \(25\.3% \/ 200k ctx · Pi \+ reasoning\)/);
+  assert.match(rendered, /Total request\s+50\.6k tokens \(25\.3% \/ 200k ctx · Pi \+ prior reasoning\)/);
   const estimated = stripAnsi(renderSummary(
     snapshotWith({ ...correctedSession, contextUsageEstimated: true }, usage),
     plainTheme,
     120,
   ).join("\n"));
-  assert.match(estimated, /Total request\s+~50\.6k tokens \(25\.3% · Pi est\. \+ reasoning\)/);
+  assert.match(estimated, /Total request\s+~50\.6k tokens \(25\.3% · Pi est\. \+ prior reasoning\)/);
 
   const heuristic = buildSessionEstimate(snapshotWith(correctedSession, undefined))!;
   assert.equal(
