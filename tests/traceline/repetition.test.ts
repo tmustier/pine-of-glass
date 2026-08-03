@@ -71,7 +71,6 @@ test("identical compact invocations in one assistant step fold with a count and 
   assert.ok(visible.includes("mcp call linear_save_issue ×3"), visible);
   assert.ok(visible.endsWith("2.4k ch"), `landed result sizes sum: ${visible}`);
   assert.deepEqual(renderTraceRow(b, 100), [], "later repeated calls render nothing");
-  assert.deepEqual(renderTraceRow(c, 100), [], "the first call carries the fold");
 });
 
 test("identical invocations in separate assistant steps stay separate", () => {

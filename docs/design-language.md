@@ -411,16 +411,13 @@ a wandering ellipsis column is not.
 
 ### 9.9 Repetition folds
 
-Calls in one assistant step whose compact invocation lines are identical fold into
-one row with a dim multiplication count: `mcp call linear_save_issue ×22`. The
-visible invocation is the fold key, not the complete arguments: when Traceline cannot
-show how calls differ, repeating the same line adds no information. Calls from separate
-assistant steps never merge. The folded row sums landed result sizes; any running call
-keeps it running, and any failed call makes it an error. Expanded rows, reads, file
-mutations, image results and record rows do not participate because their individual
-rendering carries information the generic fold cannot preserve. An expanded row also
-splits a fold, so no aggregate crosses a native-rendered block. Ctrl+T restores every
-native row.
+Identical compact invocations within one assistant step fold into one row with a dim
+count: `mcp call linear_save_issue ×22`. The visible invocation is the key, so calls
+with different hidden arguments may fold; calls from separate steps never do. Folded
+rows sum landed result sizes and use the worst status: error, then running, then
+success. Expanded rows split folds. Reads, file mutations, image results and record
+rows stay separate because their row-specific facts matter. Ctrl+T restores native
+rows.
 
 Consecutive reads use a richer fold at two granularities sharing one grammar (both
 adopted against a 400-session corpus of real transcripts, per §10):

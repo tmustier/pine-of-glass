@@ -52,13 +52,12 @@ function assistantStepRows(comp: ToolRowLike, siblings: unknown[]): ToolRowLike[
     if (!isAssistantRow(sibling)) continue;
     const content = sibling.lastMessage?.content;
     if (!Array.isArray(content)) continue;
-    const ids = content.flatMap((block: unknown) => {
-      if (!block || typeof block !== "object") return [];
-      const call = block as { type?: unknown; id?: unknown };
-      return call.type === "toolCall" && typeof call.id === "string" ? [call.id] : [];
-    });
-    if (!ids.includes(id)) continue;
-    const stepIds = new Set(ids);
+    const stepIds = new Set<string>();
+    for (const block of content) {
+      const call = block && typeof block === "object" ? block as { type?: unknown; id?: unknown } : undefined;
+      if (call?.type === "toolCall" && typeof call.id === "string") stepIds.add(call.id);
+    }
+    if (!stepIds.has(id)) continue;
     return siblings.filter(
       (row): row is ToolRowLike =>
         isToolRow(row) && typeof row.toolCallId === "string" && stepIds.has(row.toolCallId),
