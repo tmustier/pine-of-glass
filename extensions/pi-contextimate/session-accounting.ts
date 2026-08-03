@@ -2,13 +2,53 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 
 export type SessionBreakdown = {
-  thinkingChars: number;
+  thinkingSummaryChars: number;
+  /** Exact provider-reported reasoning for the assistant usage anchoring Pi's total. */
+  reasoningTokens?: number;
   toolOutputChars: number;
   messageChars: number;
   messageCount: number;
   /** Pi's current total includes a local estimate after the last trusted assistant usage. */
   contextUsageEstimated: boolean;
 };
+
+export type SessionEstimate = {
+  totalTokens: number;
+  totalSource: "pi" | "heuristic";
+  toolOutputTokens: number;
+  messageTokens: number;
+  thinkingSummaryTokens: number;
+  reasoningTokens?: number;
+  unattributedTokens: number;
+  denominator: number;
+};
+
+export function estimateSessionBreakdown(
+  session: SessionBreakdown,
+  options: { denominator: number; harnessTokens: number; contextTokens?: number | null },
+): SessionEstimate {
+  const estimate = (chars: number) => Math.ceil(chars / options.denominator);
+  const toolOutputTokens = estimate(session.toolOutputChars);
+  const messageTokens = estimate(session.messageChars);
+  const thinkingSummaryTokens = estimate(session.thinkingSummaryChars);
+  const attributedTokens = toolOutputTokens + messageTokens + thinkingSummaryTokens + (session.reasoningTokens ?? 0);
+  const heuristicTotal = estimate(session.toolOutputChars + session.messageChars + session.thinkingSummaryChars)
+    + (session.reasoningTokens ?? 0);
+  const piTotal = options.contextTokens === null || options.contextTokens === undefined
+    ? undefined
+    : Math.max(0, Math.round(options.contextTokens - options.harnessTokens));
+  const totalTokens = piTotal ?? heuristicTotal;
+  return {
+    totalTokens,
+    totalSource: piTotal === undefined ? "heuristic" : "pi",
+    toolOutputTokens,
+    messageTokens,
+    thinkingSummaryTokens,
+    reasoningTokens: session.reasoningTokens,
+    unattributedTokens: Math.max(0, Math.round(totalTokens - attributedTokens)),
+    denominator: options.denominator,
+  };
+}
 
 /** The slice of pi's ReadonlySessionManager the session walk needs. */
 export type SessionSource = {
@@ -42,16 +82,6 @@ function countToolCallContent(block: unknown): number {
   return safeJson({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }).length;
 }
 
-function countReasoningPayload(value: unknown): number {
-  if (!value) return 0;
-  if (typeof value !== "string") return safeJson(value).length;
-  try {
-    return safeJson(JSON.parse(value)).length;
-  } catch {
-    return value.length;
-  }
-}
-
 export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
   if (!sessionManager) return undefined;
   // Session entries are arbitrary historical content; a malformed session should cost
@@ -62,13 +92,29 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
 
     const llmMessages = convertToLlm(messages);
     const breakdown: SessionBreakdown = {
-      thinkingChars: 0,
+      thinkingSummaryChars: 0,
       toolOutputChars: 0,
       messageChars: 0,
       messageCount: messages.length,
       contextUsageEstimated: true,
     };
     let lastTrustedUsageIndex = -1;
+    for (let index = 0; index < llmMessages.length; index++) {
+      const message = llmMessages[index]!;
+      if (message.role !== "assistant") continue;
+      const usage = message.usage;
+      const usageTokens = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+      if (message.stopReason !== "aborted" && message.stopReason !== "error" && usageTokens > 0) {
+        lastTrustedUsageIndex = index;
+      }
+    }
+    if (lastTrustedUsageIndex >= 0) {
+      const anchored = llmMessages[lastTrustedUsageIndex]!;
+      if (anchored.role === "assistant" && typeof anchored.usage.reasoning === "number"
+        && Number.isFinite(anchored.usage.reasoning) && anchored.usage.reasoning >= 0) {
+        breakdown.reasoningTokens = anchored.usage.reasoning;
+      }
+    }
 
     for (let index = 0; index < llmMessages.length; index++) {
       const message = llmMessages[index]!;
@@ -77,23 +123,20 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
         continue;
       }
       if (message.role === "assistant") {
-        const usage = message.usage;
-        const usageTokens = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-        if (message.stopReason !== "aborted" && message.stopReason !== "error" && usageTokens > 0) {
-          lastTrustedUsageIndex = index;
-        }
         for (const block of message.content) {
           if (block.type === "thinking") {
-            // Claude replays thinking text with its signature, including through relays;
-            // the signature is not a text-sized reasoning carrier. OpenAI/Codex replays
-            // the signed encrypted payload, so only that family counts its carrier bytes.
-            const replaysThinkingText = message.api === "anthropic-messages"
+            // Thinking text is a provider-generated summary, not the full reasoning.
+            // Earlier Claude summaries are replayed as context; opaque signatures are
+            // never treated as token-sized text. When reported, the anchored response
+            // uses exact usage.reasoning instead, avoiding a second summary estimate.
+            const claudeSummary = message.api === "anthropic-messages"
               || message.model.toLowerCase().includes("claude");
-            breakdown.thinkingChars += replaysThinkingText
-              ? (block.thinking ?? "").length
-              : block.thinkingSignature
-                ? countReasoningPayload(block.thinkingSignature)
-                : (block.thinking ?? "").length;
+            const plainSummary = !block.thinkingSignature;
+            const coveredByExactReasoning = index === lastTrustedUsageIndex
+              && breakdown.reasoningTokens !== undefined;
+            if (!coveredByExactReasoning && !block.redacted && (claudeSummary || plainSummary)) {
+              breakdown.thinkingSummaryChars += (block.thinking ?? "").length;
+            }
           } else if (block.type === "toolCall") {
             breakdown.messageChars += countToolCallContent(block);
           } else {

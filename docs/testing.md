@@ -138,10 +138,13 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   unescaped names, wrapper-chars math (`content − Σ skill chars ≥ 0`); prompt *without*
   skills/context blocks degrades to a single system section.
 - **Session estimate math** (`buildSessionEstimate`): with `contextUsage` → totalSource
-  `"pi"`, `unattributed = total − tools − messages − thinking replay` clamped ≥ 0;
-  without → heuristic fallback. The session walk counts signed Claude thinking text, including through
-  relays, rather than its opaque signature; it keeps OpenAI/Codex carrier accounting and
-  marks Pi's total estimated when messages trail the last trusted assistant usage.
+  `"pi"`, `unattributed = total − tools − messages − earlier thinking summaries − exact
+  anchored reasoning` clamped ≥ 0; without → heuristic fallback. The session walk reads
+  only the last trusted assistant's provider-reported `usage.reasoning`, including zero,
+  rather than summing calls or estimating reasoning from summary text and opaque
+  signatures. Replayed Claude summaries remain a separate context estimate unless exact
+  anchored reasoning covers them, and messages trailing the provider anchor keep Pi's
+  total estimated.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.

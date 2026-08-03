@@ -10,7 +10,13 @@ import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import { BUILT_IN_HEURISTIC_RULES, type BuiltInHeuristicRule } from "./model-heuristics.ts";
-import { buildSessionBreakdown, type SessionBreakdown, type SessionSource } from "./session-accounting.ts";
+import {
+  buildSessionBreakdown,
+  estimateSessionBreakdown,
+  type SessionBreakdown,
+  type SessionEstimate,
+  type SessionSource,
+} from "./session-accounting.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -949,10 +955,6 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { se
   };
 }
 
-function sessionChars(session: SessionBreakdown): number {
-  return session.thinkingChars + session.toolOutputChars + session.messageChars;
-}
-
 // Only for walking the foreign TUI component tree, whose objects we do not control.
 // Snapshot building deliberately has no such guards: if pi's session callbacks throw
 // (resume race), render()'s catch shows the honest "unavailable" line instead of a
@@ -1018,7 +1020,7 @@ function buildSnapshot(
     JSON.stringify(config),
     pi.getActiveTools().join(","),
     pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
-    session ? `${session.thinkingChars}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
+    session ? `${session.thinkingSummaryChars}:${session.reasoningTokens ?? "unreported"}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
   ].join("|");
 
@@ -1208,38 +1210,13 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
   return out;
 }
 
-type SessionEstimate = {
-  totalTokens: number;
-  totalSource: "pi" | "heuristic";
-  toolOutputTokens: number;
-  messageTokens: number;
-  thinkingTokens: number;
-  unattributedTokens: number;
-  denominator: number;
-};
-
 function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undefined {
   if (!snapshot.session) return undefined;
-  const denominator = snapshot.heuristic.sessionDenominator;
-  const toolOutputTokens = estimateCharsAsTokens(snapshot.session.toolOutputChars, denominator);
-  const messageTokens = estimateCharsAsTokens(snapshot.session.messageChars, denominator);
-  const thinkingTokens = estimateCharsAsTokens(snapshot.session.thinkingChars, denominator);
-  const heuristicTotal = estimateCharsAsTokens(sessionChars(snapshot.session), denominator);
-  const harnessTokens = totalTokens(snapshot);
-  const piSessionTokens = snapshot.contextUsage?.tokens === null || snapshot.contextUsage?.tokens === undefined
-    ? undefined
-    : Math.max(0, Math.round(snapshot.contextUsage.tokens - harnessTokens));
-  const totalTokensValue = piSessionTokens ?? heuristicTotal;
-  const unattributedTokens = Math.max(0, Math.round(totalTokensValue - toolOutputTokens - messageTokens - thinkingTokens));
-  return {
-    totalTokens: totalTokensValue,
-    totalSource: piSessionTokens === undefined ? "heuristic" : "pi",
-    toolOutputTokens,
-    messageTokens,
-    thinkingTokens,
-    unattributedTokens,
-    denominator,
-  };
+  return estimateSessionBreakdown(snapshot.session, {
+    denominator: snapshot.heuristic.sessionDenominator,
+    harnessTokens: totalTokens(snapshot),
+    contextTokens: snapshot.contextUsage?.tokens,
+  });
 }
 
 // --- proportion (design language §8): "of what" — shares of the context window --------
@@ -1297,8 +1274,20 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
     renderMetricRow({ label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(snapshot.session.toolOutputChars) }, theme, layout),
     renderMetricRow({ label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars) }, theme, layout),
   ];
-  if (estimate.thinkingTokens > 0) {
-    rows.push(renderMetricRow({ label: "Thinking replay", tokens: estimate.thinkingTokens, detail: countDetail(snapshot.session.thinkingChars) }, theme, layout));
+  if (estimate.thinkingSummaryTokens > 0) {
+    rows.push(renderMetricRow({
+      label: "Thinking summaries",
+      tokens: estimate.thinkingSummaryTokens,
+      detail: countDetail(snapshot.session.thinkingSummaryChars),
+    }, theme, layout));
+  }
+  if (estimate.reasoningTokens !== undefined) {
+    rows.push(renderMetricRow({
+      label: "Reasoning output",
+      tokens: estimate.reasoningTokens,
+      exact: true,
+      detail: "(provider)",
+    }, theme, layout));
   }
   rows.push(
     renderMetricRow({ label: "Unattributed", tokens: estimate.unattributedTokens, detail: "(accounting gap)" }, theme, layout),
@@ -1335,9 +1324,10 @@ function summaryTokenLayout(snapshot: PrefixSnapshot): TokenLabelLayout {
     sessionEstimate.totalTokens,
     sessionEstimate.toolOutputTokens,
     sessionEstimate.messageTokens,
-    sessionEstimate.thinkingTokens,
+    sessionEstimate.thinkingSummaryTokens,
     sessionEstimate.unattributedTokens,
   );
+  if (sessionEstimate?.reasoningTokens !== undefined) values.push(sessionEstimate.reasoningTokens);
   if (typeof snapshot.contextUsage?.tokens === "number") values.push(snapshot.contextUsage.tokens);
   return tokenLabelLayout(values);
 }

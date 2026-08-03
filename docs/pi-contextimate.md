@@ -62,16 +62,19 @@ In the UI, a formula-counted tools row says `OpenAI formula · schema text ÷ 6.
 The session split anchors on that total and claims only what it can count:
 
 ```text
-Tool outputs:        y       estimated from provider-shaped tool output chars
-Messages:            z       estimated from visible message text and tool-call structure
-Thinking replay:     r       estimated from replayed thinking text or carrier; omitted at zero
-Unattributed:        x-y-z-r remaining accounting gap
-Total session:       x       Pi's total minus the estimated static prefix
+Tool outputs:        y         estimated from provider-shaped tool output chars
+Messages:            z         estimated from visible message text and tool-call structure
+Thinking summaries:  s         estimated from replayed summaries not covered by exact reasoning
+Reasoning output:    r         exact usage.reasoning from the provider response anchoring Pi's total
+Unattributed:        x-y-z-s-r remaining accounting gap
+Total session:       x         Pi's total minus the estimated static prefix
 ```
 
-`Thinking replay` describes context representation, not provider-reported reasoning usage. Signed Claude thinking, including through relays, counts its replayable thinking text rather than its opaque signature. Signed OpenAI/Codex reasoning counts the encrypted carrier sent back in context, not the visible summary. Claude can omit prior thinking from billed input outside tool-use continuations, so the heuristic fallback is not a billing forecast.
+The `thinking` text saved by Pi can be a provider-generated summary, not the model's full internal reasoning. Contextimate therefore never estimates reasoning from that text or from an opaque signature. `Reasoning output` uses only the exact `usage.reasoning` breakdown on the same latest trusted assistant response that anchors Pi's total. It is not a cumulative session sum: reasoning generated on earlier calls is not necessarily replayed into the current context. A reported zero is shown as exact; if the provider supplies no breakdown, the row is omitted.
 
-`Unattributed` is the remaining accounting gap, not a diagnosis. It can absorb static-prefix estimation error, provider overhead, images and unobserved reasoning. In particular, a large gap does not claim that the model used that many reasoning tokens.
+Claude summaries that Pi sends back in context, including through relays, are estimated separately as `Thinking summaries`. A summary on the anchored response is excluded only when exact reasoning was reported, so it is not counted again beside exact reasoning output; without a provider breakdown it stays in the summary estimate. Opaque OpenAI/Codex reasoning carriers and redacted signatures are never converted from bytes or characters into supposed token counts. Claude can also omit prior thinking outside tool-use continuations, so the heuristic fallback is not a billing forecast.
+
+`Unattributed` is the remaining accounting gap, not a diagnosis. It can absorb static-prefix estimation error, provider overhead, images, opaque replay carriers and reasoning when the provider supplies no breakdown. In particular, a large gap does not claim that the model used that many reasoning tokens.
 
 After compaction, Pi deliberately reports usage as unknown until the next assistant response arrives. The panel then falls back to its heuristic estimate and labels the whole total as heuristic.
 

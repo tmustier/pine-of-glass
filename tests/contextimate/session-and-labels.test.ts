@@ -23,7 +23,26 @@ function snapshotWith(session: PrefixSnapshot["session"], usage: PrefixSnapshot[
   return snapshot;
 }
 
-const session = { thinkingChars: 12000, toolOutputChars: 5200, messageChars: 1300, messageCount: 6, contextUsageEstimated: false };
+const session = {
+  thinkingSummaryChars: 1200,
+  reasoningTokens: 12000,
+  toolOutputChars: 5200,
+  messageChars: 1300,
+  messageCount: 6,
+  contextUsageEstimated: false,
+};
+
+function usageWithReasoning(reasoning: number) {
+  return {
+    input: 10,
+    output: reasoning + 10,
+    cacheRead: 0,
+    cacheWrite: 0,
+    reasoning,
+    totalTokens: reasoning + 20,
+    cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+}
 
 test("with Pi usage: total anchors to (Pi current − estimated harness) and residual is clamped", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
@@ -34,10 +53,17 @@ test("with Pi usage: total anchors to (Pi current − estimated harness) and res
   // Visible buckets use the session denominator (2.6 for the modern Claude heuristic).
   assert.equal(estimate.toolOutputTokens, Math.ceil(5200 / 2.6));
   assert.equal(estimate.messageTokens, Math.ceil(1300 / 2.6));
-  assert.equal(estimate.thinkingTokens, Math.ceil(12000 / 2.6));
+  assert.equal(estimate.thinkingSummaryTokens, Math.ceil(1200 / 2.6));
+  assert.equal(estimate.reasoningTokens, 12000, "reasoning stays provider-exact");
   assert.equal(
     estimate.unattributedTokens,
-    Math.max(0, Math.round(estimate.totalTokens - estimate.toolOutputTokens - estimate.messageTokens - estimate.thinkingTokens)),
+    Math.max(0, Math.round(
+      estimate.totalTokens
+      - estimate.toolOutputTokens
+      - estimate.messageTokens
+      - estimate.thinkingSummaryTokens
+      - estimate.reasoningTokens!,
+    )),
   );
 
   // Pi usage smaller than the visible buckets must clamp at zero, never go negative.
@@ -49,8 +75,9 @@ test("without Pi usage (or null tokens): heuristic fallback over all session cha
   for (const usage of [undefined, { tokens: null, contextWindow: 200000, percent: null }]) {
     const estimate = buildSessionEstimate(snapshotWith(session, usage))!;
     assert.equal(estimate.totalSource, "heuristic");
-    assert.equal(estimate.totalTokens, Math.ceil((12000 + 5200 + 1300) / 2.6));
-    assert.equal(estimate.thinkingTokens, Math.ceil(12000 / 2.6));
+    assert.equal(estimate.totalTokens, Math.ceil((1200 + 5200 + 1300) / 2.6) + 12000);
+    assert.equal(estimate.thinkingSummaryTokens, Math.ceil(1200 / 2.6));
+    assert.equal(estimate.reasoningTokens, 12000);
     assert.ok(estimate.unattributedTokens <= 1, "heuristic rounding leaves no material accounting gap");
   }
 });
@@ -59,48 +86,102 @@ test("no session → no estimate", () => {
   assert.equal(buildSessionEstimate(snapshotWith(undefined, undefined)), undefined);
 });
 
-test("session walk distinguishes Claude thinking text from OpenAI signed carriers", () => {
+test("session walk uses exact anchored reasoning and estimates only uncovered replayed summaries", () => {
   const anthropic = SessionManager.inMemory("/tmp/contextimate-anthropic-thinking");
   anthropic.appendMessage({ role: "user", content: "hi", timestamp: 1 });
-  anthropic.appendMessage(assistantMessage([
-    { type: "thinking", thinking: "think", thinkingSignature: "opaque-signature-much-longer-than-text" },
-  ]));
+  anthropic.appendMessage(assistantMessage(
+    [{ type: "thinking", thinking: "think", thinkingSignature: "opaque-signature-much-longer-than-text" }],
+    { usage: usageWithReasoning(800) },
+  ));
+  anthropic.appendMessage(assistantMessage(
+    [{ type: "text", text: "done" }],
+    { usage: usageWithReasoning(25) },
+  ));
   const anthropicBreakdown = buildSessionBreakdown(anthropic)!;
-  assert.equal(anthropicBreakdown.thinkingChars, 5);
+  assert.equal(anthropicBreakdown.thinkingSummaryChars, 5, "only the earlier replayed summary is estimated");
+  assert.equal(anthropicBreakdown.reasoningTokens, 25, "reasoning follows the latest trusted usage, not a session sum");
   assert.equal(anthropicBreakdown.contextUsageEstimated, false, "last trusted usage anchors Pi's exact total");
 
   anthropic.appendMessage({ role: "user", content: "trailing", timestamp: 2 });
-  assert.equal(buildSessionBreakdown(anthropic)!.contextUsageEstimated, true);
+  const trailing = buildSessionBreakdown(anthropic)!;
+  assert.equal(trailing.contextUsageEstimated, true);
+  assert.equal(trailing.reasoningTokens, 25, "trailing local estimates preserve the provider anchor");
 
   const radiusClaude = SessionManager.inMemory("/tmp/contextimate-radius-claude-thinking");
   radiusClaude.appendMessage(assistantMessage(
     [{ type: "thinking", thinking: "think", thinkingSignature: "opaque-signature-much-longer-than-text" }],
-    { api: "pi-messages", provider: "radius", model: "claude-fable-5" },
+    { api: "pi-messages", provider: "radius", model: "claude-fable-5", usage: usageWithReasoning(700) },
   ));
-  assert.equal(buildSessionBreakdown(radiusClaude)!.thinkingChars, 5, "Claude relays keep Anthropic signature semantics");
+  const radiusBreakdown = buildSessionBreakdown(radiusClaude)!;
+  assert.equal(radiusBreakdown.thinkingSummaryChars, 0, "the anchored output summary is covered by exact reasoning");
+  assert.equal(radiusBreakdown.reasoningTokens, 700, "relay usage preserves exact reasoning");
 
   const codex = SessionManager.inMemory("/tmp/contextimate-codex-thinking");
-  const carrier = JSON.stringify({ id: "encrypted-reasoning" });
   codex.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "summary only", thinkingSignature: carrier }],
-    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.6-sol" },
+    [{ type: "thinking", thinking: "summary only", thinkingSignature: JSON.stringify({ id: "encrypted-reasoning" }) }],
+    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.6-sol", usage: usageWithReasoning(900) },
   ));
-  assert.equal(
-    buildSessionBreakdown(codex)!.thinkingChars,
-    JSON.stringify(JSON.parse(carrier), null, 2).length,
-  );
+  const codexBreakdown = buildSessionBreakdown(codex)!;
+  assert.equal(codexBreakdown.thinkingSummaryChars, 0, "opaque carriers are never estimated as reasoning text");
+  assert.equal(codexBreakdown.reasoningTokens, 900);
+
+  const unreported = SessionManager.inMemory("/tmp/contextimate-unreported-reasoning");
+  const summary = "summary only";
+  unreported.appendMessage(assistantMessage([
+    { type: "thinking", thinking: summary, thinkingSignature: "opaque-signature" },
+  ]));
+  const unreportedBreakdown = buildSessionBreakdown(unreported)!;
+  assert.equal(unreportedBreakdown.reasoningTokens, undefined);
+  assert.equal(unreportedBreakdown.thinkingSummaryChars, summary.length, "uncovered anchored summaries stay estimated");
+  const unreportedRows = stripAnsi(renderSummary(
+    snapshotWith(unreportedBreakdown, undefined),
+    plainTheme,
+    120,
+  ).join("\n"));
+  assert.doesNotMatch(unreportedRows, /Reasoning output/, "an absent provider breakdown gets no exact row");
+});
+
+test("reported zero reasoning stays exact while the accounting gap remains separate", () => {
+  const fable = SessionManager.inMemory("/tmp/contextimate-fable-zero-reasoning");
+  fable.appendMessage({ role: "user", content: "hi", timestamp: 1 });
+  fable.appendMessage(assistantMessage(
+    [{ type: "text", text: "Hello! How can I help you today?" }],
+    {
+      model: "claude-fable-5",
+      usage: {
+        input: 2,
+        output: 71,
+        cacheRead: 0,
+        cacheWrite: 30971,
+        reasoning: 0,
+        totalTokens: 31044,
+        cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    },
+  ));
+  const breakdown = buildSessionBreakdown(fable)!;
+  assert.equal(breakdown.reasoningTokens, 0);
+  const rendered = stripAnsi(renderSummary(
+    snapshotWith(breakdown, { tokens: 31044, contextWindow: 200000, percent: 15.5 }),
+    plainTheme,
+    120,
+  ).join("\n"));
+  assert.match(rendered, /Reasoning output\s+0\.0k tokens \(provider\)/);
+  assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
 });
 
 test("Total request keeps the estimate marker when Pi adds trailing local estimates", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith({ ...session, contextUsageEstimated: true }, usage);
   const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
-  assert.match(rendered, /Thinking replay\s+~4\.6k tokens/);
+  assert.match(rendered, /Thinking summaries\s+~0\.5k tokens/);
+  assert.match(rendered, /Reasoning output\s+12\.0k tokens \(provider\)/);
+  assert.doesNotMatch(rendered, /Reasoning output\s+~12\.0k/, "exact reasoning has no estimate marker");
   assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
   assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0% · Pi est\.\)/);
   const narrowSessionRows = stripAnsi(renderSummary(snapshot, plainTheme, 80).join("\n"))
     .split("\n")
-    .filter((line) => /Thinking replay|Unattributed|Total session|Total request/.test(line));
+    .filter((line) => /Thinking summaries|Reasoning output|Unattributed|Total session|Total request/.test(line));
   assert.ok(narrowSessionRows.every((line) => line.length <= 80), "session rows stay inside the narrow panel");
 });
 
