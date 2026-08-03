@@ -58,6 +58,7 @@ test("real ExtensionRunner keeps a headless child out of Cachemire's interactive
       { getThinkingLevel: (): "off" => "off" } as never,
       {
         getModel: () => undefined,
+        getScopedModels: () => [],
         isIdle: () => true,
         isProjectTrusted: () => true,
         getSignal: () => undefined,

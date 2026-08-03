@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- **Contextimate: recognise the Claude 4.7+ tokenizer across routes.** Fable 5,
+  Opus 5 and explicit Claude 4.7+ models relayed through Radius or OpenRouter now
+  use the same measured profile as Claude 4.7/4.8. Bedrock retains its own payload
+  shape.
+- **Contextimate: make accounting uncertainty visible.** The former
+  `Other / reasoning` residual is now `Unattributed`, so static-prefix error cannot
+  masquerade as model reasoning. `Reasoning context` sums exact `usage.reasoning`
+  values for signed blocks retained by the provider response anchoring Pi's total,
+  including reported zero. Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet
+  4.6+ histories follow Anthropic's keep-all policy; older Claude families keep only
+  the current assistant turn. GPT-5.6 Responses histories follow OpenAI's all-turns
+  default; earlier models keep the current turn. Pi's exact prompt total rejects
+  impossible historical attribution, including cached input. Other providers' history
+  remains unattributed until retention is measured. Summaries not covered by exact
+  counts, including cross-model thinking converted to text, remain a clearly estimated
+  `Thinking summaries` row. Opaque signatures are never sized as tokens. `Total request`
+  keeps `~` when Pi includes local estimates for trailing messages, including excluded
+  `!!` bash executions.
+- The live prefix probe now verifies the provider and model that actually answered,
+  preventing a model-selection override from producing a confidently mislabeled
+  calibration.
+- Refresh the installed Pi lifecycle contract fixture for the new scoped-models
+  accessor.
+
 ## 0.9.1 (2026-07-27)
 
 - **Cachemire: follow the selected branch after `/tree`.** Cachemire now records

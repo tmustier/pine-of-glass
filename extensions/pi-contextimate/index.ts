@@ -1,6 +1,6 @@
 import type { Component } from "@earendil-works/pi-tui";
-import type { ContextUsage, ExtensionAPI, ExtensionContext, SessionEntry, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
-import { buildSessionContext, convertToLlm, keyText } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, ExtensionAPI, ExtensionContext, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
+import { keyText } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
@@ -9,6 +9,14 @@ import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE, type ContainerLike 
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
+import { BUILT_IN_HEURISTIC_RULES, type BuiltInHeuristicRule } from "./model-heuristics.ts";
+import {
+  buildSessionBreakdown,
+  estimateSessionBreakdown,
+  type SessionBreakdown,
+  type SessionEstimate,
+  type SessionSource,
+} from "./session-accounting.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -104,17 +112,6 @@ type ResolvedHeuristic = {
   toolNumerator: string;
 };
 
-type BuiltInHeuristicRule = {
-  label: string;
-  providerIncludes: string[];
-  apiEquals: string[];
-  modelRegex?: RegExp;
-  textDenominator: number;
-  sessionDenominator: number;
-  toolDenominator: number;
-  toolNumerator: string;
-};
-
 type ToolNumeratorResult = {
   label: string;
   content: string;
@@ -126,19 +123,6 @@ type ToolNumeratorResult = {
 type ToolDisplayEstimate = {
   tokens: number;
   chars: number;
-};
-
-type SessionBreakdown = {
-  thinkingChars: number;
-  toolOutputChars: number;
-  messageChars: number;
-  messageCount: number;
-};
-
-/** The slice of pi's ReadonlySessionManager the session walk needs. */
-type SessionSource = {
-  getEntries(): SessionEntry[];
-  getLeafId(): string | null;
 };
 
 type PrefixSnapshot = {
@@ -596,90 +580,16 @@ function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | 
   };
 }
 
-const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
-  {
-    label: "Claude 4.7+ heuristic",
-    providerIncludes: ["anthropic"],
-    apiEquals: ["anthropic-messages"],
-    modelRegex: /claude.*4[-.]?[78]|4[-.]?[78].*claude/,
-    textDenominator: 2.6,
-    sessionDenominator: 2.6,
-    toolDenominator: 2.6,
-    toolNumerator: "anthropic",
-  },
-  {
-    label: "Claude 4.5/4.6 heuristic",
-    providerIncludes: ["anthropic"],
-    apiEquals: ["anthropic-messages"],
-    modelRegex: /claude.*4[-.]?[56]|4[-.]?[56].*claude/,
-    textDenominator: 3.8,
-    sessionDenominator: 3.5,
-    toolDenominator: 3.3,
-    toolNumerator: "anthropic",
-  },
-  {
-    label: "Anthropic heuristic",
-    providerIncludes: ["anthropic"],
-    apiEquals: ["anthropic-messages"],
-    textDenominator: 3.5,
-    sessionDenominator: 3.5,
-    toolDenominator: 3.3,
-    toolNumerator: "anthropic",
-  },
-  {
-    label: "OpenAI-Codex heuristic",
-    providerIncludes: ["openai-codex"],
-    apiEquals: ["openai-codex-responses"],
-    textDenominator: 4,
-    sessionDenominator: 4,
-    toolDenominator: 5.5,
-    toolNumerator: "openai-cookbook",
-  },
-  {
-    label: "OpenAI Responses heuristic",
-    providerIncludes: ["openai"],
-    apiEquals: ["openai-responses", "azure-openai-responses"],
-    textDenominator: 4,
-    sessionDenominator: 4,
-    toolDenominator: 5.5,
-    toolNumerator: "openai-responses",
-  },
-  {
-    label: "OpenAI-chat-style heuristic",
-    providerIncludes: ["mistral"],
-    apiEquals: ["openai-completions", "mistral-conversations"],
-    textDenominator: 4,
-    sessionDenominator: 4,
-    toolDenominator: 5.5,
-    toolNumerator: "openai-chat",
-  },
-  {
-    label: "Gemini/Vertex heuristic",
-    providerIncludes: ["google", "gemini"],
-    apiEquals: ["google-generative-ai", "google-vertex"],
-    textDenominator: 4,
-    sessionDenominator: 4,
-    toolDenominator: 4,
-    toolNumerator: "gemini",
-  },
-  {
-    label: "Bedrock heuristic",
-    providerIncludes: ["bedrock"],
-    apiEquals: ["bedrock-converse-stream"],
-    textDenominator: 4,
-    sessionDenominator: 4,
-    toolDenominator: 4,
-    toolNumerator: "bedrock",
-  },
-];
-
 function builtInRuleMatches(rule: BuiltInHeuristicRule, model: ModelSummary): boolean {
   const provider = model.provider.toLowerCase();
   const api = model.api.toLowerCase();
   const providerOrApiMatches = rule.providerIncludes.some((entry) => provider.includes(entry))
     || rule.apiEquals.includes(api);
+  const explicitRelayMatches = rule.relayedModelRoutes?.some(
+    (route) => provider.includes(route.providerIncludes) && api === route.apiEquals,
+  ) ?? false;
   const modelMatches = rule.modelRegex ? rule.modelRegex.test(model.id.toLowerCase()) : true;
-  return providerOrApiMatches && modelMatches;
+  return (providerOrApiMatches || explicitRelayMatches) && modelMatches;
 }
 
 function builtInHeuristicForModel(model?: ModelSummary): Partial<ResolvedHeuristic> | undefined {
@@ -1045,84 +955,6 @@ function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { se
   };
 }
 
-function countTextContent(content: unknown): number {
-  if (typeof content === "string") return content.length;
-  if (!Array.isArray(content)) return 0;
-  return content.reduce((sum, block) => {
-    if (!block || typeof block !== "object") return sum;
-    const typed = block as { type?: string; text?: string; data?: string; mimeType?: string };
-    if (typed.type === "text") return sum + (typed.text ?? "").length;
-    if (typed.type === "image") return sum + `[image:${typed.mimeType ?? "unknown"}:${typed.data?.length ?? 0} chars]`.length;
-    return sum;
-  }, 0);
-}
-
-function countToolCallContent(block: unknown): number {
-  if (!block || typeof block !== "object") return 0;
-  const toolCall = block as { id?: string; name?: string; arguments?: unknown };
-  return safeJson({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }).length;
-}
-
-function countReasoningPayload(value: unknown): number {
-  if (!value) return 0;
-  if (typeof value !== "string") return safeJson(value).length;
-  try {
-    return safeJson(JSON.parse(value)).length;
-  } catch {
-    return value.length;
-  }
-}
-
-function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
-  if (!sessionManager) return undefined;
-  // Session entries are arbitrary historical content; a malformed session should cost
-  // the session rows, not the whole panel.
-  try {
-    const { messages } = buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId());
-    if (messages.length === 0) return undefined;
-
-    const breakdown: SessionBreakdown = {
-      thinkingChars: 0,
-      toolOutputChars: 0,
-      messageChars: 0,
-      messageCount: messages.length,
-    };
-
-    for (const message of convertToLlm(messages)) {
-      if (message.role === "toolResult") {
-        breakdown.toolOutputChars += countTextContent(message.content);
-        continue;
-      }
-      if (message.role === "assistant") {
-        for (const block of message.content) {
-          if (block.type === "thinking") {
-            // OpenAI/Codex sends encrypted reasoning items back as context when
-            // a signature is present; the visible thinking summary itself is not
-            // replayed. For providers without signatures, fall back to text.
-            breakdown.thinkingChars += block.thinkingSignature
-              ? countReasoningPayload(block.thinkingSignature)
-              : (block.thinking ?? "").length;
-          } else if (block.type === "toolCall") {
-            breakdown.messageChars += countToolCallContent(block);
-          } else {
-            breakdown.messageChars += countTextContent([block]);
-          }
-        }
-        continue;
-      }
-      breakdown.messageChars += countTextContent(message.content);
-    }
-
-    return breakdown;
-  } catch {
-    return undefined;
-  }
-}
-
-function sessionChars(session: SessionBreakdown): number {
-  return session.thinkingChars + session.toolOutputChars + session.messageChars;
-}
-
 // Only for walking the foreign TUI component tree, whose objects we do not control.
 // Snapshot building deliberately has no such guards: if pi's session callbacks throw
 // (resume race), render()'s catch shows the honest "unavailable" line instead of a
@@ -1188,7 +1020,7 @@ function buildSnapshot(
     JSON.stringify(config),
     pi.getActiveTools().join(","),
     pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
-    session ? `${session.thinkingChars}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}` : "no-session",
+    session ? `${session.thinkingSummaryChars}:${session.reasoningTokens ?? "unreported"}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
   ].join("|");
 
@@ -1378,35 +1210,13 @@ function renderExpandedToolsBlock(content: { notes: string[]; tools: ToolExpande
   return out;
 }
 
-type SessionEstimate = {
-  totalTokens: number;
-  totalSource: "pi" | "heuristic";
-  toolOutputTokens: number;
-  messageTokens: number;
-  otherTokens: number;
-  denominator: number;
-};
-
 function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undefined {
   if (!snapshot.session) return undefined;
-  const denominator = snapshot.heuristic.sessionDenominator;
-  const toolOutputTokens = estimateCharsAsTokens(snapshot.session.toolOutputChars, denominator);
-  const messageTokens = estimateCharsAsTokens(snapshot.session.messageChars, denominator);
-  const heuristicTotal = estimateCharsAsTokens(sessionChars(snapshot.session), denominator);
-  const harnessTokens = totalTokens(snapshot);
-  const piSessionTokens = snapshot.contextUsage?.tokens === null || snapshot.contextUsage?.tokens === undefined
-    ? undefined
-    : Math.max(0, Math.round(snapshot.contextUsage.tokens - harnessTokens));
-  const totalTokensValue = piSessionTokens ?? heuristicTotal;
-  const otherTokens = Math.max(0, Math.round(totalTokensValue - toolOutputTokens - messageTokens));
-  return {
-    totalTokens: totalTokensValue,
-    totalSource: piSessionTokens === undefined ? "heuristic" : "pi",
-    toolOutputTokens,
-    messageTokens,
-    otherTokens,
-    denominator,
-  };
+  return estimateSessionBreakdown(snapshot.session, {
+    denominator: snapshot.heuristic.sessionDenominator,
+    harnessTokens: totalTokens(snapshot),
+    contextTokens: snapshot.contextUsage?.tokens,
+  });
 }
 
 // --- proportion (design language §8): "of what" — shares of the context window --------
@@ -1414,7 +1224,7 @@ function buildSessionEstimate(snapshot: PrefixSnapshot): SessionEstimate | undef
 /**
  * Integer percent of the context window; `<1%` rather than a dishonest `0%`. Shares
  * derived from estimated token counts carry the ~ marker — a wrong harness estimate
- * must not masquerade as an exact share (only Total request is pi-exact).
+ * must not masquerade as exact (only a fully provider-backed Total request drops ~).
  */
 function ctxShareLabel(tokens: number, usage: ContextUsage | undefined, options: { estimate?: boolean } = {}): string | undefined {
   if (!usage || usage.tokens === null || usage.contextWindow <= 0) return undefined;
@@ -1458,29 +1268,49 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
   const estimate = buildSessionEstimate(snapshot);
   if (!snapshot.session || !estimate) return [];
   const sessionShare = ctxShareLabel(estimate.totalTokens, snapshot.contextUsage, { estimate: true });
-  const provenance = estimate.totalSource === "pi" ? "Pi current - harness" : "heuristic fallback";
+  const provenance = estimate.totalSource === "pi" ? "Pi-based" : "heuristic fallback";
   const rows = [
     "",
     renderMetricRow({ label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(snapshot.session.toolOutputChars) }, theme, layout),
     renderMetricRow({ label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars) }, theme, layout),
-    renderMetricRow({ label: "Other / reasoning", tokens: estimate.otherTokens, detail: "(residual)" }, theme, layout),
+  ];
+  if (estimate.thinkingSummaryTokens > 0) {
+    rows.push(renderMetricRow({
+      label: "Thinking summaries",
+      tokens: estimate.thinkingSummaryTokens,
+      detail: countDetail(snapshot.session.thinkingSummaryChars),
+    }, theme, layout));
+  }
+  if (estimate.reasoningTokens !== undefined) {
+    rows.push(renderMetricRow({
+      label: "Reasoning context",
+      tokens: estimate.reasoningTokens,
+      exact: true,
+      detail: "(provider)",
+    }, theme, layout));
+  }
+  rows.push(
+    renderMetricRow({ label: "Unattributed", tokens: estimate.unattributedTokens, detail: "(accounting gap)" }, theme, layout),
     renderMetricRow({
       label: "Total session",
       tokens: estimate.totalTokens,
       emphasis: true,
       detail: sessionShare ? `(${sessionShare} · ${provenance})` : `(${provenance})`,
     }, theme, layout),
-  ];
+  );
   const usage = snapshot.contextUsage;
   if (usage && usage.tokens !== null) {
     const percent = formatPercent(usage.percent);
     const window = usage.contextWindow > 0 ? contextWindowLabel(usage.contextWindow) : undefined;
+    const usageEstimated = snapshot.session.contextUsageEstimated;
     rows.push(renderMetricRow({
       label: "Total request",
       tokens: usage.tokens,
-      exact: true,
+      exact: !usageEstimated,
       emphasis: true,
-      detail: percent && window ? `(${percent} / ${window} ctx)` : "(Pi usage)",
+      detail: percent && window
+        ? usageEstimated ? `(${percent} · Pi est.)` : `(${percent} / ${window} ctx)`
+        : usageEstimated ? "(Pi est.)" : "(Pi usage)",
     }, theme, layout));
     rows.push(...renderContextBar(snapshot, estimate, theme, width));
   }
@@ -1494,8 +1324,10 @@ function summaryTokenLayout(snapshot: PrefixSnapshot): TokenLabelLayout {
     sessionEstimate.totalTokens,
     sessionEstimate.toolOutputTokens,
     sessionEstimate.messageTokens,
-    sessionEstimate.otherTokens,
+    sessionEstimate.thinkingSummaryTokens,
+    sessionEstimate.unattributedTokens,
   );
+  if (sessionEstimate?.reasoningTokens !== undefined) values.push(sessionEstimate.reasoningTokens);
   if (typeof snapshot.contextUsage?.tokens === "number") values.push(snapshot.contextUsage.tokens);
   return tokenLabelLayout(values);
 }
@@ -1833,6 +1665,7 @@ export const internals = {
   estimateOpenAIToolDefinitionTokens,
   estimateOpenAIFunctionToolTokens,
   // session accounting
+  buildSessionBreakdown,
   buildSessionEstimate,
   // token label layout
   tokenLabelLayout,

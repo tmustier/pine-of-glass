@@ -101,10 +101,12 @@ export const fixtureContextUsage: ContextUsage = {
 } as ContextUsage;
 
 export const fixtureSession: SessionBreakdown = {
-  thinkingChars: 12000,
+  thinkingSummaryChars: 1200,
+  reasoningTokens: 12000,
   toolOutputChars: 52340,
   messageChars: 8120,
   messageCount: 14,
+  contextUsageEstimated: false,
 };
 
 // Hand-written system prompt matching the format the contract suite proves pi emits.

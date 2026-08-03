@@ -1,13 +1,14 @@
-// Session-residual math (the "Other / reasoning" bucket) and the token-column layout
+// Session-residual math (the unattributed bucket) and the token-column layout
 // invariant that past alignment fixes were made for.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import type { PrefixSnapshot } from "../../extensions/pi-contextimate/index.ts";
-import { fakePi, fixtureSystemPrompt, anthropicModel, stripAnsi } from "../helpers.ts";
+import { assistantMessage, fakePi, fixtureSystemPrompt, anthropicModel, plainTheme, stripAnsi } from "../helpers.ts";
 
-const { buildSnapshot, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, ctxShareLabel, contextWindowLabel, methodologyHint } = internals;
+const { buildSnapshot, buildSessionBreakdown, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, ctxShareLabel, contextWindowLabel, methodologyHint, renderSummary } = internals;
 
 function snapshotWith(session: PrefixSnapshot["session"], usage: PrefixSnapshot["contextUsage"]): PrefixSnapshot {
   const snapshot = buildSnapshot(
@@ -22,9 +23,16 @@ function snapshotWith(session: PrefixSnapshot["session"], usage: PrefixSnapshot[
   return snapshot;
 }
 
-const session = { thinkingChars: 12000, toolOutputChars: 5200, messageChars: 1300, messageCount: 6 };
+const session = {
+  thinkingSummaryChars: 1200,
+  reasoningTokens: 12000,
+  toolOutputChars: 5200,
+  messageChars: 1300,
+  messageCount: 6,
+  contextUsageEstimated: false,
+};
 
-test("with Pi usage: total anchors to (Pi current − harness) and residual is clamped", () => {
+test("with Pi usage: total anchors to (Pi current − estimated harness) and residual is clamped", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith(session, usage);
   const estimate = buildSessionEstimate(snapshot)!;
@@ -33,23 +41,117 @@ test("with Pi usage: total anchors to (Pi current − harness) and residual is c
   // Visible buckets use the session denominator (2.6 for the Claude 4.7+ heuristic).
   assert.equal(estimate.toolOutputTokens, Math.ceil(5200 / 2.6));
   assert.equal(estimate.messageTokens, Math.ceil(1300 / 2.6));
-  assert.equal(estimate.otherTokens, Math.max(0, Math.round(estimate.totalTokens - estimate.toolOutputTokens - estimate.messageTokens)));
+  assert.equal(estimate.thinkingSummaryTokens, Math.ceil(1200 / 2.6));
+  assert.equal(estimate.reasoningTokens, 12000, "reasoning stays provider-exact");
+  assert.equal(
+    estimate.unattributedTokens,
+    Math.max(0, Math.round(
+      estimate.totalTokens
+      - estimate.toolOutputTokens
+      - estimate.messageTokens
+      - estimate.thinkingSummaryTokens
+      - estimate.reasoningTokens!,
+    )),
+  );
 
   // Pi usage smaller than the visible buckets must clamp at zero, never go negative.
   const tiny = buildSessionEstimate(snapshotWith(session, { tokens: 100, contextWindow: 200000, percent: 0.1 }))!;
-  assert.equal(tiny.otherTokens, 0);
+  assert.equal(tiny.unattributedTokens, 0);
 });
 
 test("without Pi usage (or null tokens): heuristic fallback over all session chars", () => {
   for (const usage of [undefined, { tokens: null, contextWindow: 200000, percent: null }]) {
     const estimate = buildSessionEstimate(snapshotWith(session, usage))!;
     assert.equal(estimate.totalSource, "heuristic");
-    assert.equal(estimate.totalTokens, Math.ceil((12000 + 5200 + 1300) / 2.6));
+    assert.equal(estimate.totalTokens, Math.ceil((1200 + 5200 + 1300) / 2.6) + 12000);
+    assert.equal(estimate.thinkingSummaryTokens, Math.ceil(1200 / 2.6));
+    assert.equal(estimate.reasoningTokens, 12000);
+    assert.ok(estimate.unattributedTokens <= 1, "heuristic rounding leaves no material accounting gap");
   }
 });
 
 test("no session → no estimate", () => {
   assert.equal(buildSessionEstimate(snapshotWith(undefined, undefined)), undefined);
+});
+
+test("session walk estimates a summary when the provider omits its reasoning breakdown", () => {
+  const unreported = SessionManager.inMemory("/tmp/contextimate-unreported-reasoning");
+  const summary = "summary only";
+  unreported.appendMessage(assistantMessage([
+    { type: "thinking", thinking: summary, thinkingSignature: "opaque-signature" },
+  ]));
+  const breakdown = buildSessionBreakdown(unreported)!;
+  assert.equal(breakdown.reasoningTokens, undefined);
+  assert.equal(breakdown.thinkingSummaryChars, summary.length);
+  const rows = stripAnsi(renderSummary(snapshotWith(breakdown, undefined), plainTheme, 120).join("\n"));
+  assert.doesNotMatch(rows, /Reasoning context/, "an absent provider breakdown gets no exact row");
+});
+
+test("reported zero reasoning stays exact while the accounting gap remains separate", () => {
+  const fable = SessionManager.inMemory("/tmp/contextimate-fable-zero-reasoning");
+  fable.appendMessage({ role: "user", content: "hi", timestamp: 1 });
+  fable.appendMessage(assistantMessage(
+    [{ type: "text", text: "Hello! How can I help you today?" }],
+    {
+      model: "claude-fable-5",
+      usage: {
+        input: 2,
+        output: 71,
+        cacheRead: 0,
+        cacheWrite: 30971,
+        reasoning: 0,
+        totalTokens: 31044,
+        cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    },
+  ));
+  const breakdown = buildSessionBreakdown(fable)!;
+  assert.equal(breakdown.reasoningTokens, 0);
+  const rendered = stripAnsi(renderSummary(
+    snapshotWith(breakdown, { tokens: 31044, contextWindow: 200000, percent: 15.5 }),
+    plainTheme,
+    120,
+  ).join("\n"));
+  assert.match(rendered, /Reasoning context\s+0\.0k tokens \(provider\)/);
+  assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
+});
+
+test("Total request keeps the estimate marker when Pi adds trailing local estimates", () => {
+  const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
+  const snapshot = snapshotWith({ ...session, contextUsageEstimated: true }, usage);
+  const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
+  assert.match(rendered, /Thinking summaries\s+~0\.5k tokens/);
+  assert.match(rendered, /Reasoning context\s+12\.0k tokens \(provider\)/);
+  assert.doesNotMatch(rendered, /Reasoning context\s+~12\.0k/, "exact reasoning has no estimate marker");
+  assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
+  assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0% · Pi est\.\)/);
+  const narrowSessionRows = stripAnsi(renderSummary(snapshot, plainTheme, 80).join("\n"))
+    .split("\n")
+    .filter((line) => /Thinking summaries|Reasoning context|Unattributed|Total session|Total request/.test(line));
+  assert.ok(narrowSessionRows.every((line) => line.length <= 80), "session rows stay inside the narrow panel");
+});
+
+test("trailing excluded bash keeps Pi's estimate marker", () => {
+  const manager = SessionManager.inMemory("/tmp/contextimate-excluded-bash");
+  manager.appendMessage(assistantMessage([{ type: "text", text: "done" }]));
+  manager.appendMessage({
+    role: "bashExecution",
+    command: "printf hidden",
+    output: "hidden",
+    exitCode: 0,
+    cancelled: false,
+    truncated: false,
+    timestamp: 2,
+    excludeFromContext: true,
+  });
+  const breakdown = buildSessionBreakdown(manager)!;
+  assert.equal(breakdown.contextUsageEstimated, true);
+  const rendered = stripAnsi(renderSummary(
+    snapshotWith(breakdown, { tokens: 50000, contextWindow: 200000, percent: 25 }),
+    plainTheme,
+    120,
+  ).join("\n"));
+  assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0% · Pi est\.\)/);
 });
 
 test("token labels align to one shared column width across magnitudes", () => {
