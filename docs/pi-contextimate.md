@@ -1,8 +1,8 @@
 # How pi-contextimate counts context
 
-`[Contextimate]` is an inspector, not a billing ledger. Its job is to explain why a session is large and which component is responsible, accurately enough to act on. Every heuristic number carries a `~`; only `Total request` is Pi's own exact count.
+`[Contextimate]` is an inspector, not a billing ledger. Its job is to explain why a session is large and which component is responsible, accurately enough to act on. Every heuristic number carries a `~`. `Total request` drops the marker only when Pi's current total comes entirely from the latest trusted provider usage; local estimates for trailing messages keep it.
 
-This note records the counting policy, the evidence behind it, and the user configuration. The live values are in `extensions/pi-contextimate/index.ts`: the per-provider defaults in `BUILT_IN_HEURISTIC_RULES`, the OpenAI formula constants in `estimateOpenAIFunctionToolTokens`. This note explains why they hold the values they do; it does not duplicate them.
+This note records the counting policy, the evidence behind it, and the user configuration. Live provider profiles are in `extensions/pi-contextimate/model-heuristics.ts`, formula constants are in `extensions/pi-contextimate/index.ts`, and active-path accounting is in `extensions/pi-contextimate/session-accounting.ts`. This note explains why they hold the values they do; it does not duplicate them.
 
 ## Count what the provider sees
 
@@ -27,6 +27,8 @@ Divisors were measured with Anthropic's `messages/count_tokens` endpoint and con
 
 The decisive finding: Claude 4.7 changed tokenizer accounting. The identical captured Pi request counts 29,258 input tokens on `claude-opus-4-5` and 40,758 on `claude-opus-4-7`, and the count endpoint matched live accounting within 15 tokens. Against real Pi startup material this puts Claude 4.5/4.6 near chars ÷ 3.5 to 3.8 and Claude 4.7/4.8 near chars ÷ 2.6. OpenAI-Codex markdown-ish system text measured close to chars ÷ 4.
 
+A follow-up count on 3 August 2026 established the modern family boundary. One byte-identical Pi payload counted 17,382 tokens on both `claude-fable-5` and `claude-opus-4-8`; `claude-opus-5` differed by only 4 once-per-tool-block overhead tokens and had the same 16,116-token system count. Contextimate therefore applies the modern Claude text profile to Fable 5 and the named Claude 5 families, including explicit Radius and OpenRouter relays whose model ids identify that downstream tokenizer. Bedrock Claude uses the same model-family text ratio while retaining its own provider payload shape and unmeasured tool divisor.
+
 Divisors depend on content shape: repetitive prose tokenizes around chars ÷ 7, JSON-ish text heavier, markdown heavier still. The shipped values are calibrated to Pi-shaped material (system prompts, AGENTS.md, skill index), not universal constants.
 
 The session divisors were validated by replaying 194 local session transcripts (16,479 assistant turns) against recorded provider usage: chars ÷ 2.6 beat a blanket chars ÷ 4 on 20 of 24 Anthropic transcripts, with median error 0.6 to 2.1% against 2.8 to 4.7%. OpenAI-Codex session material sits at chars ÷ 4, so the blanket value is already right there. `pi-contextimate-evaluate-transcripts` re-runs this evaluation.
@@ -49,24 +51,27 @@ raw minified chars ÷ 4             78.4%
 
 Two changes made the formula win: counting nested-object and array-item properties recursively, and moving text fragments from chars ÷ 4 to chars ÷ 6.6.
 
-Anthropic tool payloads measured near their text divisors (÷ 3.36 on Claude 4.5/4.6, ÷ 2.5 on 4.7/4.8), so they use plain divisors of 3.3 and 2.6 on the Anthropic-shaped payload. Chat-style and plain Responses tools use ÷ 5.5 (measured on OpenAI-Codex live probes); Gemini and Bedrock use ÷ 4 until someone measures them.
+Anthropic tool payloads measured near their text divisors (÷ 3.36 on Claude 4.5/4.6, ÷ 2.5 on the modern Claude family), so they use plain divisors of 3.3 and 2.6 on the Anthropic-shaped payload. Chat-style and plain Responses tools use ÷ 5.5 (measured on OpenAI-Codex live probes); Gemini and Bedrock use ÷ 4 until someone measures them.
 
 In the UI, a formula-counted tools row says `OpenAI formula · schema text ÷ 6.6` and its character count is a payload-size cue only: it is not what gets divided. Divisor-counted rows say things like `÷ 2.6 · Anthropic tool payload`. Each tool's own row is counted on that tool's own shaped payload or formula subtotal, and the schema tree is just the readable rendering of it.
 
 ## Session rows and the total
 
-`Total request` uses Pi's own `ctx.getContextUsage()`: the latest trusted provider-reported total plus a small local estimate for anything after it. It needs no network call and matches Pi's footer number.
+`Total request` uses Pi's own `ctx.getContextUsage()`: the latest trusted provider-reported total plus a small local estimate for anything after it. It needs no network call and matches Pi's footer number. Contextimate scans the same active message path: the total has no `~` when the latest trusted assistant usage is last, and keeps `~` when one or more trailing messages make Pi add a local estimate.
 
 The session split anchors on that total and claims only what it can count:
 
 ```text
-Tool outputs:        y   estimated from provider-shaped tool output chars
-Messages:            z   estimated from visible message text and tool-call structure
-Other / reasoning:   x - y - z
-Total session:       x   Pi's total minus the estimated static prefix
+Tool outputs:        y       estimated from provider-shaped tool output chars
+Messages:            z       estimated from visible message text and tool-call structure
+Thinking replay:     r       estimated from replayed thinking text or carrier; omitted at zero
+Unattributed:        x-y-z-r remaining accounting gap
+Total session:       x       Pi's total minus the estimated static prefix
 ```
 
-`Other / reasoning` is a residual on purpose. It absorbs encrypted reasoning replay, provider overhead, images and estimation error. The extension never estimates hidden thinking from encrypted payload lengths: those strings are carrier blobs, not the billed text.
+`Thinking replay` describes context representation, not provider-reported reasoning usage. Signed Claude thinking, including through relays, counts its replayable thinking text rather than its opaque signature. Signed OpenAI/Codex reasoning counts the encrypted carrier sent back in context, not the visible summary. Claude can omit prior thinking from billed input outside tool-use continuations, so the heuristic fallback is not a billing forecast.
+
+`Unattributed` is the remaining accounting gap, not a diagnosis. It can absorb static-prefix estimation error, provider overhead, images and unobserved reasoning. In particular, a large gap does not claim that the model used that many reasoning tokens.
 
 After compaction, Pi deliberately reports usage as unknown until the next assistant response arrives. The panel then falls back to its heuristic estimate and labels the whole total as heuristic.
 

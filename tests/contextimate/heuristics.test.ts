@@ -23,14 +23,27 @@ test("no model, no config → chars/4 fallback with openai-responses shape", () 
 });
 
 test("built-in model routing boundaries", () => {
-  // Claude 4.7/4.8 family.
-  assert.equal(resolveHeuristic(anthropicModel, {}).label, "Claude 4.7+ heuristic");
+  // Modern Claude tokenizer family, including explicit relays.
+  assert.equal(resolveHeuristic(anthropicModel, {}).label, "Modern Claude heuristic");
   assert.equal(resolveHeuristic(anthropicModel, {}).textDenominator, 2.6);
+  for (const modern of [
+    model("anthropic", "claude-fable-5", "anthropic-messages"),
+    model("anthropic", "claude-opus-5", "anthropic-messages"),
+    model("radius", "claude-opus-4-8", "pi-messages"),
+    model("openrouter", "anthropic/claude-fable-5:batch", "openai-completions"),
+  ]) {
+    assert.equal(resolveHeuristic(modern, {}).label, "Modern Claude heuristic");
+    assert.equal(resolveHeuristic(modern, {}).toolNumerator, "anthropic");
+  }
   // Claude 4.5/4.6 family.
   const sonnet45 = resolveHeuristic(model("anthropic", "claude-sonnet-4-5", "anthropic-messages"), {});
   assert.equal(sonnet45.label, "Claude 4.5/4.6 heuristic");
   assert.equal(sonnet45.textDenominator, 3.8);
   assert.equal(sonnet45.toolDenominator, 3.3);
+  assert.equal(
+    resolveHeuristic(model("radius", "claude-sonnet-4-5", "pi-messages"), {}).label,
+    "Claude 4.5/4.6 heuristic",
+  );
   // "3-5" must NOT match the 4.5/4.6 regex — falls through to generic Anthropic.
   const haiku35 = resolveHeuristic(model("anthropic", "claude-haiku-3-5", "anthropic-messages"), {});
   assert.equal(haiku35.label, "Anthropic heuristic");
@@ -43,7 +56,16 @@ test("built-in model routing boundaries", () => {
   // Other providers.
   assert.equal(resolveHeuristic(model("openai", "gpt-5.5", "openai-responses"), {}).label, "OpenAI Responses heuristic");
   assert.equal(resolveHeuristic(model("google", "gemini-2.5-pro", "google-generative-ai"), {}).toolNumerator, "gemini");
-  assert.equal(resolveHeuristic(model("bedrock", "claude-x", "bedrock-converse-stream"), {}).toolNumerator, "bedrock");
+  assert.equal(resolveHeuristic(model("bedrock", "claude-x", "bedrock-converse-stream"), {}).label, "Bedrock heuristic");
+  const bedrockModern = resolveHeuristic(model("amazon-bedrock", "claude-opus-4-8", "bedrock-converse-stream"), {});
+  assert.equal(bedrockModern.label, "Modern Claude on Bedrock heuristic");
+  assert.equal(bedrockModern.textDenominator, 2.6, "Bedrock Claude keeps its model tokenizer");
+  assert.equal(bedrockModern.toolDenominator, 4, "Bedrock Claude keeps its provider payload shape");
+  assert.equal(bedrockModern.toolNumerator, "bedrock");
+  assert.equal(
+    resolveHeuristic(model("amazon-bedrock", "us.anthropic.claude-opus-4-6-v1", "bedrock-converse-stream"), {}).label,
+    "Claude 4.5/4.6 on Bedrock heuristic",
+  );
   assert.equal(resolveHeuristic(model("mistral", "mistral-large", "mistral-conversations"), {}).toolNumerator, "openai-chat");
 });
 
@@ -102,7 +124,7 @@ test("unknown provider keeps a defined label (regression: renderHeader crash)", 
     profiles: { quiet: { textDenominator: 5 } },
     rules: [{ match: { provider: "anthropic" }, profile: "quiet" }],
   });
-  assert.equal(profiled.label, "Claude 4.7+ heuristic", "label survives a label-less profile patch");
+  assert.equal(profiled.label, "Modern Claude heuristic", "label survives a label-less profile patch");
 });
 
 test("cleanDenominator rejects non-finite/non-positive values", () => {

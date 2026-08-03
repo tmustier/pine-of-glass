@@ -209,7 +209,7 @@ Panels are multi-line surfaces with a top: contextimate's estimator, cachemire's
 
 ```
 [Contextimate] summary → compact → expanded
-  ctrl+o: cycle view · model anthropic/claude-opus-4-8 · counts ch ÷ 2.6 (Claude 4.7+ heuristic)
+  ctrl+o: cycle view · model anthropic/claude-opus-4-8 · counts ch ÷ 2.6 (Modern Claude heuristic)
 ```
 
 - line 1: the extension name in bold accent, plus mode pips when the panel has
@@ -230,6 +230,13 @@ for free.
 
 A panel ends with one blank line, so the next chat block never abuts it. This is
 §5's "one blank before a group", supplied by the panel because pi does not.
+
+A residual is an accounting gap, not a diagnosis. Contextimate calls it
+`Unattributed`, never `reasoning`, and labels it `(accounting gap)`. Known thinking
+replay gets its own conditional row; the remaining gap can still include
+prefix-estimation error, provider overhead, images and unobserved reasoning. If Pi's
+context total includes local
+estimates for messages after the last provider usage, the total keeps its `~`.
 
 In expanded audit views:
 

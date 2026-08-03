@@ -116,9 +116,11 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   earlier. `parseContextimateConfig` drops non-positive JSON denominators before
   resolution; `cleanDenominator` remains the defensive pure boundary for direct patches.
   This is user-configurable surface; precedence bugs misprice every row.
-- **Built-in rule matching**: boundary table: `claude-opus-4-8` → 4.7+ rule;
-  `claude-sonnet-4-5` → 4.5/4.6 rule; other anthropic → generic; `openai-codex` vs
-  `openai` vs `mistral` vs `gemini` vs `bedrock` routing by provider/api.
+- **Built-in rule matching**: boundary table: `claude-opus-4-8`, Fable 5 and the
+  named Claude 5 families → modern Claude rule; explicit Radius/OpenRouter relays keep
+  that tokenizer while Bedrock keeps its payload shape; `claude-sonnet-4-5` → 4.5/4.6
+  rule; other anthropic → generic; `openai-codex` vs `openai` vs `mistral` vs `gemini`
+  vs `bedrock` routing by provider/api.
 - **Tool payload shaping**: for one frozen `ToolSummary` fixture, the exact JSON emitted
   per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`),
   the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to
@@ -136,8 +138,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   unescaped names, wrapper-chars math (`content − Σ skill chars ≥ 0`); prompt *without*
   skills/context blocks degrades to a single system section.
 - **Session estimate math** (`buildSessionEstimate`): with `contextUsage` → totalSource
-  `"pi"`, `other = total − tools − messages` clamped ≥ 0; without → heuristic fallback;
-  thinking chars counted from `thinkingSignature` when present else `thinking` text.
+  `"pi"`, `unattributed = total − tools − messages − thinking replay` clamped ≥ 0;
+  without → heuristic fallback. The session walk counts signed Claude thinking text, including through
+  relays, rather than its opaque signature; it keeps OpenAI/Codex carrier accounting and
+  marks Pi's total estimated when messages trail the last trusted assistant usage.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.

@@ -41,12 +41,13 @@ The panel renders after Pi's native startup resource list and re-inserts itself 
 
 How to read the numbers:
 
-- every `~` number is an estimate; only `Total request` is Pi's own exact count
-- the dim hint line under the header states the counting method once, for example `counts ch ÷ 2.6 (Claude 4.7+ heuristic)`; data rows carry only their raw size, like `(9.2k ch)`
-- the method follows the active model, so switching models re-estimates immediately
+- every `~` number is an estimate; `Total request` drops it only when Pi's current total is fully provider-reported, and keeps it when trailing messages add a local estimate
+- the dim hint line under the header states the counting method once, for example `counts ch ÷ 2.6 (Modern Claude heuristic)`; data rows carry only their raw size, like `(9.2k ch)`
+- the method follows the active model, so switching models re-estimates immediately; named modern Claude models keep their tokenizer profile through supported Radius and OpenRouter relays
 - the first row says `Runtime system prompt` because Pi assembles that prompt at runtime from its base prompt plus tool and extension contributions; expanded view attributes the part it can verify
 - `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand
 - each expanded tool header shows where the tool came from: its config scope and defining file, or `builtin`
+- known thinking context is shown separately as `Thinking replay`; `Unattributed` is the remaining accounting gap and can include prefix-estimation error, provider overhead, images and unobserved reasoning
 
 The panel's visual grammar is the family design language: see `docs/design-language.md`.
 

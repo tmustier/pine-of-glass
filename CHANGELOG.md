@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **Contextimate: recognise the modern Claude tokenizer across routes.** Fable 5,
+  Opus 5 and explicit modern Claude models relayed through Radius or OpenRouter now
+  use the same measured profile as Claude 4.7/4.8. Bedrock retains its own payload
+  shape.
+- **Contextimate: make accounting uncertainty visible.** The former
+  `Other / reasoning` residual is now `Unattributed`, so static-prefix error cannot
+  masquerade as model reasoning. Known thinking context now has a separate
+  `Thinking replay` row. Signed Claude thinking, including through relays, counts its
+  text instead of its opaque signature. `Total request` keeps `~` when Pi
+  includes local estimates for trailing messages.
+- The live prefix probe now verifies the provider and model that actually answered,
+  preventing a model-selection override from producing a confidently mislabeled
+  calibration.
+- Refresh the installed Pi lifecycle contract fixture for the new scoped-models
+  accessor.
+
 ## 0.9.1 (2026-07-27)
 
 - **Cachemire: follow the selected branch after `/tree`.** Cachemire now records

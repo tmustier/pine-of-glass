@@ -39,6 +39,11 @@ const cmd = [
   '-p', prompt,
 ];
 const env = { ...process.env, PI_CONTEXTIMATE_PAYLOAD_CAPTURE: base };
+// A probe launched from Pi inherits the parent bash tool's session selection. The explicit
+// --model/--thinking flags own this child run, so do not let those ambient values compete.
+for (const key of ['PI_PROVIDER', 'PI_MODEL', 'PI_REASONING_LEVEL', 'PI_SESSION_ID', 'PI_SESSION_FILE']) {
+  delete env[key];
+}
 const proc = spawnSync(piBin, cmd, { cwd, env, encoding: 'utf8', timeout: 180000 });
 fs.writeFileSync(`${base}.stdout.txt`, proc.stdout || '');
 fs.writeFileSync(`${base}.stderr.txt`, (proc.stderr || '').replace(/npm_[A-Za-z0-9_-]+/g, 'npm_[REDACTED]'));
@@ -49,7 +54,7 @@ if (proc.status !== 0) {
 const payloadPath = `${base}.payloads.jsonl`;
 if (!fs.existsSync(payloadPath)) throw new Error(`No payload capture at ${payloadPath}`);
 const payload = JSON.parse(fs.readFileSync(payloadPath, 'utf8').trim().split('\n').at(-1));
-let usage;
+let assistant;
 for (const file of fs.readdirSync(sessions, { recursive: true })) {
   const full = path.join(sessions, file.toString());
   if (!full.endsWith('.jsonl') || !fs.existsSync(full)) continue;
@@ -58,10 +63,12 @@ for (const file of fs.readdirSync(sessions, { recursive: true })) {
     try {
       const o = JSON.parse(line);
       const m = o.message || {};
-      if (m.role === 'assistant' && m.usage) usage = m.usage;
+      if (m.role === 'assistant' && m.usage) assistant = m;
     } catch {}
   }
 }
+const usage = assistant?.usage;
+const actualModel = assistant ? `${assistant.provider}/${assistant.model}` : null;
 const inputTotal = usage ? (usage.input || 0) + (usage.cacheRead || 0) + (usage.cacheWrite || 0) : null;
 const jsonChars = (value) => JSON.stringify(value ?? null).length;
 const textChars = (value) => {
@@ -76,7 +83,9 @@ const inputKey = firstPresentKey(['input', 'messages', 'contents']);
 const systemPayload = systemKey ? payload[systemKey] : null;
 const inputPayload = inputKey ? payload[inputKey] : null;
 const summary = {
-  model,
+  model, // Backward-compatible alias for requestedModel.
+  requestedModel: model,
+  actualModel,
   cwd,
   artifacts: { base, sessions, payloadPath, stdout: `${base}.stdout.txt`, stderr: `${base}.stderr.txt` },
   payload: {
@@ -103,3 +112,7 @@ const summary = {
 fs.writeFileSync(`${base}.summary.json`, JSON.stringify(summary, null, 2));
 console.log(JSON.stringify(summary, null, 2));
 console.log('WARNING: payload captures can contain sensitive prompt/tool data; do not commit output-dir artifacts.');
+if (actualModel !== model) {
+  console.error(`Model mismatch: requested ${model}, but ${actualModel ?? 'no assistant response'} answered. Discard this capture and disable the extension or preset that changed model selection.`);
+  process.exit(1);
+}
