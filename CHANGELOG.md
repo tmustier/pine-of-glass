@@ -2,11 +2,22 @@
 
 ## Unreleased
 
-- **Contextimate: extend the Claude 4.7+ heuristic.** Fable 5, Opus 5 and
-  explicit Radius or OpenRouter relays now use the same measured text ratio.
-- **Contextimate: correct Codex context totals.** GPT-5.3 to GPT-5.5 omit
-  earlier reasoning from reported usage. Contextimate now adds Pi's exact stored count.
-  GPT-5.6 is unchanged.
+- **Contextimate: recognise the Claude 4.7+ tokenizer across routes.** Fable 5,
+  Opus 5 and explicit Claude 4.7+ models relayed through Radius or OpenRouter now
+  use the same measured profile as Claude 4.7/4.8. Bedrock retains its own payload
+  shape.
+- **Contextimate: make accounting uncertainty visible.** The former
+  `Other / reasoning` residual is now `Unattributed`, so static-prefix error cannot
+  masquerade as model reasoning. `Reasoning context` sums exact `usage.reasoning`
+  values for signed blocks retained by the provider response anchoring Pi's total,
+  including reported zero. Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet
+  4.6+ histories follow Anthropic's keep-all policy; older Claude families keep only
+  the current assistant turn. GPT-5.6 Responses histories follow OpenAI's all-turns
+  default; earlier models keep the current turn. Pi's exact prompt total rejects
+  impossible historical attribution, including cached input. Other providers' history
+  remains unattributed until retention is measured. Summaries not covered by exact counts remain a clearly estimated
+  `Thinking summaries` row, and opaque signatures are never sized as tokens.
+  `Total request` keeps `~` when Pi includes local estimates for trailing messages.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled
   calibration.

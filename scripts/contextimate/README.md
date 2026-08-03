@@ -21,7 +21,7 @@ node scripts/contextimate/probe-live-prefix.mjs \
   --output-dir /tmp/pi-contextimate-prefix-probe
 ```
 
-This runs a tiny live Pi request with `thinking off`, captures the provider payload and records `usage.input`. It clears inherited model selectors and exits if a different provider or model answers. The printed summary contains only sizes and usage; the payload JSONL can contain sensitive prompt or tool data and should stay local.
+This runs a tiny live Pi request with `thinking off`, captures the outgoing provider payload via `before_provider_request`, and records provider `usage.input`. It clears inherited parent-session model selectors, then verifies the provider-qualified model in the generated assistant message. A mismatch exits non-zero and the capture must be discarded; disable the extension or preset that changed model selection before retrying. The printed summary contains only sizes and usage; the payload JSONL artifact can contain sensitive prompt/tool data and should stay local.
 
 Pass extra Pi flags after `--`, for example:
 

@@ -11,7 +11,8 @@ import { compactCount } from "../_lib/fmt.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import { BUILT_IN_HEURISTIC_RULES, type BuiltInHeuristicRule } from "./model-heuristics.ts";
 import {
-  buildSessionBreakdown, correctedContextTokens, estimateSessionBreakdown,
+  buildSessionBreakdown,
+  estimateSessionBreakdown,
   type SessionBreakdown,
   type SessionEstimate,
   type SessionSource,
@@ -192,6 +193,11 @@ function tokenLabelLayout(tokens: number[]): TokenLabelLayout {
   return { unitWidth, fieldWidth: Math.max(0, ...rawLabels.map((label) => label.length)) };
 }
 
+function formatPercent(value: number | null): string | undefined {
+  if (value === null || !Number.isFinite(value)) return undefined;
+  return `${value.toFixed(1)}%`;
+}
+
 function cleanDenominator(value: unknown, fallback = 4): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
@@ -251,6 +257,14 @@ function unescapeXml(value: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&lt;/g, "<")
     .replace(/&amp;/g, "&");
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? "undefined";
+  } catch (error) {
+    return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
+  }
 }
 
 function safeMinifiedJson(value: unknown): string {
@@ -587,7 +601,7 @@ function builtInHeuristicForModel(model?: ModelSummary): Partial<ResolvedHeurist
     textDenominator: rule.textDenominator,
     sessionDenominator: rule.sessionDenominator,
     toolDenominator: rule.toolDenominator,
-    toolNumerator: model.api === "openai-completions" ? "openai-chat" : rule.toolNumerator,
+    toolNumerator: rule.toolNumerator,
   };
 }
 
@@ -1006,7 +1020,7 @@ function buildSnapshot(
     JSON.stringify(config),
     pi.getActiveTools().join(","),
     pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
-    session ? JSON.stringify(session) : "no-session",
+    session ? `${session.thinkingSummaryChars}:${session.reasoningTokens ?? "unreported"}:${session.toolOutputChars}:${session.messageChars}:${session.messageCount}:${session.contextUsageEstimated}` : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
   ].join("|");
 
@@ -1233,15 +1247,17 @@ function harnessDetail(snapshot: PrefixSnapshot): string {
 
 // One stacked bar under Total request: the carried part (harness + session) in accent,
 // free window dim — the half-second "how full am I?" answer.
-function renderContextBar(snapshot: PrefixSnapshot, usage: ContextUsage, estimate: SessionEstimate, requestTokens: number, theme: Theme, width: number): string[] {
-  const free = Math.max(0, usage.contextWindow - requestTokens);
+function renderContextBar(snapshot: PrefixSnapshot, estimate: SessionEstimate, theme: Theme, width: number): string[] {
+  const usage = snapshot.contextUsage;
+  if (!usage || usage.tokens === null || usage.contextWindow <= 0) return [];
+  const free = Math.max(0, usage.contextWindow - usage.tokens);
   const legend =
     `harness ~${compactCount(totalTokens(snapshot))}${SEP}session ~${compactCount(estimate.totalTokens)}${SEP}free ${compactCount(free)}`;
   const room = Math.max(0, width - 4 - legend.length - 2);
   const sameLine = room >= 12;
   const barWidth = Math.min(28, Math.max(12, sameLine ? room : width - 4));
-  const carried = Math.min(1, Math.max(0, requestTokens / usage.contextWindow));
-  const filled = Math.min(barWidth, Math.max(requestTokens > 0 ? 1 : 0, Math.round(carried * barWidth)));
+  const carried = Math.min(1, Math.max(0, usage.tokens / usage.contextWindow));
+  const filled = Math.min(barWidth, Math.max(usage.tokens > 0 ? 1 : 0, Math.round(carried * barWidth)));
   const bar = `${accent(theme, "█".repeat(filled))}${theme.fg("dim", "▒".repeat(barWidth - filled))}`;
   return sameLine
     ? [`  ${bar}  ${theme.fg("dim", legend)}`]
@@ -1249,42 +1265,54 @@ function renderContextBar(snapshot: PrefixSnapshot, usage: ContextUsage, estimat
 }
 
 function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number, layout?: TokenLabelLayout): string[] {
-  if (!snapshot.session) return [];
-  const estimate = buildSessionEstimate(snapshot)!;
+  const estimate = buildSessionEstimate(snapshot);
+  if (!snapshot.session || !estimate) return [];
   const sessionShare = ctxShareLabel(estimate.totalTokens, snapshot.contextUsage, { estimate: true });
-  const provenance = estimate.totalSource === "pi" ? "Pi current - harness" : "heuristic fallback";
+  const provenance = estimate.totalSource === "pi" ? "Pi-based" : "heuristic fallback";
   const rows = [
     "",
     renderMetricRow({ label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(snapshot.session.toolOutputChars) }, theme, layout),
     renderMetricRow({ label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars) }, theme, layout),
-    renderMetricRow({ label: "Other / reasoning", tokens: estimate.otherTokens, detail: "(residual)" }, theme, layout),
+  ];
+  if (estimate.thinkingSummaryTokens > 0) {
+    rows.push(renderMetricRow({
+      label: "Thinking summaries",
+      tokens: estimate.thinkingSummaryTokens,
+      detail: countDetail(snapshot.session.thinkingSummaryChars),
+    }, theme, layout));
+  }
+  if (estimate.reasoningTokens !== undefined) {
+    rows.push(renderMetricRow({
+      label: "Reasoning context",
+      tokens: estimate.reasoningTokens,
+      exact: true,
+      detail: "(provider)",
+    }, theme, layout));
+  }
+  rows.push(
+    renderMetricRow({ label: "Unattributed", tokens: estimate.unattributedTokens, detail: "(accounting gap)" }, theme, layout),
     renderMetricRow({
       label: "Total session",
       tokens: estimate.totalTokens,
       emphasis: true,
       detail: sessionShare ? `(${sessionShare} · ${provenance})` : `(${provenance})`,
     }, theme, layout),
-  ];
+  );
   const usage = snapshot.contextUsage;
-  const requestTokens = correctedContextTokens(snapshot.session, usage?.tokens);
-  if (usage && requestTokens !== undefined) {
-    const percent = usage.contextWindow > 0
-      ? `${((requestTokens / usage.contextWindow) * 100).toFixed(1)}%`
-      : undefined;
+  if (usage && usage.tokens !== null) {
+    const percent = formatPercent(usage.percent);
+    const window = usage.contextWindow > 0 ? contextWindowLabel(usage.contextWindow) : undefined;
     const usageEstimated = snapshot.session.contextUsageEstimated;
-    const context = percent && !usageEstimated
-      ? `${percent} / ${contextWindowLabel(usage.contextWindow)} ctx`
-      : percent;
     rows.push(renderMetricRow({
       label: "Total request",
-      tokens: requestTokens,
+      tokens: usage.tokens,
       exact: !usageEstimated,
       emphasis: true,
-      detail: `(${context ?? "Pi usage"})`,
+      detail: percent && window
+        ? usageEstimated ? `(${percent} · Pi est.)` : `(${percent} / ${window} ctx)`
+        : usageEstimated ? "(Pi est.)" : "(Pi usage)",
     }, theme, layout));
-    rows.push(...(usage.contextWindow > 0
-      ? renderContextBar(snapshot, usage, estimate, requestTokens, theme, width)
-      : []));
+    rows.push(...renderContextBar(snapshot, estimate, theme, width));
   }
   return rows;
 }
@@ -1296,10 +1324,11 @@ function summaryTokenLayout(snapshot: PrefixSnapshot): TokenLabelLayout {
     sessionEstimate.totalTokens,
     sessionEstimate.toolOutputTokens,
     sessionEstimate.messageTokens,
-    sessionEstimate.otherTokens,
+    sessionEstimate.thinkingSummaryTokens,
+    sessionEstimate.unattributedTokens,
   );
-  const requestTokens = correctedContextTokens(snapshot.session, snapshot.contextUsage?.tokens);
-  if (requestTokens !== undefined) values.push(requestTokens);
+  if (sessionEstimate?.reasoningTokens !== undefined) values.push(sessionEstimate.reasoningTokens);
+  if (typeof snapshot.contextUsage?.tokens === "number") values.push(snapshot.contextUsage.tokens);
   return tokenLabelLayout(values);
 }
 

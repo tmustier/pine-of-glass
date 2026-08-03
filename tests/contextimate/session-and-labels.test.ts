@@ -1,12 +1,11 @@
-// Session-residual math and the token-column layout invariant that past
-// alignment fixes were made for.
+// Session-residual math (the unattributed bucket) and the token-column layout
+// invariant that past alignment fixes were made for.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import type { PrefixSnapshot } from "../../extensions/pi-contextimate/index.ts";
-import { correctedContextTokens } from "../../extensions/pi-contextimate/session-accounting.ts";
 import { assistantMessage, fakePi, fixtureSystemPrompt, anthropicModel, plainTheme, stripAnsi } from "../helpers.ts";
 
 const { buildSnapshot, buildSessionBreakdown, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, ctxShareLabel, contextWindowLabel, methodologyHint, renderSummary } = internals;
@@ -25,50 +24,13 @@ function snapshotWith(session: PrefixSnapshot["session"], usage: PrefixSnapshot[
 }
 
 const session = {
+  thinkingSummaryChars: 1200,
+  reasoningTokens: 12000,
   toolOutputChars: 5200,
   messageChars: 1300,
+  messageCount: 6,
   contextUsageEstimated: false,
 };
-
-function codexBreakdown(options: {
-  api?: string;
-  provider?: string;
-  firstModel?: string;
-  finalModel?: string;
-  signature?: string;
-} = {}) {
-  const sessionManager = SessionManager.inMemory("/tmp/contextimate-codex-reasoning");
-  const api = options.api ?? "openai-codex-responses";
-  const provider = options.provider ?? "openai-codex";
-  const firstModel = options.firstModel ?? "gpt-5.5";
-  const usage = (reasoning: number, input: number, output: number) => ({
-    input, output, reasoning, cacheRead: 0, cacheWrite: 0, totalTokens: input + output,
-    cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  });
-  sessionManager.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "summary", thinkingSignature: options.signature
-      ?? JSON.stringify({ type: "reasoning", encrypted_content: "opaque" }) }],
-    { api, provider, model: firstModel, usage: usage(216, 578, 228) },
-  ));
-  sessionManager.appendMessage({ role: "user", content: "next", timestamp: 2 });
-  sessionManager.appendMessage(assistantMessage(
-    [{ type: "text", text: "OK" }],
-    { api, provider, model: options.finalModel ?? firstModel, usage: usage(0, 598, 5) },
-  ));
-  return buildSessionBreakdown(sessionManager)!;
-}
-
-test("Codex correction follows the measured route", () => {
-  const corrected = codexBreakdown();
-  assert.equal(corrected.providerOmittedReasoningTokens, 216);
-  assert.equal(correctedContextTokens(corrected, 603), 819);
-  assert.equal(codexBreakdown({ firstModel: "gpt-5.6-sol" }).providerOmittedReasoningTokens, undefined);
-  assert.equal(codexBreakdown({ api: "openai-responses", provider: "openai" }).providerOmittedReasoningTokens, undefined);
-  assert.equal(codexBreakdown({ finalModel: "gpt-5.4" }).providerOmittedReasoningTokens, undefined);
-  assert.equal(codexBreakdown({
-    signature: JSON.stringify({ type: "reasoning", id: "no-encrypted-content" }),
-  }).providerOmittedReasoningTokens, undefined);
-});
 
 test("with Pi usage: total anchors to (Pi current − estimated harness) and residual is clamped", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
@@ -76,42 +38,35 @@ test("with Pi usage: total anchors to (Pi current − estimated harness) and res
   const estimate = buildSessionEstimate(snapshot)!;
   assert.equal(estimate.totalSource, "pi");
   assert.equal(estimate.totalTokens, Math.max(0, Math.round(50000 - totalTokens(snapshot))));
+  // Visible buckets use the session denominator (2.6 for the Claude 4.7+ heuristic).
   assert.equal(estimate.toolOutputTokens, Math.ceil(5200 / 2.6));
   assert.equal(estimate.messageTokens, Math.ceil(1300 / 2.6));
+  assert.equal(estimate.thinkingSummaryTokens, Math.ceil(1200 / 2.6));
+  assert.equal(estimate.reasoningTokens, 12000, "reasoning stays provider-exact");
   assert.equal(
-    estimate.otherTokens,
-    Math.max(0, Math.round(estimate.totalTokens - estimate.toolOutputTokens - estimate.messageTokens)),
+    estimate.unattributedTokens,
+    Math.max(0, Math.round(
+      estimate.totalTokens
+      - estimate.toolOutputTokens
+      - estimate.messageTokens
+      - estimate.thinkingSummaryTokens
+      - estimate.reasoningTokens!,
+    )),
   );
 
+  // Pi usage smaller than the visible buckets must clamp at zero, never go negative.
   const tiny = buildSessionEstimate(snapshotWith(session, { tokens: 100, contextWindow: 200000, percent: 0.1 }))!;
-  assert.equal(tiny.otherTokens, 0);
+  assert.equal(tiny.unattributedTokens, 0);
 });
 
-test("Codex correction changes the number, not the label", () => {
-  const correctedSession = { ...session, providerOmittedReasoningTokens: 600 };
-  const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
-  const snapshot = snapshotWith(correctedSession, usage);
-  assert.equal(
-    buildSessionEstimate(snapshot)!.totalTokens,
-    Math.max(0, Math.round(50600 - totalTokens(snapshot))),
-  );
-  const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
-  assert.match(rendered, /Total request\s+50\.6k tokens \(25\.3% \/ 200k ctx\)/);
-  assert.doesNotMatch(rendered, /Pi \+ prior/);
-
-  const estimated = stripAnsi(renderSummary(
-    snapshotWith({ ...correctedSession, contextUsageEstimated: true }, usage),
-    plainTheme,
-    120,
-  ).join("\n"));
-  assert.match(estimated, /Total request\s+~50\.6k tokens \(25\.3%\)/);
-});
-
-test("without Pi usage (or null tokens): heuristic fallback uses session characters", () => {
+test("without Pi usage (or null tokens): heuristic fallback over all session chars", () => {
   for (const usage of [undefined, { tokens: null, contextWindow: 200000, percent: null }]) {
     const estimate = buildSessionEstimate(snapshotWith(session, usage))!;
     assert.equal(estimate.totalSource, "heuristic");
-    assert.equal(estimate.totalTokens, Math.ceil((5200 + 1300) / 2.6));
+    assert.equal(estimate.totalTokens, Math.ceil((1200 + 5200 + 1300) / 2.6) + 12000);
+    assert.equal(estimate.thinkingSummaryTokens, Math.ceil(1200 / 2.6));
+    assert.equal(estimate.reasoningTokens, 12000);
+    assert.ok(estimate.unattributedTokens <= 1, "heuristic rounding leaves no material accounting gap");
   }
 });
 
@@ -119,19 +74,61 @@ test("no session → no estimate", () => {
   assert.equal(buildSessionEstimate(snapshotWith(undefined, undefined)), undefined);
 });
 
-test("session estimates do not count reasoning summaries or signatures", () => {
+test("session walk estimates a summary when the provider omits its reasoning breakdown", () => {
   const unreported = SessionManager.inMemory("/tmp/contextimate-unreported-reasoning");
+  const summary = "summary only";
   unreported.appendMessage(assistantMessage([
-    { type: "thinking", thinking: "summary only", thinkingSignature: "opaque-signature".repeat(100) },
+    { type: "thinking", thinking: summary, thinkingSignature: "opaque-signature" },
   ]));
-  assert.equal(buildSessionBreakdown(unreported)!.messageChars, 0);
+  const breakdown = buildSessionBreakdown(unreported)!;
+  assert.equal(breakdown.reasoningTokens, undefined);
+  assert.equal(breakdown.thinkingSummaryChars, summary.length);
+  const rows = stripAnsi(renderSummary(snapshotWith(breakdown, undefined), plainTheme, 120).join("\n"));
+  assert.doesNotMatch(rows, /Reasoning context/, "an absent provider breakdown gets no exact row");
+});
+
+test("reported zero reasoning stays exact while the accounting gap remains separate", () => {
+  const fable = SessionManager.inMemory("/tmp/contextimate-fable-zero-reasoning");
+  fable.appendMessage({ role: "user", content: "hi", timestamp: 1 });
+  fable.appendMessage(assistantMessage(
+    [{ type: "text", text: "Hello! How can I help you today?" }],
+    {
+      model: "claude-fable-5",
+      usage: {
+        input: 2,
+        output: 71,
+        cacheRead: 0,
+        cacheWrite: 30971,
+        reasoning: 0,
+        totalTokens: 31044,
+        cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    },
+  ));
+  const breakdown = buildSessionBreakdown(fable)!;
+  assert.equal(breakdown.reasoningTokens, 0);
+  const rendered = stripAnsi(renderSummary(
+    snapshotWith(breakdown, { tokens: 31044, contextWindow: 200000, percent: 15.5 }),
+    plainTheme,
+    120,
+  ).join("\n"));
+  assert.match(rendered, /Reasoning context\s+0\.0k tokens \(provider\)/);
+  assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
 });
 
 test("Total request keeps the estimate marker when Pi adds trailing local estimates", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith({ ...session, contextUsageEstimated: true }, usage);
   const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
-  assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0%\)/);
+  assert.match(rendered, /Thinking summaries\s+~0\.5k tokens/);
+  assert.match(rendered, /Reasoning context\s+12\.0k tokens \(provider\)/);
+  assert.doesNotMatch(rendered, /Reasoning context\s+~12\.0k/, "exact reasoning has no estimate marker");
+  assert.match(rendered, /Unattributed\s+~\d+\.\dk tokens \(accounting gap\)/);
+  assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0% · Pi est\.\)/);
+  const narrowSessionRows = stripAnsi(renderSummary(snapshot, plainTheme, 80).join("\n"))
+    .split("\n")
+    .filter((line) => /Thinking summaries|Reasoning context|Unattributed|Total session|Total request/.test(line));
+  assert.ok(narrowSessionRows.every((line) => line.length <= 80), "session rows stay inside the narrow panel");
 });
 
 test("token labels align to one shared column width across magnitudes", () => {

@@ -50,15 +50,18 @@ function rendered(lines: string[]): string {
   return normalizeKeyHints(stripAnsi(lines.join("\n")));
 }
 
-test("summary view golden", () => {
+test("summary view goldens at 80 and 120 columns", () => {
   const snapshot = fixtureSnapshot(anthropicModel);
   expectGolden("contextimate-summary-anthropic-80.txt", rendered(renderSummary(snapshot, plainTheme, 80)));
+  expectGolden("contextimate-summary-anthropic-120.txt", rendered(renderSummary(snapshot, plainTheme, 120)));
+  expectGolden("contextimate-summary-codex-100.txt", rendered(renderSummary(fixtureSnapshot(codexModel), plainTheme, 100)));
 });
 
 test("compact view goldens at 80 and 120 columns", () => {
   const snapshot = fixtureSnapshot(anthropicModel);
   expectGolden("contextimate-compact-anthropic-80.txt", rendered(renderCompact(snapshot, plainTheme, 80)));
   expectGolden("contextimate-compact-anthropic-120.txt", rendered(renderCompact(snapshot, plainTheme, 120)));
+  expectGolden("contextimate-compact-codex-100.txt", rendered(renderCompact(fixtureSnapshot(codexModel), plainTheme, 100)));
 });
 
 // The golden normalizes the trailing newline away, so the panel tail spacer

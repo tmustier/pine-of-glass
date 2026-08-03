@@ -41,13 +41,16 @@ The panel renders after Pi's native startup resource list and re-inserts itself 
 
 How to read the numbers:
 
-- every `~` number is an estimate; `Total request` drops it when its parts are exact, and keeps it when trailing messages add a local estimate
+- every `~` number is an estimate; `Total request` drops it only when Pi's current total is fully provider-reported, and keeps it when trailing messages add a local estimate
 - the dim hint line under the header states the counting method once, for example `counts ch ÷ 2.6 (Claude 4.7+ heuristic)`; data rows carry only their raw size, like `(9.2k ch)`
-- the method follows the active model, so switching models re-estimates immediately; Claude 4.7+ models keep that profile through supported Radius and OpenRouter relays
+- the method follows the active model, so switching models re-estimates immediately; named Claude 4.7+ models keep their tokenizer profile through supported Radius and OpenRouter relays
 - the first row says `Runtime system prompt` because Pi assembles that prompt at runtime from its base prompt plus tool and extension contributions; expanded view attributes the part it can verify
 - `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand
 - each expanded tool header shows where the tool came from: its config scope and defining file, or `builtin`
-- on GPT-5.3 to GPT-5.5 Codex, `Total request` includes the earlier reasoning omitted from OpenAI's total
+- `Reasoning context` sums provider-reported exact counts for signed reasoning retained by the response anchoring Pi's total; it follows Claude and OpenAI's model-specific retention defaults
+- Pi's exact prompt total, including cache reads and writes, rejects historical attribution that cannot fit; summaries not covered by exact counts remain estimated separately as `Thinking summaries`
+- opaque signatures are never treated as token-sized text, and cross-model reasoning is not counted as retained
+- `Unattributed` is the remaining accounting gap and can include prefix-estimation error, provider overhead, images and reasoning when the provider reports no breakdown
 
 The panel's visual grammar is the family design language: see `docs/design-language.md`.
 
