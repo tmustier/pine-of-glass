@@ -1,5 +1,3 @@
-// Loss-aware grouping for Traceline's two repetition folds. This module owns only
-// membership and aggregation; index.ts keeps the family rendering grammar.
 import {
   isAssistantRow,
   isToolRow,
@@ -8,7 +6,7 @@ import {
   type ToolRowLike,
 } from "../_lib/chat.ts";
 
-export type FoldRun = { rows: ToolRowLike[]; index: number };
+type FoldRun = { rows: ToolRowLike[]; index: number };
 
 export function combinedResultChars(rows: ToolRowDataLike[]): number | undefined {
   let total: number | undefined;
@@ -18,8 +16,6 @@ export function combinedResultChars(rows: ToolRowDataLike[]): number | undefined
   }
   return total;
 }
-
-type ReadFileGroup = { rows: ToolRowLike[]; breakout: boolean };
 
 export function adjacentReadGroups(rows: ToolRowLike[]): Array<{ path: string; rows: ToolRowLike[] }> {
   const grouped: { path: string; rows: ToolRowLike[] }[] = [];
@@ -32,26 +28,20 @@ export function adjacentReadGroups(rows: ToolRowLike[]): Array<{ path: string; r
   return grouped;
 }
 
-function readFileGroups(rows: ToolRowLike[], warningChars: number): ReadFileGroup[] {
-  return adjacentReadGroups(rows).map((group) => ({
-    rows: group.rows,
-    breakout: (combinedResultChars(group.rows) ?? 0) >= warningChars,
-  }));
-}
-
 export function groupedReadRun(run: FoldRun, warningChars: number): FoldRun | undefined {
   const units: { rows: ToolRowLike[]; start: number; breakout: boolean }[] = [];
   let offset = 0;
-  for (const group of readFileGroups(run.rows, warningChars)) {
+  for (const group of adjacentReadGroups(run.rows)) {
+    const breakout = (combinedResultChars(group.rows) ?? 0) >= warningChars;
     const open = units[units.length - 1];
-    if (!group.breakout && open && !open.breakout) open.rows.push(...group.rows);
-    else units.push({ rows: [...group.rows], start: offset, breakout: group.breakout });
+    if (!breakout && open && !open.breakout) open.rows.push(...group.rows);
+    else units.push({ rows: [...group.rows], start: offset, breakout });
     offset += group.rows.length;
   }
   const unit = units.find((candidate) =>
     run.index >= candidate.start && run.index < candidate.start + candidate.rows.length
-  );
-  if (!unit || unit.rows.length < 2) return undefined;
+  )!;
+  if (unit.rows.length < 2) return undefined;
   return { rows: unit.rows, index: run.index - unit.start };
 }
 
@@ -85,10 +75,10 @@ export function groupedRepetitionRun(
   keyOf: (row: ToolRowLike) => string | undefined,
 ): FoldRun | undefined {
   const key = keyOf(comp);
-  const step = key ? assistantStepRows(comp, siblings) : undefined;
-  if (!key || !step) return undefined;
+  if (!key) return undefined;
+  const step = assistantStepRows(comp, siblings);
+  if (!step) return undefined;
   const self = step.indexOf(comp);
-  if (self < 0) return undefined;
   let start = self;
   let end = self + 1;
   while (start > 0 && step[start - 1]?.expanded !== true) start--;
@@ -96,13 +86,4 @@ export function groupedRepetitionRun(
   const rows = step.slice(start, end).filter((row) => keyOf(row) === key);
   if (rows.length < 2) return undefined;
   return { rows, index: rows.indexOf(comp) };
-}
-
-export function foldedStatus(
-  rows: ToolRowDataLike[],
-  statusOf: (row: ToolRowDataLike) => "success" | "running" | "error",
-): "success" | "running" | "error" {
-  if (rows.some((row) => statusOf(row) === "error")) return "error";
-  if (rows.some((row) => statusOf(row) === "running")) return "running";
-  return "success";
 }

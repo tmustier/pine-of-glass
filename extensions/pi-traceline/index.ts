@@ -45,7 +45,7 @@ import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact } from "./image-fact.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
-import { adjacentReadGroups, combinedResultChars, foldedStatus, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
+import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
 import {
   captureWriteSnapshot,
   diffStatsFromContents,
@@ -1260,9 +1260,9 @@ function sameDirReadRows(comp: ToolRowLike): { rows: ToolRowLike[]; index: numbe
   return { rows, index: selfIndex };
 }
 
-// Recompute read groups as results land so ballooning files never disappear.
 function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
-  const run = sameDirReadRows(comp); return run ? groupedReadRun(run, sizeThresholds.warning) : undefined;
+  const run = sameDirReadRows(comp);
+  return run ? groupedReadRun(run, sizeThresholds.warning) : undefined;
 }
 
 // Reads, mutations, records and images carry facts a generic count cannot preserve.
@@ -1273,18 +1273,20 @@ function repetitionKey(comp: ToolRowLike): string | undefined {
 }
 
 function repetitionRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
-  const found = componentLocation(comp); return found ? groupedRepetitionRun(comp, found.sibs, repetitionKey) : undefined;
+  const found = componentLocation(comp);
+  return found ? groupedRepetitionRun(comp, found.sibs, repetitionKey) : undefined;
 }
 
 function foldedRepetitionLine(rows: ToolRowLike[], width: number): string {
   const carrier = rows[0]!;
-  const display = rows.find((row) => toolStatus(row) === "error") ?? carrier;
+  const failed = rows.find((row) => toolStatus(row) === "error");
+  const status = failed ? "error" : rows.some((row) => toolStatus(row) === "running") ? "running" : "success";
   const blockRows = blockToolRows(carrier);
   const facts = blockFacts(blockRows);
   const available = traceRowAvailable(width);
-  const body = `${invocationInk(display, available)}${dim(` ×${rows.length}`)}`;
+  const body = `${invocationInk(failed ?? carrier, available)}${dim(` ×${rows.length}`)}`;
   const suffix = charSuffix(combinedResultChars(rows), facts.sizeColumnLive);
-  return fitTraceRow(carrier, foldedStatus(rows, toolStatus), body, suffix,
+  return fitTraceRow(carrier, status, body, suffix,
     blockSuffixReserve(blockRows, facts, available), width);
 }
 
@@ -1646,8 +1648,6 @@ export const internals = {
   foldBashPreamble,
   previousBashRow,
   readRun,
-  repetitionRun,
-  foldedRepetitionLine,
   dedupeThinkingLabels,
   // typed test/dev accessors for traceline's Pi seam globals
   setTracelineChat,

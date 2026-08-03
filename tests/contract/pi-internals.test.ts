@@ -116,8 +116,7 @@ test("startup resource list still renders [Section] headers contextimate anchors
 });
 
 // ---------------------------------------------------------------------------------------
-// Real interactive components vs traceline's duck types and prototype patch points.
-
+// Interactive components used through Traceline's duck types.
 test("real ToolExecutionComponent satisfies traceline's duck type and one-line path", () => {
   pi.initTheme(undefined, false);
   const comp = new pi.ToolExecutionComponent(
@@ -131,12 +130,12 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   );
 
   assert.equal(traceline.isToolRow(comp), true, "ToolExecutionComponent no longer matches isToolRow (render/setExpanded/toolName)");
+  assert.equal((comp as unknown as { toolCallId?: unknown }).toolCallId, "tool-1", "toolCallId no longer mirrors the call ID");
 
   const proto = Object.getPrototypeOf(comp) as { render?: unknown };
   const descriptor = Object.getOwnPropertyDescriptor(proto, "render");
   assert.ok(descriptor && (descriptor.writable ?? false), "prototype render not writable — traceline patch cannot install");
 
-  // ≥100 ch so the result-size suffix appears (traceline omits it below the fact floor).
   comp.updateResult({ content: [{ type: "text", text: "hello world ".repeat(20) }], isError: false }, false);
   assert.equal(traceline.toolStatus(comp as never), "success", "result/isPartial fields drifted — status colours break");
 
@@ -145,8 +144,6 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   assert.ok(visible.includes("read"), `one-line render lost the invocation: ${JSON.stringify(visible)}`);
   assert.ok(/\b0\.2k ch$/.test(visible.trimEnd()), `result-size suffix missing: ${JSON.stringify(visible)}`);
 
-  // A distinct execution reaches the error state; a settled successful component is
-  // never updated to a second final result by Pi's event stream.
   const errorComp = new pi.ToolExecutionComponent(
     "read",
     "tool-error",
@@ -172,8 +169,6 @@ test("real ToolExecutionComponent: bash multiline render seam", () => {
     tmpdir(),
   );
 
-  // Multiline commands render one line per real newline, timeout suffix on the last —
-  // the shape flattenInvocationLines + stripTimeoutSuffix assume (issue #10).
   const callComp = (comp as unknown as { callRendererComponent?: { render?: (w: number) => string[] } }).callRendererComponent;
   assert.ok(callComp && typeof callComp.render === "function", "bash callRendererComponent gone — one-line path falls back");
   const lines = callComp.render(10_000);
@@ -184,11 +179,16 @@ test("real ToolExecutionComponent: bash multiline render seam", () => {
   assert.ok(flat.includes("echo done"), `flattened bash row lost its tail: ${flat}`);
 });
 
-test("real AssistantMessageComponent satisfies traceline's assistant duck type", () => {
-  const component = new pi.AssistantMessageComponent(assistantMessage([{ type: "text", text: "hi" }]));
+test("real AssistantMessageComponent preserves its tool-call link and duck type", () => {
+  const component = new pi.AssistantMessageComponent(assistantMessage([
+    { type: "toolCall", id: "tool-1", name: "read", arguments: { path: "/tmp/contract-fixture.txt" } },
+  ]));
   assert.equal(traceline.isAssistantRow(component), true, "AssistantMessageComponent no longer matches isAssistantRow");
-  // hideThinkingBlock is declared private but traceline reads it duck-typed at runtime.
-  const peek = component as unknown as { hideThinkingBlock: boolean };
+  const peek = component as unknown as {
+    hideThinkingBlock: boolean;
+    lastMessage?: { content?: Array<{ id?: unknown }> };
+  };
+  assert.equal(peek.lastMessage?.content?.[0]?.id, "tool-1", "assistant tool-call ID no longer links to its execution row");
   assert.equal(peek.hideThinkingBlock, false);
   component.setHideThinkingBlock(true);
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");

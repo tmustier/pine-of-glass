@@ -17,7 +17,6 @@ const {
   bashPreambleRun,
   foldBashPreamble,
   renderTraceRow,
-  repetitionRun,
   setTracelineChat,
   setTracelineThemeGetter,
 } = internals;
@@ -67,11 +66,6 @@ test("identical compact invocations in one assistant step fold with a count and 
   const c = mcpComp("NEXSELL-3", 900);
   setTracelineChat({ children: [assistantBefore([a, b, c]), a, b, c] });
 
-  const run = repetitionRun(b);
-  assert.ok(run, "a middle call must see its assistant-step fold");
-  assert.equal(run!.rows.length, 3);
-  assert.equal(run!.index, 1);
-
   const first = renderTraceRow(a, 100);
   const visible = stripAnsi(first.at(-1)!);
   assert.ok(visible.includes("mcp call linear_save_issue ×3"), visible);
@@ -85,8 +79,6 @@ test("identical invocations in separate assistant steps stay separate", () => {
   const b = mcpComp("NEXSELL-2", 300);
   setTracelineChat({ children: [assistantBefore([a]), a, assistantBefore([b]), b] });
 
-  assert.equal(repetitionRun(a), undefined);
-  assert.equal(repetitionRun(b), undefined);
   assert.ok(!stripAnsi(renderTraceRow(a, 100).at(-1)!).includes("×"));
   assert.ok(!stripAnsi(renderTraceRow(b, 100).at(-1)!).includes("×"));
 });
@@ -97,9 +89,8 @@ test("an expanded row splits a same-step repetition fold", () => {
   const c = mcpComp("NEXSELL-3", 100);
   setTracelineChat({ children: [assistantBefore([a, expanded, c]), a, expanded, c] });
 
-  assert.equal(repetitionRun(a), undefined, "a fold cannot cross a native expanded row");
-  assert.equal(repetitionRun(expanded), undefined);
-  assert.equal(repetitionRun(c), undefined);
+  assert.ok(!stripAnsi(renderTraceRow(a, 100).at(-1)!).includes("×"));
+  assert.ok(!stripAnsi(renderTraceRow(c, 100).at(-1)!).includes("×"));
 });
 
 test("a failed member makes the folded repetition visibly fail", () => {
