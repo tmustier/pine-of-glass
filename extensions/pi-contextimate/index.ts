@@ -11,7 +11,7 @@ import { compactCount } from "../_lib/fmt.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import { BUILT_IN_HEURISTIC_RULES, type BuiltInHeuristicRule } from "./model-heuristics.ts";
 import {
-  buildSessionBreakdown, accountProviderContext, estimateSessionBreakdown,
+  buildSessionBreakdown, correctedContextTokens, estimateSessionBreakdown,
   type SessionBreakdown,
   type SessionEstimate,
   type SessionSource,
@@ -1252,55 +1252,39 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
   if (!snapshot.session) return [];
   const estimate = buildSessionEstimate(snapshot)!;
   const sessionShare = ctxShareLabel(estimate.totalTokens, snapshot.contextUsage, { estimate: true });
-  const provenance = estimate.totalSource === "pi" ? "Pi-based" : "heuristic fallback";
+  const provenance = estimate.totalSource === "pi" ? "Pi current - harness" : "heuristic fallback";
   const rows = [
     "",
     renderMetricRow({ label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(snapshot.session.toolOutputChars) }, theme, layout),
     renderMetricRow({ label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars) }, theme, layout),
-  ];
-  if (estimate.thinkingSummaryTokens > 0) {
-    rows.push(renderMetricRow({
-      label: "Thinking summaries",
-      tokens: estimate.thinkingSummaryTokens,
-      detail: countDetail(snapshot.session.thinkingSummaryChars),
-    }, theme, layout));
-  }
-  if (estimate.reasoningTokens !== undefined) {
-    rows.push(renderMetricRow({
-      label: "Reasoning context",
-      tokens: estimate.reasoningTokens,
-      exact: true,
-      detail: "(provider)",
-    }, theme, layout));
-  }
-  rows.push(
-    renderMetricRow({ label: "Unattributed", tokens: estimate.unattributedTokens, detail: "(accounting gap)" }, theme, layout),
+    renderMetricRow({ label: "Other / reasoning", tokens: estimate.otherTokens, detail: "(residual)" }, theme, layout),
     renderMetricRow({
       label: "Total session",
       tokens: estimate.totalTokens,
       emphasis: true,
       detail: sessionShare ? `(${sessionShare} · ${provenance})` : `(${provenance})`,
     }, theme, layout),
-  );
+  ];
   const usage = snapshot.contextUsage;
-  const request = accountProviderContext(snapshot.session, usage?.tokens);
-  if (usage && request) {
+  const requestTokens = correctedContextTokens(snapshot.session, usage?.tokens);
+  if (usage && requestTokens !== undefined) {
     const percent = usage.contextWindow > 0
-      ? `${((request.tokens / usage.contextWindow) * 100).toFixed(1)}%`
+      ? `${((requestTokens / usage.contextWindow) * 100).toFixed(1)}%`
       : undefined;
     const usageEstimated = snapshot.session.contextUsageEstimated;
     const context = percent && !usageEstimated
       ? `${percent} / ${contextWindowLabel(usage.contextWindow)} ctx`
       : percent;
-    const provenance = request.corrected
-      ? `Pi${usageEstimated ? " est." : ""} + prior reasoning`
-      : usageEstimated ? "Pi est." : "";
-    const detail = `(${[context, provenance].filter(Boolean).join(" · ") || "Pi usage"})`;
-    const compactDetail = `(${[percent, provenance.replace(" reasoning", "")].filter(Boolean).join(" · ") || "Pi usage"})`;
-    const metric = { label: "Total request", tokens: request.tokens, exact: !usageEstimated, emphasis: true, detail };
-    const requestRow = renderMetricRow(metric, theme, layout);
-    rows.push(stripAnsi(requestRow).length <= width ? requestRow : renderMetricRow({ ...metric, detail: compactDetail }, theme, layout));
-    rows.push(...(usage.contextWindow > 0 ? renderContextBar(snapshot, usage, estimate, request.tokens, theme, width) : []));
+    rows.push(renderMetricRow({
+      label: "Total request",
+      tokens: requestTokens,
+      exact: !usageEstimated,
+      emphasis: true,
+      detail: `(${context ?? "Pi usage"})`,
+    }, theme, layout));
+    rows.push(...(usage.contextWindow > 0
+      ? renderContextBar(snapshot, usage, estimate, requestTokens, theme, width)
+      : []));
   }
   return rows;
 }
@@ -1312,12 +1296,10 @@ function summaryTokenLayout(snapshot: PrefixSnapshot): TokenLabelLayout {
     sessionEstimate.totalTokens,
     sessionEstimate.toolOutputTokens,
     sessionEstimate.messageTokens,
-    sessionEstimate.thinkingSummaryTokens,
-    sessionEstimate.unattributedTokens,
+    sessionEstimate.otherTokens,
   );
-  if (sessionEstimate?.reasoningTokens !== undefined) values.push(sessionEstimate.reasoningTokens);
-  const request = accountProviderContext(snapshot.session, snapshot.contextUsage?.tokens);
-  if (request) values.push(request.tokens);
+  const requestTokens = correctedContextTokens(snapshot.session, snapshot.contextUsage?.tokens);
+  if (requestTokens !== undefined) values.push(requestTokens);
   return tokenLabelLayout(values);
 }
 

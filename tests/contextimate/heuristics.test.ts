@@ -4,10 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
-import {
-  codexUsageOmitsHistoricalReasoning,
-  keepsAllClaudeThinking,
-} from "../../extensions/pi-contextimate/model-heuristics.ts";
+import { codexNeedsReasoningCorrection } from "../../extensions/pi-contextimate/model-heuristics.ts";
 import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
 
@@ -26,40 +23,23 @@ test("no model, no config → chars/4 fallback with openai-responses shape", () 
   assert.equal(h.toolNumerator, "openai-responses");
 });
 
-test("Claude thinking-retention boundaries follow Anthropic's model policy", () => {
-  for (const keepAll of [
-    "claude-opus-4-5",
-    "claude-sonnet-4-6",
-    "claude-fable-5",
-    "anthropic.claude-mythos-preview-v1:0",
-  ]) assert.equal(keepsAllClaudeThinking(keepAll), true, keepAll);
-  for (const lastTurnOnly of [
-    "claude-opus-4-4",
-    "claude-sonnet-4-5",
-    "claude-3-7-sonnet-20250219",
-    "claude-haiku-4-5",
-  ]) assert.equal(keepsAllClaudeThinking(lastTurnOnly), false, lastTurnOnly);
-});
-
 test("Codex corrects only the measured GPT-5.3 to GPT-5.5 family", () => {
-  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.3"), true);
-  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.4-mini"), true);
-  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.5"), true);
-  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5.6-sol"), false);
-  assert.equal(codexUsageOmitsHistoricalReasoning("gpt-5"), false);
-  assert.equal(codexUsageOmitsHistoricalReasoning("o3"), false);
+  assert.equal(codexNeedsReasoningCorrection("gpt-5.3"), true);
+  assert.equal(codexNeedsReasoningCorrection("gpt-5.4-mini"), true);
+  assert.equal(codexNeedsReasoningCorrection("gpt-5.5"), true);
+  assert.equal(codexNeedsReasoningCorrection("gpt-5.6-sol"), false);
 });
 
 test("built-in model routing boundaries", () => {
-  // Modern Claude tokenizer family, including explicit relays.
-  assert.equal(resolveHeuristic(anthropicModel, {}).label, "Modern Claude heuristic");
+  // Claude 4.7+ tokenizer family, including explicit relays.
+  assert.equal(resolveHeuristic(anthropicModel, {}).label, "Claude 4.7+ heuristic");
   assert.equal(resolveHeuristic(anthropicModel, {}).textDenominator, 2.6);
-  for (const modern of [
+  for (const claude47Plus of [
     model("anthropic", "claude-fable-5", "anthropic-messages"),
     model("anthropic", "claude-opus-5", "anthropic-messages"),
     model("radius", "claude-opus-4-8", "pi-messages"),
     model("openrouter", "anthropic/claude-fable-5:batch", "openai-completions"),
-  ]) assert.equal(resolveHeuristic(modern, {}).label, "Modern Claude heuristic");
+  ]) assert.equal(resolveHeuristic(claude47Plus, {}).label, "Claude 4.7+ heuristic");
   assert.equal(
     resolveHeuristic(model("openrouter", "anthropic/claude-fable-5", "openai-completions"), {}).toolNumerator,
     "openai-chat",
@@ -86,11 +66,11 @@ test("built-in model routing boundaries", () => {
   assert.equal(resolveHeuristic(model("openai", "gpt-5.5", "openai-responses"), {}).label, "OpenAI Responses heuristic");
   assert.equal(resolveHeuristic(model("google", "gemini-2.5-pro", "google-generative-ai"), {}).toolNumerator, "gemini");
   assert.equal(resolveHeuristic(model("bedrock", "claude-x", "bedrock-converse-stream"), {}).label, "Bedrock heuristic");
-  const bedrockModern = resolveHeuristic(model("amazon-bedrock", "claude-opus-4-8", "bedrock-converse-stream"), {});
-  assert.equal(bedrockModern.label, "Modern Claude on Bedrock heuristic");
-  assert.equal(bedrockModern.textDenominator, 2.6, "Bedrock Claude keeps its model tokenizer");
-  assert.equal(bedrockModern.toolDenominator, 4, "Bedrock Claude keeps its provider payload shape");
-  assert.equal(bedrockModern.toolNumerator, "bedrock");
+  const bedrock47Plus = resolveHeuristic(model("amazon-bedrock", "claude-opus-4-8", "bedrock-converse-stream"), {});
+  assert.equal(bedrock47Plus.label, "Claude 4.7+ on Bedrock heuristic");
+  assert.equal(bedrock47Plus.textDenominator, 2.6, "Bedrock Claude keeps its model tokenizer");
+  assert.equal(bedrock47Plus.toolDenominator, 4, "Bedrock Claude keeps its provider payload shape");
+  assert.equal(bedrock47Plus.toolNumerator, "bedrock");
   assert.equal(
     resolveHeuristic(model("amazon-bedrock", "us.anthropic.claude-opus-4-6-v1", "bedrock-converse-stream"), {}).label,
     "Claude 4.5/4.6 on Bedrock heuristic",
@@ -153,7 +133,7 @@ test("unknown provider keeps a defined label (regression: renderHeader crash)", 
     profiles: { quiet: { textDenominator: 5 } },
     rules: [{ match: { provider: "anthropic" }, profile: "quiet" }],
   });
-  assert.equal(profiled.label, "Modern Claude heuristic", "label survives a label-less profile patch");
+  assert.equal(profiled.label, "Claude 4.7+ heuristic", "label survives a label-less profile patch");
 });
 
 test("cleanDenominator rejects non-finite/non-positive values", () => {

@@ -2,15 +2,11 @@
 
 ## Unreleased
 
-- **Contextimate: recognise the modern Claude tokenizer across routes.** Fable 5,
-  Opus 5 and explicit modern Claude models relayed through Radius or OpenRouter now
-  use the same measured text profile as Claude 4.7/4.8. Tool payloads remain
-  route-specific.
-- **Contextimate: make accounting uncertainty visible.** `Reasoning context` shows
-  exact retained reasoning, `Thinking summaries` shows estimates and `Unattributed`
-  shows the remaining accounting gap. Contextimate corrects tested GPT-5.3 to GPT-5.5
-  Codex totals that omit prior reasoning; GPT-5.6 totals are already complete. Pi's native context
-  display and compaction are unchanged.
+- **Contextimate: extend the Claude 4.7+ heuristic.** Fable 5, Opus 5 and
+  explicit Radius or OpenRouter relays now use the same measured text ratio.
+- **Contextimate: correct Codex context totals.** GPT-5.3 to GPT-5.5 omit
+  earlier reasoning from reported usage. Contextimate now adds Pi's exact stored count.
+  GPT-5.6 is unchanged.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled
   calibration.

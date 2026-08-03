@@ -42,14 +42,12 @@ The panel renders after Pi's native startup resource list and re-inserts itself 
 How to read the numbers:
 
 - every `~` number is an estimate; `Total request` drops it when its parts are exact, and keeps it when trailing messages add a local estimate
-- the dim hint line under the header states the counting method once, for example `counts ch ÷ 2.6 (Modern Claude heuristic)`; data rows carry only their raw size, like `(9.2k ch)`
-- the method follows the active model, so switching models re-estimates immediately; named modern Claude models keep their tokenizer profile through supported Radius and OpenRouter relays
+- the dim hint line under the header states the counting method once, for example `counts ch ÷ 2.6 (Claude 4.7+ heuristic)`; data rows carry only their raw size, like `(9.2k ch)`
+- the method follows the active model, so switching models re-estimates immediately; Claude 4.7+ models keep that profile through supported Radius and OpenRouter relays
 - the first row says `Runtime system prompt` because Pi assembles that prompt at runtime from its base prompt plus tool and extension contributions; expanded view attributes the part it can verify
 - `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand
 - each expanded tool header shows where the tool came from: its config scope and defining file, or `builtin`
-- `Reasoning context` uses exact provider counts; `Thinking summaries` remains estimated
-- Contextimate corrects tested GPT-5.3 to GPT-5.5 Codex totals that omit prior reasoning; Pi's native context display and compaction are unchanged
-- `Unattributed` is the remaining accounting gap, not an estimate of reasoning
+- on GPT-5.3 to GPT-5.5 Codex, `Total request` includes the earlier reasoning omitted from OpenAI's total
 
 The panel's visual grammar is the family design language: see `docs/design-language.md`.
 

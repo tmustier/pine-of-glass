@@ -116,11 +116,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   earlier. `parseContextimateConfig` drops non-positive JSON denominators before
   resolution; `cleanDenominator` remains the defensive pure boundary for direct patches.
   This is user-configurable surface; precedence bugs misprice every row.
-- **Built-in rule matching**: boundary table: `claude-opus-4-8`, Fable 5 and the
-  named Claude 5 families → modern Claude rule; explicit Radius/OpenRouter relays keep
-  that tokenizer while Bedrock keeps its payload shape; `claude-sonnet-4-5` → 4.5/4.6
-  rule; other anthropic → generic; `openai-codex` vs `openai` vs `mistral` vs `gemini`
-  vs `bedrock` routing by provider/api.
+- **Built-in rule matching**: boundary table: `claude-opus-4-8`, Fable 5 and Opus 5
+  → Claude 4.7+ rule, including explicit Radius/OpenRouter relays;
+  `claude-sonnet-4-5` → 4.5/4.6 rule; other anthropic → generic; remaining providers
+  route by provider/API.
 - **Tool payload shaping**: for one frozen `ToolSummary` fixture, the exact JSON emitted
   per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`),
   the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to
@@ -138,10 +137,9 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   unescaped names, wrapper-chars math (`content − Σ skill chars ≥ 0`); prompt *without*
   skills/context blocks degrades to a single system section.
 - **Session estimate math** (`buildSessionEstimate`): with `contextUsage` → totalSource
-  `"pi"`, `unattributed = total − tools − messages − uncovered thinking summaries −
-  exact retained reasoning` clamped ≥ 0; without → heuristic fallback. Fixtures cover
-  provider retention boundaries, model changes, signed Gemini carriers, missing
-  breakdowns, trailing estimates and the measured GPT-5.3 to GPT-5.5 Codex correction.
+  `"pi"`, `other = total − tools − messages` clamped ≥ 0; without → heuristic fallback.
+  Focused tests cover the GPT-5.3 to GPT-5.5 Codex correction and its identity and
+  encrypted-carrier checks.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.
