@@ -1283,7 +1283,7 @@ function renderSessionRows(snapshot: PrefixSnapshot, theme: Theme, width: number
   }
   if (estimate.reasoningTokens !== undefined) {
     rows.push(renderMetricRow({
-      label: "Reasoning output",
+      label: "Reasoning context",
       tokens: estimate.reasoningTokens,
       exact: true,
       detail: "(provider)",

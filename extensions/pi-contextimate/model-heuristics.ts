@@ -26,6 +26,25 @@ const CLAUDE_RELAYED_MODEL_ROUTES = [
 const MODERN_CLAUDE_MODEL = /claude.*(?:4[-.]?[78]|(?:fable|opus|sonnet|haiku)[-.]?5(?:$|[:.-]))|4[-.]?[78].*claude/;
 const CLAUDE_45_46_MODEL = /claude.*4[-.]?[56]|4[-.]?[56].*claude/;
 
+function familyAtLeast(modelId: string, family: string, major: number, minor: number): boolean {
+  const versionPattern = `${family}[-.]?(\\d{1,2})(?:[-.](\\d{1,2}))?(?=$|[-.:@])`;
+  const version = modelId.toLowerCase().match(new RegExp(versionPattern));
+  if (!version) return false;
+  const foundMajor = Number(version[1]);
+  const foundMinor = Number(version[2] ?? 0);
+  return foundMajor > major || (foundMajor === major && foundMinor >= minor);
+}
+
+/** Anthropic's default keep-all policy; Pi passes same-model signed blocks back intact. */
+export function keepsAllClaudeThinking(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return familyAtLeast(id, "opus", 4, 5)
+    || familyAtLeast(id, "sonnet", 4, 6)
+    || familyAtLeast(id, "fable", 5, 0)
+    || familyAtLeast(id, "mythos", 5, 0)
+    || /mythos[-.]?preview/.test(id);
+}
+
 export const BUILT_IN_HEURISTIC_RULES: BuiltInHeuristicRule[] = [
   {
     label: "Modern Claude heuristic",

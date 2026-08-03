@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
+import { keepsAllClaudeThinking } from "../../extensions/pi-contextimate/model-heuristics.ts";
 import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
 
@@ -20,6 +21,28 @@ test("no model, no config → chars/4 fallback with openai-responses shape", () 
   assert.equal(h.sessionDenominator, 4);
   assert.equal(h.toolDenominator, 4);
   assert.equal(h.toolNumerator, "openai-responses");
+});
+
+test("Claude thinking-retention boundaries follow Anthropic's model policy", () => {
+  for (const keepAll of [
+    "claude-opus-4-5",
+    "claude-opus-4-5-20251101",
+    "claude-opus-5",
+    "claude-sonnet-4-6",
+    "anthropic.claude-sonnet-4-6-20250514-v1:0",
+    "claude-fable-5",
+    "claude-mythos-5",
+    "anthropic.claude-mythos-preview-v1:0",
+  ]) assert.equal(keepsAllClaudeThinking(keepAll), true, keepAll);
+  for (const lastTurnOnly of [
+    "claude-opus-4-4",
+    "claude-opus-4-20250514",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-20250514",
+    "claude-3-7-sonnet-20250219",
+    "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    "claude-haiku-4-5",
+  ]) assert.equal(keepsAllClaudeThinking(lastTurnOnly), false, lastTurnOnly);
 });
 
 test("built-in model routing boundaries", () => {

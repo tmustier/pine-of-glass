@@ -64,15 +64,19 @@ The session split anchors on that total and claims only what it can count:
 ```text
 Tool outputs:        y         estimated from provider-shaped tool output chars
 Messages:            z         estimated from visible message text and tool-call structure
-Thinking summaries:  s         estimated from replayed summaries not covered by exact reasoning
-Reasoning output:    r         exact usage.reasoning from the provider response anchoring Pi's total
+Thinking summaries:  s         estimated from summaries not covered by exact retained reasoning
+Reasoning context:   r         exact reported reasoning retained in the anchored request
 Unattributed:        x-y-z-s-r remaining accounting gap
 Total session:       x         Pi's total minus the estimated static prefix
 ```
 
-The `thinking` text saved by Pi can be a provider-generated summary, not the model's full internal reasoning. Contextimate therefore never estimates reasoning from that text or from an opaque signature. `Reasoning output` uses only the exact `usage.reasoning` breakdown on the same latest trusted assistant response that anchors Pi's total. It is not a cumulative session sum: reasoning generated on earlier calls is not necessarily replayed into the current context. A reported zero is shown as exact; if the provider supplies no breakdown, the row is omitted.
+The `thinking` text saved by Pi can be a provider-generated summary, not the model's full internal reasoning. Contextimate therefore never estimates reasoning from that text or from an opaque signature. `Reasoning context` sums exact `usage.reasoning` values that remain in the provider usage anchoring Pi's total. The current response's reasoning is included as output. Earlier responses are included as input only for verified retention paths, and only when their provider, API and model exactly match the anchor, which is the identity check Pi uses when replaying them. A reported zero is shown as exact.
 
-Claude summaries that Pi sends back in context, including through relays, are estimated separately as `Thinking summaries`. A summary on the anchored response is excluded only when exact reasoning was reported, so it is not counted again beside exact reasoning output; without a provider breakdown it stays in the summary estimate. Opaque OpenAI/Codex reasoning carriers and redacted signatures are never converted from bytes or characters into supposed token counts. Claude can also omit prior thinking outside tool-use continuations, so the heuristic fallback is not a billing forecast.
+Retention is model-specific and knowable. Anthropic's [thinking block preservation policy](https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-block-preservation-by-model) keeps all prior thinking turns for Claude Opus 4.5 and later Opus models, Sonnet 4.6 and later Sonnet models, Fable 5, Mythos 5 and Mythos Preview. Contextimate sums every reported same-model reasoning count on the active path for those models, including supported relays and Bedrock routes. Earlier Claude families keep only reasoning from the current assistant turn because the API strips older blocks. Compaction naturally removes reasoning that is no longer on Pi's active message path.
+
+OpenAI Responses and Codex histories also accumulate exact reported reasoning when Pi has a signed reasoning item to replay for the same provider, API and model. An ordinary OpenAI text item id is not a reasoning carrier. Other providers' historical reasoning stays unattributed until its retained-token semantics are measured; the current response's exact reported reasoning still appears.
+
+Summaries not covered by exact retained reasoning are estimated separately as `Thinking summaries`. This includes Claude thinking that Pi converts to ordinary text after a model change, and a current block whose session usage has no reasoning breakdown. Opaque carriers and redacted signatures are never converted from bytes or characters into supposed token counts. Missing provider breakdowns remain part of `Unattributed` rather than becoming estimated reasoning.
 
 `Unattributed` is the remaining accounting gap, not a diagnosis. It can absorb static-prefix estimation error, provider overhead, images, opaque replay carriers and reasoning when the provider supplies no breakdown. In particular, a large gap does not claim that the model used that many reasoning tokens.
 

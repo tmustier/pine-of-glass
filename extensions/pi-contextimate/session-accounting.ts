@@ -1,9 +1,17 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { keepsAllClaudeThinking } from "./model-heuristics.ts";
+
+const OPENAI_REASONING_REPLAY_APIS = new Set([
+  "openai-responses",
+  "azure-openai-responses",
+  "openai-codex-responses",
+]);
 
 export type SessionBreakdown = {
   thinkingSummaryChars: number;
-  /** Exact provider-reported reasoning for the assistant usage anchoring Pi's total. */
+  /** Exact reported reasoning retained in the provider usage anchoring Pi's total. */
   reasoningTokens?: number;
   toolOutputChars: number;
   messageChars: number;
@@ -82,6 +90,19 @@ function countToolCallContent(block: unknown): number {
   return safeJson({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }).length;
 }
 
+function reportedReasoning(message: AssistantMessage): number | undefined {
+  const tokens = message.usage.reasoning;
+  return typeof tokens === "number" && Number.isFinite(tokens) && tokens >= 0 ? tokens : undefined;
+}
+
+function sameModel(left: AssistantMessage, right: AssistantMessage): boolean {
+  return left.provider === right.provider && left.api === right.api && left.model === right.model;
+}
+
+function hasReasoningCarrier(message: AssistantMessage): boolean {
+  return message.content.some((block) => block.type === "thinking" && Boolean(block.thinkingSignature));
+}
+
 export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
   if (!sessionManager) return undefined;
   // Session entries are arbitrary historical content; a malformed session should cost
@@ -98,6 +119,7 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       messageCount: messages.length,
       contextUsageEstimated: true,
     };
+    const trustedAssistantIndices: number[] = [];
     let lastTrustedUsageIndex = -1;
     for (let index = 0; index < llmMessages.length; index++) {
       const message = llmMessages[index]!;
@@ -105,16 +127,52 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       const usage = message.usage;
       const usageTokens = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
       if (message.stopReason !== "aborted" && message.stopReason !== "error" && usageTokens > 0) {
+        trustedAssistantIndices.push(index);
         lastTrustedUsageIndex = index;
       }
     }
-    if (lastTrustedUsageIndex >= 0) {
-      const anchored = llmMessages[lastTrustedUsageIndex]!;
-      if (anchored.role === "assistant" && typeof anchored.usage.reasoning === "number"
-        && Number.isFinite(anchored.usage.reasoning) && anchored.usage.reasoning >= 0) {
-        breakdown.reasoningTokens = anchored.usage.reasoning;
+
+    // Pi sends signed reasoning back intact only for an exact provider/API/model match.
+    // The latest response's reasoning is current output. Earlier exact counts are added
+    // only where the provider documents retained reasoning as input: Anthropic's
+    // model-specific policy and OpenAI Responses reasoning-item replay.
+    const exactReasoningIndices = new Set<number>();
+    const strippedThinkingIndices = new Set<number>();
+    let exactReasoningTokens = 0;
+    let hasExactReasoning = false;
+    const anchor = llmMessages[lastTrustedUsageIndex];
+    if (anchor?.role === "assistant") {
+      let turnStart = 0;
+      for (let index = 0; index < lastTrustedUsageIndex; index++) {
+        if (llmMessages[index]!.role === "user") turnStart = index + 1;
+      }
+      const anchorIsClaude = anchor.api === "anthropic-messages"
+        || anchor.model.toLowerCase().includes("claude");
+      const keepsRetainedHistory = anchorIsClaude
+        ? keepsAllClaudeThinking(anchor.model)
+        : OPENAI_REASONING_REPLAY_APIS.has(anchor.api);
+      const historyStart = keepsRetainedHistory
+        ? 0
+        : anchorIsClaude
+          ? turnStart
+          : lastTrustedUsageIndex;
+      for (const index of trustedAssistantIndices) {
+        if (index > lastTrustedUsageIndex) continue;
+        const message = llmMessages[index]!;
+        if (message.role !== "assistant" || !sameModel(message, anchor)) continue;
+        if (index < historyStart) {
+          if (anchorIsClaude) strippedThinkingIndices.add(index);
+          continue;
+        }
+        if (index !== lastTrustedUsageIndex && !hasReasoningCarrier(message)) continue;
+        const tokens = reportedReasoning(message);
+        if (tokens === undefined) continue;
+        exactReasoningTokens += tokens;
+        hasExactReasoning = true;
+        exactReasoningIndices.add(index);
       }
     }
+    if (hasExactReasoning) breakdown.reasoningTokens = exactReasoningTokens;
 
     for (let index = 0; index < llmMessages.length; index++) {
       const message = llmMessages[index]!;
@@ -126,15 +184,13 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
         for (const block of message.content) {
           if (block.type === "thinking") {
             // Thinking text is a provider-generated summary, not the full reasoning.
-            // Earlier Claude summaries are replayed as context; opaque signatures are
-            // never treated as token-sized text. When reported, the anchored response
-            // uses exact usage.reasoning instead, avoiding a second summary estimate.
+            // Estimate summaries only when exact retained reasoning does not already
+            // cover the block; opaque signatures are never treated as token-sized text.
             const claudeSummary = message.api === "anthropic-messages"
               || message.model.toLowerCase().includes("claude");
             const plainSummary = !block.thinkingSignature;
-            const coveredByExactReasoning = index === lastTrustedUsageIndex
-              && breakdown.reasoningTokens !== undefined;
-            if (!coveredByExactReasoning && !block.redacted && (claudeSummary || plainSummary)) {
+            if (!strippedThinkingIndices.has(index) && !exactReasoningIndices.has(index)
+              && !block.redacted && (claudeSummary || plainSummary)) {
               breakdown.thinkingSummaryChars += (block.thinking ?? "").length;
             }
           } else if (block.type === "toolCall") {

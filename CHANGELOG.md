@@ -8,11 +8,13 @@
   shape.
 - **Contextimate: make accounting uncertainty visible.** The former
   `Other / reasoning` residual is now `Unattributed`, so static-prefix error cannot
-  masquerade as model reasoning. `Reasoning output` reads the exact
-  `usage.reasoning` value from the provider response anchoring Pi's total, including
-  reported zero, while replayed provider summaries not covered by an exact count remain
-  a clearly estimated `Thinking summaries` row. Opaque signatures are never sized as
-  reasoning tokens.
+  masquerade as model reasoning. `Reasoning context` sums exact `usage.reasoning`
+  values for signed blocks retained by the provider response anchoring Pi's total,
+  including reported zero. Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet
+  4.6+ histories follow Anthropic's keep-all policy; older Claude families keep only
+  the current assistant turn. Signed OpenAI Responses and Codex history also accumulates
+  exact reported reasoning. Summaries not covered by exact counts remain a clearly
+  estimated `Thinking summaries` row, and opaque signatures are never sized as tokens.
   `Total request` keeps `~` when Pi includes local estimates for trailing messages.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled

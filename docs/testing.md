@@ -138,13 +138,13 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   unescaped names, wrapper-chars math (`content − Σ skill chars ≥ 0`); prompt *without*
   skills/context blocks degrades to a single system section.
 - **Session estimate math** (`buildSessionEstimate`): with `contextUsage` → totalSource
-  `"pi"`, `unattributed = total − tools − messages − earlier thinking summaries − exact
-  anchored reasoning` clamped ≥ 0; without → heuristic fallback. The session walk reads
-  only the last trusted assistant's provider-reported `usage.reasoning`, including zero,
-  rather than summing calls or estimating reasoning from summary text and opaque
-  signatures. Replayed Claude summaries remain a separate context estimate unless exact
-  anchored reasoning covers them, and messages trailing the provider anchor keep Pi's
-  total estimated.
+  `"pi"`, `unattributed = total − tools − messages − uncovered thinking summaries −
+  exact retained reasoning` clamped ≥ 0; without → heuristic fallback. The session walk
+  sums provider-reported `usage.reasoning`, including zero, on verified Anthropic and
+  OpenAI Responses retention paths under Pi's exact provider/API/model identity. Boundary
+  fixtures pin Anthropic's keep-all families, date-suffixed older ids, last-turn-only
+  models, model changes, relays, OpenAI text-item ids, missing breakdowns and trailing
+  local estimates. Summary text and opaque signatures never become estimated reasoning.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.

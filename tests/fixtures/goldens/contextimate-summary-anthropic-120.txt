@@ -12,7 +12,7 @@
   Tool outputs                              ~20.1k tokens (52.3k ch)
   Messages                                   ~3.1k tokens (8.1k ch)
   Thinking summaries                         ~0.5k tokens (1.2k ch)
-  Reasoning output                           12.0k tokens (provider)
+  Reasoning context                          12.0k tokens (provider)
   Unattributed                              ~27.7k tokens (accounting gap)
   Total session                             ~63.5k tokens (~32% ctx · Pi-based)
   Total request                              64.3k tokens (32.2% / 200k ctx)
