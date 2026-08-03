@@ -116,8 +116,8 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   earlier. `parseContextimateConfig` drops non-positive JSON denominators before
   resolution; `cleanDenominator` remains the defensive pure boundary for direct patches.
   This is user-configurable surface; precedence bugs misprice every row.
-- **Built-in rule matching**: boundary table: `claude-opus-4-8`, Fable 5 and the
-  named Claude 5 families → Claude 4.7+ rule; explicit Radius/OpenRouter relays keep
+- **Built-in rule matching**: boundary table: `claude-opus-4-8`, Fable 5 and Opus 5
+  → Claude 4.7+ rule; explicit Radius/OpenRouter relays keep
   that tokenizer while Bedrock keeps its payload shape; `claude-sonnet-4-5` → 4.5/4.6
   rule; other anthropic → generic; `openai-codex` vs `openai` vs `mistral` vs `gemini`
   vs `bedrock` routing by provider/api.
@@ -143,9 +143,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   sums provider-reported `usage.reasoning`, including zero, on documented Anthropic and
   OpenAI Responses retention paths under Pi's exact provider/API/model identity. Boundary
   fixtures pin Anthropic's keep-all families, OpenAI's all-turns and current-turn defaults,
-  model changes, relays, missing breakdowns and trailing local estimates. The exact prompt total, including cache reads and writes,
-  rejects impossible history. Summary text and opaque signatures never become estimated
-  reasoning.
+  cross-model summary conversion, relays, missing breakdowns, and trailing local estimates
+  including excluded bash messages. The exact prompt total, including cache reads and
+  writes, rejects impossible history. Summary text and opaque signatures never become
+  estimated reasoning.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.

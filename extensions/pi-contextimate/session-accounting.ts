@@ -95,6 +95,12 @@ function reportedReasoning(message: AssistantMessage): number | undefined {
   return typeof tokens === "number" && Number.isFinite(tokens) && tokens >= 0 ? tokens : undefined;
 }
 
+function hasTrustedUsage(message: AssistantMessage): boolean {
+  const usage = message.usage;
+  const tokens = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+  return message.stopReason !== "aborted" && message.stopReason !== "error" && tokens > 0;
+}
+
 function sameModel(left: AssistantMessage, right: AssistantMessage): boolean {
   return left.provider === right.provider && left.api === right.api && left.model === right.model;
 }
@@ -139,13 +145,15 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
     let lastTrustedUsageIndex = -1;
     for (let index = 0; index < llmMessages.length; index++) {
       const message = llmMessages[index]!;
-      if (message.role !== "assistant") continue;
-      const usage = message.usage;
-      const usageTokens = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-      if (message.stopReason !== "aborted" && message.stopReason !== "error" && usageTokens > 0) {
+      if (message.role === "assistant" && hasTrustedUsage(message)) {
         trustedAssistantIndices.push(index);
         lastTrustedUsageIndex = index;
       }
+    }
+    let lastTrustedContextIndex = -1;
+    for (let index = 0; index < messages.length; index++) {
+      const message = messages[index]!;
+      if (message.role === "assistant" && hasTrustedUsage(message)) lastTrustedContextIndex = index;
     }
 
     // Pi reports generated reasoning per response and the next prompt only as one aggregate.
@@ -172,7 +180,6 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       const keepsCurrentTurn = anchorIsClaude || anchorIsOpenAI;
       const historyStart = keepsRetainedHistory ? 0 : keepsCurrentTurn ? turnStart : lastTrustedUsageIndex;
       for (const index of trustedAssistantIndices) {
-        if (index > lastTrustedUsageIndex) continue;
         const message = llmMessages[index]!;
         if (message.role !== "assistant" || !sameModel(message, anchor)) continue;
         if (index < historyStart) {
@@ -215,8 +222,9 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
             const claudeSummary = message.api === "anthropic-messages"
               || message.model.toLowerCase().includes("claude");
             const plainSummary = !block.thinkingSignature;
+            const crossModelSummary = anchor?.role === "assistant" && !sameModel(message, anchor);
             if (!strippedThinkingIndices.has(index) && !exactReasoningIndices.has(index)
-              && !block.redacted && (claudeSummary || plainSummary)) {
+              && !block.redacted && (claudeSummary || plainSummary || crossModelSummary)) {
               breakdown.thinkingSummaryChars += (block.thinking ?? "").length;
             }
           } else if (block.type === "toolCall") {
@@ -230,7 +238,9 @@ export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBr
       breakdown.messageChars += countTextContent(message.content);
     }
 
-    breakdown.contextUsageEstimated = lastTrustedUsageIndex !== llmMessages.length - 1;
+    // Pi estimates every raw context message after the last trusted usage, including
+    // `!!` bash messages that convertToLlm deliberately omits from provider context.
+    breakdown.contextUsageEstimated = lastTrustedContextIndex !== messages.length - 1;
     return breakdown;
   } catch {
     return undefined;

@@ -23,7 +23,7 @@ const CLAUDE_RELAYED_MODEL_ROUTES = [
   { providerIncludes: "radius", apiEquals: "pi-messages" },
   { providerIncludes: "openrouter", apiEquals: "openai-completions" },
 ];
-const CLAUDE_47_PLUS_MODEL = /claude.*(?:4[-.]?[78]|(?:fable|opus|sonnet|haiku)[-.]?5(?:$|[:.-]))|4[-.]?[78].*claude/;
+const CLAUDE_47_PLUS_MODEL = /claude.*(?:4[-.]?[7-9](?=$|[-.:@])|(?:fable|opus|sonnet|haiku)[-.]?5(?=$|[-.:@]))|4[-.]?[7-9](?=$|[-.:@]).*claude/;
 const CLAUDE_45_46_MODEL = /claude.*4[-.]?[56]|4[-.]?[56].*claude/;
 
 function familyAtLeast(modelId: string, family: string, major: number, minor: number): boolean {

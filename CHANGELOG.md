@@ -15,9 +15,11 @@
   the current assistant turn. GPT-5.6 Responses histories follow OpenAI's all-turns
   default; earlier models keep the current turn. Pi's exact prompt total rejects
   impossible historical attribution, including cached input. Other providers' history
-  remains unattributed until retention is measured. Summaries not covered by exact counts remain a clearly estimated
-  `Thinking summaries` row, and opaque signatures are never sized as tokens.
-  `Total request` keeps `~` when Pi includes local estimates for trailing messages.
+  remains unattributed until retention is measured. Summaries not covered by exact
+  counts, including cross-model thinking converted to text, remain a clearly estimated
+  `Thinking summaries` row. Opaque signatures are never sized as tokens. `Total request`
+  keeps `~` when Pi includes local estimates for trailing messages, including excluded
+  `!!` bash executions.
 - The live prefix probe now verifies the provider and model that actually answered,
   preventing a model-selection override from producing a confidently mislabeled
   calibration.

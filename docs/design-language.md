@@ -234,10 +234,11 @@ A panel ends with one blank line, so the next chat block never abuts it. This is
 A residual is an accounting gap, not a diagnosis. Contextimate calls it
 `Unattributed`, never `reasoning`, and labels it `(accounting gap)`. Provider-reported
 reasoning retained by the response anchoring Pi's total gets an exact `Reasoning
-context` row, including a reported zero. Exact counts accumulate across same-model
-signed history when that model preserves prior thinking. Model changes and current-turn
-policies stop the accumulation. Historical reasoning must fit inside the exact reported
-prompt total across input, cache reads and cache writes. Provider-generated summaries
+context` row, including a reported zero. Exact counts accumulate only across history
+matching the active provider, API and model when that route preserves prior thinking.
+Returning to an earlier model can resume its matching history; current-turn policies stop
+at the user boundary. Historical reasoning must fit inside the exact reported prompt total
+across input, cache reads and cache writes. Provider-generated summaries
 not covered by exact retained reasoning get a separate estimated `Thinking summaries`
 row; opaque signatures are never sized as reasoning.
 The remaining gap can still include prefix-estimation error, provider overhead, images,

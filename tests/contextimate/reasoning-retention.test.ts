@@ -153,6 +153,20 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
     { api: "openai-responses", provider: "openai", model: "gpt-5.6", usage: usageWithReasoning(40) },
   ));
   assert.equal(buildSessionBreakdown(idOnlyReasoning)!.reasoningTokens, 40, "id-only items cannot replay reasoning");
+
+  const changedModel = SessionManager.inMemory("/tmp/contextimate-openai-changed-model");
+  const summary = "visible summary";
+  changedModel.appendMessage(assistantMessage(
+    [{ type: "thinking", thinking: summary, thinkingSignature: encryptedReasoning("rs_cross_model") }],
+    { api: "openai-responses", provider: "openai", model: "gpt-5.6", usage: usageWithReasoning(600) },
+  ));
+  changedModel.appendMessage(assistantMessage(
+    [{ type: "text", text: "done" }],
+    { api: "openai-responses", provider: "openai", model: "gpt-5.5", usage: usageWithReasoning(40) },
+  ));
+  const changedModelBreakdown = buildSessionBreakdown(changedModel)!;
+  assert.equal(changedModelBreakdown.reasoningTokens, 40);
+  assert.equal(changedModelBreakdown.thinkingSummaryChars, summary.length, "cross-model thinking becomes text");
 });
 
 test("a replay signature alone does not prove historical retention", () => {

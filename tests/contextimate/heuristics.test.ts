@@ -64,12 +64,18 @@ test("built-in model routing boundaries", () => {
   for (const modern of [
     model("anthropic", "claude-fable-5", "anthropic-messages"),
     model("anthropic", "claude-opus-5", "anthropic-messages"),
+    model("anthropic", "claude-opus-4-9", "anthropic-messages"),
     model("radius", "claude-opus-4-8", "pi-messages"),
-    model("openrouter", "anthropic/claude-fable-5:batch", "openai-completions"),
+    model("openrouter", "anthropic/claude-fable-5@20260801", "openai-completions"),
   ]) {
     assert.equal(resolveHeuristic(modern, {}).label, "Claude 4.7+ heuristic");
     assert.equal(resolveHeuristic(modern, {}).toolNumerator, "anthropic");
   }
+  assert.equal(
+    resolveHeuristic(model("anthropic", "claude-opus-4-70", "anthropic-messages"), {}).label,
+    "Anthropic heuristic",
+    "4.7 must not prefix-match 4.70",
+  );
   // Claude 4.5/4.6 family.
   const sonnet45 = resolveHeuristic(model("anthropic", "claude-sonnet-4-5", "anthropic-messages"), {});
   assert.equal(sonnet45.label, "Claude 4.5/4.6 heuristic");

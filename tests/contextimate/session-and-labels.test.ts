@@ -131,6 +131,29 @@ test("Total request keeps the estimate marker when Pi adds trailing local estima
   assert.ok(narrowSessionRows.every((line) => line.length <= 80), "session rows stay inside the narrow panel");
 });
 
+test("trailing excluded bash keeps Pi's estimate marker", () => {
+  const manager = SessionManager.inMemory("/tmp/contextimate-excluded-bash");
+  manager.appendMessage(assistantMessage([{ type: "text", text: "done" }]));
+  manager.appendMessage({
+    role: "bashExecution",
+    command: "printf hidden",
+    output: "hidden",
+    exitCode: 0,
+    cancelled: false,
+    truncated: false,
+    timestamp: 2,
+    excludeFromContext: true,
+  });
+  const breakdown = buildSessionBreakdown(manager)!;
+  assert.equal(breakdown.contextUsageEstimated, true);
+  const rendered = stripAnsi(renderSummary(
+    snapshotWith(breakdown, { tokens: 50000, contextWindow: 200000, percent: 25 }),
+    plainTheme,
+    120,
+  ).join("\n"));
+  assert.match(rendered, /Total request\s+~50\.0k tokens \(25\.0% · Pi est\.\)/);
+});
+
 test("token labels align to one shared column width across magnitudes", () => {
   const values = [12, 950, 64321, 1234567];
   const layout = tokenLabelLayout(values);
