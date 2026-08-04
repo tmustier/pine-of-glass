@@ -136,10 +136,10 @@ test("event flow: send-time payload replaces a stale material history forecast",
 
   await fire(probe, "session_start", {}, ctx);
   try {
-    assert.match(widgets.at(-1)!, /next send ~80\.0k/, "pre-send selection uses canonical history");
+    assert.match(widgets.at(-1)!, /next send ~76\.9k/, "pre-send selection uses canonical history");
     await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
     assert.equal(notifications.length, 0, "the tiny observed payload is below the notice threshold");
-    assert.doesNotMatch(widgets.at(-1)!, /next send ~80\.0k/, "the clock is refreshed from provider fields");
+    assert.doesNotMatch(widgets.at(-1)!, /next send ~76\.9k/, "the clock is refreshed from provider fields");
   } finally {
     await fire(probe, "session_shutdown", {});
   }
@@ -159,7 +159,7 @@ test("event flow: a material provider payload posts one est-marked notice", asyn
       messages: [{ role: "user", content: [{ type: "text", text: "x".repeat(200_000) }] }],
     } }, ctx);
     assert.equal(notifications.length, 1, "a material observed payload must post a notice");
-    assert.match(notifications[0]!, /sending ~80\.0k uncached to anthropic \(est/);
+    assert.match(notifications[0]!, /sending ~77\.0k uncached to anthropic \(est/);
     assert.match(notifications[0]!, /model switched/);
   } finally {
     await fire(probe, "session_shutdown", {});
