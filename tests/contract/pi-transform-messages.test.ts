@@ -97,13 +97,13 @@ function richHistory(): Message[] {
         { type: "thinking", thinking: "", thinkingSignature: "SIGNATURE-ONLY" },
         { type: "thinking", thinking: "   \n  ", thinkingSignature: undefined }, // blank: vanishes even same-model
         { type: "thinking", thinking: "", thinkingSignature: "REDACTED", redacted: true },
-        { type: "toolCall", id: "t1", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "TOOL-THOUGHT" },
+        { type: "toolCall", id: "call|foreign/item+x", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "TOOL-THOUGHT" },
       ] as AssistantContent,
       { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol", stopReason: "toolUse" },
     ),
     {
       role: "toolResult",
-      toolCallId: "t1",
+      toolCallId: "call|foreign/item+x",
       toolName: "read",
       content: [
         { type: "text", text: "tool result text" },
