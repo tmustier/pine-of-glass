@@ -154,9 +154,9 @@ Cachemire follows these rules:
 Cachemire uses 4 provider-general rules:
 
 - The freshness **anchor** is request processing. Generation time uses up the window.
-- The cache **scope** is the provider, model, wire API and byte-exact prefix. Warmth
-  checks require all 3 identity fields to match. A model switch therefore means the
-  cache is expected cold before you send anything, and the
+- The cache **scope** is the provider, model, wire API and byte-exact prefix. Warmth and
+  model-switch calibration require all 3 identity fields to match. A model switch
+  therefore means the cache is expected cold before you send anything, and the
   widget forecasts the prompt in the *target* model's currency (est-marked). Switching
   back to a model whose own cache may still be warm says so instead.
 - The **window** has different strengths for each provider. Anthropic has a contract
