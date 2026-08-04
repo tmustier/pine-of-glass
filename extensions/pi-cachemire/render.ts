@@ -20,24 +20,6 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
   return parts.join(SEP);
 }
 
-/** Signed BLUF breakdown for a model-switch estimate (design language §7). Terms are
- * computed on display-rounded tenths of k so `anchor +tokenizer -dropped thinking`
- * always sums to the rendered headline; zero terms drop like a diff stat's zero side. */
-export function renderSwitchBreakdown(
-  estTokens: number,
-  breakdown: { anchorTokens: number; droppedThinking: number },
-): string | undefined {
-  const tenths = (n: number) => Math.round(n / 100);
-  const fmt = (t: number) => compactCount(t * 100);
-  const dropped = tenths(breakdown.droppedThinking);
-  const anchor = tenths(breakdown.anchorTokens);
-  const retokenized = tenths(estTokens) - anchor + dropped;
-  const terms = [fmt(anchor)];
-  if (retokenized !== 0) terms.push(`${retokenized > 0 ? "+" : "-"}${fmt(Math.abs(retokenized))} tokenizer`);
-  if (dropped !== 0) terms.push(`-${fmt(dropped)} dropped thinking`);
-  return terms.length > 1 ? terms.join(" ") : undefined;
-}
-
 // Tense grammar: in-flight predictions are progressive with ~estimates ("breaking ·
 // re-writing ~77.7k"); resolved lines are past tense with exact usage ("broke · re-wrote
 // 77.7k of 80.1k prompt (97%)").
@@ -50,14 +32,9 @@ function breakingSize(p: BreakPrediction): string {
     return ` \u00b7 re-writing ~${compactCount(p.expectedRewriteTokens)}${p.expectedUsd !== undefined ? ` (~${formatUsd(p.expectedUsd)})` : ""}`;
   }
   if (p.estimatedRewriteTokens !== undefined) {
-    // Model switch sized by the shared heuristics: BLUF (design language §7), the
-    // consequence first, then the signed explanation. Target currency, always wearing
-    // est; gateway routes demote the wording and withhold the breakdown.
-    const breakdown = p.estimateBasis === "gateway" || p.estimateBreakdown === undefined
-      ? undefined
-      : renderSwitchBreakdown(p.estimatedRewriteTokens, p.estimateBreakdown);
+    // Model switch sized by the shared heuristics in the target currency, always
+    // wearing est; gateway routes demote the wording.
     const parens = [
-      ...(breakdown === undefined ? [] : [breakdown]),
       p.estimateBasis === "gateway" ? "rough est \u00b7 gateway route" : "est",
       ...(p.estimatedUsd === undefined ? [] : [`~${formatUsd(p.estimatedUsd)}`]),
     ].join(SEP);
