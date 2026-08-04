@@ -71,6 +71,17 @@ function selectTools(payloadTools, onlyNames) {
 // ---------------------------------------------------------------------------------------
 // Request builders (pure; unit-tested). Sections pass through byte-identical.
 
+export function buildAnthropicExactCountRequest(payload, options = {}) {
+  const model = options.model ?? payload.model;
+  if (!model) throw new Error("payload has no model; pass --model");
+  if (!Array.isArray(payload.messages)) throw new Error("payload has no messages array");
+  const body = { model, messages: payload.messages };
+  for (const key of ["system", "tools", "tool_choice", "thinking"]) {
+    if (payload[key] !== undefined) body[key] = payload[key];
+  }
+  return { id: "exact", label: "exact captured prompt", body };
+}
+
 export function buildAnthropicCountRequests(payload, options = {}) {
   const model = options.model ?? payload.model;
   if (!model) throw new Error("payload has no model; pass --model");
@@ -178,6 +189,7 @@ export const PROVIDERS = {
   anthropic: {
     detect: (kind) => kind === "anthropic",
     build: buildAnthropicCountRequests,
+    exact: buildAnthropicExactCountRequest,
     cost: "free (count_tokens endpoint)",
     env: "ANTHROPIC_API_KEY",
     // Credential resolution: ANTHROPIC_API_KEY → x-api-key; otherwise pi's own OAuth
@@ -255,7 +267,7 @@ function readPiOAuthAccessToken(provider) {
 // CLI.
 
 function parseArgs(argv) {
-  const args = { live: false, json: false };
+  const args = { live: false, json: false, exact: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--payload") args.payload = argv[++i];
@@ -264,6 +276,7 @@ function parseArgs(argv) {
     else if (arg === "--model") args.model = argv[++i];
     else if (arg === "--live") args.live = true;
     else if (arg === "--json") args.json = true;
+    else if (arg === "--exact") args.exact = true;
     else if (arg === "--help" || arg === "-h") args.help = true;
     else throw new Error(`unknown argument: ${arg}`);
   }
@@ -276,7 +289,10 @@ const HELP = `check-provider-tokens — provider-exact token counts for a captur
   2. Dry-run the plan:   node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl
   3. Execute:            ... --live   (anthropic: free count_tokens; openai: tiny real cost)
 
-Options: --payload <file>  --provider anthropic|openai  --tools a,b  --model <id>  --live  --json`;
+Options: --payload <file>  --provider anthropic|openai  --tools a,b  --model <id>  --live  --exact  --json
+
+--exact counts the complete captured prompt where the provider offers a count endpoint;
+default mode runs controlled static-section ablations.`;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -289,7 +305,10 @@ async function main() {
   const provider = PROVIDERS[providerName];
   if (!provider) throw new Error(`no provider for payload kind ${kind}; pass --provider (${Object.keys(PROVIDERS).join("|")})`);
 
-  const requests = provider.build(payload, { tools: args.tools, model: args.model });
+  if (args.exact && !provider.exact) throw new Error(`${providerName} has no non-generating exact-count endpoint`);
+  const requests = args.exact
+    ? [provider.exact(payload, { model: args.model })]
+    : provider.build(payload, { tools: args.tools, model: args.model });
   if (!args.live) {
     const plan = requests.map(({ id, label, body }) => ({ id, label, bodyChars: JSON.stringify(body).length }));
     if (args.json) console.log(JSON.stringify({ provider: providerName, mode: "dry-run", plan }, null, 2));
@@ -306,6 +325,11 @@ async function main() {
   for (const request of requests) {
     counts[request.id] = await provider.execute(request.body, credential);
     process.stderr.write(`counted ${request.id}: ${counts[request.id]}\n`);
+  }
+  if (args.exact) {
+    const output = { provider: providerName, exactTokens: counts.exact, model: args.model ?? payload.model };
+    console.log(args.json ? JSON.stringify(output, null, 2) : `provider-exact captured prompt: ${counts.exact} tokens (${providerName}, model ${output.model})`);
+    return;
   }
   const summary = summarizeCounts(requests, counts);
   const suggestion = suggestDenominators(summary);

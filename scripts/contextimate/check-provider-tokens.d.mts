@@ -48,6 +48,7 @@ export interface ExecuteOptions {
 export interface ProviderEntry {
   detect(kind: PayloadKind | undefined): boolean;
   build(payload: Record<string, unknown>, options?: BuildOptions): CountRequest[];
+  exact?: (payload: Record<string, unknown>, options?: BuildOptions) => CountRequest;
   cost: string;
   env: string;
   resolveCredential(): { apiKey?: string; oauthToken?: string } | undefined;
@@ -57,6 +58,7 @@ export interface ProviderEntry {
 
 export function detectPayloadKind(payload: unknown): PayloadKind | undefined;
 export function parsePayloadFile(text: string): { kind: PayloadKind; payload: Record<string, unknown> };
+export function buildAnthropicExactCountRequest(payload: Record<string, unknown>, options?: BuildOptions): CountRequest;
 export function buildAnthropicCountRequests(payload: Record<string, unknown>, options?: BuildOptions): CountRequest[];
 export function buildOpenAIResponsesProbes(payload: Record<string, unknown>, options?: BuildOptions): CountRequest[];
 export function computeToolOverhead(requests: CountRequest[], counts: Record<string, number | undefined>): number | undefined;

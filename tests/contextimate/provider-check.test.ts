@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   parsePayloadFile,
   detectPayloadKind,
+  buildAnthropicExactCountRequest,
   buildAnthropicCountRequests,
   buildOpenAIResponsesProbes,
   computeToolOverhead,
@@ -56,6 +57,24 @@ test("anthropic count requests pass payload sections through byte-identical", ()
   }
   assert.equal(byId.baseline!.body.tools, undefined);
   assert.equal(byId.baseline!.body.system, undefined);
+});
+
+test("anthropic exact count preserves the complete captured prompt and accepted controls", () => {
+  const payload = {
+    ...capturedAnthropicPayload(),
+    tool_choice: { type: "auto" },
+    thinking: { type: "enabled", budget_tokens: 1024 },
+    output_config: { effort: "high" },
+  };
+  const request = buildAnthropicExactCountRequest(payload);
+  assert.equal(request.id, "exact");
+  assert.equal(request.body.messages, payload.messages);
+  assert.equal(request.body.system, payload.system);
+  assert.equal(request.body.tools, payload.tools);
+  assert.equal(request.body.tool_choice, payload.tool_choice);
+  assert.equal(request.body.thinking, payload.thinking);
+  assert.equal(request.body.output_config, undefined);
+  assert.equal(request.body.max_tokens, undefined);
 });
 
 test("tool limiting and model override", () => {
