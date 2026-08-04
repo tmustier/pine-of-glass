@@ -30,16 +30,6 @@ test("clock: model switch forecasts in the target currency, always marked est", 
   // Gateway routes may transform the request upstream: the claim is demoted.
   const gateway = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, basis: "gateway" } });
   assert.equal(gateway.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (rough est \u00b7 gateway route)");
-  // With a billed source anchor: BLUF breakdown in diff-stat style, terms summing to
-  // the headline (design language \u00a77).
-  const decomposed = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, breakdown: { anchorTokens: 80_100, droppedThinking: 2_100 } } });
-  assert.equal(decomposed.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking \u00b7 est)");
-  // Zero terms drop out entirely: an anchor that matches the estimate explains nothing.
-  const flat = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, breakdown: { anchorTokens: 96_400, droppedThinking: 0 } } });
-  assert.equal(flat.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (est)");
-  // Gateway routes withhold the breakdown: a rough number gets no precise explanation.
-  const gatewayDecomposed = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, basis: "gateway", breakdown: { anchorTokens: 80_100, droppedThinking: 2_100 } } });
-  assert.equal(gatewayDecomposed.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (rough est \u00b7 gateway route)");
   // Without an estimate the number is withheld outright (and stays out of the old currency).
   const untagged = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
   assert.equal(untagged.text, "cache cold expected \u00b7 model switched \u00b7 prompt size known at next send");
@@ -85,14 +75,6 @@ test("break prediction: model switch sized in the target currency, or silent whe
   assert.equal(
     renderBreakingLine(sized),
     "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (est \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
-  );
-  // With a billed anchor the notice explains itself in the same signed grammar.
-  assert.equal(
-    renderBreakingLine(predictBreak({
-      ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
-      switchForecast: { estTokens: 96_400, basis: "direct", priorMayBeWarm: false, targetProvider: "openai-codex", breakdown: { anchorTokens: 80_100, droppedThinking: 2_100 } },
-    })!),
-    "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking \u00b7 est \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
   );
   assert.equal(
     renderBreakingLine(predictBreak({
@@ -177,7 +159,7 @@ test("computeSwitchForecast: estimates from canonical history in the target curr
   assert.equal(forecast.prior, undefined);
 });
 
-test("computeSwitchForecast: a billed source anchor calibrates the estimate", () => {
+test("computeSwitchForecast: a source-model bill never rescales the target estimate", () => {
   const entries = [
     { type: "message", id: "u1", parentId: null, timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: "b".repeat(5200), timestamp: 1_000 } },
     { type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-01T10:00:05.000Z", message: {
@@ -186,25 +168,16 @@ test("computeSwitchForecast: a billed source anchor calibrates the estimate", ()
       stopReason: "stop", timestamp: 5_000, usage: usage(2, 2_898, 0),
     } },
   ] as unknown as SessionEntry[];
-  const source: SwitchTarget = { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" };
-  const snapshot = {
+  const sourceSnapshot = {
     requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
     promptTokens: 2_925,
     provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses",
   };
-  const base = { target: OPUS, source, entries, activeLeafId: "a1", systemPromptChars: 0, tools: [] };
-  // Source estimate (chars/4) of the 7.8k-char history is 1950; sol billed 2925 on
-  // this path → ratio 1.5. Target estimate 3000 (chars/2.6) → 4500.
-  const calibrated = computeSwitchForecast({ ...base, snapshots: [snapshot] });
-  assert.equal(calibrated.estTokens, 4_500);
-  assert.deepEqual(calibrated.breakdown, { anchorTokens: 2_925, droppedThinking: 0 });
-  // A pre-api snapshot cannot be attributed to the exact provider route, so it does
-  // not calibrate the target currency.
-  assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: undefined }] }).estTokens, 3_000);
-  // Without a billed anchor on the path the heuristic number stands alone, unexplained.
-  const plain = computeSwitchForecast({ ...base, snapshots: [] });
-  assert.equal(plain.estTokens, 3_000);
-  assert.equal(plain.breakdown, undefined);
+  const base = { target: OPUS, entries, activeLeafId: "a1", systemPromptChars: 0, tools: [] };
+  // Target estimate: 7.8k history chars / 2.6 = 3000. The unrelated source bill is
+  // exact in its own currency, but its density is not transferable to this tokenizer.
+  assert.equal(computeSwitchForecast({ ...base, snapshots: [sourceSnapshot] }).estTokens, 3_000);
+  assert.equal(computeSwitchForecast({ ...base, snapshots: [] }).estTokens, 3_000);
 });
 
 test("computeSwitchForecast: send-time provider fields replace stale canonical sizing", () => {
