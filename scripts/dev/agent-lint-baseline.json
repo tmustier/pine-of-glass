@@ -5,7 +5,7 @@
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
-      "extensions/pi-cachemire/index.ts": 931,
+      "extensions/pi-cachemire/index.ts": 936,
       "extensions/pi-contextimate/index.ts": 1573,
       "extensions/pi-traceline/index.ts": 1766,
       "tests/contract/pi-internals.test.ts": 432,

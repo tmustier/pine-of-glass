@@ -190,7 +190,7 @@ function predictBreak(args: {
   fingerprintCause?: CallCause;
   rates?: ModelRates;
   /** Target-currency estimate while a model switch is pending (issue #57). */
-  switchForecast?: Pick<SwitchForecast, "estTokens" | "basis" | "targetProvider"> & { priorMayBeWarm: boolean };
+  switchForecast?: Pick<SwitchForecast, "estTokens" | "basis" | "targetProvider" | "breakdown"> & { priorMayBeWarm: boolean };
 }): BreakPrediction | undefined {
   // Cold starts are healthy and the compaction summarizer call is labelled, not warned.
   if (args.isFirst || args.inCompaction || args.expectedRead <= 0) return undefined;
@@ -220,6 +220,7 @@ function predictBreak(args: {
         estimatedUsd: rewriteCostUsd(forecast.estTokens, args.rates),
         estimateBasis: forecast.basis,
         targetProvider: forecast.targetProvider,
+        estimateBreakdown: forecast.breakdown,
       };
     }
     if (args.fingerprintCause.kind === "compaction") return { cause: args.fingerprintCause };
@@ -505,8 +506,12 @@ function refreshSwitchForecast(
     s.switchForecast = undefined;
     return;
   }
+  const source = s.lastCallProvider !== undefined && s.lastCallModelId !== undefined && s.lastCallApi !== undefined
+    ? { provider: s.lastCallProvider, id: s.lastCallModelId, api: s.lastCallApi }
+    : undefined;
   s.switchForecast = computeSwitchForecast({
     target,
+    source,
     entries: ctx.sessionManager.getEntries(),
     activeLeafId,
     systemPromptChars: ctx.getSystemPrompt().length,

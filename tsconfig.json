@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["extensions/**/*.ts", "tests/**/*.ts", "scripts/cachemire/**/*.ts"]
+  "include": ["extensions/**/*.ts", "tests/**/*.ts"]
 }
