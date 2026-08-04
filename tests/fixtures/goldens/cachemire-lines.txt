@@ -16,7 +16,6 @@
 [stale] ◍ cache stale · history compacted · next send re-writes the new prefix
 [stale] ◍ cache stale · thinking level changed · next send re-writes the prompt
 [cold] ◍ cache cold expected · model switched · next send ~96.4k uncached to openai-codex (est)
-[cold] ◍ cache cold expected · model switched · next send ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking · est)
 [cold] ◍ cache cold expected · model switched · next send ~96.4k uncached to radius (rough est · gateway route)
 [warm-unknown] ◍ cache may still be warm · last claude-opus-4-8 call 1m ago · next send confirms
 [cold] ◍ cache cold expected · model switched · prompt size known at next send
@@ -25,7 +24,7 @@
 === notices (chat lines) ===
 ◍ cache breaking · re-writing ~150.3k (~$2.82) · cause: idle 7m00s > 5m TTL
 ◍ cache breaking · re-writing the new prefix · cause: history compacted
-◍ cache breaking · sending ~96.4k uncached to openai-codex (80.1k +18.4k tokenizer -2.1k dropped thinking · est · ~$0.12) · cause: model switched claude-opus-4-8 → gpt-5.6-luna
+◍ cache breaking · sending ~96.4k uncached to openai-codex (est · ~$0.12) · cause: model switched claude-opus-4-8 → gpt-5.6-luna
 ◍ cache after compaction · reused 34.9k of the last pre-compaction 72.5k prompt (48%) · processed 39.1k uncached
 ◍ cache broke · re-wrote 153.0k of 153.2k prompt (100%) · $2.97 · cause: idle 7m00s > 5m TTL
 ◍ cache partial · read 90.0k of 152.1k expected · re-wrote 62.1k (41% of prompt) · cause: unknown (provider-side eviction?)
