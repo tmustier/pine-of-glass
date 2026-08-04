@@ -7,7 +7,6 @@ import assert from "node:assert/strict";
 import {
   forecastHistoryForTarget,
   forecastTargetPrompt,
-  normalizeForecastToolCallId,
   type ForecastMessage,
   type TargetModel,
 } from "../../extensions/_lib/forecast.ts";
@@ -71,31 +70,10 @@ test("redacted thinking: kept same-model, dropped cross-model", () => {
   assert.equal(forecastHistoryForTarget(history, opus).keptReasoningChars, 0);
 });
 
-test("cross-provider tool IDs follow target API wire constraints", () => {
-  const source: ForecastMessage = {
-    role: "assistant", content: [], provider: "foreign", api: "foreign-api", model: "old",
-  };
+test("toolCall: stored ID and arguments count, thoughtSignature only for the same model", () => {
   const id = "call|foreign/item";
-  assert.equal(normalizeForecastToolCallId(id, opus, source), "call_foreign_item");
-  assert.equal(
-    normalizeForecastToolCallId(id, { provider: "mistral", id: "mistral-large", api: "mistral-conversations" }, source),
-    "1ca52kv1m",
-  );
-  assert.equal(normalizeForecastToolCallId(id, { provider: "openai", id: "gpt", api: "openai-responses" }, source), "call|fc_16ipy761458vd9");
-  assert.equal(
-    normalizeForecastToolCallId(id, { provider: "azure-openai-responses", id: "gpt", api: "openai-responses" }, source),
-    "call_foreign_item",
-    "Azure is an allowed Responses carrier only on the Azure wire API",
-  );
-  assert.equal(
-    normalizeForecastToolCallId(id, { provider: "azure-openai-responses", id: "gpt", api: "azure-openai-responses" }, source),
-    "call|fc_16ipy761458vd9",
-  );
-});
-
-test("toolCall: arguments always count, thoughtSignature only for the same model", () => {
-  const call = { type: "toolCall", id: "t1", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "T".repeat(80) };
-  const argChars = JSON.stringify({ id: "t1", name: "read", arguments: { path: "/tmp/x" } }).length;
+  const call = { type: "toolCall", id, name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "T".repeat(80) };
+  const argChars = JSON.stringify({ id, name: "read", arguments: { path: "/tmp/x" } }).length;
   const history = [solTurn([call], { stopReason: "toolUse" })];
   const cross = forecastHistoryForTarget(history, opus);
   assert.equal(cross.textChars, argChars);
