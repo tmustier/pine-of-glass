@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 
 function usage(message) {
   if (message) console.error(message);
-  console.error("usage: record-external-token-count.mjs --capture aggregate.jsonl --tokens N --source anthropic-count-tokens");
+  console.error("usage: record-external-token-count.mjs --capture aggregate.jsonl --tokens N --source anthropic-count-tokens --counted-model MODEL [--request-id ID]");
   process.exit(message ? 1 : 0);
 }
 
@@ -17,18 +17,26 @@ for (let index = 0; index < args.length; index += 2) {
   if (key === "--capture") options.capture = value;
   else if (key === "--tokens") options.tokens = Number(value);
   else if (key === "--source") options.source = value;
+  else if (key === "--request-id") options.requestId = value;
+  else if (key === "--counted-model") options.countedModel = value;
   else usage(`unknown option: ${key}`);
 }
-if (!options.capture || !Number.isInteger(options.tokens) || options.tokens <= 0 || !options.source) {
-  usage("capture, positive whole tokens, and source are required");
+if (!options.capture || !Number.isInteger(options.tokens) || options.tokens <= 0 || !options.source || !options.countedModel) {
+  usage("capture, positive whole tokens, source, and counted model are required");
 }
 const records = readFileSync(options.capture, "utf8")
   .split("\n")
   .filter(Boolean)
   .map((line) => JSON.parse(line));
 const resolvedIds = new Set(records.filter((record) => record.type === "resolved").map((record) => record.requestId));
-const request = records.toReversed().find((record) => record.type === "request" && !resolvedIds.has(record.requestId));
-if (!request) throw new Error("no unresolved request found");
+const candidates = records.filter((record) => record.type === "request" &&
+  !resolvedIds.has(record.requestId) && (options.requestId === undefined || record.requestId === options.requestId));
+if (candidates.length === 0) throw new Error("no matching unresolved request found");
+if (candidates.length > 1) throw new Error("more than one unresolved request; pass --request-id");
+const [request] = candidates;
+if (request.target?.model !== options.countedModel) {
+  throw new Error(`counted model does not match captured target model ${request.target?.model ?? "unknown"}`);
+}
 const record = {
   schemaVersion: 1,
   type: "resolved",
@@ -42,6 +50,7 @@ const record = {
   actualPromptTokens: options.tokens,
   usage: { input: options.tokens, cacheRead: 0, cacheWrite: 0 },
   exactSource: options.source,
+  countedModel: options.countedModel,
 };
 appendFileSync(options.capture, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
 console.log(`recorded ${options.tokens} exact tokens for ${request.caseId}`);

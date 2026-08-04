@@ -1,0 +1,6123 @@
+{
+  "schemaVersion": 1,
+  "bootstrap": {
+    "samples": 4000,
+    "seed": 20260804
+  },
+  "candidates": [
+    {
+      "name": "C2-anthropic-tool-block",
+      "providers": [
+        "anthropic"
+      ],
+      "toolBlockTokens": 290,
+      "rationale": "Anthropic count_tokens solved a 290-token once-per-request tool block in the controlled four-tool development ablation. The constant was frozen before holdout analysis.",
+      "mechanism": "toolBlockTokens"
+    }
+  ],
+  "rows": [
+    {
+      "studyRun": "openai-dev-baseline",
+      "caseId": "baseline",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:baseline",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 217,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 217,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 249,
+        "flatTokens": 249,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 8,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 73,
+        "flatTokens": 249,
+        "normalizedTokens": 249,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 249,
+        "B1-send": 249,
+        "P0-current-send": 264,
+        "C1-normalized-send": 249
+      }
+    },
+    {
+      "studyRun": "openai-dev-prose-short",
+      "caseId": "prose-short",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-prose-short",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 455,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 455,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 542,
+        "flatTokens": 542,
+        "systemTokens": 534,
+        "toolTokens": 0,
+        "historyTokens": 8,
+        "systemChars": 2135,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 2135,
+        "systemJsonChars": 2157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 83,
+        "flatTokens": 542,
+        "normalizedTokens": 542,
+        "normalizedSystemTokens": 534,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 542,
+        "B1-send": 542,
+        "P0-current-send": 557,
+        "C1-normalized-send": 542
+      }
+    },
+    {
+      "studyRun": "openai-dev-prose-long",
+      "caseId": "prose-long",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-prose-long",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 10514,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 10514,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 11472,
+        "flatTokens": 11472,
+        "systemTokens": 11464,
+        "toolTokens": 0,
+        "historyTokens": 8,
+        "systemChars": 45854,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 45854,
+        "systemJsonChars": 46457,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 664,
+        "flatTokens": 11472,
+        "normalizedTokens": 11472,
+        "normalizedSystemTokens": 11464,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 11472,
+        "B1-send": 11472,
+        "P0-current-send": 11487,
+        "C1-normalized-send": 11472
+      }
+    },
+    {
+      "studyRun": "openai-dev-dense-short",
+      "caseId": "dense-short",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-dense-short",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 404,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 404,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 424,
+        "flatTokens": 424,
+        "systemTokens": 416,
+        "toolTokens": 0,
+        "historyTokens": 8,
+        "systemChars": 1664,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 1664,
+        "systemJsonChars": 1820,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 217,
+        "flatTokens": 424,
+        "normalizedTokens": 424,
+        "normalizedSystemTokens": 416,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 424,
+        "B1-send": 424,
+        "P0-current-send": 439,
+        "C1-normalized-send": 424
+      }
+    },
+    {
+      "studyRun": "openai-dev-dense-long",
+      "caseId": "dense-long",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-dense-long",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 19172,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 19172,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 16400,
+        "flatTokens": 16400,
+        "systemTokens": 16392,
+        "toolTokens": 0,
+        "historyTokens": 8,
+        "systemChars": 65566,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 65566,
+        "systemJsonChars": 77258,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 11753,
+        "flatTokens": 16400,
+        "normalizedTokens": 16400,
+        "normalizedSystemTokens": 16392,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 16400,
+        "B1-send": 16400,
+        "P0-current-send": 16415,
+        "C1-normalized-send": 16400
+      }
+    },
+    {
+      "studyRun": "openai-dev-tool-one",
+      "caseId": "tool-one",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tools-one",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 358,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 358,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 352,
+        "flatTokens": 411,
+        "systemTokens": 241,
+        "toolTokens": 103,
+        "historyTokens": 8,
+        "systemChars": 963,
+        "toolChars": 651,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 1,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 1,
+        "toolJsonChars": 687,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 73,
+        "flatTokens": 420,
+        "normalizedTokens": 352,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 103,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 420,
+        "B1-send": 352,
+        "P0-current-send": 389,
+        "C1-normalized-send": 352
+      }
+    },
+    {
+      "studyRun": "openai-dev-tool-four",
+      "caseId": "tool-four",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tools-four",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 695,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 695,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 631,
+        "flatTokens": 923,
+        "systemTokens": 241,
+        "toolTokens": 382,
+        "historyTokens": 8,
+        "systemChars": 963,
+        "toolChars": 2700,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 73,
+        "flatTokens": 959,
+        "normalizedTokens": 631,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 959,
+        "B1-send": 631,
+        "P0-current-send": 782,
+        "C1-normalized-send": 631
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-baseline",
+      "caseId": "baseline",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:baseline",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 368,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 368,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 383,
+        "flatTokens": 249,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 12,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 229,
+        "flatTokens": 263,
+        "normalizedTokens": 405,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 263,
+        "B1-send": 383,
+        "P0-current-send": 492,
+        "C1-normalized-send": 405,
+        "C2-anthropic-tool-block": 405
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-prose-short",
+      "caseId": "prose-short",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-prose-short",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 755,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 0,
+        "cacheWrite": 753
+      },
+      "canonical": {
+        "totalTokens": 834,
+        "flatTokens": 542,
+        "systemTokens": 822,
+        "toolTokens": 0,
+        "historyTokens": 12,
+        "systemChars": 2135,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 2192,
+        "systemJsonChars": 2339,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 239,
+        "flatTokens": 556,
+        "normalizedTokens": 856,
+        "normalizedSystemTokens": 844,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 556,
+        "B1-send": 834,
+        "P0-current-send": 947,
+        "C1-normalized-send": 856,
+        "C2-anthropic-tool-block": 856
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-prose-long",
+      "caseId": "prose-long",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-prose-long",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 16747,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 0,
+        "cacheWrite": 16745
+      },
+      "canonical": {
+        "totalTokens": 17649,
+        "flatTokens": 11472,
+        "systemTokens": 17637,
+        "toolTokens": 0,
+        "historyTokens": 12,
+        "systemChars": 45854,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 45911,
+        "systemJsonChars": 46639,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 820,
+        "flatTokens": 11486,
+        "normalizedTokens": 17671,
+        "normalizedSystemTokens": 17659,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 11486,
+        "B1-send": 17649,
+        "P0-current-send": 17986,
+        "C1-normalized-send": 17671,
+        "C2-anthropic-tool-block": 17671
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-dense-short",
+      "caseId": "dense-short",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-dense-short",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 665,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 0,
+        "cacheWrite": 663
+      },
+      "canonical": {
+        "totalTokens": 652,
+        "flatTokens": 424,
+        "systemTokens": 640,
+        "toolTokens": 0,
+        "historyTokens": 12,
+        "systemChars": 1664,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1721,
+        "systemJsonChars": 2002,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 373,
+        "flatTokens": 438,
+        "normalizedTokens": 674,
+        "normalizedSystemTokens": 662,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 438,
+        "B1-send": 652,
+        "P0-current-send": 817,
+        "C1-normalized-send": 674,
+        "C2-anthropic-tool-block": 674
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-dense-long",
+      "caseId": "dense-long",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:system-dense-long",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 27161,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 0,
+        "cacheWrite": 27159
+      },
+      "canonical": {
+        "totalTokens": 25230,
+        "flatTokens": 16400,
+        "systemTokens": 25218,
+        "toolTokens": 0,
+        "historyTokens": 12,
+        "systemChars": 65566,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 65623,
+        "systemJsonChars": 77440,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 11909,
+        "flatTokens": 16414,
+        "normalizedTokens": 25252,
+        "normalizedSystemTokens": 25240,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 16414,
+        "B1-send": 25230,
+        "P0-current-send": 29832,
+        "C1-normalized-send": 25252,
+        "C2-anthropic-tool-block": 25252
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-tool-one",
+      "caseId": "tool-one",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tools-one",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 899,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 0,
+        "cacheWrite": 897
+      },
+      "canonical": {
+        "totalTokens": 636,
+        "flatTokens": 411,
+        "systemTokens": 371,
+        "toolTokens": 253,
+        "historyTokens": 12,
+        "systemChars": 963,
+        "toolChars": 651,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 1,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 1,
+        "toolJsonChars": 723,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 229,
+        "flatTokens": 443,
+        "normalizedTokens": 658,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 253,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 443,
+        "B1-send": 636,
+        "P0-current-send": 771,
+        "C1-normalized-send": 658,
+        "C2-anthropic-tool-block": 948
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-tool-four",
+      "caseId": "tool-four",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tools-four",
+        "history:none",
+        "direction:none",
+        "turn:first"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 1634,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 0,
+        "cacheWrite": 1632
+      },
+      "canonical": {
+        "totalTokens": 1431,
+        "flatTokens": 923,
+        "systemTokens": 371,
+        "toolTokens": 1048,
+        "historyTokens": 12,
+        "systemChars": 963,
+        "toolChars": 2700,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 229,
+        "flatTokens": 982,
+        "normalizedTokens": 1453,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 982,
+        "B1-send": 1431,
+        "P0-current-send": 1599,
+        "C1-normalized-send": 1453,
+        "C2-anthropic-tool-block": 1743
+      }
+    },
+    {
+      "studyRun": "openai-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 217,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 217,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 249,
+        "flatTokens": 249,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 8,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 73,
+        "flatTokens": 249,
+        "normalizedTokens": 249,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 249,
+        "B1-send": 249,
+        "P0-current-send": 264,
+        "C1-normalized-send": 249
+      }
+    },
+    {
+      "studyRun": "openai-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 237,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 237,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 256,
+        "flatTokens": 257,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 15,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 60,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 387,
+        "messageCount": 3,
+        "textChars": 60,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 60,
+        "framingChars": 339,
+        "flatTokens": 257,
+        "normalizedTokens": 256,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 15,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 257,
+        "B1-send": 256,
+        "P0-current-send": 338,
+        "C1-normalized-send": 256
+      }
+    },
+    {
+      "studyRun": "openai-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-openai"
+      ],
+      "userTurn": 3,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 257,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 257,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 264,
+        "flatTokens": 264,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 23,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 91,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 5,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 684,
+        "messageCount": 5,
+        "textChars": 91,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 3,
+          "assistant": 2
+        },
+        "blockCounts": {
+          "message": 5,
+          "input_text": 3,
+          "output_text": 2
+        },
+        "normalizedHistoryChars": 91,
+        "framingChars": 605,
+        "flatTokens": 264,
+        "normalizedTokens": 264,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 23,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 264,
+        "B1-send": 264,
+        "P0-current-send": 412,
+        "C1-normalized-send": 264
+      }
+    },
+    {
+      "studyRun": "openai-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-openai"
+      ],
+      "userTurn": 4,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 277,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 277,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 272,
+        "flatTokens": 272,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 31,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 122,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 7,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 981,
+        "messageCount": 7,
+        "textChars": 122,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 4,
+          "assistant": 3
+        },
+        "blockCounts": {
+          "message": 7,
+          "input_text": 4,
+          "output_text": 3
+        },
+        "normalizedHistoryChars": 122,
+        "framingChars": 871,
+        "flatTokens": 272,
+        "normalizedTokens": 272,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 31,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 272,
+        "B1-send": 272,
+        "P0-current-send": 487,
+        "C1-normalized-send": 272
+      }
+    },
+    {
+      "studyRun": "openai-dev-tool-history",
+      "caseId": "tool-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 367,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 367,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 362,
+        "flatTokens": 421,
+        "systemTokens": 241,
+        "toolTokens": 103,
+        "historyTokens": 18,
+        "systemChars": 963,
+        "toolChars": 651,
+        "historyTextChars": 69,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 1,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 1,
+        "toolJsonChars": 687,
+        "messageJsonChars": 130,
+        "messageCount": 1,
+        "textChars": 69,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 69,
+        "framingChars": 73,
+        "flatTokens": 430,
+        "normalizedTokens": 362,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 103,
+        "normalizedHistoryTokens": 18,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 430,
+        "B1-send": 362,
+        "P0-current-send": 399,
+        "C1-normalized-send": 362
+      }
+    },
+    {
+      "studyRun": "openai-dev-tool-history",
+      "caseId": "tool-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 2,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 1046,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 1046,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 952,
+        "flatTokens": 1012,
+        "systemTokens": 241,
+        "toolTokens": 103,
+        "historyTokens": 608,
+        "systemChars": 963,
+        "toolChars": 651,
+        "historyTextChars": 2431,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 1,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 1,
+        "toolJsonChars": 687,
+        "messageJsonChars": 2862,
+        "messageCount": 1,
+        "textChars": 69,
+        "toolCallChars": 88,
+        "toolResultChars": 2220,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1,
+          "function_call": 1,
+          "function_call_output": 1
+        },
+        "normalizedHistoryChars": 2377,
+        "framingChars": 497,
+        "flatTokens": 1007,
+        "normalizedTokens": 939,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 103,
+        "normalizedHistoryTokens": 595,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 1007,
+        "B1-send": 952,
+        "P0-current-send": 1082,
+        "C1-normalized-send": 939
+      }
+    },
+    {
+      "studyRun": "openai-dev-reasoning",
+      "caseId": "reasoning-carrier",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:growing",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 223,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 223,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 257,
+        "flatTokens": 257,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 16,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 62,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 123,
+        "messageCount": 1,
+        "textChars": 62,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 62,
+        "framingChars": 73,
+        "flatTokens": 257,
+        "normalizedTokens": 257,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 16,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 257,
+        "B1-send": 257,
+        "P0-current-send": 272,
+        "C1-normalized-send": 257
+      }
+    },
+    {
+      "studyRun": "openai-dev-reasoning",
+      "caseId": "reasoning-carrier",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:reasoning",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 243,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 243,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 265,
+        "flatTokens": 265,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 24,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 94,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 421,
+        "messageCount": 3,
+        "textChars": 94,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 94,
+        "framingChars": 339,
+        "flatTokens": 265,
+        "normalizedTokens": 265,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 24,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 265,
+        "B1-send": 265,
+        "P0-current-send": 347,
+        "C1-normalized-send": 265
+      }
+    },
+    {
+      "studyRun": "openai-dev-image-small",
+      "caseId": "image-small",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:image-small",
+        "history:image",
+        "direction:none"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 237,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 237,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 1464,
+        "flatTokens": 1465,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 1223,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 92,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 5010,
+        "messageCount": 1,
+        "textChars": 92,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1,
+          "input_image": 1
+        },
+        "normalizedHistoryChars": 4892,
+        "framingChars": 130,
+        "flatTokens": 1465,
+        "normalizedTokens": 1464,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 1223,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 1465,
+        "B1-send": 1464,
+        "P0-current-send": 1494,
+        "C1-normalized-send": 1464
+      }
+    },
+    {
+      "studyRun": "openai-dev-image-ordinary",
+      "caseId": "image-ordinary",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:image-ordinary",
+        "history:image",
+        "direction:none"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 1157,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 1157,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 1465,
+        "flatTokens": 1465,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 1224,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 95,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 5013,
+        "messageCount": 1,
+        "textChars": 95,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1,
+          "input_image": 1
+        },
+        "normalizedHistoryChars": 4895,
+        "framingChars": 130,
+        "flatTokens": 1465,
+        "normalizedTokens": 1465,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 1224,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 1465,
+        "B1-send": 1465,
+        "P0-current-send": 1495,
+        "C1-normalized-send": 1465
+      }
+    },
+    {
+      "studyRun": "openai-dev-reasoning-high",
+      "caseId": "reasoning-carrier-high",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:growing",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 227,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 227,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 261,
+        "flatTokens": 261,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 20,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 79,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 140,
+        "messageCount": 1,
+        "textChars": 79,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 79,
+        "framingChars": 73,
+        "flatTokens": 261,
+        "normalizedTokens": 261,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 20,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 261,
+        "B1-send": 261,
+        "P0-current-send": 276,
+        "C1-normalized-send": 261
+      }
+    },
+    {
+      "studyRun": "openai-dev-reasoning-high",
+      "caseId": "reasoning-carrier-high",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:reasoning",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 476,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 476,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 721,
+        "flatTokens": 721,
+        "systemTokens": 241,
+        "toolTokens": 0,
+        "historyTokens": 480,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 121,
+        "historyReasoningChars": 1798,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 0,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 963,
+        "systemJsonChars": 975,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 2247,
+        "messageCount": 3,
+        "textChars": 121,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 43,
+        "opaqueReasoningChars": 1592,
+        "retainedReasoningChars": 1592,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "reasoning": 1,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 1713,
+        "framingChars": 546,
+        "flatTokens": 670,
+        "normalizedTokens": 670,
+        "normalizedSystemTokens": 241,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 429,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 670,
+        "B1-send": 721,
+        "P0-current-send": 803,
+        "C1-normalized-send": 670
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 368,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 368,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 383,
+        "flatTokens": 249,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 12,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 229,
+        "flatTokens": 263,
+        "normalizedTokens": 405,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 263,
+        "B1-send": 383,
+        "P0-current-send": 492,
+        "C1-normalized-send": 405,
+        "C2-anthropic-tool-block": 405
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 387,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 387,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 395,
+        "flatTokens": 257,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 24,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 60,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 265,
+        "messageCount": 3,
+        "textChars": 60,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "text": 3
+        },
+        "normalizedHistoryChars": 60,
+        "framingChars": 342,
+        "flatTokens": 271,
+        "normalizedTokens": 417,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 24,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 271,
+        "B1-send": 395,
+        "P0-current-send": 547,
+        "C1-normalized-send": 417,
+        "C2-anthropic-tool-block": 417
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 3,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 406,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 406,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 406,
+        "flatTokens": 264,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 35,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 91,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 5,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 409,
+        "messageCount": 5,
+        "textChars": 91,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 3,
+          "assistant": 2
+        },
+        "blockCounts": {
+          "text": 5
+        },
+        "normalizedHistoryChars": 91,
+        "framingChars": 455,
+        "flatTokens": 279,
+        "normalizedTokens": 428,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 35,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 279,
+        "B1-send": 406,
+        "P0-current-send": 603,
+        "C1-normalized-send": 428,
+        "C2-anthropic-tool-block": 428
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-growing",
+      "caseId": "growing-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:messages",
+        "history:growing",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 4,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 425,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 425,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 418,
+        "flatTokens": 272,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 47,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 122,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 7,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 553,
+        "messageCount": 7,
+        "textChars": 122,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 4,
+          "assistant": 3
+        },
+        "blockCounts": {
+          "text": 7
+        },
+        "normalizedHistoryChars": 122,
+        "framingChars": 568,
+        "flatTokens": 286,
+        "normalizedTokens": 440,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 47,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 286,
+        "B1-send": 418,
+        "P0-current-send": 658,
+        "C1-normalized-send": 440,
+        "C2-anthropic-tool-block": 440
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-tool-history",
+      "caseId": "tool-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 910,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 812,
+        "cacheWrite": 96
+      },
+      "canonical": {
+        "totalTokens": 651,
+        "flatTokens": 421,
+        "systemTokens": 371,
+        "toolTokens": 253,
+        "historyTokens": 27,
+        "systemChars": 963,
+        "toolChars": 651,
+        "historyTextChars": 69,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 1,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 1,
+        "toolJsonChars": 723,
+        "messageJsonChars": 161,
+        "messageCount": 1,
+        "textChars": 69,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 69,
+        "framingChars": 229,
+        "flatTokens": 453,
+        "normalizedTokens": 673,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 253,
+        "normalizedHistoryTokens": 27,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 453,
+        "B1-send": 651,
+        "P0-current-send": 786,
+        "C1-normalized-send": 673,
+        "C2-anthropic-tool-block": 963
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-tool-history",
+      "caseId": "tool-history",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 2,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 2019,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 812,
+        "cacheWrite": 1205
+      },
+      "canonical": {
+        "totalTokens": 1539,
+        "flatTokens": 998,
+        "systemTokens": 371,
+        "toolTokens": 253,
+        "historyTokens": 915,
+        "systemChars": 963,
+        "toolChars": 651,
+        "historyTextChars": 2378,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 1,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 1,
+        "toolJsonChars": 723,
+        "messageJsonChars": 2888,
+        "messageCount": 3,
+        "textChars": 69,
+        "toolCallChars": 89,
+        "toolResultChars": 2220,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "text": 1,
+          "tool_use": 1,
+          "tool_result": 1
+        },
+        "normalizedHistoryChars": 2378,
+        "framingChars": 647,
+        "flatTokens": 1031,
+        "normalizedTokens": 1561,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 253,
+        "normalizedHistoryTokens": 915,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 1031,
+        "B1-send": 1539,
+        "P0-current-send": 1835,
+        "C1-normalized-send": 1561,
+        "C2-anthropic-tool-block": 1851
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-reasoning",
+      "caseId": "reasoning-carrier",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:growing",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 378,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 378,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 395,
+        "flatTokens": 257,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 24,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 62,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 154,
+        "messageCount": 1,
+        "textChars": 62,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 62,
+        "framingChars": 229,
+        "flatTokens": 271,
+        "normalizedTokens": 417,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 24,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 271,
+        "B1-send": 395,
+        "P0-current-send": 505,
+        "C1-normalized-send": 417,
+        "C2-anthropic-tool-block": 417
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-reasoning",
+      "caseId": "reasoning-carrier",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:reasoning",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 407,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 407,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 541,
+        "flatTokens": 352,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 170,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 94,
+        "historyReasoningChars": 348,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 699,
+        "messageCount": 3,
+        "textChars": 94,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 3,
+        "opaqueReasoningChars": 348,
+        "retainedReasoningChars": 348,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "text": 3,
+          "thinking": 1
+        },
+        "normalizedHistoryChars": 442,
+        "framingChars": 394,
+        "flatTokens": 366,
+        "normalizedTokens": 563,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 170,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 366,
+        "B1-send": 541,
+        "P0-current-send": 714,
+        "C1-normalized-send": 563,
+        "C2-anthropic-tool-block": 563
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-image-small",
+      "caseId": "image-small",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:image-small",
+        "history:image",
+        "direction:none"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 407,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 407,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 2253,
+        "flatTokens": 1465,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 1882,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 92,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 5066,
+        "messageCount": 1,
+        "textChars": 92,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1,
+          "image": 1
+        },
+        "normalizedHistoryChars": 4892,
+        "framingChars": 311,
+        "flatTokens": 1479,
+        "normalizedTokens": 2275,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 1882,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 1479,
+        "B1-send": 2253,
+        "P0-current-send": 2394,
+        "C1-normalized-send": 2275,
+        "C2-anthropic-tool-block": 2275
+      }
+    },
+    {
+      "studyRun": "anthropic-dev-image-ordinary",
+      "caseId": "image-ordinary",
+      "split": "development",
+      "route": "direct",
+      "strata": [
+        "component:image-ordinary",
+        "history:image",
+        "direction:none"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 1442,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 2,
+        "cacheRead": 0,
+        "cacheWrite": 1440
+      },
+      "canonical": {
+        "totalTokens": 2254,
+        "flatTokens": 1465,
+        "systemTokens": 371,
+        "toolTokens": 0,
+        "historyTokens": 1883,
+        "systemChars": 963,
+        "toolChars": 2,
+        "historyTextChars": 95,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 1,
+        "activeToolCount": 0,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 1020,
+        "systemJsonChars": 1157,
+        "toolCount": 0,
+        "toolJsonChars": 2,
+        "messageJsonChars": 5069,
+        "messageCount": 1,
+        "textChars": 95,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1,
+          "image": 1
+        },
+        "normalizedHistoryChars": 4895,
+        "framingChars": 311,
+        "flatTokens": 1480,
+        "normalizedTokens": 2276,
+        "normalizedSystemTokens": 393,
+        "normalizedToolTokens": 0,
+        "normalizedHistoryTokens": 1883,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-send": 1480,
+        "B1-send": 2254,
+        "P0-current-send": 2395,
+        "C1-normalized-send": 2276,
+        "C2-anthropic-tool-block": 2276
+      }
+    },
+    {
+      "studyRun": "openai-holdout-natural-a",
+      "caseId": "natural-a",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8288,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 8288,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8875,
+        "flatTokens": 9167,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 8,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 90,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 495,
+        "flatTokens": 9203,
+        "normalizedTokens": 8875,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8867,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9196,
+        "B1-selection": 8867,
+        "B0-send": 9203,
+        "B1-send": 8875,
+        "P0-current-send": 9026,
+        "C1-normalized-send": 8875
+      }
+    },
+    {
+      "studyRun": "openai-holdout-natural-a",
+      "caseId": "natural-a",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8309,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 629,
+        "cacheRead": 7680,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8883,
+        "flatTokens": 9175,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 16,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 62,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 389,
+        "messageCount": 3,
+        "textChars": 62,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 62,
+        "framingChars": 761,
+        "flatTokens": 9211,
+        "normalizedTokens": 8883,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 16,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8875,
+        "flatTokens": 9168,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 8,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 32,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9204,
+        "B1-selection": 8875,
+        "B0-send": 9211,
+        "B1-send": 8883,
+        "P0-current-send": 9101,
+        "C1-normalized-send": 8883
+      }
+    },
+    {
+      "studyRun": "openai-holdout-natural-b",
+      "caseId": "natural-b",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8290,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 610,
+        "cacheRead": 7680,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8879,
+        "flatTokens": 9171,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 12,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 46,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 107,
+        "messageCount": 1,
+        "textChars": 46,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 46,
+        "framingChars": 495,
+        "flatTokens": 9207,
+        "normalizedTokens": 8879,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8867,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9196,
+        "B1-selection": 8867,
+        "B0-send": 9207,
+        "B1-send": 8879,
+        "P0-current-send": 9030,
+        "C1-normalized-send": 8879
+      }
+    },
+    {
+      "studyRun": "openai-holdout-natural-b",
+      "caseId": "natural-b",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8312,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 632,
+        "cacheRead": 7680,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8892,
+        "flatTokens": 9184,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 25,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 97,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 424,
+        "messageCount": 3,
+        "textChars": 97,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 97,
+        "framingChars": 761,
+        "flatTokens": 9220,
+        "normalizedTokens": 8892,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 25,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8880,
+        "flatTokens": 9172,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 13,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 50,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9208,
+        "B1-selection": 8880,
+        "B0-send": 9220,
+        "B1-send": 8892,
+        "P0-current-send": 9109,
+        "C1-normalized-send": 8892
+      }
+    },
+    {
+      "studyRun": "openai-holdout-natural-c",
+      "caseId": "natural-c",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8291,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 8291,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8880,
+        "flatTokens": 9172,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 13,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 49,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 110,
+        "messageCount": 1,
+        "textChars": 49,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 49,
+        "framingChars": 495,
+        "flatTokens": 9208,
+        "normalizedTokens": 8880,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 13,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8867,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9196,
+        "B1-selection": 8867,
+        "B0-send": 9208,
+        "B1-send": 8880,
+        "P0-current-send": 9031,
+        "C1-normalized-send": 8880
+      }
+    },
+    {
+      "studyRun": "openai-holdout-natural-c",
+      "caseId": "natural-c",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8314,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 634,
+        "cacheRead": 7680,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8893,
+        "flatTokens": 9185,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 26,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 103,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 430,
+        "messageCount": 3,
+        "textChars": 103,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 103,
+        "framingChars": 761,
+        "flatTokens": 9221,
+        "normalizedTokens": 8893,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 26,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8880,
+        "flatTokens": 9172,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 13,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 50,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9208,
+        "B1-selection": 8880,
+        "B0-send": 9221,
+        "B1-send": 8893,
+        "P0-current-send": 9111,
+        "C1-normalized-send": 8893
+      }
+    },
+    {
+      "studyRun": "openai-holdout-image",
+      "caseId": "image",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:image",
+        "history:image",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8878,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 1198,
+        "cacheRead": 7680,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 10091,
+        "flatTokens": 10383,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 1224,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 94,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 5012,
+        "messageCount": 1,
+        "textChars": 94,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1,
+          "input_image": 1
+        },
+        "normalizedHistoryChars": 4894,
+        "framingChars": 552,
+        "flatTokens": 10419,
+        "normalizedTokens": 10091,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 1224,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8867,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9196,
+        "B1-selection": 8867,
+        "B0-send": 10419,
+        "B1-send": 10091,
+        "P0-current-send": 10256,
+        "C1-normalized-send": 10091
+      }
+    },
+    {
+      "studyRun": "openai-holdout-image",
+      "caseId": "image",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:image",
+        "history:image",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8898,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 194,
+        "cacheRead": 8704,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 10099,
+        "flatTokens": 10391,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 1232,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 126,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 5310,
+        "messageCount": 3,
+        "textChars": 126,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "input_image": 1,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 4926,
+        "framingChars": 818,
+        "flatTokens": 10427,
+        "normalizedTokens": 10099,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 1232,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 10091,
+        "flatTokens": 10384,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 1224,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 96,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 10420,
+        "B1-selection": 10091,
+        "B0-send": 10427,
+        "B1-send": 10099,
+        "P0-current-send": 10331,
+        "C1-normalized-send": 10099
+      }
+    },
+    {
+      "studyRun": "openai-holdout-reasoning",
+      "caseId": "reasoning",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:growing",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8298,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 8298,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8887,
+        "flatTokens": 9179,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 20,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 79,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 140,
+        "messageCount": 1,
+        "textChars": 79,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 79,
+        "framingChars": 495,
+        "flatTokens": 9215,
+        "normalizedTokens": 8887,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 20,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8867,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9196,
+        "B1-selection": 8867,
+        "B0-send": 9215,
+        "B1-send": 8887,
+        "P0-current-send": 9038,
+        "C1-normalized-send": 8887
+      }
+    },
+    {
+      "studyRun": "openai-holdout-reasoning",
+      "caseId": "reasoning",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:reasoning",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8584,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 8584,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 9401,
+        "flatTokens": 9693,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 534,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 122,
+        "historyReasoningChars": 2011,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 2461,
+        "messageCount": 3,
+        "textChars": 122,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 44,
+        "opaqueReasoningChars": 1804,
+        "retainedReasoningChars": 1804,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "reasoning": 1,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 1926,
+        "framingChars": 969,
+        "flatTokens": 9677,
+        "normalizedTokens": 9349,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 482,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 9393,
+        "flatTokens": 9686,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 526,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 93,
+        "historyReasoningChars": 2011,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9722,
+        "B1-selection": 9393,
+        "B0-send": 9677,
+        "B1-send": 9401,
+        "P0-current-send": 9619,
+        "C1-normalized-send": 9349
+      }
+    },
+    {
+      "studyRun": "openai-holdout-tool",
+      "caseId": "tool-history",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8297,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 617,
+        "cacheRead": 7680,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 8885,
+        "flatTokens": 9177,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 18,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 69,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 130,
+        "messageCount": 1,
+        "textChars": 69,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1
+        },
+        "normalizedHistoryChars": 69,
+        "framingChars": 495,
+        "flatTokens": 9213,
+        "normalizedTokens": 8885,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 18,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 8867,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9196,
+        "B1-selection": 8867,
+        "B0-send": 9213,
+        "B1-send": 8885,
+        "P0-current-send": 9036,
+        "C1-normalized-send": 8885
+      }
+    },
+    {
+      "studyRun": "openai-holdout-tool",
+      "caseId": "tool-history",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 2,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8976,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 1296,
+        "cacheRead": 7680,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 9475,
+        "flatTokens": 9767,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 608,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 2431,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 2862,
+        "messageCount": 1,
+        "textChars": 69,
+        "toolCallChars": 88,
+        "toolResultChars": 2220,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "message": 1,
+          "input_text": 1,
+          "function_call": 1,
+          "function_call_output": 1
+        },
+        "normalizedHistoryChars": 2377,
+        "framingChars": 919,
+        "flatTokens": 9790,
+        "normalizedTokens": 9462,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 595,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-send": 9790,
+        "B1-send": 9475,
+        "P0-current-send": 9719,
+        "C1-normalized-send": 9462
+      }
+    },
+    {
+      "studyRun": "openai-holdout-tool",
+      "caseId": "tool-history",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-openai"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8997,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 293,
+        "cacheRead": 8704,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 9483,
+        "flatTokens": 9776,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 616,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 2464,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 5,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 3161,
+        "messageCount": 3,
+        "textChars": 102,
+        "toolCallChars": 88,
+        "toolResultChars": 2220,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "message": 3,
+          "input_text": 2,
+          "function_call": 1,
+          "function_call_output": 1,
+          "output_text": 1
+        },
+        "normalizedHistoryChars": 2410,
+        "framingChars": 1185,
+        "flatTokens": 9798,
+        "normalizedTokens": 9470,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 603,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 9476,
+        "flatTokens": 9768,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 609,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 2434,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 4,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9804,
+        "B1-selection": 9476,
+        "B0-send": 9798,
+        "B1-send": 9483,
+        "P0-current-send": 9794,
+        "C1-normalized-send": 9470
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-natural-a",
+      "caseId": "natural-a",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13919,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13919,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14113,
+        "flatTokens": 9167,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 12,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 121,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 651,
+        "flatTokens": 9225,
+        "normalizedTokens": 14135,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 12,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14101,
+        "flatTokens": 9160,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9204,
+        "B1-selection": 14101,
+        "B0-send": 9225,
+        "B1-send": 14113,
+        "P0-current-send": 14444,
+        "C1-normalized-send": 14135,
+        "C2-anthropic-tool-block": 14425
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-natural-a",
+      "caseId": "natural-a",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13933,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13933,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14124,
+        "flatTokens": 9174,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 23,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 59,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 205,
+        "messageCount": 2,
+        "textChars": 59,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2
+        },
+        "blockCounts": {
+          "text": 2
+        },
+        "normalizedHistoryChars": 59,
+        "framingChars": 705,
+        "flatTokens": 9233,
+        "normalizedTokens": 14146,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 23,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14113,
+        "flatTokens": 9167,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 12,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9211,
+        "B1-selection": 14113,
+        "B0-send": 9233,
+        "B1-send": 14124,
+        "P0-current-send": 14476,
+        "C1-normalized-send": 14146,
+        "C2-anthropic-tool-block": 14436
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-natural-b",
+      "caseId": "natural-b",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13921,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13921,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14119,
+        "flatTokens": 9171,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 18,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 46,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 138,
+        "messageCount": 1,
+        "textChars": 46,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 46,
+        "framingChars": 651,
+        "flatTokens": 9230,
+        "normalizedTokens": 14141,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 18,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14101,
+        "flatTokens": 9160,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9204,
+        "B1-selection": 14101,
+        "B0-send": 9230,
+        "B1-send": 14119,
+        "P0-current-send": 14451,
+        "C1-normalized-send": 14141,
+        "C2-anthropic-tool-block": 14431
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-natural-b",
+      "caseId": "natural-b",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13936,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13936,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14137,
+        "flatTokens": 9183,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 36,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 93,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 239,
+        "messageCount": 2,
+        "textChars": 93,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2
+        },
+        "blockCounts": {
+          "text": 2
+        },
+        "normalizedHistoryChars": 93,
+        "framingChars": 705,
+        "flatTokens": 9241,
+        "normalizedTokens": 14159,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 36,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14119,
+        "flatTokens": 9171,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 18,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 46,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9215,
+        "B1-selection": 14119,
+        "B0-send": 9241,
+        "B1-send": 14137,
+        "P0-current-send": 14489,
+        "C1-normalized-send": 14159,
+        "C2-anthropic-tool-block": 14449
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-natural-c",
+      "caseId": "natural-c",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13921,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13921,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14120,
+        "flatTokens": 9172,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 19,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 49,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 141,
+        "messageCount": 1,
+        "textChars": 49,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 49,
+        "framingChars": 651,
+        "flatTokens": 9230,
+        "normalizedTokens": 14142,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 19,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14101,
+        "flatTokens": 9160,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9204,
+        "B1-selection": 14101,
+        "B0-send": 9230,
+        "B1-send": 14120,
+        "P0-current-send": 14452,
+        "C1-normalized-send": 14142,
+        "C2-anthropic-tool-block": 14432
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-natural-c",
+      "caseId": "natural-c",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13937,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13937,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14141,
+        "flatTokens": 9185,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 40,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 102,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 248,
+        "messageCount": 2,
+        "textChars": 102,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2
+        },
+        "blockCounts": {
+          "text": 2
+        },
+        "normalizedHistoryChars": 102,
+        "framingChars": 705,
+        "flatTokens": 9244,
+        "normalizedTokens": 14163,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 40,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14120,
+        "flatTokens": 9172,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 19,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 49,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9216,
+        "B1-selection": 14120,
+        "B0-send": 9244,
+        "B1-send": 14141,
+        "P0-current-send": 14493,
+        "C1-normalized-send": 14163,
+        "C2-anthropic-tool-block": 14453
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-image",
+      "caseId": "image",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:image",
+        "history:image",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 14594,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 14594,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 15984,
+        "flatTokens": 10383,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 1883,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 94,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 5068,
+        "messageCount": 1,
+        "textChars": 94,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1,
+          "image": 1
+        },
+        "normalizedHistoryChars": 4894,
+        "framingChars": 733,
+        "flatTokens": 10442,
+        "normalizedTokens": 16006,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 1883,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14101,
+        "flatTokens": 9160,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9204,
+        "B1-selection": 14101,
+        "B0-send": 10442,
+        "B1-send": 15984,
+        "P0-current-send": 16347,
+        "C1-normalized-send": 16006,
+        "C2-anthropic-tool-block": 16296
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-image",
+      "caseId": "image",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:image",
+        "history:image",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 14608,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 14608,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 15995,
+        "flatTokens": 10391,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 1894,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 124,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 5152,
+        "messageCount": 2,
+        "textChars": 124,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 2
+        },
+        "blockCounts": {
+          "text": 2,
+          "image": 1
+        },
+        "normalizedHistoryChars": 4924,
+        "framingChars": 787,
+        "flatTokens": 10449,
+        "normalizedTokens": 16017,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 1894,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 15984,
+        "flatTokens": 10383,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 1883,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 94,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 10427,
+        "B1-selection": 15984,
+        "B0-send": 10449,
+        "B1-send": 15995,
+        "P0-current-send": 16379,
+        "C1-normalized-send": 16017,
+        "C2-anthropic-tool-block": 16307
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-reasoning",
+      "caseId": "reasoning",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:growing",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13938,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13938,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14132,
+        "flatTokens": 9179,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 31,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 79,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 171,
+        "messageCount": 1,
+        "textChars": 79,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 79,
+        "framingChars": 651,
+        "flatTokens": 9238,
+        "normalizedTokens": 14154,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 31,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14101,
+        "flatTokens": 9160,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9204,
+        "B1-selection": 14101,
+        "B0-send": 9238,
+        "B1-send": 14132,
+        "P0-current-send": 14463,
+        "C1-normalized-send": 14154,
+        "C2-anthropic-tool-block": 14444
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-reasoning",
+      "caseId": "reasoning",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:reasoning",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13952,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13952,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14143,
+        "flatTokens": 9187,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 42,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 108,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 254,
+        "messageCount": 2,
+        "textChars": 108,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2
+        },
+        "blockCounts": {
+          "text": 2
+        },
+        "normalizedHistoryChars": 108,
+        "framingChars": 705,
+        "flatTokens": 9245,
+        "normalizedTokens": 14165,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 42,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14132,
+        "flatTokens": 9179,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 31,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 79,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9224,
+        "B1-selection": 14132,
+        "B0-send": 9245,
+        "B1-send": 14143,
+        "P0-current-send": 14495,
+        "C1-normalized-send": 14165,
+        "C2-anthropic-tool-block": 14455
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-tool",
+      "caseId": "tool-history",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13930,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13930,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14128,
+        "flatTokens": 9177,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 27,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 69,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 161,
+        "messageCount": 1,
+        "textChars": 69,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 69,
+        "framingChars": 651,
+        "flatTokens": 9235,
+        "normalizedTokens": 14150,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 27,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14101,
+        "flatTokens": 9160,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9204,
+        "B1-selection": 14101,
+        "B0-send": 9235,
+        "B1-send": 14128,
+        "P0-current-send": 14459,
+        "C1-normalized-send": 14150,
+        "C2-anthropic-tool-block": 14440
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-tool",
+      "caseId": "tool-history",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:tool-history",
+        "history:tool",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13944,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13944,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14140,
+        "flatTokens": 9184,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 39,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 99,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 245,
+        "messageCount": 2,
+        "textChars": 99,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2
+        },
+        "blockCounts": {
+          "text": 2
+        },
+        "normalizedHistoryChars": 99,
+        "framingChars": 705,
+        "flatTokens": 9243,
+        "normalizedTokens": 14162,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 39,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14128,
+        "flatTokens": 9177,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 27,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 69,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9221,
+        "B1-selection": 14128,
+        "B0-send": 9243,
+        "B1-send": 14140,
+        "P0-current-send": 14492,
+        "C1-normalized-send": 14162,
+        "C2-anthropic-tool-block": 14452
+      }
+    },
+    {
+      "studyRun": "anthropic-holdout-imported-reasoning",
+      "caseId": "imported-reasoning",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:reasoning",
+        "history:reasoning",
+        "direction:same-anthropic"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 15878,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 15878,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 16768,
+        "flatTokens": 10893,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 2667,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 1265,
+        "historyReasoningChars": 868,
+        "historyImageChars": 4800,
+        "messageCount": 5,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 7704,
+        "messageCount": 5,
+        "textChars": 1072,
+        "toolCallChars": 166,
+        "toolResultChars": 27,
+        "readableReasoningChars": 174,
+        "opaqueReasoningChars": 868,
+        "retainedReasoningChars": 868,
+        "imageCount": 1,
+        "imageChars": 4800,
+        "roleCounts": {
+          "user": 3,
+          "assistant": 2
+        },
+        "blockCounts": {
+          "text": 4,
+          "thinking": 2,
+          "tool_use": 1,
+          "tool_result": 1,
+          "image": 1
+        },
+        "normalizedHistoryChars": 6933,
+        "framingChars": 1330,
+        "flatTokens": 10951,
+        "normalizedTokens": 16790,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 2667,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 16757,
+        "flatTokens": 10886,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 2656,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 1236,
+        "historyReasoningChars": 868,
+        "historyImageChars": 4800,
+        "messageCount": 4,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 10930,
+        "B1-selection": 16757,
+        "B0-send": 10951,
+        "B1-send": 16768,
+        "P0-current-send": 17361,
+        "C1-normalized-send": 16790,
+        "C2-anthropic-tool-block": 17080
+      }
+    },
+    {
+      "studyRun": "openai-holdout-natural-a",
+      "caseId": "cross-openai-to-anthropic",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:cross-model",
+        "history:mixed",
+        "direction:openai-to-anthropic"
+      ],
+      "userTurn": 3,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "actualPromptTokens": 13973,
+      "exactSource": "anthropic-count-tokens",
+      "identityVerification": "count-endpoint-model",
+      "usage": {
+        "input": 13973,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 14149,
+        "flatTokens": 9191,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 48,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 124,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 7,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "provider": {
+        "shape": "anthropic",
+        "systemChars": 33994,
+        "systemJsonChars": 34553,
+        "toolCount": 4,
+        "toolJsonChars": 2877,
+        "messageJsonChars": 496,
+        "messageCount": 6,
+        "textChars": 124,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 4,
+          "assistant": 2
+        },
+        "blockCounts": {
+          "text": 6
+        },
+        "normalizedHistoryChars": 124,
+        "framingChars": 931,
+        "flatTokens": 9249,
+        "normalizedTokens": 14171,
+        "normalizedSystemTokens": 13075,
+        "normalizedToolTokens": 1048,
+        "normalizedHistoryTokens": 48,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "selection": {
+        "totalTokens": 14138,
+        "flatTokens": 9183,
+        "systemTokens": 13053,
+        "toolTokens": 1048,
+        "historyTokens": 37,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 95,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 6,
+        "activeToolCount": 4,
+        "heuristic": "Claude 4.7+ heuristic"
+      },
+      "estimates": {
+        "B0-selection": 9228,
+        "B1-selection": 14138,
+        "B0-send": 9249,
+        "B1-send": 14149,
+        "P0-current-send": 14588,
+        "C1-normalized-send": 14171,
+        "C2-anthropic-tool-block": 14461
+      }
+    },
+    {
+      "studyRun": "cross-anthropic-to-openai",
+      "caseId": "cross-anthropic-to-openai",
+      "split": "holdout",
+      "route": "direct",
+      "strata": [
+        "component:cross-model",
+        "history:reasoning",
+        "direction:anthropic-to-openai"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "openai-codex",
+        "api": "openai-codex-responses",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 9923,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 9923,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "canonical": {
+        "totalTokens": 10427,
+        "flatTokens": 10719,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 1560,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 1439,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 5,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "provider": {
+        "shape": "openai-responses",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2844,
+        "messageJsonChars": 6994,
+        "messageCount": 5,
+        "textChars": 1246,
+        "toolCallChars": 166,
+        "toolResultChars": 27,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 3
+        },
+        "blockCounts": {
+          "message": 5,
+          "input_text": 2,
+          "output_text": 3,
+          "function_call": 1,
+          "function_call_output": 1
+        },
+        "normalizedHistoryChars": 1439,
+        "framingChars": 5989,
+        "flatTokens": 9555,
+        "normalizedTokens": 9227,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 382,
+        "normalizedHistoryTokens": 360,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "selection": {
+        "totalTokens": 10420,
+        "flatTokens": 10712,
+        "systemTokens": 8485,
+        "toolTokens": 382,
+        "historyTokens": 1553,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 1410,
+        "historyReasoningChars": 0,
+        "historyImageChars": 4800,
+        "messageCount": 4,
+        "activeToolCount": 4,
+        "heuristic": "OpenAI-Codex heuristic"
+      },
+      "estimates": {
+        "B0-selection": 10748,
+        "B1-selection": 10420,
+        "B0-send": 9555,
+        "B1-send": 10427,
+        "P0-current-send": 10752,
+        "C1-normalized-send": 9227
+      }
+    },
+    {
+      "studyRun": "gateway-a",
+      "caseId": "gateway-a",
+      "split": "holdout",
+      "route": "gateway",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-radius"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "radius",
+        "api": "pi-messages",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8288,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 3,
+        "cacheRead": 0,
+        "cacheWrite": 8285
+      },
+      "canonical": {
+        "totalTokens": 9204,
+        "flatTokens": 9167,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 8,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "provider": {
+        "shape": "pi-messages",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2777,
+        "messageJsonChars": 110,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 515,
+        "flatTokens": 9186,
+        "normalizedTokens": 9204,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 711,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "fallback chars/4"
+      },
+      "selection": {
+        "totalTokens": 9196,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "estimates": {
+        "B0-selection": 9179,
+        "B1-selection": 9196,
+        "B0-send": 9186,
+        "B1-send": 9204,
+        "P0-current-send": 9208,
+        "C1-normalized-send": 9204
+      }
+    },
+    {
+      "studyRun": "gateway-a",
+      "caseId": "gateway-a",
+      "split": "holdout",
+      "route": "gateway",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-radius"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "radius",
+        "api": "pi-messages",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8309,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 3,
+        "cacheRead": 8285,
+        "cacheWrite": 21
+      },
+      "canonical": {
+        "totalTokens": 9212,
+        "flatTokens": 9175,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 16,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 61,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "provider": {
+        "shape": "pi-messages",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2777,
+        "messageJsonChars": 792,
+        "messageCount": 3,
+        "textChars": 61,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "text": 3
+        },
+        "normalizedHistoryChars": 61,
+        "framingChars": 1165,
+        "flatTokens": 9194,
+        "normalizedTokens": 9212,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 711,
+        "normalizedHistoryTokens": 16,
+        "heuristic": "fallback chars/4"
+      },
+      "selection": {
+        "totalTokens": 9204,
+        "flatTokens": 9168,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 8,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 32,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "estimates": {
+        "B0-selection": 9187,
+        "B1-selection": 9204,
+        "B0-send": 9194,
+        "B1-send": 9212,
+        "P0-current-send": 9378,
+        "C1-normalized-send": 9212
+      }
+    },
+    {
+      "studyRun": "gateway-b",
+      "caseId": "gateway-b",
+      "split": "holdout",
+      "route": "gateway",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-radius"
+      ],
+      "userTurn": 1,
+      "requestOrdinal": 1,
+      "firstRequest": true,
+      "compaction": false,
+      "target": {
+        "provider": "radius",
+        "api": "pi-messages",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8288,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 3,
+        "cacheRead": 0,
+        "cacheWrite": 8285
+      },
+      "canonical": {
+        "totalTokens": 9204,
+        "flatTokens": 9167,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 8,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 29,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 1,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "provider": {
+        "shape": "pi-messages",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2777,
+        "messageJsonChars": 110,
+        "messageCount": 1,
+        "textChars": 29,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 1
+        },
+        "blockCounts": {
+          "text": 1
+        },
+        "normalizedHistoryChars": 29,
+        "framingChars": 515,
+        "flatTokens": 9186,
+        "normalizedTokens": 9204,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 711,
+        "normalizedHistoryTokens": 8,
+        "heuristic": "fallback chars/4"
+      },
+      "selection": {
+        "totalTokens": 9196,
+        "flatTokens": 9160,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 0,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 0,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 0,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "estimates": {
+        "B0-selection": 9179,
+        "B1-selection": 9196,
+        "B0-send": 9186,
+        "B1-send": 9204,
+        "P0-current-send": 9208,
+        "C1-normalized-send": 9204
+      }
+    },
+    {
+      "studyRun": "gateway-b",
+      "caseId": "gateway-b",
+      "split": "holdout",
+      "route": "gateway",
+      "strata": [
+        "component:natural",
+        "history:mixed",
+        "direction:same-radius"
+      ],
+      "userTurn": 2,
+      "requestOrdinal": 1,
+      "firstRequest": false,
+      "compaction": false,
+      "target": {
+        "provider": "radius",
+        "api": "pi-messages",
+        "model": "gpt-5.6-sol"
+      },
+      "actualPromptTokens": 8309,
+      "exactSource": "provider-response",
+      "identityVerification": "provider-response",
+      "usage": {
+        "input": 3,
+        "cacheRead": 8285,
+        "cacheWrite": 21
+      },
+      "canonical": {
+        "totalTokens": 9212,
+        "flatTokens": 9175,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 16,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 61,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 3,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "provider": {
+        "shape": "pi-messages",
+        "systemChars": 33937,
+        "systemJsonChars": 34371,
+        "toolCount": 4,
+        "toolJsonChars": 2777,
+        "messageJsonChars": 792,
+        "messageCount": 3,
+        "textChars": 61,
+        "toolCallChars": 0,
+        "toolResultChars": 0,
+        "readableReasoningChars": 0,
+        "opaqueReasoningChars": 0,
+        "retainedReasoningChars": 0,
+        "imageCount": 0,
+        "imageChars": 0,
+        "roleCounts": {
+          "user": 2,
+          "assistant": 1
+        },
+        "blockCounts": {
+          "text": 3
+        },
+        "normalizedHistoryChars": 61,
+        "framingChars": 1165,
+        "flatTokens": 9194,
+        "normalizedTokens": 9212,
+        "normalizedSystemTokens": 8485,
+        "normalizedToolTokens": 711,
+        "normalizedHistoryTokens": 16,
+        "heuristic": "fallback chars/4"
+      },
+      "selection": {
+        "totalTokens": 9204,
+        "flatTokens": 9168,
+        "systemTokens": 8485,
+        "toolTokens": 711,
+        "historyTokens": 8,
+        "systemChars": 33937,
+        "toolChars": 2700,
+        "historyTextChars": 32,
+        "historyReasoningChars": 0,
+        "historyImageChars": 0,
+        "messageCount": 2,
+        "activeToolCount": 4,
+        "heuristic": "fallback chars/4"
+      },
+      "estimates": {
+        "B0-selection": 9187,
+        "B1-selection": 9204,
+        "B0-send": 9194,
+        "B1-send": 9212,
+        "P0-current-send": 9378,
+        "C1-normalized-send": 9212
+      }
+    }
+  ]
+}

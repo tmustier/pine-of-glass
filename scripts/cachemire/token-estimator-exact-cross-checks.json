@@ -1,0 +1,38 @@
+{
+  "protocolVersion": "token-estimator-study-v1",
+  "checks": [
+    {
+      "studyRun": "anthropic-dev-baseline",
+      "caseId": "baseline",
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "providerResponseTokens": 368,
+      "countEndpointTokens": 368
+    },
+    {
+      "studyRun": "anthropic-dev-tool-four",
+      "caseId": "tool-four",
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "providerResponseTokens": 1634,
+      "countEndpointTokens": 1634
+    },
+    {
+      "studyRun": "anthropic-dev-dense-long",
+      "caseId": "dense-long",
+      "target": {
+        "provider": "anthropic",
+        "api": "anthropic-messages",
+        "model": "claude-fable-5"
+      },
+      "providerResponseTokens": 27161,
+      "countEndpointTokens": 27161
+    }
+  ]
+}

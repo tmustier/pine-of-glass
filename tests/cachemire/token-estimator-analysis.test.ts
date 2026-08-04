@@ -51,6 +51,33 @@ function request(runId: string, requestId: string, actual: number): JsonObject[]
   ];
 }
 
+test("committed Anthropic count-endpoint cross-checks match response usage", () => {
+  const dataset = JSON.parse(readFileSync(
+    join(process.cwd(), "scripts/cachemire/token-estimator-study-data.json"),
+    "utf8",
+  )) as { rows: Array<{ studyRun: string; caseId: string; actualPromptTokens: number; exactSource: string }> };
+  const crossChecks = JSON.parse(readFileSync(
+    join(process.cwd(), "scripts/cachemire/token-estimator-exact-cross-checks.json"),
+    "utf8",
+  )) as {
+    checks: Array<{
+      studyRun: string;
+      caseId: string;
+      providerResponseTokens: number;
+      countEndpointTokens: number;
+    }>;
+  };
+  assert.equal(crossChecks.checks.length, 3);
+  for (const check of crossChecks.checks) {
+    const row = dataset.rows.find((candidate) =>
+      candidate.studyRun === check.studyRun && candidate.caseId === check.caseId
+    );
+    assert.equal(row?.exactSource, "provider-response");
+    assert.equal(row?.actualPromptTokens, check.providerResponseTokens);
+    assert.equal(check.countEndpointTokens, check.providerResponseTokens);
+  }
+});
+
 test("study analyzer joins exact-identity captures and emits deterministic aggregate reports", () => {
   const directory = mkdtempSync(join(tmpdir(), "token-estimator-analysis-"));
   const capture = join(directory, "capture.jsonl");
@@ -75,7 +102,12 @@ test("study analyzer joins exact-identity captures and emits deterministic aggre
   const report = parsedReport as {
     dataset: { requests: number; studyRuns: number };
     validation: { identityFailures: number; privacyViolations: string[]; splitFailures: string[] };
-    groups: Array<{ dimension: string; comparisons: Record<string, { lower: number; upper: number } | undefined> }>;
+    groups: Array<{
+      dimension: string;
+      value: string;
+      metrics: Record<string, { meanAbsolutePercent?: number; rawAbsoluteErrors?: number[] } | undefined>;
+      comparisons: Record<string, { lower: number; upper: number } | undefined>;
+    }>;
   };
   assert.equal(dataset.rows.length, 2);
   assert.deepEqual(report.dataset, { requests: 2, studyRuns: 2 });
@@ -83,6 +115,9 @@ test("study analyzer joins exact-identity captures and emits deterministic aggre
   assert.deepEqual(report.validation.privacyViolations, []);
   assert.deepEqual(report.validation.splitFailures, []);
   const overall = report.groups.find((group) => group.dimension === "overall");
-  assert.ok(overall?.comparisons["B1-send -> C1-normalized-send"]);
+  assert.equal(overall?.comparisons["B1-send -> C1-normalized-send"], undefined);
+  const smallStratum = report.groups.find((group) => group.dimension === "detailed-declared-stratum");
+  assert.equal(smallStratum?.metrics["B1-send"]?.meanAbsolutePercent, undefined);
+  assert.deepEqual(smallStratum?.metrics["B1-send"]?.rawAbsoluteErrors, [10, 8]);
   assert.match(readFileSync(markdownPath, "utf8"), /2 resolved requests across 2 study runs/);
 });

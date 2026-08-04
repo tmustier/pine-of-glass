@@ -19,6 +19,7 @@ import {
 } from "../../extensions/_lib/heuristics.ts";
 import { ESTIMATED_IMAGE_CHARS } from "../../extensions/_lib/provider-prompt.ts";
 import {
+  aggregateToolPayloadForShape,
   estimateToolListTokens,
   safeMinifiedJson,
   type ToolShape,
@@ -324,6 +325,22 @@ function parseTools(value: unknown): { count: number; shapes: ToolShape[] } {
   return { count: candidates.length, shapes: candidates.map(parseToolShape).filter((tool): tool is ToolShape => tool !== undefined) };
 }
 
+function flatToolPayload(tools: ToolShape[], target: TargetModel): unknown {
+  if (target.api === "anthropic-messages") {
+    return tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      eager_input_streaming: true,
+      input_schema: tool.schema,
+    }));
+  }
+  if (target.api === "pi-messages") return aggregateToolPayloadForShape(tools, "raw-schema");
+  if (target.api.includes("google") || target.api.includes("gemini")) {
+    return aggregateToolPayloadForShape(tools, "google");
+  }
+  return aggregateToolPayloadForShape(tools, "openai-responses");
+}
+
 export function measureCanonicalPrompt(
   pi: Pick<ExtensionAPI, "getActiveTools" | "getAllTools">,
   ctx: Pick<ExtensionContext, "sessionManager" | "getSystemPrompt">,
@@ -338,7 +355,7 @@ export function measureCanonicalPrompt(
   const system = forecastTargetPrompt({ history: [], systemPromptChars: systemChars, tools: [], target });
   const staticPrompt = forecastTargetPrompt({ history: [], systemPromptChars: systemChars, tools, target });
   const total = forecastTargetPrompt({ history, systemPromptChars: systemChars, tools, target });
-  const toolChars = safeMinifiedJson(tools).length;
+  const toolChars = safeMinifiedJson(flatToolPayload(tools, target)).length;
   const flatChars = systemChars + toolChars + historyCounts.textChars + historyCounts.keptReasoningChars + historyCounts.imageChars;
   return {
     totalTokens: total.tokens,

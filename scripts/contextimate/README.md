@@ -38,11 +38,15 @@ node scripts/contextimate/probe-live-prefix.mjs --output-dir /tmp/probe
 # 2. preview the counting plan (no network)
 node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl
 
-# 3. get provider-exact counts
+# 3. get provider-exact static-section counts
 node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl --live
+
+# 4. count the complete captured prompt when a count endpoint supports it
+node scripts/contextimate/check-provider-tokens.mjs \
+  --payload /tmp/probe/*.payloads.jsonl --exact --live --json
 ```
 
-This builds a matrix of minimal counting requests (baseline, system-only, all-tools, and per-tool) from a captured payload, passing each section through **byte-identical** (never reshaped), so the counted payload is exactly what pi sent and exactly what contextimate estimates. Use `--tools name1,name2` to focus on specific tools (e.g. one lazy-loaded MCP server whose hot-path footprint the startup estimator cannot see), `--model` to count against a different model, and `--json` for machine output.
+Default mode builds minimal counting requests for the baseline, system, all tools and each tool. It passes each measured section through byte-identical. It replaces the conversation with one minimal message so each marginal isolates one static component. Use `--exact` to preserve the complete captured prompt. Anthropic supports this through `count_tokens`; OpenAI has no non-generating equivalent in this script. Use `--tools name1,name2` to focus on specific tools, `--model` to count another model and `--json` for machine output.
 
 - **Anthropic**: uses the free `count_tokens` endpoint. Credentials: `ANTHROPIC_API_KEY`, or automatically pi's own OAuth token from `~/.pi/agent/auth.json` (used locally against the official API only, never printed).
 - **OpenAI**: uses tiny real `/v1/responses` probes (`max_output_tokens: 16`, `store: false`) and reads exact `usage.input_tokens`. **Not free**: costs a fraction of a cent per probe. Requires `OPENAI_API_KEY` (pi's `openai-codex` OAuth token cannot call `api.openai.com`).
