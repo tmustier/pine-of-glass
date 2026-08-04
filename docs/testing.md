@@ -161,9 +161,8 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
 - **Send-time prompt sizing**: recognized Anthropic, OpenAI, Google and `pi-messages`
   payloads count only system, tool and message fields. Tests pin transformed-payload
   precedence, metadata exclusion, flat image sizing and canonical-history fallback.
-  The `transformMessages` contract also passes a nontrivial normalization callback,
-  while unit fixtures pin known per-API outputs, so cross-provider tool IDs are counted
-  at their wire-safe length rather than raw length.
+  The immediate canonical forecast counts stored tool-call IDs; provider-specific ID
+  rewriting is deliberately left to the authoritative send-time payload.
 - **Restored freshness**: persisted lineage uses the parent entry timestamp as its
   request anchor and response time only as fallback, so long generations do not restore
   an artificially fresh cache.

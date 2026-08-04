@@ -1,19 +1,15 @@
-// Contract: _lib/forecast.ts mirrors the size-material rules of pi-ai's
-// transformMessages. The forecast cannot import that function at runtime (pi's loader
-// only aliases the compat surface), so this suite runs BOTH implementations over the
-// same histories and compares the resulting material char counts. When a case fails
-// after `pi update`, update extensions/_lib/forecast.ts to match the real transform.
+// Contract: _lib/forecast.ts mirrors the material transform rules that significantly
+// affect size. The forecast cannot import transformMessages at runtime (pi's loader
+// only aliases the compat surface), so this suite runs both implementations over the
+// same histories. Provider-specific tool ID rewriting is deliberately left to the
+// authoritative send-time payload.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import type { Message, Model, Api } from "@earendil-works/pi-ai";
 
-import {
-  forecastHistoryForTarget,
-  normalizeForecastToolCallId,
-  type ForecastMessage,
-} from "../../extensions/_lib/forecast.ts";
+import { forecastHistoryForTarget, type ForecastMessage } from "../../extensions/_lib/forecast.ts";
 import { ESTIMATED_IMAGE_CHARS } from "../../extensions/_lib/provider-prompt.ts";
 import { assistantMessage } from "../helpers.ts";
 
@@ -101,13 +97,13 @@ function richHistory(): Message[] {
         { type: "thinking", thinking: "", thinkingSignature: "SIGNATURE-ONLY" },
         { type: "thinking", thinking: "   \n  ", thinkingSignature: undefined }, // blank: vanishes even same-model
         { type: "thinking", thinking: "", thinkingSignature: "REDACTED", redacted: true },
-        { type: "toolCall", id: "t1", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "TOOL-THOUGHT" },
+        { type: "toolCall", id: "call|foreign/item+x", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "TOOL-THOUGHT" },
       ] as AssistantContent,
       { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol", stopReason: "toolUse" },
     ),
     {
       role: "toolResult",
-      toolCallId: "t1",
+      toolCallId: "call|foreign/item+x",
       toolName: "read",
       content: [
         { type: "text", text: "tool result text" },
@@ -138,31 +134,6 @@ test("mirror: same-model replay keeps reasoning payloads", () => {
   assertMirror(richHistory(), opus, "sol/opus history → opus (opus turns replay)");
   const sol = fakeModel({ id: "gpt-5.6-sol" });
   assertMirror(richHistory(), sol, "sol/opus history → sol (sol turns replay)");
-});
-
-test("mirror: cross-provider tool call IDs use pi's normalization callback", () => {
-  const originalId = `call|${"+/=".repeat(180)}`;
-  const history = [
-    assistantMessage(
-      [{ type: "toolCall", id: originalId, name: "read", arguments: { path: "/tmp/x" } }] as AssistantContent,
-      { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol", stopReason: "toolUse" },
-    ),
-    {
-      role: "toolResult", toolCallId: originalId, toolName: "read",
-      content: [{ type: "text", text: "result" }], isError: false, timestamp: 4,
-    } as Message,
-  ];
-  const target = fakeModel({ id: "claude-opus-4-8", api: "anthropic-messages", provider: "anthropic" });
-  const transformed = transformMessages(history, target, (id, model, source) =>
-    normalizeForecastToolCallId(id, model, source as unknown as ForecastMessage));
-  const firstBlock = (transformed[0] as Extract<Message, { role: "assistant" }>).content[0];
-  assert.equal(firstBlock?.type, "toolCall");
-  assert.equal(firstBlock?.type === "toolCall" ? firstBlock.id.length : 0, 64);
-  assert.equal(
-    materialCharsOfForecast(history, target),
-    materialCharsOfTransform(transformed),
-    "the forecast must count the normalized wire ID, not the 545-char source ID",
-  );
 });
 
 test("known divergence: pi synthesizes results for orphaned tool calls; the forecast ignores them", () => {
