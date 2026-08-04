@@ -173,6 +173,18 @@ export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
     }
   };
 
+  pi.on("session_start", async (_event, ctx) => {
+    const switchTarget = process.env.PI_TOKEN_ESTIMATOR_SWITCH_TARGET;
+    if (switchTarget === undefined) return;
+    const separator = switchTarget.indexOf("/");
+    const provider = switchTarget.slice(0, separator);
+    const modelId = switchTarget.slice(separator + 1);
+    const model = separator > 0 ? ctx.modelRegistry.find(provider, modelId) : undefined;
+    if (model === undefined || !await pi.setModel(model)) {
+      append({ schemaVersion: SCHEMA_VERSION, type: "switch_failure", ...meta });
+    }
+  });
+
   pi.on("model_select", (event, ctx) => {
     const target = targetFromModel(event.model);
     const selectionId = randomUUID();

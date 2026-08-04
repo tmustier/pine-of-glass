@@ -145,10 +145,13 @@ function joinRecords(records, candidates) {
     }
     const selection = request.selectionId ? selections.get(request.selectionId) : undefined;
     if (selection && !sameTarget(selection.target, request.target)) identityFailures.push(requestId);
-    const turn = request.configuredTurn ?? request.requestOrdinal;
+    const userTurn = request.configuredTurn ?? request.requestOrdinal;
+    const requestOrdinal = request.requestOrdinal ?? 1;
     const estimates = {
-      "B0-flat-4": request.canonical?.flatTokens,
-      "B1-family": request.canonical?.totalTokens,
+      "B0-selection": selection?.canonical?.flatTokens,
+      "B1-selection": selection?.canonical?.totalTokens,
+      "B0-send": request.canonical?.flatTokens,
+      "B1-send": request.canonical?.totalTokens,
       "P0-current-send": request.currentProviderTokens,
       "C1-normalized-send": request.provider?.normalizedTokens,
     };
@@ -159,7 +162,9 @@ function joinRecords(records, candidates) {
       split: request.split,
       route: request.route,
       strata: request.strata ?? [],
-      turn,
+      userTurn,
+      requestOrdinal,
+      firstRequest: userTurn === 1 && requestOrdinal === 1,
       compaction: request.compaction,
       target: request.target,
       actualPromptTokens: resolved.actualPromptTokens,
@@ -260,7 +265,7 @@ function groupDefinitions(rows) {
   addGroups("route", (row) => row.route);
   addGroups("split", (row) => row.split);
   addGroups("size", (row) => sizeBand(row.actualPromptTokens));
-  addGroups("turn", (row) => row.turn === 1 ? "first" : "later");
+  addGroups("turn", (row) => row.firstRequest ? "first" : "later");
   addGroups("reasoning", (row) => row.provider?.retainedReasoningChars > 0 ? "present" : "absent");
   addGroups("image", (row) => row.provider?.imageCount > 0 ? "present" : "absent");
   const tags = new Set(rows.flatMap((row) => row.strata));
@@ -272,8 +277,15 @@ function summarize(rows, estimatorNames) {
   return groupDefinitions(rows).map((group) => {
     const metrics = Object.fromEntries(estimatorNames.map((name) => [name, estimateMetrics(group.rows, name)]));
     const comparisons = {};
-    const pairs = [["B0-flat-4", "B1-family"], ["B1-family", "C1-normalized-send"], ["B1-family", "P0-current-send"]];
-    for (const name of estimatorNames.filter((name) => !["B0-flat-4", "B1-family", "P0-current-send", "C1-normalized-send"].includes(name))) {
+    const pairs = [
+      ["B0-selection", "B1-selection"],
+      ["B0-send", "B1-send"],
+      ["B1-send", "C1-normalized-send"],
+      ["B1-send", "P0-current-send"],
+    ];
+    for (const name of estimatorNames.filter((name) => ![
+      "B0-selection", "B1-selection", "B0-send", "B1-send", "P0-current-send", "C1-normalized-send",
+    ].includes(name))) {
       pairs.push(["C1-normalized-send", name]);
     }
     for (const [simple, complex] of pairs) {
@@ -325,7 +337,15 @@ const runs = Map.groupBy(joined.rows, (row) => row.studyRun);
 const splitFailures = [...runs.entries()]
   .filter(([, rows]) => new Set(rows.map((row) => row.split)).size > 1)
   .map(([run]) => run);
-const estimatorNames = ["B0-flat-4", "B1-family", "P0-current-send", "C1-normalized-send", ...candidates.map((item) => item.name)];
+const estimatorNames = [
+  "B0-selection",
+  "B1-selection",
+  "B0-send",
+  "B1-send",
+  "P0-current-send",
+  "C1-normalized-send",
+  ...candidates.map((item) => item.name),
+];
 const dataset = {
   schemaVersion: 1,
   bootstrap: { samples: BOOTSTRAP_SAMPLES, seed: BOOTSTRAP_SEED },

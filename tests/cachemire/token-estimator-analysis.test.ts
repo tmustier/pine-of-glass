@@ -83,6 +83,6 @@ test("study analyzer joins exact-identity captures and emits deterministic aggre
   assert.deepEqual(report.validation.privacyViolations, []);
   assert.deepEqual(report.validation.splitFailures, []);
   const overall = report.groups.find((group) => group.dimension === "overall");
-  assert.ok(overall?.comparisons["B1-family -> C1-normalized-send"]);
+  assert.ok(overall?.comparisons["B1-send -> C1-normalized-send"]);
   assert.match(readFileSync(markdownPath, "utf8"), /2 resolved requests across 2 study runs/);
 });
