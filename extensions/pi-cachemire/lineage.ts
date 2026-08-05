@@ -1,4 +1,5 @@
 import { isJsonObject } from "../_lib/boundary.ts";
+import { confirmedWindow, retentionForModel } from "./retention.ts";
 import type {
   CacheLineageSnapshot,
   CacheWindow,
@@ -23,7 +24,6 @@ function persistedEntryAt(entry: unknown): number | undefined {
 
 function billedSnapshotFromEntry(
   entry: unknown,
-  windowForModel: (provider: string | undefined, model: string | undefined) => CacheWindow | undefined,
   entryTimes: ReadonlyMap<string, number>,
 ): CacheLineageSnapshot | undefined {
   if (
@@ -40,6 +40,12 @@ function billedSnapshotFromEntry(
   const parentAt = typeof entry.parentId === "string" ? entryTimes.get(entry.parentId) : undefined;
   const requestAt = parentAt !== undefined && parentAt <= responseAt ? parentAt : responseAt;
   const provider = typeof entry.message.provider === "string" ? entry.message.provider : undefined;
+  const model = typeof entry.message.model === "string" ? entry.message.model : undefined;
+  const api = typeof entry.message.api === "string" ? entry.message.api : undefined;
+  const window = confirmedWindow(
+    retentionForModel(provider, model, api),
+    { cacheRead, cacheWrite },
+  ) ?? { kind: "unknown" };
   return {
     requestLeafId: typeof entry.parentId === "string" ? entry.parentId : null,
     responseEntryId: entry.id,
@@ -47,9 +53,9 @@ function billedSnapshotFromEntry(
     requestAt,
     promptTokens: input + cacheRead + cacheWrite,
     provider,
-    model: typeof entry.message.model === "string" ? entry.message.model : undefined,
-    api: typeof entry.message.api === "string" ? entry.message.api : undefined,
-    window: windowForModel(provider, typeof entry.message.model === "string" ? entry.message.model : undefined),
+    model,
+    api,
+    window,
   };
 }
 
@@ -64,13 +70,10 @@ function persistedEntryTimes(entries: readonly unknown[]): Map<string, number> {
 }
 
 /** Restore every normal provider call in the session tree, not only the active branch. */
-export function restoreLineageSnapshots(
-  entries: readonly unknown[],
-  windowForModel: (provider: string | undefined, model: string | undefined) => CacheWindow | undefined,
-): CacheLineageSnapshot[] {
+export function restoreLineageSnapshots(entries: readonly unknown[]): CacheLineageSnapshot[] {
   const entryTimes = persistedEntryTimes(entries);
   return entries
-    .map((entry) => billedSnapshotFromEntry(entry, windowForModel, entryTimes))
+    .map((entry) => billedSnapshotFromEntry(entry, entryTimes))
     .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined);
 }
 
@@ -89,14 +92,13 @@ function responseLinkKey(snapshot: CacheLineageSnapshot): string {
 export function hydrateLineageResponseIds(
   snapshots: CacheLineageSnapshot[],
   entries: readonly unknown[],
-  windowForModel: (provider: string | undefined, model: string | undefined) => CacheWindow | undefined,
 ): void {
   const unresolved = snapshots.filter((snapshot) => snapshot.responseEntryId === undefined);
   if (unresolved.length === 0) return;
   const entryTimes = persistedEntryTimes(entries);
   const persisted = new Map(
     entries
-      .map((entry) => billedSnapshotFromEntry(entry, windowForModel, entryTimes))
+      .map((entry) => billedSnapshotFromEntry(entry, entryTimes))
       .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined)
       .map((snapshot) => [responseLinkKey(snapshot), snapshot]),
   );
@@ -233,7 +235,6 @@ export function pathContainsCompaction(
 export function cacheStateForLineage(
   resolution: ResolvedCacheLineage,
   current: { provider?: string; model?: string; api?: string },
-  fallbackWindow: CacheWindow,
 ): {
   expectedRead: number;
   lastRequestAt: number | undefined;
@@ -255,7 +256,7 @@ export function cacheStateForLineage(
       changed(baseline.model, current.model) ||
       changed(baseline.api, current.api)
     ),
-    window: refresh?.window ?? fallbackWindow,
+    window: refresh?.window ?? { kind: "unknown" },
   };
 }
 

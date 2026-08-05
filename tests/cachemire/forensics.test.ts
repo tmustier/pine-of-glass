@@ -1,14 +1,9 @@
-// Cachemire forensics: fingerprinting, miss-cause naming, and classification.
-// The load-bearing invariant: pi moves its cache_control breakpoint to the last user
-// message on every request, so fingerprints must strip cache_control — otherwise every
-// healthy call would be misdiagnosed as "history mutated".
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
-import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 
-const { stripCacheControl, fingerprintPayload, diffFingerprints, classifyCall } = internals;
+const { fingerprintPayload, diffFingerprints, classifyCall } = internals;
 
 const MIN = 60_000;
 
@@ -50,22 +45,32 @@ function anthropicPayload(options: {
   };
 }
 
-test("stripCacheControl removes breakpoints recursively, preserving everything else", () => {
-  const stripped = stripCacheControl(anthropicPayload());
-  if (!isJsonObject(stripped)) assert.fail("stripCacheControl should preserve an object payload");
-  assert.equal(JSON.stringify(stripped).includes("cache_control"), false);
-  assert.ok(Array.isArray(stripped.system));
-  assert.ok(isJsonObject(stripped.system[0]));
-  assert.equal(stripped.system[0].text, "You are a fixture.");
-  assert.ok(Array.isArray(stripped.tools));
-  assert.ok(isJsonObject(stripped.tools[0]));
-  assert.equal(stripped.tools[0].name, "bash");
-});
-
 test("moving the breakpoint between calls is NOT a mutation", () => {
   const call1 = fingerprintPayload(anthropicPayload({ userTexts: ["a"], breakpointIndex: 0 }));
   const call2 = fingerprintPayload(anthropicPayload({ userTexts: ["a", "b"], breakpointIndex: 1 }));
   assert.equal(diffFingerprints(call1, call2), undefined, "appended message + moved breakpoint must not diff");
+});
+
+test("Bedrock fingerprints exclude moved cache points and include tool config", () => {
+  const payload = (texts: string[], toolDescription = "Run a command") => ({
+    modelId: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    system: [{ text: "fixture" }, { cachePoint: { type: "default" } }],
+    messages: texts.map((text, index) => ({
+      role: "user",
+      content: [
+        { text },
+        ...(index === texts.length - 1 ? [{ cachePoint: { type: "default" } }] : []),
+      ],
+    })),
+    toolConfig: { tools: [{ toolSpec: { name: "bash", description: toolDescription, inputSchema: {} } }] },
+  });
+
+  const first = fingerprintPayload(payload(["a"]));
+  const next = fingerprintPayload(payload(["a", "b"]));
+  assert.equal(first.model, "us.anthropic.claude-sonnet-4-5-20250929-v1:0");
+  assert.equal(first.toolHashes[0]?.name, "bash");
+  assert.equal(diffFingerprints(first, next), undefined);
+  assert.equal(diffFingerprints(next, fingerprintPayload(payload(["a", "b"], "Changed")))?.kind, "tools");
 });
 
 test("fingerprint detects provider kind and TTL from observed cache_control", () => {

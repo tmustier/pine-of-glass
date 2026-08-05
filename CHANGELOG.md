@@ -11,7 +11,10 @@
   use OpenAI's documented 30-minute minimum on both
   OpenAI and OpenAI Codex. A direct official OpenAI GPT-5 request below GPT-5.6 gets a
   24-hour maximum only when its outgoing payload contains `prompt_cache_retention:
-  "24h"`; other routes make no idle-time or warmth claim. This removes the OpenAI
+  "24h"` and a later cache read confirms an entry. MiniMax M2.7, documented Bedrock
+  Claude 4.5 and 4.6 models, Groq GPT-OSS, and supported Cerebras models now get exact
+  route policies. Every window waits for a reported cache read or supported write;
+  unmatched routes make no idle-time or warmth claim. This removes the OpenAI
   5-minute to 1-hour band, `in_memory` support, replica identity
   and 512-token entry matching. Re-write forecasts use the prior billed prompt as a
   baseline, not the whole next prompt. Stale and invalidated states retain warning

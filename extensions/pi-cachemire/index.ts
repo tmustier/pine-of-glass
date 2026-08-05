@@ -20,7 +20,6 @@ import {
   expiryCause,
   fingerprintPayload,
   pastWindow,
-  stripCacheControl,
 } from "./classify.ts";
 import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, withinWarmHorizon } from "./clock.ts";
 import { activeToolShapes, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
@@ -34,7 +33,13 @@ import {
 } from "./lineage.ts";
 import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
 import {
-  inferAnthropicTtlMs, OPENAI_EXTENDED_WINDOW, OPENAI_MINIMUM_WINDOW, windowForModel, windowForRequest, windowLabel,
+  confirmedWindow,
+  inferAnthropicTtlMs,
+  OPENAI_EXTENDED_WINDOW,
+  OPENAI_MINIMUM_WINDOW,
+  retentionForRequest,
+  type RetentionMatch,
+  windowLabel,
 } from "./retention.ts";
 import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
@@ -339,9 +344,9 @@ interface CachemireState {
   pendingFingerprint?: RequestFingerprint;
   pendingFingerprintCause?: CallCause;
   pendingRequestLeafId?: string | null;
-  pendingRequestWindow?: CacheWindow;
+  pendingRetention?: RetentionMatch;
   pendingRequestAt?: number;
-  pendingPreviousCacheAt?: number;
+  pendingPreviousRequestAt?: number;
   pendingPreviousWindow?: CacheWindow;
   pendingCacheGapMs?: number;
   prevCallRequestAt?: number;
@@ -483,7 +488,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const entries = ctx.sessionManager.getEntries();
     const { messages } = buildSessionContext(entries, ctx.sessionManager.getLeafId());
     s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);
-    s.lineages = restoreLineageSnapshots(entries, windowForModel);
+    s.lineages = restoreLineageSnapshots(entries);
     const baseline = findBranchBaseline(entries, ctx.sessionManager.getLeafId(), s.lineages);
     const model = ctx.model;
     if (model) {
@@ -494,7 +499,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     Object.assign(s, cacheStateForLineage(
       { baseline, refresh: baseline, compatible: [] },
       { provider: model?.provider, model: model?.id, api: model?.api },
-      baseline?.window ?? windowForModel(model?.provider, model?.id) ?? UNKNOWN_WINDOW,
     ));
     s.prevCallRequestAt = s.records.at(-1)?.at || undefined;
     // A restored branch can already be mid-switch (billed by a different model than the
@@ -505,9 +509,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.inCompaction = false;
     s.pendingFingerprint = undefined;
     s.pendingFingerprintCause = undefined;
-    s.pendingRequestAt = s.pendingPreviousCacheAt = s.pendingCacheGapMs = undefined;
+    s.pendingRequestAt = s.pendingPreviousRequestAt = s.pendingCacheGapMs = undefined;
     s.pendingRequestLeafId = undefined;
-    s.pendingRequestWindow = s.pendingPreviousWindow = undefined;
+    s.pendingRetention = s.pendingPreviousWindow = undefined;
     s.ui = ctx.ui;
     s.theme = ctx.ui.theme;
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
@@ -529,7 +533,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.pendingFingerprint = fingerprintPayload(event.payload);
     const requestAt = Date.now();
     const entries = ctx.sessionManager.getEntries();
-    hydrateLineageResponseIds(s.lineages, entries, windowForModel);
+    hydrateLineageResponseIds(s.lineages, entries);
     const resolution = resolveCacheLineage({
       entries,
       activeLeafId: ctx.sessionManager.getLeafId(),
@@ -543,7 +547,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     Object.assign(s, cacheStateForLineage(
       resolution,
       { provider: ctx.model?.provider, model: ctx.model?.id ?? s.pendingFingerprint.model, api: ctx.model?.api },
-      windowForModel(ctx.model?.provider, ctx.model?.id ?? s.pendingFingerprint.model) ?? UNKNOWN_WINDOW,
     ));
     s.pendingFingerprintCause = resolution.cause;
     // Re-forecast at send time from the actual provider body. This captures pi's
@@ -551,26 +554,21 @@ export default function piCachemire(pi: ExtensionAPI): void {
     refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), ctx.model, event.payload);
     s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
     if (firstAttempt) {
-      s.pendingPreviousCacheAt = s.lastRequestAt;
+      s.pendingPreviousRequestAt = s.lastRequestAt;
       s.pendingPreviousWindow = s.window;
     }
     s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
-    s.pendingRequestWindow = windowForRequest({
+    s.pendingRetention = retentionForRequest({
       provider: ctx.model?.provider,
       model: ctx.model?.id ?? s.pendingFingerprint.model,
-      fingerprint: s.pendingFingerprint,
+      api: ctx.model?.api,
+      ttlMs: s.pendingFingerprint.ttlMs,
       payload: event.payload,
-    }) ?? UNKNOWN_WINDOW;
-    if (s.pendingFingerprint.kind === "anthropic" && ctx.model?.provider === "anthropic") {
-      s.providerLabel = "anthropic";
-    } else if (s.pendingFingerprint.kind === "openai-responses") {
-      s.providerLabel = ctx.model?.provider ?? "openai";
-    } else {
-      s.providerLabel = ctx.model?.provider;
-    }
+    });
+    s.providerLabel = ctx.model?.provider;
     s.pendingRequestAt = requestAt;
-    // Optimistically anchor the in-flight request; agent_end rolls it back if no usage arrives.
     s.lastRequestAt = requestAt;
+    s.window = UNKNOWN_WINDOW;
 
     // Place the break notice where the causality lives: between the user's action and the
     // response. It shows the expectation now and is resolved in place when usage arrives.
@@ -608,7 +606,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
         else s.pendingNotice = appendChatLine(text);
       }
     }
-    s.window = s.pendingRequestWindow;
     updateWidget();
   });
 
@@ -626,11 +623,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
       (s.lastCallProvider !== undefined && model.provider !== s.lastCallProvider) ||
       (s.lastCallApi !== undefined && model.api !== s.lastCallApi)
     );
-    // Keep the freshness window honest across provider switches until the next
-    // observation lands; an anthropic TTL observed from a live payload stays valid.
-    if (!(model.provider === "anthropic" && s.window.kind === "contract" && s.window.source === "observed")) {
-      s.window = windowForModel(model.provider, model.id) ?? UNKNOWN_WINDOW;
-    }
     refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
     updateWidget();
   });
@@ -657,7 +649,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("session_tree", async (event, ctx) => {
     if (!ownsState()) return;
     const entries = ctx.sessionManager.getEntries();
-    hydrateLineageResponseIds(s.lineages, entries, windowForModel);
+    hydrateLineageResponseIds(s.lineages, entries);
     const baseline = findBranchBaseline(entries, event.newLeafId, s.lineages);
     const resolution = resolveCacheLineage({
       entries,
@@ -672,7 +664,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     Object.assign(s, cacheStateForLineage(
       resolution,
       { provider: ctx.model?.provider, model: ctx.model?.id, api: ctx.model?.api },
-      windowForModel(ctx.model?.provider, ctx.model?.id) ?? UNKNOWN_WINDOW,
     ));
     // Checking out a branch billed by another model is a switch in lineage terms.
     refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
@@ -715,6 +706,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       inCompaction: s.inCompaction,
       fingerprintCause,
     });
+    const activeWindow = confirmedWindow(s.pendingRetention, usage) ?? UNKNOWN_WINDOW;
     const record: CallRecord = {
       index: s.records.length + 1,
       at: now,
@@ -740,22 +732,20 @@ export default function piCachemire(pi: ExtensionAPI): void {
       model: message.model,
       api: message.api,
       fingerprint: s.pendingFingerprint,
-      window: s.pendingRequestWindow ?? s.window,
+      window: activeWindow,
       recordIndex: record.index,
     });
     s.compacted = false;
     s.prevCallRequestAt = requestAt;
-    // Usage arrived: the anchor this request claimed at send time is provider-confirmed.
     s.pendingFingerprint = undefined;
     s.pendingFingerprintCause = undefined;
     s.pendingRequestAt = undefined;
     s.pendingRequestLeafId = undefined;
-    s.pendingPreviousCacheAt = s.pendingPreviousWindow = undefined;
+    s.pendingPreviousRequestAt = s.pendingPreviousWindow = undefined;
     s.pendingCacheGapMs = undefined;
     s.expectedRead = promptSize;
-    s.window = s.pendingRequestWindow ?? s.window;
-    s.pendingRequestWindow = undefined;
-    // Fresh usage re-baselines the currency: counts are now denominated in this model.
+    s.window = activeWindow;
+    s.pendingRetention = undefined;
     s.lastCallModelId = message.model ?? s.currentModelId ?? s.lastCallModelId;
     s.lastCallProvider = message.provider ?? s.lastCallProvider;
     s.lastCallApi = message.api ?? s.lastCallApi;
@@ -797,21 +787,21 @@ export default function piCachemire(pi: ExtensionAPI): void {
 
   pi.on("turn_end", async (_event, ctx) => {
     if (!ownsState()) return;
-    hydrateLineageResponseIds(s.lineages, ctx.sessionManager.getEntries(), windowForModel);
+    hydrateLineageResponseIds(s.lineages, ctx.sessionManager.getEntries());
   });
 
   pi.on("agent_end", async () => {
     if (!ownsState()) return;
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
     if (s.pendingRequestAt !== undefined) {
-      s.lastRequestAt = s.pendingPreviousCacheAt;
+      s.lastRequestAt = s.pendingPreviousRequestAt;
       s.window = s.pendingPreviousWindow ?? s.window;
       s.pendingRequestAt = undefined;
       s.pendingRequestLeafId = undefined;
-      s.pendingPreviousCacheAt = s.pendingPreviousWindow = undefined;
+      s.pendingPreviousRequestAt = s.pendingPreviousWindow = undefined;
       s.pendingFingerprint = undefined;
       s.pendingFingerprintCause = undefined;
-      s.pendingRequestWindow = undefined;
+      s.pendingRetention = undefined;
       s.pendingCacheGapMs = undefined;
       updateWidget();
     }
@@ -838,13 +828,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
 
 // Test-only surface. Pi's loader imports only the default export, so this is runtime-inert.
 export const internals = {
-  stripCacheControl,
   fingerprintPayload,
   inferAnthropicTtlMs,
   wireThinkingEffort,
   thinkingLevelsDiffer,
-  windowForModel,
-  windowForRequest,
   windowLabel,
   pastWindow,
   OPENAI_EXTENDED_WINDOW,

@@ -245,7 +245,7 @@ test("event flow: classification uses the previous policy and abort restores it"
   }, ctx);
   const firstMessage = {
     role: "assistant", content: [], provider: "openai", api: "openai-responses", model: "gpt-5.4",
-    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 0, 100_000),
+    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 100_000, 0),
   };
   await fire(probe, "message_end", { message: firstMessage }, ctx);
   entries.push({ type: "message", id: "a1", parentId: "u1", message: firstMessage });
@@ -286,7 +286,7 @@ test("event flow: switching back before an OpenAI maximum stays unknown", async 
   }, ctx);
   const openaiMessage = {
     role: "assistant", content: [], provider: "openai", api: "openai-responses", model: "gpt-5.4",
-    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 0, 100_000),
+    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 100_000, 0),
   };
   await fire(probe, "message_end", { message: openaiMessage }, ctx);
   entries.push({ type: "message", id: "a1", parentId: "u1", message: openaiMessage });

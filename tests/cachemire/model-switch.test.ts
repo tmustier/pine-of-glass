@@ -10,7 +10,7 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 const {
   cacheClock, nextClockUpdateMs, OPENAI_MINIMUM_WINDOW, predictBreak, renderBreakingLine,
-  restoreLineageSnapshots, windowForModel, withinWarmHorizon,
+  restoreLineageSnapshots, withinWarmHorizon,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -179,7 +179,7 @@ function entriesFixture(): SessionEntry[] {
 const OPUS: SwitchTarget = { provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages", input: ["text", "image"] };
 
 test("restored lineage anchors freshness at the parent request, not response end", () => {
-  const restored = restoreLineageSnapshots(entriesFixture(), () => undefined);
+  const restored = restoreLineageSnapshots(entriesFixture());
   assert.equal(restored[0]?.requestAt, 1_000);
   assert.equal(restored[0]?.responseAt, 5_000);
 });
@@ -283,7 +283,7 @@ test("computeSwitchForecast: gateway targets are labelled, not refused a number"
 
 test("computeSwitchForecast: finds the target's own prior call on the active path only", () => {
   const entries = entriesFixture();
-  const snapshots = restoreLineageSnapshots(entries, windowForModel);
+  const snapshots = restoreLineageSnapshots(entries);
   // Switching back to sol itself: its billed call at a1 is on the path.
   const backToSol = computeSwitchForecast({
     target: { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" },

@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import piCachemire, { internals } from "../../extensions/pi-cachemire/index.ts";
 import { cacheStateForLineage } from "../../extensions/pi-cachemire/lineage.ts";
-import type { CacheLineageSnapshot, CacheWindow } from "../../extensions/pi-cachemire/types.ts";
+import type { CacheLineageSnapshot } from "../../extensions/pi-cachemire/types.ts";
 
 const {
   diffFingerprints,
@@ -16,7 +16,6 @@ const {
   restoreLineageSnapshots,
 } = internals;
 
-const WINDOW: CacheWindow = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" };
 type Handler = (...args: unknown[]) => unknown;
 
 function extensionProbe(): { handlers: Map<string, Handler[]>; commands: Map<string, Handler> } {
@@ -94,10 +93,6 @@ function branchedEntries(now = 30_000) {
   ];
 }
 
-function restored(entries: unknown[]): CacheLineageSnapshot[] {
-  return restoreLineageSnapshots(entries, () => WINDOW);
-}
-
 function resolve(
   entries: unknown[],
   snapshots: CacheLineageSnapshot[],
@@ -143,7 +138,7 @@ function context(entries: unknown[], leaf: { id: string }, notifications: string
 
 test("restores every branch while selecting only the active path baseline", () => {
   const entries = branchedEntries();
-  const snapshots = restored(entries);
+  const snapshots = restoreLineageSnapshots(entries);
   assert.deepEqual(snapshots.map((snapshot) => snapshot.responseEntryId), ["root", "left", "left-next", "right"]);
   assert.equal(findBranchBaseline(entries, "left", snapshots)?.promptTokens, 100_000);
   assert.equal(findBranchBaseline(entries, "right", snapshots)?.promptTokens, 120_000);
@@ -159,16 +154,16 @@ test("restores every branch while selecting only the active path baseline", () =
 
 test("links a live request snapshot after Pi persists its assistant response", () => {
   const entries = branchedEntries();
-  const persisted = restored(entries)[0]!;
+  const persisted = restoreLineageSnapshots(entries)[0]!;
   const live = { ...persisted, responseEntryId: undefined, fingerprint: fingerprintPayload(payload(["root"])) };
-  hydrateLineageResponseIds([live], entries, () => WINDOW);
+  hydrateLineageResponseIds([live], entries);
   assert.equal(live.responseEntryId, "root");
   assert.ok(live.fingerprint);
 });
 
 test("returning to a warm branch uses its compatible descendants, not a sibling", () => {
   const entries = branchedEntries(30_000);
-  const snapshots = restored(entries);
+  const snapshots = restoreLineageSnapshots(entries);
   const root = snapshotById(snapshots, "root");
   const left = snapshotById(snapshots, "left");
   const leftNext = snapshotById(snapshots, "left-next");
@@ -187,7 +182,7 @@ test("returning to a warm branch uses its compatible descendants, not a sibling"
 
 test("an unknown restored API withholds refresh proof without inventing a model switch", () => {
   const entries = branchedEntries();
-  const snapshots = restored(entries);
+  const snapshots = restoreLineageSnapshots(entries);
   const left = snapshotById(snapshots, "left");
   left.api = undefined;
   left.fingerprint = fingerprintPayload(payload(["root", "left"]));
@@ -197,7 +192,6 @@ test("an unknown restored API withholds refresh proof without inventing a model 
   const cacheState = cacheStateForLineage(
     resolution,
     { provider: "anthropic", model: "claude-opus-4-8", api: "anthropic-messages" },
-    WINDOW,
   );
   assert.equal(cacheState.modelSwitched, false);
   assert.equal(cacheState.lastRequestAt, undefined, "unknown identity cannot restore a freshness clock");
@@ -214,7 +208,7 @@ test("incompatible descendants cannot refresh the selected lineage", () => {
     { ...baseOptions, model: "claude-fable-5" },
   ];
   for (const options of variants) {
-    const snapshots = restored(entries);
+    const snapshots = restoreLineageSnapshots(entries);
     const left = snapshotById(snapshots, "left");
     const leftNext = snapshotById(snapshots, "left-next");
     left.fingerprint = fingerprintPayload(payload(["root", "left"], baseOptions));
@@ -229,7 +223,7 @@ test("incompatible descendants cannot refresh the selected lineage", () => {
     (snapshot: CacheLineageSnapshot) => { snapshot.api = undefined; },
     (snapshot: CacheLineageSnapshot) => { snapshot.window = { kind: "contract", ttlMs: 60 * 60_000, source: "observed" }; },
   ]) {
-    const snapshots = restored(entries);
+    const snapshots = restoreLineageSnapshots(entries);
     const left = snapshotById(snapshots, "left");
     const leftNext = snapshotById(snapshots, "left-next");
     left.fingerprint = fingerprintPayload(payload(["root", "left"], baseOptions));
@@ -242,7 +236,7 @@ test("incompatible descendants cannot refresh the selected lineage", () => {
 
 test("suffix divergence is natural, while edited history and model changes still break", () => {
   const entries = branchedEntries();
-  const snapshots = restored(entries);
+  const snapshots = restoreLineageSnapshots(entries);
   const left = snapshotById(snapshots, "left");
   left.fingerprint = fingerprintPayload(payload(["root", "left"]));
 
@@ -265,7 +259,7 @@ test("a selected compaction checkpoint stays unsized before provider usage", () 
     ...branchedEntries(),
     { type: "compaction", id: "compact", parentId: "left", summary: "short summary", timestamp: new Date().toISOString() },
   ];
-  const snapshots = restored(entries);
+  const snapshots = restoreLineageSnapshots(entries);
   const left = snapshotById(snapshots, "left");
   left.fingerprint = fingerprintPayload(payload(["root", "left"]));
   const resolution = resolve(entries, snapshots, "compact", fingerprintPayload(payload(["summary"])));
@@ -283,7 +277,7 @@ test("a selected compaction checkpoint stays unsized before provider usage", () 
 test("lineage-local freshness drives TTL prediction", () => {
   const now = 10 * 60_000;
   const entries = branchedEntries(now - 6 * 60_000);
-  const snapshots = restored(entries);
+  const snapshots = restoreLineageSnapshots(entries);
   const left = snapshotById(snapshots, "left");
   const leftNext = snapshotById(snapshots, "left-next");
   left.fingerprint = fingerprintPayload(payload(["root", "left"]));
