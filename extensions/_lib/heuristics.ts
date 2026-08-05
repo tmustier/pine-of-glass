@@ -53,6 +53,11 @@ const COMMAND_R_MODEL = /(?:^|[/@._-])command-r(?:-plus)?-08-2024(?::free)?$/;
 const NORTH_MINI_CODE_MODEL = /(?:^|[/@._-])north-mini-code(?:-1[.]0|(?:-|:)free)?$/;
 const GROK_420_43_MODEL = /(?:^|[/@._-])grok-(?:4[.]20(?:-(?:(?:0309-)?(?:non-)?reasoning|multi-agent(?:-0309)?))?|4[.]3|build-0[.]1)(?::free)?$/;
 const GROK_45_MODEL = /(?:^|[/@._-])grok-4[.]5(?::free)?$/;
+const GEMINI_2_3_MODEL = /(?:^|[/._-])gemini-(?:2[.]0-flash(?:-lite)?|2[.]5-(?:flash(?:-lite)?|pro|computer-use-preview-10-2025)|3-(?:flash-preview|pro-(?:preview|image))|3[.]1-(?:flash-lite(?:-preview|-image)?|pro-preview(?:-customtools)?)|3[.]5-flash(?:-lite)?|3[.]6-flash)(?::batch)?$/;
+const DEEPSEEK_MODEL = /(?:^|[/._-])deepseek-(?:chat-v3(?:-0324|[.]1)|r1(?:-0528)?|v3(?:[.]1(?:-terminus)?|[.]2(?:-exp|-thinking)?|-0324)?|v4-(?:flash(?:-0731)?|pro))(?:-free)?$|(?:^|[.])deepseek[.](?:r1-v1:0|v3-v1:0|v3[.]2)$/;
+const QWEN_25_MODEL = /(?:^|[/._-])qwen-?2[.]5-(?:7b|72b)-instruct(?:-turbo)?$/;
+const QWEN_3_MODEL = /(?:^|[/._-])qwen-?3-(?:(?:8b|14b|30b(?:-a3b)?|32b|235b(?:-a22b)?)|(?:30b-a3b|235b-a22b)-(?:instruct|thinking)-2507|30b-a3b-fp8|235b-a22b-2507|(?:32b|235b-a22b-2507)-v1:0|next-80b-a3b(?:-(?:instruct|thinking))?|coder-(?:(?:30b-a3b|480b-a35b)(?:-instruct|-v1:0)?|next)|vl-(?:8b|30b-a3b|32b|235b-a22b)(?:-(?:instruct|thinking))?)$/;
+const QWEN_35_MODEL = /(?:^|[/._-])qwen3[.]5-(?:9b|27b|35b-a3b|122b-a10b|397b-a17b)$/;
 
 function familyAtLeast(modelId: string, family: string, major: number, minor: number): boolean {
   const versionPattern = `${family}[-.]?(\\d{1,2})(?:[-.](\\d{1,2}))?(?=$|[-.:@])`;
@@ -133,6 +138,26 @@ const GROK_45: TokenizerProfile = {
   textDenominator: 4.1,
   sessionDenominator: 3.6,
 };
+const GEMINI_2_3: TokenizerProfile = {
+  label: "Gemini 2/3 countTokens",
+  textDenominator: 3.9,
+  sessionDenominator: 3.4,
+};
+const DEEPSEEK: TokenizerProfile = {
+  label: "DeepSeek tokenizer",
+  textDenominator: 4,
+  sessionDenominator: 3.6,
+};
+const QWEN_25_3: TokenizerProfile = {
+  label: "Qwen 2.5/3 tokenizer",
+  textDenominator: 4,
+  sessionDenominator: 3.8,
+};
+const QWEN_35: TokenizerProfile = {
+  label: "Qwen 3.5 tokenizer",
+  textDenominator: 3.9,
+  sessionDenominator: 3.5,
+};
 
 function isClaudeModel(model: ModelSummary): boolean {
   return model.provider.toLowerCase().includes("anthropic") || model.id.toLowerCase().includes("claude");
@@ -154,6 +179,10 @@ function tokenizerProfile(model: ModelSummary): TokenizerProfile | undefined {
   if (NORTH_MINI_CODE_MODEL.test(id)) return NORTH_MINI_CODE;
   if (GROK_420_43_MODEL.test(id)) return GROK_420_43;
   if (GROK_45_MODEL.test(id)) return GROK_45;
+  if (GEMINI_2_3_MODEL.test(id)) return GEMINI_2_3;
+  if (DEEPSEEK_MODEL.test(id)) return DEEPSEEK;
+  if (QWEN_35_MODEL.test(id)) return QWEN_35;
+  if (QWEN_25_MODEL.test(id) || QWEN_3_MODEL.test(id)) return QWEN_25_3;
   if (model.provider.toLowerCase().includes("openai-codex")) {
     return { label: "OpenAI-Codex heuristic", textDenominator: 4, sessionDenominator: 4 };
   }

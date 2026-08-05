@@ -26,6 +26,7 @@ class ArtifactSpec:
     filename: str
     sha256: str
     core_sha256: str | None = None
+    bpe_sha256: str | None = None
     pattern_sha256: str | None = None
 
 
@@ -34,6 +35,7 @@ class TokenizerSpec:
     label: str
     representative: ArtifactSpec
     family_members: tuple[ArtifactSpec, ...] = ()
+    token_stream_sha256: str | None = None
 
 
 KIMI_HASH = "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103"
@@ -42,6 +44,28 @@ GLM_5_HASH = "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
 COMMAND_CORE_HASH = "2bcc46184ba3b57d82c76cdeb373c32e65cb570633a7237e1b01c175faf3758e"
 KIMI_CONFIG_HASH = "12fcab43d2b6068f46769f5ff373960bf7c17a94d7abbc50e2491306b2f6cf58"
 KIMI_PATTERN_HASH = "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
+
+
+def tokenizer_family(
+    label: str,
+    bpe_sha256: str,
+    token_stream_sha256: str,
+    artifact_groups: Sequence[tuple[str, Sequence[tuple[str, str]]]],
+) -> TokenizerSpec:
+    artifacts = tuple(
+        ArtifactSpec(
+            repository, revision, "tokenizer.json", sha256, bpe_sha256=bpe_sha256
+        )
+        for sha256, members in artifact_groups
+        for repository, revision in members
+    )
+    return TokenizerSpec(
+        label,
+        artifacts[0],
+        artifacts[1:],
+        token_stream_sha256=token_stream_sha256,
+    )
+
 
 TOKENIZERS = [
     TokenizerSpec(
@@ -195,6 +219,226 @@ TOKENIZERS = [
             "14bd1c49d7d11874921d324986713df4be21cd06060530c497dacef99919b7a5",
         ),
     ),
+    tokenizer_family(
+        "DeepSeek",
+        "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882",
+        "fc92ce91342c67f51ff9f576b966759714efe91fe088124cd386c17eb51b2abd",
+        (
+            (
+                "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41",
+                (
+                    (
+                        "deepseek-ai/DeepSeek-V3",
+                        "e815299b0bcbac849fa540c768ef21845365c9eb",
+                    ),
+                    (
+                        "deepseek-ai/DeepSeek-V3-0324",
+                        "e9b33add76883f293d6bf61f6bd89b497e80e335",
+                    ),
+                ),
+            ),
+            (
+                "ecb6f9fc369894346f0511f4074ca75cee5cd5f3b06d02f1ba35fcd39f8e121d",
+                (
+                    (
+                        "deepseek-ai/DeepSeek-R1",
+                        "56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad",
+                    ),
+                    (
+                        "deepseek-ai/DeepSeek-R1-0528",
+                        "4236a6af538feda4548eca9ab308586007567f52",
+                    ),
+                ),
+            ),
+            (
+                "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70",
+                (
+                    (
+                        "deepseek-ai/DeepSeek-V3.1",
+                        "c0781d039fb7a1ba2abc4add0bdc293e92d2b8db",
+                    ),
+                    (
+                        "deepseek-ai/DeepSeek-V3.1-Terminus",
+                        "19510d6dc61f79dbd925bd51ee8a9081c509a4b6",
+                    ),
+                    (
+                        "deepseek-ai/DeepSeek-V3.2-Exp",
+                        "194c67e12b1b0d6df0ef373ddcf215bc84027409",
+                    ),
+                ),
+            ),
+            (
+                "cd050be35cae877f8f0aa847f45aa87e23835a56ca32b29b28545597852784e5",
+                (
+                    (
+                        "deepseek-ai/DeepSeek-V3.2",
+                        "a7e62ac04ecb2c0a54d736dc46601c5606cf10a6",
+                    ),
+                ),
+            ),
+            (
+                "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
+                (
+                    (
+                        "deepseek-ai/DeepSeek-V4-Flash",
+                        "60d8d70770c6776ff598c94bb586a859a38244f1",
+                    ),
+                    (
+                        "deepseek-ai/DeepSeek-V4-Flash-0731",
+                        "7872f01b1d1fe23eabc4c98b48bffcef5a386062",
+                    ),
+                    (
+                        "deepseek-ai/DeepSeek-V4-Pro",
+                        "b5968e9190ef611bbf34a7229255be88a0e937c1",
+                    ),
+                ),
+            ),
+        ),
+    ),
+    tokenizer_family(
+        "Qwen 2.5/3",
+        "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b",
+        "0cbd8118040023d731f5ccc639adb182bc553575a5d13c86e1c49929a59fb0ea",
+        (
+            (
+                "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+                (
+                    (
+                        "Qwen/Qwen2.5-7B-Instruct",
+                        "a09a35458c702b33eeacc393d103063234e8bc28",
+                    ),
+                    (
+                        "Qwen/Qwen2.5-72B-Instruct",
+                        "495f39366efef23836d0cfae4fbe635880d2be31",
+                    ),
+                    (
+                        "Qwen/Qwen2.5-Coder-7B-Instruct",
+                        "c03e6d358207e414f1eca0bb1891e29f1db0e242",
+                    ),
+                    (
+                        "Qwen/Qwen2.5-VL-7B-Instruct",
+                        "cc594898137f460bfe9f0759e9844b3ce807cfb5",
+                    ),
+                ),
+            ),
+            (
+                "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+                (
+                    ("Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218"),
+                    ("Qwen/Qwen3-14B", "40c069824f4251a91eefaf281ebe4c544efd3e18"),
+                    (
+                        "Qwen/Qwen3-30B-A3B",
+                        "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+                    ),
+                    ("Qwen/Qwen3-32B", "9216db5781bf21249d130ec9da846c4624c16137"),
+                    (
+                        "Qwen/Qwen3-235B-A22B",
+                        "8efa61729e24bd65b1d152b5ab5409052aa80e65",
+                    ),
+                    (
+                        "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                        "0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe",
+                    ),
+                    (
+                        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+                        "ac9c66cc9b46af7306746a9250f23d47083d689e",
+                    ),
+                    (
+                        "Qwen/Qwen3-Next-80B-A3B-Instruct",
+                        "9c7f2fbe84465e40164a94cc16cd30b6999b0cc7",
+                    ),
+                    (
+                        "Qwen/Qwen3-Next-80B-A3B-Thinking",
+                        "e502dd4100cc68c0de57643fd4317ec93a128670",
+                    ),
+                ),
+            ),
+            (
+                "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
+                (
+                    (
+                        "Qwen/Qwen3-30B-A3B-Thinking-2507",
+                        "144afc2f379b542fdd4e85a1fcd5e1f79112d95d",
+                    ),
+                    (
+                        "Qwen/Qwen3-235B-A22B-Thinking-2507",
+                        "6cbffae6d8e28b986a6b17bd36f42f9fa0f1f0a5",
+                    ),
+                    (
+                        "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+                        "b2cff646eb4bb1d68355c01b18ae02e7cf42d120",
+                    ),
+                    (
+                        "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+                        "9d90cf8fca1bf7b7acca42d3fc9ae694a2194069",
+                    ),
+                    (
+                        "Qwen/Qwen3-Coder-Next",
+                        "a7fbcb5c0e12d62a448eaa0e260346bf5dcc0feb",
+                    ),
+                ),
+            ),
+            (
+                "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+                (
+                    (
+                        "Qwen/Qwen3-VL-8B-Instruct",
+                        "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",
+                    ),
+                    (
+                        "Qwen/Qwen3-VL-8B-Thinking",
+                        "92f3c4b4feadd3a016ef468d103bb5f58b2a2c6b",
+                    ),
+                    (
+                        "Qwen/Qwen3-VL-30B-A3B-Instruct",
+                        "9c4b90e1e4ba969fd3b5378b57d966d725f1b86c",
+                    ),
+                    (
+                        "Qwen/Qwen3-VL-30B-A3B-Thinking",
+                        "d0ed0380729be07a546fdefafbb4fe411f341e92",
+                    ),
+                    (
+                        "Qwen/Qwen3-VL-32B-Instruct",
+                        "0cfaf48183f594c314753d30a4c4974bc75f3ccb",
+                    ),
+                    (
+                        "Qwen/Qwen3-VL-235B-A22B-Instruct",
+                        "710c13861be6c466e66de3f484069440b8f31389",
+                    ),
+                    (
+                        "Qwen/Qwen3-VL-235B-A22B-Thinking",
+                        "6664affde68449468deb7527186455c7450c13c0",
+                    ),
+                ),
+            ),
+        ),
+    ),
+    tokenizer_family(
+        "Qwen 3.5",
+        "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317",
+        "1b9ddcbd8e88d46091ec9398b4dc9e71e52369581c9701c17f527ad80ee943a1",
+        (
+            (
+                "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+                (
+                    ("Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a"),
+                    ("Qwen/Qwen3.5-27B", "fc05daec18b0a78c049392ed2e771dde82bdf654"),
+                    (
+                        "Qwen/Qwen3.5-35B-A3B",
+                        "59d61f3ce65a6d9863b86d2e96597125219dc754",
+                    ),
+                    (
+                        "Qwen/Qwen3.5-122B-A10B",
+                        "dc4d348443bc740c68e2d77492492c11606384d5",
+                    ),
+                    (
+                        "Qwen/Qwen3.5-397B-A17B",
+                        "8472618112abcbd45acbcdc58436aff4233c23f7",
+                    ),
+                ),
+            ),
+        ),
+    ),
 ]
 
 
@@ -234,6 +478,22 @@ def extract_kimi_pattern(source_path: str) -> str:
     raise RuntimeError("Kimi tokenizer source no longer contains a literal pat_str")
 
 
+def tokenizer_bpe_sha256(path: str) -> str:
+    with open(path) as handle:
+        model = json.load(handle)["model"]
+    merges = [
+        merge if isinstance(merge, list) else merge.split(" ", 1)
+        for merge in model["merges"]
+    ]
+    encoded = json.dumps(
+        {"vocab": model["vocab"], "merges": merges},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def check_artifact(
     spec: ArtifactSpec, hf_hub_download: Callable[..., str]
 ) -> dict[str, str]:
@@ -258,6 +518,13 @@ def check_artifact(
                 f"{spec.repository} tokenizer core hash changed: {core_hash}"
             )
         result["coreSha256"] = core_hash
+    if spec.bpe_sha256 is not None:
+        bpe_hash = tokenizer_bpe_sha256(artifact)
+        if bpe_hash != spec.bpe_sha256:
+            raise RuntimeError(
+                f"{spec.repository} tokenizer BPE hash changed: {bpe_hash}"
+            )
+        result["bpeSha256"] = bpe_hash
     if spec.pattern_sha256 is not None:
         source = hf_hub_download(
             spec.repository, "tokenization_kimi.py", revision=spec.revision
@@ -322,6 +589,14 @@ def load_encoder(
     return lambda text: tokenizer.encode(text, add_special_tokens=False).ids
 
 
+def token_stream_sha256(
+    encode: Callable[[str], Sequence[int]], texts: dict[str, str]
+) -> str:
+    streams = [[name, list(encode(texts[name]))] for name in sorted(texts)]
+    encoded = json.dumps(streams, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def aggregate(
     samples: dict[str, dict[str, float | int]], names: list[str]
 ) -> dict[str, float | int]:
@@ -371,6 +646,21 @@ def main() -> None:
             for member in (spec.representative, *spec.family_members)
         ]
         encode = load_encoder(spec, hf_hub_download)
+        if spec.token_stream_sha256 is not None:
+            stream_hash = token_stream_sha256(encode, texts)
+            if stream_hash != spec.token_stream_sha256:
+                raise RuntimeError(
+                    f"{spec.representative.repository} token stream changed: {stream_hash}"
+                )
+            for member in spec.family_members:
+                member_encode = load_encoder(
+                    TokenizerSpec(spec.label, member), hf_hub_download
+                )
+                member_hash = token_stream_sha256(member_encode, texts)
+                if member_hash != spec.token_stream_sha256:
+                    raise RuntimeError(
+                        f"{member.repository} token stream differs: {member_hash}"
+                    )
         samples = {}
         for name, text in texts.items():
             tokens = len(encode(text))
@@ -388,6 +678,8 @@ def main() -> None:
         }
         if spec.representative.filename == "tiktoken.model":
             row["configurationSha256"] = KIMI_CONFIG_HASH
+        if spec.token_stream_sha256 is not None:
+            row["tokenStreamSha256"] = spec.token_stream_sha256
         rows.append(row)
 
     result = {

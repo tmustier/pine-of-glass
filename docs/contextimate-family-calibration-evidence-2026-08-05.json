@@ -360,6 +360,387 @@
           "charsPerToken": 3.9457,
           "recommendedDenominator": 3.9
         }
+      },
+      {
+        "profile": "DeepSeek",
+        "familyArtifacts": [
+          {
+            "repository": "deepseek-ai/DeepSeek-V3",
+            "revision": "e815299b0bcbac849fa540c768ef21845365c9eb",
+            "sha256": "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V3-0324",
+            "revision": "e9b33add76883f293d6bf61f6bd89b497e80e335",
+            "sha256": "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-R1",
+            "revision": "56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad",
+            "sha256": "ecb6f9fc369894346f0511f4074ca75cee5cd5f3b06d02f1ba35fcd39f8e121d",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-R1-0528",
+            "revision": "4236a6af538feda4548eca9ab308586007567f52",
+            "sha256": "ecb6f9fc369894346f0511f4074ca75cee5cd5f3b06d02f1ba35fcd39f8e121d",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V3.1",
+            "revision": "c0781d039fb7a1ba2abc4add0bdc293e92d2b8db",
+            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V3.1-Terminus",
+            "revision": "19510d6dc61f79dbd925bd51ee8a9081c509a4b6",
+            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V3.2-Exp",
+            "revision": "194c67e12b1b0d6df0ef373ddcf215bc84027409",
+            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V3.2",
+            "revision": "a7e62ac04ecb2c0a54d736dc46601c5606cf10a6",
+            "sha256": "cd050be35cae877f8f0aa847f45aa87e23835a56ca32b29b28545597852784e5",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V4-Flash",
+            "revision": "60d8d70770c6776ff598c94bb586a859a38244f1",
+            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V4-Flash-0731",
+            "revision": "7872f01b1d1fe23eabc4c98b48bffcef5a386062",
+            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          },
+          {
+            "repository": "deepseek-ai/DeepSeek-V4-Pro",
+            "revision": "b5968e9190ef611bbf34a7229255be88a0e937c1",
+            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
+            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 878,
+            "charsPerToken": 3.1583
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1904,
+            "charsPerToken": 4.2526
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 11763,
+            "charsPerToken": 3.9634
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 3906,
+            "charsPerToken": 3.8628
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5371,
+            "charsPerToken": 3.4448
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13667,
+          "charsPerToken": 4.0037,
+          "recommendedDenominator": 4.0
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 9277,
+          "charsPerToken": 3.6208,
+          "recommendedDenominator": 3.6
+        },
+        "tokenStreamSha256": "fc92ce91342c67f51ff9f576b966759714efe91fe088124cd386c17eb51b2abd"
+      },
+      {
+        "profile": "Qwen 2.5/3",
+        "familyArtifacts": [
+          {
+            "repository": "Qwen/Qwen2.5-7B-Instruct",
+            "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen2.5-72B-Instruct",
+            "revision": "495f39366efef23836d0cfae4fbe635880d2be31",
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "revision": "c03e6d358207e414f1eca0bb1891e29f1db0e242",
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen2.5-VL-7B-Instruct",
+            "revision": "cc594898137f460bfe9f0759e9844b3ce807cfb5",
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-8B",
+            "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-14B",
+            "revision": "40c069824f4251a91eefaf281ebe4c544efd3e18",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-30B-A3B",
+            "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-32B",
+            "revision": "9216db5781bf21249d130ec9da846c4624c16137",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-235B-A22B",
+            "revision": "8efa61729e24bd65b1d152b5ab5409052aa80e65",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "revision": "0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+            "revision": "ac9c66cc9b46af7306746a9250f23d47083d689e",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+            "revision": "9c7f2fbe84465e40164a94cc16cd30b6999b0cc7",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-Next-80B-A3B-Thinking",
+            "revision": "e502dd4100cc68c0de57643fd4317ec93a128670",
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-30B-A3B-Thinking-2507",
+            "revision": "144afc2f379b542fdd4e85a1fcd5e1f79112d95d",
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-235B-A22B-Thinking-2507",
+            "revision": "6cbffae6d8e28b986a6b17bd36f42f9fa0f1f0a5",
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+            "revision": "b2cff646eb4bb1d68355c01b18ae02e7cf42d120",
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+            "revision": "9d90cf8fca1bf7b7acca42d3fc9ae694a2194069",
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-Coder-Next",
+            "revision": "a7fbcb5c0e12d62a448eaa0e260346bf5dcc0feb",
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-VL-8B-Instruct",
+            "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-VL-8B-Thinking",
+            "revision": "92f3c4b4feadd3a016ef468d103bb5f58b2a2c6b",
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+            "revision": "9c4b90e1e4ba969fd3b5378b57d966d725f1b86c",
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-VL-30B-A3B-Thinking",
+            "revision": "d0ed0380729be07a546fdefafbb4fe411f341e92",
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-VL-32B-Instruct",
+            "revision": "0cfaf48183f594c314753d30a4c4974bc75f3ccb",
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-VL-235B-A22B-Instruct",
+            "revision": "710c13861be6c466e66de3f484069440b8f31389",
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          },
+          {
+            "repository": "Qwen/Qwen3-VL-235B-A22B-Thinking",
+            "revision": "6664affde68449468deb7527186455c7450c13c0",
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 817,
+            "charsPerToken": 3.3941
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1857,
+            "charsPerToken": 4.3603
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 11848,
+            "charsPerToken": 3.935
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 3723,
+            "charsPerToken": 4.0526
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5067,
+            "charsPerToken": 3.6515
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13705,
+          "charsPerToken": 3.9926,
+          "recommendedDenominator": 4.0
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 8790,
+          "charsPerToken": 3.8214,
+          "recommendedDenominator": 3.8
+        },
+        "tokenStreamSha256": "0cbd8118040023d731f5ccc639adb182bc553575a5d13c86e1c49929a59fb0ea"
+      },
+      {
+        "profile": "Qwen 3.5",
+        "familyArtifacts": [
+          {
+            "repository": "Qwen/Qwen3.5-9B",
+            "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+          },
+          {
+            "repository": "Qwen/Qwen3.5-27B",
+            "revision": "fc05daec18b0a78c049392ed2e771dde82bdf654",
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+          },
+          {
+            "repository": "Qwen/Qwen3.5-35B-A3B",
+            "revision": "59d61f3ce65a6d9863b86d2e96597125219dc754",
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+          },
+          {
+            "repository": "Qwen/Qwen3.5-122B-A10B",
+            "revision": "dc4d348443bc740c68e2d77492492c11606384d5",
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+          },
+          {
+            "repository": "Qwen/Qwen3.5-397B-A17B",
+            "revision": "8472618112abcbd45acbcdc58436aff4233c23f7",
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 903,
+            "charsPerToken": 3.0709
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1914,
+            "charsPerToken": 4.2304
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 12052,
+            "charsPerToken": 3.8684
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 4054,
+            "charsPerToken": 3.7218
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5457,
+            "charsPerToken": 3.3905
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13966,
+          "charsPerToken": 3.918,
+          "recommendedDenominator": 3.9
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 9511,
+          "charsPerToken": 3.5317,
+          "recommendedDenominator": 3.5
+        },
+        "tokenStreamSha256": "1b9ddcbd8e88d46091ec9398b4dc9e71e52369581c9701c17f527ad80ee943a1"
       }
     ]
   },
@@ -640,5 +1021,839 @@
     "models": 26,
     "reportedCostUsd": 0.1215,
     "caveat": "One GLM request generated 38,918 hidden reasoning tokens despite max_tokens 1."
+  },
+  "usageAssessment": {
+    "measuredAt": "2026-08-05",
+    "catalog": "installed pi-ai 0.83.0 provider data",
+    "method": "Aggregate model_change metadata only; no prompt or message content inspected.",
+    "windows": [
+      {
+        "days": 30,
+        "sessionFiles": 2228,
+        "modelChangeEvents": 3206
+      },
+      {
+        "days": 90,
+        "sessionFiles": 4964,
+        "modelChangeEvents": 7444
+      }
+    ],
+    "families": [
+      {
+        "family": "MiniMax",
+        "catalogEntries": 41,
+        "providerCatalogs": 13,
+        "modelChanges30Days": 0,
+        "modelChanges90Days": 0,
+        "decision": "exclude"
+      },
+      {
+        "family": "Mistral",
+        "catalogEntries": 73,
+        "providerCatalogs": 6,
+        "modelChanges30Days": 0,
+        "modelChanges90Days": 0,
+        "decision": "exclude"
+      },
+      {
+        "family": "Llama",
+        "catalogEntries": 36,
+        "providerCatalogs": 8,
+        "modelChanges30Days": 0,
+        "modelChanges90Days": 0,
+        "decision": "exclude"
+      },
+      {
+        "family": "Gemma",
+        "catalogEntries": 19,
+        "providerCatalogs": 9,
+        "modelChanges30Days": 0,
+        "modelChanges90Days": 0,
+        "decision": "exclude"
+      },
+      {
+        "family": "MiMo",
+        "catalogEntries": 25,
+        "providerCatalogs": 9,
+        "modelChanges30Days": 0,
+        "modelChanges90Days": 0,
+        "decision": "exclude"
+      }
+    ],
+    "conclusion": "Catalog availability alone did not justify new profiles without any recent local use."
+  },
+  "geminiCountTokens": {
+    "corpusVersion": "2026-08-05.1",
+    "corpusRevision": "556dd115a77839773e143afc0d982afa59eb7479",
+    "corpusFiles": {
+      "config-json": [
+        "package.json",
+        "tsconfig.json"
+      ],
+      "instructions-core": [
+        "AGENTS.md",
+        "docs/agent-coding-standard.md"
+      ],
+      "instructions-design": [
+        "docs/design-language.md"
+      ],
+      "session-code": [
+        "extensions/_lib/heuristics.ts",
+        "extensions/_lib/tool-payloads.ts"
+      ],
+      "session-tests": [
+        "tests/contextimate/heuristics.test.ts",
+        "tests/contextimate/provider-check.test.ts"
+      ]
+    },
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/{model}:countTokens",
+    "requestCoverage": "one user text part per corpus fixture",
+    "models": [
+      {
+        "model": "gemini-2.0-flash",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-2.0-flash-lite",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-2.5-flash",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-2.5-flash-lite",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-2.5-pro",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-2.5-computer-use-preview-10-2025",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3-flash-preview",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3-pro-preview",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3-pro-image",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.1-flash-lite-preview",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.1-flash-lite-image",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.1-pro-preview",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.1-pro-preview-customtools",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.5-flash",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      },
+      {
+        "model": "gemini-3.6-flash",
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
+      }
+    ],
+    "groups": [
+      {
+        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e",
+        "models": [
+          "gemini-2.0-flash",
+          "gemini-2.0-flash-lite",
+          "gemini-2.5-flash",
+          "gemini-2.5-flash-lite",
+          "gemini-2.5-pro",
+          "gemini-2.5-computer-use-preview-10-2025",
+          "gemini-3-flash-preview",
+          "gemini-3-pro-preview",
+          "gemini-3-pro-image",
+          "gemini-3.1-flash-lite",
+          "gemini-3.1-flash-lite-preview",
+          "gemini-3.1-flash-lite-image",
+          "gemini-3.1-pro-preview",
+          "gemini-3.1-pro-preview-customtools",
+          "gemini-3.5-flash",
+          "gemini-3.5-flash-lite",
+          "gemini-3.6-flash"
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 971,
+            "charsPerToken": 2.8558
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1972,
+            "charsPerToken": 4.106
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 12126,
+            "charsPerToken": 3.8448
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 4213,
+            "charsPerToken": 3.5813
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5806,
+            "charsPerToken": 3.1867
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 14098,
+          "charsPerToken": 3.8813,
+          "recommendedDenominator": 3.9
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 10019,
+          "charsPerToken": 3.3526,
+          "recommendedDenominator": 3.4
+        }
+      }
+    ]
+  },
+  "geminiUnsupportedCountAttempts": {
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/{model}:countTokens",
+    "models": [
+      {
+        "model": "gemini-2.5-pro-preview",
+        "status": 404,
+        "reason": "not listed or not supported for countTokens by the official Developer API"
+      },
+      {
+        "model": "gemini-2.5-pro-preview-05-06",
+        "status": 404,
+        "reason": "not listed or not supported for countTokens by the official Developer API"
+      },
+      {
+        "model": "gemini-3-flash",
+        "status": 404,
+        "reason": "not listed or not supported for countTokens by the official Developer API"
+      },
+      {
+        "model": "gemini-3.1-pro",
+        "status": 404,
+        "reason": "not listed or not supported for countTokens by the official Developer API"
+      },
+      {
+        "model": "gemini-3.1-flash-live-preview",
+        "status": 404,
+        "reason": "not listed or not supported for countTokens by the official Developer API"
+      }
+    ]
+  },
+  "geminiPiRoutes": {
+    "piAiVersion": "0.83.0",
+    "routeEntries": 68,
+    "countedProfileEntries": 62,
+    "genericEstimateEntries": 6,
+    "dynamicSelectorEntries": 0,
+    "models": [
+      {
+        "model": "gemini-2.0-flash",
+        "classification": "counted-profile",
+        "routeEntries": 1,
+        "providers": [
+          "google"
+        ],
+        "apis": [
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-2.0-flash"
+        ]
+      },
+      {
+        "model": "gemini-2.0-flash-lite",
+        "classification": "counted-profile",
+        "routeEntries": 1,
+        "providers": [
+          "google"
+        ],
+        "apis": [
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-2.0-flash-lite"
+        ]
+      },
+      {
+        "model": "gemini-2.5-computer-use-preview-10-2025",
+        "classification": "counted-profile",
+        "routeEntries": 1,
+        "providers": [
+          "google"
+        ],
+        "apis": [
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-2.5-computer-use-preview-10-2025"
+        ]
+      },
+      {
+        "model": "gemini-2.5-flash",
+        "classification": "counted-profile",
+        "routeEntries": 5,
+        "providers": [
+          "google",
+          "google-vertex",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-2.5-flash",
+          "google/gemini-2.5-flash",
+          "google/gemini-2.5-flash:batch"
+        ]
+      },
+      {
+        "model": "gemini-2.5-flash-lite",
+        "classification": "counted-profile",
+        "routeEntries": 5,
+        "providers": [
+          "google",
+          "google-vertex",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-2.5-flash-lite",
+          "google/gemini-2.5-flash-lite",
+          "google/gemini-2.5-flash-lite:batch"
+        ]
+      },
+      {
+        "model": "gemini-2.5-pro",
+        "classification": "counted-profile",
+        "routeEntries": 6,
+        "providers": [
+          "github-copilot",
+          "google",
+          "google-vertex",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-2.5-pro",
+          "google/gemini-2.5-pro",
+          "google/gemini-2.5-pro:batch"
+        ]
+      },
+      {
+        "model": "gemini-3-flash-preview",
+        "classification": "counted-profile",
+        "routeEntries": 5,
+        "providers": [
+          "github-copilot",
+          "google",
+          "google-vertex",
+          "openrouter"
+        ],
+        "apis": [
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3-flash-preview",
+          "google/gemini-3-flash-preview",
+          "google/gemini-3-flash-preview:batch"
+        ]
+      },
+      {
+        "model": "gemini-3-pro-image",
+        "classification": "counted-profile",
+        "routeEntries": 1,
+        "providers": [
+          "openrouter"
+        ],
+        "apis": [
+          "openai-completions"
+        ],
+        "modelIds": [
+          "google/gemini-3-pro-image"
+        ]
+      },
+      {
+        "model": "gemini-3-pro-preview",
+        "classification": "counted-profile",
+        "routeEntries": 1,
+        "providers": [
+          "google"
+        ],
+        "apis": [
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-3-pro-preview"
+        ]
+      },
+      {
+        "model": "gemini-3.1-flash-lite",
+        "classification": "counted-profile",
+        "routeEntries": 5,
+        "providers": [
+          "google",
+          "google-vertex",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3.1-flash-lite",
+          "google/gemini-3.1-flash-lite",
+          "google/gemini-3.1-flash-lite:batch"
+        ]
+      },
+      {
+        "model": "gemini-3.1-flash-lite-image",
+        "classification": "counted-profile",
+        "routeEntries": 1,
+        "providers": [
+          "google"
+        ],
+        "apis": [
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-3.1-flash-lite-image"
+        ]
+      },
+      {
+        "model": "gemini-3.1-flash-lite-preview",
+        "classification": "counted-profile",
+        "routeEntries": 2,
+        "providers": [
+          "google",
+          "openrouter"
+        ],
+        "apis": [
+          "google-generative-ai",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3.1-flash-lite-preview",
+          "google/gemini-3.1-flash-lite-preview"
+        ]
+      },
+      {
+        "model": "gemini-3.1-pro-preview",
+        "classification": "counted-profile",
+        "routeEntries": 6,
+        "providers": [
+          "github-copilot",
+          "google",
+          "google-vertex",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3.1-pro-preview",
+          "google/gemini-3.1-pro-preview",
+          "google/gemini-3.1-pro-preview:batch"
+        ]
+      },
+      {
+        "model": "gemini-3.1-pro-preview-customtools",
+        "classification": "counted-profile",
+        "routeEntries": 3,
+        "providers": [
+          "google",
+          "google-vertex",
+          "openrouter"
+        ],
+        "apis": [
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3.1-pro-preview-customtools",
+          "google/gemini-3.1-pro-preview-customtools"
+        ]
+      },
+      {
+        "model": "gemini-3.5-flash",
+        "classification": "counted-profile",
+        "routeEntries": 7,
+        "providers": [
+          "github-copilot",
+          "google",
+          "google-vertex",
+          "opencode",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3.5-flash",
+          "google/gemini-3.5-flash",
+          "google/gemini-3.5-flash:batch"
+        ]
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "classification": "counted-profile",
+        "routeEntries": 6,
+        "providers": [
+          "google",
+          "google-vertex",
+          "opencode",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3.5-flash-lite",
+          "google/gemini-3.5-flash-lite",
+          "google/gemini-3.5-flash-lite:batch"
+        ]
+      },
+      {
+        "model": "gemini-3.6-flash",
+        "classification": "counted-profile",
+        "routeEntries": 6,
+        "providers": [
+          "google",
+          "google-vertex",
+          "opencode",
+          "openrouter",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai",
+          "google-vertex",
+          "openai-completions"
+        ],
+        "modelIds": [
+          "gemini-3.6-flash",
+          "google/gemini-3.6-flash",
+          "google/gemini-3.6-flash:batch"
+        ]
+      },
+      {
+        "model": "gemini-2.5-pro-preview",
+        "classification": "generic-estimate",
+        "routeEntries": 1,
+        "providers": [
+          "openrouter"
+        ],
+        "apis": [
+          "openai-completions"
+        ],
+        "modelIds": [
+          "google/gemini-2.5-pro-preview"
+        ]
+      },
+      {
+        "model": "gemini-2.5-pro-preview-05-06",
+        "classification": "generic-estimate",
+        "routeEntries": 1,
+        "providers": [
+          "openrouter"
+        ],
+        "apis": [
+          "openai-completions"
+        ],
+        "modelIds": [
+          "google/gemini-2.5-pro-preview-05-06"
+        ]
+      },
+      {
+        "model": "gemini-3-flash",
+        "classification": "generic-estimate",
+        "routeEntries": 2,
+        "providers": [
+          "opencode",
+          "vercel-ai-gateway"
+        ],
+        "apis": [
+          "anthropic-messages",
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-3-flash",
+          "google/gemini-3-flash"
+        ]
+      },
+      {
+        "model": "gemini-3.1-flash-live-preview",
+        "classification": "generic-estimate",
+        "routeEntries": 1,
+        "providers": [
+          "google"
+        ],
+        "apis": [
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-3.1-flash-live-preview"
+        ]
+      },
+      {
+        "model": "gemini-3.1-pro",
+        "classification": "generic-estimate",
+        "routeEntries": 1,
+        "providers": [
+          "opencode"
+        ],
+        "apis": [
+          "google-generative-ai"
+        ],
+        "modelIds": [
+          "gemini-3.1-pro"
+        ]
+      }
+    ]
+  },
+  "openFamilyPiRoutes": {
+    "piAiVersion": "0.83.0",
+    "families": [
+      {
+        "family": "DeepSeek",
+        "routeEntries": 43,
+        "groups": [
+          {
+            "label": "DeepSeek tokenizer",
+            "routeEntries": 42,
+            "modelIds": [
+              "accounts/fireworks/models/deepseek-v4-flash",
+              "accounts/fireworks/models/deepseek-v4-pro",
+              "deepseek-ai/DeepSeek-R1",
+              "deepseek-ai/DeepSeek-R1-0528",
+              "deepseek-ai/DeepSeek-V3.2",
+              "deepseek-ai/DeepSeek-V4-Flash",
+              "deepseek-ai/DeepSeek-V4-Pro",
+              "deepseek-v3.2",
+              "deepseek-v4-flash",
+              "deepseek-v4-flash-free",
+              "deepseek-v4-pro",
+              "deepseek.r1-v1:0",
+              "deepseek.v3-v1:0",
+              "deepseek.v3.2",
+              "deepseek/deepseek-chat-v3-0324",
+              "deepseek/deepseek-chat-v3.1",
+              "deepseek/deepseek-r1",
+              "deepseek/deepseek-r1-0528",
+              "deepseek/deepseek-v3",
+              "deepseek/deepseek-v3.1",
+              "deepseek/deepseek-v3.1-terminus",
+              "deepseek/deepseek-v3.2",
+              "deepseek/deepseek-v3.2-exp",
+              "deepseek/deepseek-v3.2-thinking",
+              "deepseek/deepseek-v4-flash",
+              "deepseek/deepseek-v4-pro",
+              "us.deepseek.r1-v1:0"
+            ]
+          },
+          {
+            "label": "fallback chars/4",
+            "routeEntries": 1,
+            "modelIds": [
+              "deepseek/deepseek-chat"
+            ]
+          }
+        ]
+      },
+      {
+        "family": "Qwen",
+        "routeEntries": 115,
+        "groups": [
+          {
+            "label": "Qwen 2.5/3 tokenizer",
+            "routeEntries": 49,
+            "modelIds": [
+              "@cf/qwen/qwen3-30b-a3b-fp8",
+              "Qwen/Qwen2.5-7B-Instruct-Turbo",
+              "Qwen/Qwen3-235B-A22B",
+              "Qwen/Qwen3-235B-A22B-Thinking-2507",
+              "Qwen/Qwen3-32B",
+              "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+              "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+              "Qwen/Qwen3-Coder-Next",
+              "Qwen/Qwen3-Next-80B-A3B-Instruct",
+              "Qwen/Qwen3-Next-80B-A3B-Thinking",
+              "alibaba/qwen-3-14b",
+              "alibaba/qwen-3-235b",
+              "alibaba/qwen-3-30b",
+              "alibaba/qwen-3-32b",
+              "alibaba/qwen3-coder-30b-a3b",
+              "alibaba/qwen3-coder-next",
+              "alibaba/qwen3-next-80b-a3b-instruct",
+              "alibaba/qwen3-next-80b-a3b-thinking",
+              "alibaba/qwen3-vl-235b-a22b-instruct",
+              "qwen.qwen3-235b-a22b-2507-v1:0",
+              "qwen.qwen3-32b-v1:0",
+              "qwen.qwen3-coder-30b-a3b-v1:0",
+              "qwen.qwen3-coder-480b-a35b-v1:0",
+              "qwen.qwen3-coder-next",
+              "qwen.qwen3-next-80b-a3b",
+              "qwen.qwen3-vl-235b-a22b",
+              "qwen/qwen-2.5-72b-instruct",
+              "qwen/qwen-2.5-7b-instruct",
+              "qwen/qwen3-14b",
+              "qwen/qwen3-235b-a22b",
+              "qwen/qwen3-235b-a22b-2507",
+              "qwen/qwen3-235b-a22b-thinking-2507",
+              "qwen/qwen3-30b-a3b",
+              "qwen/qwen3-30b-a3b-instruct-2507",
+              "qwen/qwen3-30b-a3b-thinking-2507",
+              "qwen/qwen3-32b",
+              "qwen/qwen3-8b",
+              "qwen/qwen3-coder-30b-a3b-instruct",
+              "qwen/qwen3-coder-next",
+              "qwen/qwen3-next-80b-a3b-instruct",
+              "qwen/qwen3-next-80b-a3b-thinking",
+              "qwen/qwen3-vl-235b-a22b-instruct",
+              "qwen/qwen3-vl-235b-a22b-thinking",
+              "qwen/qwen3-vl-30b-a3b-instruct",
+              "qwen/qwen3-vl-30b-a3b-thinking",
+              "qwen/qwen3-vl-32b-instruct",
+              "qwen/qwen3-vl-8b-instruct",
+              "qwen/qwen3-vl-8b-thinking"
+            ]
+          },
+          {
+            "label": "fallback chars/4",
+            "routeEntries": 55,
+            "modelIds": [
+              "Qwen/Qwen3.6-27B",
+              "Qwen/Qwen3.6-35B-A3B",
+              "Qwen/Qwen3.6-Plus",
+              "Qwen/Qwen3.7-Max",
+              "accounts/fireworks/models/qwen3p7-plus",
+              "alibaba/qwen-3.6-max-preview",
+              "alibaba/qwen3-235b-a22b-thinking",
+              "alibaba/qwen3-coder",
+              "alibaba/qwen3-coder-plus",
+              "alibaba/qwen3-max",
+              "alibaba/qwen3-max-preview",
+              "alibaba/qwen3-max-thinking",
+              "alibaba/qwen3-vl-instruct",
+              "alibaba/qwen3-vl-thinking",
+              "alibaba/qwen3.5-flash",
+              "alibaba/qwen3.5-plus",
+              "alibaba/qwen3.6-27b",
+              "alibaba/qwen3.6-plus",
+              "alibaba/qwen3.7-flash",
+              "alibaba/qwen3.7-max",
+              "alibaba/qwen3.7-plus",
+              "qwen/qwen-plus",
+              "qwen/qwen-plus-2025-07-28",
+              "qwen/qwen-plus-2025-07-28:thinking",
+              "qwen/qwen3-coder",
+              "qwen/qwen3-coder-flash",
+              "qwen/qwen3-coder-plus",
+              "qwen/qwen3-max",
+              "qwen/qwen3-max-thinking",
+              "qwen/qwen3.5-flash-02-23",
+              "qwen/qwen3.5-plus-02-15",
+              "qwen/qwen3.5-plus-20260420",
+              "qwen/qwen3.6-27b",
+              "qwen/qwen3.6-35b-a3b",
+              "qwen/qwen3.6-flash",
+              "qwen/qwen3.6-max-preview",
+              "qwen/qwen3.6-plus",
+              "qwen/qwen3.7-flash",
+              "qwen/qwen3.7-max",
+              "qwen/qwen3.7-plus",
+              "qwen3.5-plus",
+              "qwen3.6-flash",
+              "qwen3.6-plus",
+              "qwen3.7-max",
+              "qwen3.7-plus",
+              "qwen3.8-max-preview"
+            ]
+          },
+          {
+            "label": "Qwen 3.5 tokenizer",
+            "routeEntries": 11,
+            "modelIds": [
+              "Qwen/Qwen3.5-122B-A10B",
+              "Qwen/Qwen3.5-27B",
+              "Qwen/Qwen3.5-35B-A3B",
+              "Qwen/Qwen3.5-397B-A17B",
+              "Qwen/Qwen3.5-9B",
+              "qwen/qwen3.5-122b-a10b",
+              "qwen/qwen3.5-27b",
+              "qwen/qwen3.5-35b-a3b",
+              "qwen/qwen3.5-397b-a17b",
+              "qwen/qwen3.5-9b"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

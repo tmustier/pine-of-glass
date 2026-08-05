@@ -58,14 +58,26 @@ With at least 2 tools, the checker removes the shared tool-block overhead before
 
 ## Open tokenizer calibration
 
-Reproduce the Kimi, GLM and Cohere raw-text profiles from a source checkout:
+Reproduce the Kimi, GLM, Cohere, DeepSeek and Qwen raw-text profiles from a source checkout:
 
 ```bash
 uv run --with 'huggingface-hub==1.26.0' --with 'tokenizers==0.22.2' \
   --with 'tiktoken==0.13.0' scripts/contextimate/study-open-tokenizers.py --json
 ```
 
-The script pins every model revision and tokenizer hash. It reads a public corpus from git revision `556dd115a77839773e143afc0d982afa59eb7479`. Later code changes cannot move the baseline silently. The script downloads tokenizer artifacts and makes no generation calls. It reads Kimi's pinned rank file and configuration directly. It checks both hashes and executes no repository code.
+The script pins every model revision and tokenizer hash. It reads a public corpus from git revision `556dd115a77839773e143afc0d982afa59eb7479`. Later code changes cannot move the baseline silently. The script downloads tokenizer artifacts and makes no generation calls. It reads Kimi's pinned rank file and configuration directly. For DeepSeek and Qwen, it also checks the ordinary-text BPE content and exact corpus token stream for every grouped artifact. It executes no repository code.
+
+## Gemini count fingerprints
+
+Gemini exposes counts through the official `countTokens` endpoint. Reproduce the Gemini evidence with an API key:
+
+```bash
+GEMINI_API_KEY=... scripts/contextimate/check-gemini-tokenizers.py --json
+```
+
+The checker sends each public corpus fixture as one user text part. Its 17 default IDs are the countable Gemini 2.x and 3.x models represented in Pi's current catalog. It groups models only when all returned counts match. Use repeated `--model` options to check another exact model ID. The script makes no generation calls and never prints the key or source text.
+
+This is a live, date-stamped check. Google can retire preview model IDs, so the checked-in evidence remains the record for the measured revisions.
 
 ## xAI tokenizer fingerprints
 
