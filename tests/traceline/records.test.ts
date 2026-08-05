@@ -3,7 +3,7 @@
 // graduate to verb-led outcome rows: the record leads and the command trails as
 // provenance behind its `$`, parsed from the *success evidence the tool reported*.
 // The explicit command target may fill in only targetless verified state output.
-// These tests pin the exact porcelain shapes, the headline placement, and the
+// These tests pin the exact evidence shapes, the headline placement, and the
 // fact-toned ink.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -110,12 +110,51 @@ test("gh porcelain: merge, close, create, issue close, release", () => {
   assert.deepEqual(recordCells(released), ["released v0.5.9"]);
 });
 
+test("silent terminal gh merges yield a merged fact", () => {
+  const direct = bash("gh pr merge 120 --squash --delete-branch\n", "(no output)");
+  assert.deepEqual(recordCells(direct), ["merged PR #120"]);
+
+  const fromWorktree = bash("cd /tmp/pr-137 && gh pr merge 137 --merge", "(no output)");
+  assert.deepEqual(recordCells(fromWorktree), ["merged PR #137"]);
+
+  const url = "https://github.com/tmustier/pine-of-glass/pull/138";
+  const withRepo = bash(`gh pr merge --repo tmustier/pine-of-glass ${url} --squash`, "(no output)");
+  assert.deepEqual(recordCells(withRepo), ["merged PR #138"]);
+});
+
+test("silent merge inference stays attributable to one merge", () => {
+  const cases = [
+    bash("gh pr merge 120 --auto", "(no output)"),
+    bash("gh pr merge 120 --disable-auto", "(no output)"),
+    bash("gh pr merge 120 --squash 2>&1 | tail -1", "(no output)"),
+    bash("gh pr merge 120 --squash; git status --short", "(no output)"),
+    bash("gh pr merge --squash", "(no output)"),
+    bash("gh pr merge 120 --squash", "(no output)", { error: true }),
+    bash("gh pr merge 120 --squash", "! Pull request tmustier/pine-of-glass#120 was already merged\n"),
+  ];
+  for (const comp of cases) assert.deepEqual(recordCells(comp), []);
+});
+
+test("same-row gh state verification accepts JSON output", () => {
+  const merged = bash(
+    "gh pr merge 126 --squash && gh pr view 126 --json state,mergedAt,mergeCommit,url",
+    '{"mergeCommit":{"oid":"56692804b905502aaa151bb16f6a506d37e32884"},"mergedAt":"2026-08-05T11:16:46Z","state":"MERGED","url":"https://github.com/Nexcade/website/pull/126"}\n',
+  );
+  assert.deepEqual(recordCells(merged), ["merged PR #126"]);
+
+  const open = bash(
+    "gh pr merge 127 --squash && gh pr view 127 --json state",
+    '{"state":"OPEN"}\n',
+  );
+  assert.deepEqual(recordCells(open), []);
+});
+
 test("npm publish porcelain yields a published fact", () => {
   const comp = bash("npm publish", "npm notice Publishing to https://registry.npmjs.org/\n+ pine-of-glass@0.5.10\n");
   assert.deepEqual(recordCells(comp), ["published 0.5.10"]);
 });
 
-test("facts require both the gate and the porcelain", () => {
+test("facts require both the command gate and result evidence", () => {
   // Porcelain-shaped text without the command: no facts.
   const cat = bash("cat CHANGELOG.md", "[main a4f21c9] docs: x\n   1c75c2a..50cf33f  main -> main\n");
   assert.deepEqual(recordCells(cat), []);

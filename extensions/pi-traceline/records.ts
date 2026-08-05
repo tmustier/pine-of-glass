@@ -1,4 +1,5 @@
 import { stripAnsi } from "../_lib/ansi.ts";
+import { isJsonObject } from "../_lib/boundary.ts";
 import type { ToolRowDataLike } from "../_lib/chat.ts";
 
 // Records of consequence (design language §9.10): parse reported success evidence
@@ -7,7 +8,7 @@ import type { ToolRowDataLike } from "../_lib/chat.ts";
 export type RecordTone = "success" | "warning";
 export type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean };
 
-type RecordRule = { gate: RegExp; parse: (out: string, command: string) => RecordFact[] };
+type RecordRule = { gate: RegExp; parse: (out: string, command: string, resultSucceeded: boolean) => RecordFact[] };
 
 function toolName(comp: ToolRowDataLike | undefined): string {
   return typeof comp?.toolName === "string" && comp.toolName.length > 0 ? comp.toolName : "tool";
@@ -41,7 +42,7 @@ function decodedTag(raw: string): string {
   }
 }
 
-const SHELL_RECORD_SEPARATORS = new Set(["&&", "||", ";", "|"]);
+const SHELL_RECORD_SEPARATORS = new Set(["&&", "||", ";", "|", "&"]);
 const GH_PR_MERGE_VALUE_OPTIONS = new Set(["--author-email", "--body", "--body-file", "--match-head-commit", "--repo", "--subject"]);
 const GH_PR_MERGE_SHORT_VALUE_OPTIONS = new Set(["-A", "-b", "-F", "-R"]);
 const GH_PR_VIEW_VALUE_OPTIONS = new Set(["--jq", "--json", "--repo", "--template"]);
@@ -73,6 +74,12 @@ function shellRecordWords(command: string): string[] {
       else current += ch;
       continue;
     }
+    if (ch === "\n") {
+      push();
+      const previous = words.at(-1);
+      if (previous && !SHELL_RECORD_SEPARATORS.has(previous)) words.push(";");
+      continue;
+    }
     if (/\s/.test(ch)) {
       push();
       continue;
@@ -94,6 +101,11 @@ function shellRecordWords(command: string): string[] {
       words.push(`${ch}${command[++i]!}`);
       continue;
     }
+    if (ch === "&" && command[i - 1] !== ">" && command[i + 1] !== ">") {
+      push();
+      words.push(ch);
+      continue;
+    }
     if (ch === ";" || ch === "|") {
       push();
       words.push(ch);
@@ -109,12 +121,6 @@ function prNumberFromToken(token: string): string | undefined {
   const direct = /^#?(\d+)$/.exec(token);
   if (direct) return direct[1];
   return /\/pull\/(\d+)\b/.exec(token)?.[1];
-}
-
-function commandEnd(tokens: string[], start: number): number {
-  let end = start;
-  while (end < tokens.length && !SHELL_RECORD_SEPARATORS.has(tokens[end]!)) end++;
-  return end;
 }
 
 function optionTakesValue(kind: GhPrKind, token: string): boolean {
@@ -166,7 +172,8 @@ function scanGhPrCommands(tokens: string[]): GhPrCommand[] {
     const kind = tokens[i + 2];
     if (kind !== "merge" && kind !== "view") continue;
     const argsStart = i + 3;
-    const end = commandEnd(tokens, argsStart);
+    let end = argsStart;
+    while (end < tokens.length && !SHELL_RECORD_SEPARATORS.has(tokens[end]!)) end++;
     commands.push({
       kind,
       prNumber: explicitPrNumberInGhArgs(tokens, argsStart, end, kind),
@@ -179,13 +186,6 @@ function scanGhPrCommands(tokens: string[]): GhPrCommand[] {
   return commands;
 }
 
-function hasFailureBranchBetween(tokens: string[], start: number, end: number): boolean {
-  for (let i = start; i < end; i++) {
-    if (tokens[i] === "||") return true;
-  }
-  return false;
-}
-
 function verifiedMergedPrNumber(command: string): string | undefined {
   const tokens = shellRecordWords(command);
   const commands = scanGhPrCommands(tokens);
@@ -194,13 +194,13 @@ function verifiedMergedPrNumber(command: string): string | undefined {
   const merge = merges[0]!;
   for (const view of commands) {
     if (view.kind !== "view" || view.prNumber !== merge.prNumber || !view.jsonFields.has("state")) continue;
-    if (view.start <= merge.start || hasFailureBranchBetween(tokens, merge.end, view.start)) continue;
+    if (view.start <= merge.start || tokens.slice(merge.end, view.start).includes("||")) continue;
     return merge.prNumber;
   }
   return undefined;
 }
 
-function ghPrMergeFacts(out: string, command: string): RecordFact[] {
+function ghPrMergeFacts(out: string, command: string, resultSucceeded: boolean): RecordFact[] {
   const nativeFacts = factsFrom(
     out,
     /(?:Merged|Squashed and merged|Rebased and merged) pull request \S*?#(\d+)/g,
@@ -208,17 +208,42 @@ function ghPrMergeFacts(out: string, command: string): RecordFact[] {
     (m) => `PR #${m[1]}`,
   );
   if (nativeFacts.length > 0) return nativeFacts;
-  const stateMatch = /^\s*MERGED(?:\s+[0-9a-f]{7,40})?\s*$/.exec(out);
-  if (!stateMatch) return [];
-  const prNumber = verifiedMergedPrNumber(command);
-  if (!prNumber) return [];
-  return [{ verb: "merged", datum: `PR #${prNumber}`, at: stateMatch.index, tone: "success", opaque: false }];
+
+  const trimmed = out.trim();
+  let stateAt: number | undefined;
+  if (/^MERGED(?:\s+[0-9a-f]{7,40})?$/.test(trimmed)) {
+    stateAt = out.indexOf(trimmed);
+  } else if (trimmed.startsWith("{")) {
+    try {
+      const state: unknown = JSON.parse(trimmed);
+      if (isJsonObject(state) && state.state === "MERGED") stateAt = out.indexOf(trimmed);
+    } catch {}
+  }
+  if (stateAt !== undefined) {
+    const prNumber = verifiedMergedPrNumber(command);
+    if (prNumber) return [{ verb: "merged", datum: `PR #${prNumber}`, at: stateAt, tone: "success", opaque: false }];
+  }
+
+  if (!resultSucceeded || trimmed !== "(no output)") return [];
+  const tokens = shellRecordWords(command);
+  const merges = scanGhPrCommands(tokens).filter((candidate) => candidate.kind === "merge");
+  if (merges.length !== 1) return [];
+  const merge = merges[0]!;
+  const previous = tokens[merge.start - 1];
+  const args = tokens.slice(merge.start + 3, merge.end);
+  if (
+    !merge.prNumber
+    || tokens.slice(merge.end).some((token) => token !== ";")
+    || (merge.start > 0 && previous !== "&&" && previous !== ";")
+    || args.some((arg) => arg === "--auto" || arg === "--disable-auto" || /[<>]/.test(arg))
+  ) return [];
+  return [{ verb: "merged", datum: `PR #${merge.prNumber}`, at: 0, tone: "success", opaque: false }];
 }
 
-// Success porcelain only. Push failures (`! [rejected] main -> main`) have neither a
+// Success evidence only. Push failures (`! [rejected] main -> main`) have neither a
 // hex range nor a `[new ...]` head, so they never match; `Everything up-to-date`
-// contributes nothing. A targetless PR `MERGED` state is accepted only as a
-// verified merged state after one explicit same-row `gh pr merge <n>` attempt.
+// contributes nothing. Targetless PR state needs a matching same-row state check;
+// a silent merge needs a successful terminal command with an explicit target.
 const RECORD_RULES: RecordRule[] = [
   {
     // `[main a4f21c9]`, `[main (root-commit) a4f21c9]`, `[detached HEAD a4f21c9]`
@@ -283,10 +308,11 @@ export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
   const cached = recordFactCache.get(comp);
   if (cached && cached.result === comp.result) return cached.facts;
   const out = stripAnsi(resultText(comp));
+  const resultSucceeded = comp.result.isError === false;
   const facts: RecordFact[] = [];
   if (out) {
     for (const rule of RECORD_RULES) {
-      if (rule.gate.test(command)) facts.push(...rule.parse(out, command));
+      if (rule.gate.test(command)) facts.push(...rule.parse(out, command, resultSucceeded));
     }
     facts.sort((a, b) => a.at - b.at);
   }

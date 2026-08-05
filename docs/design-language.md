@@ -502,13 +502,12 @@ adopted against a 400-session corpus of real transcripts, per §10):
 Some bash rows change shared state beyond the working tree: a commit, a push, a
 PR merged or closed, a release or package published. Their invocation says only
 what was attempted; the proof lives in the result, which one-line mode hides.
-A row whose output carries that proof graduates to a verb-led outcome row: the
+A row whose result carries that proof graduates to a verb-led outcome row: the
 record leads, stated verb-first from the success evidence the tool actually
-reported. The command may identify an explicit target only when the output's
-success evidence is targetless and the same row includes an explicit verification
-command, such as `gh pr view 826 --json state` returning `MERGED`; the outcome
-still never comes from arguments alone. The command trails as provenance behind
-its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87 --squash`.
+reported. When that evidence is targetless, the command may supply an explicit PR
+target under the verified-state and silent-merge rules below. The command trails as
+provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87
+--squash`.
 
 - the record is the headline because, once landed, the outcome is the row's
   identity: it joins the verb-first family (`read`, `edit`, `write`, `$`), so
@@ -522,11 +521,16 @@ its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87 --squash`.
   re-earns its berth
 - a bash row with no record keeps `$ command` at the left edge: rows lead with
   an outcome exactly when there demonstrably was one
-- output-first honesty: a fact appears only when the command names the operation
-  and success evidence appears in the output (`[main a4f21c9]`, `main -> main`,
-  `Merged pull request #87`, or a verified `MERGED` PR state). A failed push
-  after a good commit still headlines `committed a4f21c9` on a red row:
-  committed, demonstrably not landed. `git tag` earns nothing; its success
+- result-first honesty: a fact appears only when the command names the operation
+  and its result carries success evidence (`[main a4f21c9]`, `main -> main`,
+  `Merged pull request #87`, or a verified merged PR state). Same-row PR state may be
+  bare `MERGED` or JSON with a top-level `state` of `MERGED`
+- current `gh pr merge` often succeeds with no text. Pi's `(no output)` result counts
+  only for a successful terminal merge with an explicit numeric or `/pull/N` target;
+  `--auto` and `--disable-auto` do not qualify. Merge queues can turn success into an
+  enqueue rather than a landing, so verified state remains stronger evidence there
+- a failed push after a good commit still headlines `committed a4f21c9` on a red
+  row: committed, demonstrably not landed. `git tag` earns nothing; its success
   porcelain is silence
 - facts chain in output order with the `·` separator; consecutive same-verb
   facts merge their data (`pushed main, v0.5.9`) only when their tones agree,

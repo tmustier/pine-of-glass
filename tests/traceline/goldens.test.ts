@@ -114,9 +114,7 @@ test("one-line trace goldens at 80 and 120 columns", () => {
     const commit = bash(`cd ${repo} && git add -A && git -c user.email=6326440+tmustier@users.noreply.github.com commit -m "traceline: records of consequence" && git push`, {
       text: `[main a4f21c9] traceline: records of consequence\n 3 files changed, 210 insertions(+)\nTo https://github.com/tmustier/pine-of-glass.git\n   50cf33f..a4f21c9  main -> main\n`,
     });
-    const merge = bash("gh pr merge 87 --squash --delete-branch", {
-      text: "✓ Squashed and merged pull request tmustier/pine-of-glass#87 (traceline: records)\n✓ Deleted branch git-records\n",
-    });
+    const merge = bash("gh pr merge 87 --squash --delete-branch", { text: "(no output)" });
     const status = bash("git status --short", { running: true });
 
     const children = [

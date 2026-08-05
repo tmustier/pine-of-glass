@@ -129,7 +129,7 @@ Successful commands can lead with a verified outcome:
   ▏ › merged PR #87 $ gh pr merge 87 --squash
 ```
 
-Traceline only shows an outcome when the tool output proves it happened. It does not treat the command arguments as proof.
+Traceline requires result evidence, not just a command. A successful terminal `gh pr merge <number>` qualifies when Pi reports `(no output)`; auto modes do not. On merge-queue repositories, add a same-row `gh pr view <number> --json state` check when queued versus landed matters.
 
 ## Keep repeated work compact
 
