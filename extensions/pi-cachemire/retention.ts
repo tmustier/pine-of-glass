@@ -9,14 +9,16 @@ export function inferAnthropicTtlMs(
   return env.PI_CACHE_RETENTION === "long" ? TTL_LONG_MS : TTL_SHORT_MS;
 }
 
+const OPENAI_MINIMUM_MINOR = 6;
+
 export const OPENAI_MINIMUM_WINDOW: CacheWindow = {
   kind: "minimum",
-  minMs: 6 * TTL_SHORT_MS,
+  minMs: 30 * 60 * 1000,
 };
 
 export const OPENAI_EXTENDED_WINDOW: CacheWindow = {
   kind: "maximum",
-  maxMs: 24 * TTL_LONG_MS,
+  maxMs: 24 * 60 * 60 * 1000,
 };
 
 function gpt5Minor(model: string | undefined): number | undefined {
@@ -28,7 +30,8 @@ function gpt5Minor(model: string | undefined): number | undefined {
 
 function usesMinimumRetention(provider: string | undefined, model: string | undefined): boolean {
   const minor = gpt5Minor(model);
-  return (provider === "openai" || provider === "openai-codex") && minor !== undefined && minor >= 6;
+  return (provider === "openai" || provider === "openai-codex") &&
+    minor !== undefined && minor >= OPENAI_MINIMUM_MINOR;
 }
 
 export function windowForModel(
@@ -41,18 +44,16 @@ export function windowForModel(
   return usesMinimumRetention(provider, model) ? OPENAI_MINIMUM_WINDOW : undefined;
 }
 
-function supportsExtendedRetention(model: string | undefined): boolean {
-  const minor = gpt5Minor(model);
-  return minor !== undefined && minor < 6;
-}
-
 export function windowForRequest(
   provider: string | undefined,
   model: string | undefined,
   payload: unknown,
 ): CacheWindow | undefined {
   if (usesMinimumRetention(provider, model)) return OPENAI_MINIMUM_WINDOW;
-  if (provider !== "openai" || !supportsExtendedRetention(model) || !isJsonObject(payload)) return undefined;
+  const minor = gpt5Minor(model);
+  if (provider !== "openai" || minor === undefined || minor >= OPENAI_MINIMUM_MINOR || !isJsonObject(payload)) {
+    return undefined;
+  }
   return payload.prompt_cache_retention === "24h" ? OPENAI_EXTENDED_WINDOW : undefined;
 }
 

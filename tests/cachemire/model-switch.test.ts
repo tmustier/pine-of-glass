@@ -248,12 +248,11 @@ test("computeSwitchForecast: a switch-back prior needs an exact api and an uncom
     requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
     promptTokens: 80_000,
     provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses",
-    window: OPENAI_MINIMUM_WINDOW,
   };
   const base = { target: sol, entries: entriesFixture(), activeLeafId: "a1", systemPromptChars: 0, tools: [] };
   assert.deepEqual(
     computeSwitchForecast({ ...base, snapshots: [snapshot] }).prior,
-    { requestAt: 1_000, window: OPENAI_MINIMUM_WINDOW },
+    { requestAt: 1_000, window: undefined },
   );
   // Same id via a different (or unrecorded) wire API is a different cache: no warmth hint.
   assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: "openai-responses" }] }).prior, undefined);

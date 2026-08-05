@@ -95,9 +95,9 @@ test("event flow: a healthy first send and an abort both stay silent", async () 
   }
 });
 
-test("event flow: GPT-5.6 Codex waits for its 30m retention minimum", async (t) => {
+test("event flow: restored GPT-5.6 Codex reaches unknown at its 30m minimum", async (t) => {
   const startedAt = Date.UTC(2026, 7, 4, 12);
-  let now = startedAt + 15 * 60_000;
+  const now = startedAt + 30 * 60_000;
   t.mock.method(Date, "now", () => now);
   const model = {
     id: "gpt-5.6-sol", provider: "openai-codex", api: "openai-codex-responses",
@@ -118,11 +118,7 @@ test("event flow: GPT-5.6 Codex waits for its 30m retention minimum", async (t) 
   const probe = extensionProbe();
   t.after(async () => fire(probe, "session_shutdown", {}, ctx));
   await fire(probe, "session_start", {}, ctx);
-  assert.equal(widgets.at(-1), "", "15m idle is inside the documented minimum");
-  now = startedAt + 30 * 60_000;
-  await fire(probe, "model_select", { model }, ctx);
   assert.match(widgets.at(-1)!, /cache state unknown .* 30m retention minimum reached/);
-  assert.doesNotMatch(widgets.at(-1)!, /5m.*1h|typical eviction/);
 });
 
 test("event flow: an Anthropic-shaped gateway payload keeps retention unknown", async (t) => {

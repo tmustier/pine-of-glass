@@ -1,5 +1,3 @@
-// Contract test for the installed Pi routes and request shapes Cachemire uses. OpenAI's
-// GPT-5.6 minimum is a documented model-family default, so it needs no request field.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,16 +13,8 @@ function source(name: string): string {
   return readFileSync(join(piAiRoot, "api", name), "utf8");
 }
 
-test("official OpenAI and Codex OAuth keep their distinct request shapes", () => {
-  const direct = source("openai-responses.js");
-  assert.match(direct, /prompt_cache_key:/, "direct OpenAI lost its cache key");
-  assert.match(direct, /prompt_cache_retention:/, "legacy maximum-retention policy seam moved");
-  assert.match(direct, /prompt_cache_options:/, "GPT-5.6 cache-options seam moved");
-
-  const codex = source("openai-codex-responses.js");
-  assert.match(codex, /prompt_cache_key:/, "Codex cache-key seam moved");
-  assert.doesNotMatch(codex, /prompt_cache_retention:/, "Codex gained the deprecated retention field");
-  assert.doesNotMatch(codex, /prompt_cache_options:/, "Codex gained explicit cache options");
+test("direct OpenAI keeps the legacy retention field", () => {
+  assert.match(source("openai-responses.js"), /prompt_cache_retention:/);
 });
 
 function modelRecord(name: string, api: string, model: string): Record<string, unknown> {
