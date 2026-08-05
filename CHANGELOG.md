@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Cachemire: keep model-switch forecasts stable through send.** Outgoing payloads
+  still provide cache evidence, while provider usage supplies the exact result.
 - **Traceline: show silent `gh pr merge` outcomes.** A successful terminal merge
   with an explicit PR number now renders `merged PR #N` when `gh` returns no text.
   Same-row JSON `MERGED` state is also recognised.

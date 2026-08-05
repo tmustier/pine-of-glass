@@ -223,25 +223,6 @@ test("computeSwitchForecast: a source-model bill never rescales the target estim
   assert.equal(computeSwitchForecast({ ...base, snapshots: [] }).estTokens, 3_000);
 });
 
-test("computeSwitchForecast: send-time provider fields replace stale canonical sizing", () => {
-  const forecast = computeSwitchForecast({
-    target: OPUS,
-    entries: entriesFixture(),
-    activeLeafId: "a1",
-    systemPromptChars: 2_600,
-    tools: [],
-    snapshots: [],
-    providerPayload: {
-      model: OPUS.id,
-      system: "s".repeat(2_600),
-      messages: "m".repeat(2_600),
-      tools: [],
-      metadata: "ignored".repeat(100_000),
-    },
-  });
-  assert.equal(forecast.estTokens, 2_000, "only the observed 5.2k prompt chars are priced at 2.6 chars/token");
-});
-
 test("computeSwitchForecast: a switch-back prior needs an exact api and an uncompacted path", () => {
   const sol: SwitchTarget = { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" };
   const snapshot = {

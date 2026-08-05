@@ -21,7 +21,6 @@ import {
   type ForecastMessage,
   type TargetModel,
 } from "../../extensions/_lib/forecast.ts";
-import { forecastProviderPrompt } from "../../extensions/_lib/provider-prompt.ts";
 import { activeToolShapes } from "../../extensions/pi-cachemire/forecast.ts";
 
 const outputPath = process.env.PI_CACHEMIRE_FORECAST_CAPTURE ?? "/tmp/pi-cachemire-model-switch-forecast.jsonl";
@@ -45,7 +44,6 @@ type CanonicalCounts = {
 type RequestCapture = {
   identity: TargetModel;
   canonical: CanonicalCounts;
-  providerPromptTokens?: number;
 };
 
 type ResolvedCapture = RequestCapture & {
@@ -102,10 +100,6 @@ function canonicalCounts(
   }
 }
 
-function promptTokens(message: { usage: { input: number; cacheRead: number; cacheWrite: number } }): number {
-  return message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
-}
-
 export default function modelSwitchForecastProbe(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     append("session_start", { model: ctx.model === undefined ? undefined : identity(ctx.model) });
@@ -125,12 +119,11 @@ export default function modelSwitchForecastProbe(pi: ExtensionAPI): void {
       sourceRequest: lastResolved === undefined ? undefined : {
         actualPromptTokens: lastResolved.actualPromptTokens,
         canonicalTokens: lastResolved.canonical.totalTokens,
-        providerPromptTokens: lastResolved.providerPromptTokens,
       },
     });
   });
 
-  pi.on("before_provider_request", (event, ctx) => {
+  pi.on("before_provider_request", (_event, ctx) => {
     if (ctx.model === undefined) return;
     if (inCompaction) {
       pending = undefined;
@@ -140,8 +133,7 @@ export default function modelSwitchForecastProbe(pi: ExtensionAPI): void {
     const model = identity(ctx.model);
     const canonical = canonicalCounts(pi, ctx, model, "before_provider_request");
     if (canonical === undefined) return;
-    const providerPromptTokens = forecastProviderPrompt(event.payload, model)?.tokens;
-    pending = { identity: model, canonical, providerPromptTokens };
+    pending = { identity: model, canonical };
     append("before_provider_request", pending);
   });
 
@@ -158,7 +150,7 @@ export default function modelSwitchForecastProbe(pi: ExtensionAPI): void {
       pending = undefined;
       return;
     }
-    const actualPromptTokens = promptTokens(event.message);
+    const actualPromptTokens = event.message.usage.input + event.message.usage.cacheRead + event.message.usage.cacheWrite;
     if (actualPromptTokens <= 0) {
       append("unbilled_response", { identity: resolvedIdentity });
       pending = undefined;

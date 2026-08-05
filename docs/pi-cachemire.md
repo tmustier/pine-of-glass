@@ -32,10 +32,6 @@ confirm that an entry exists.
    billed them. A model-switch forecast is a labelled estimate in the target model's
    tokenizer. Exact values return with the first billed call on the new model.
 
-At `before_provider_request`, Cachemire sizes recognized prompt fields from the payload
-it observes. This captures Pi normalization and earlier payload transforms. Gateway
-estimates remain rough because the upstream request shape is not visible.
-
 ## Confirmed clocks start at request time
 
 The outgoing request supplies the clock anchor, but Cachemire does not activate its
@@ -75,8 +71,9 @@ next prompt.
 
 The next request adds the new user message and other suffix content. Shared prefixes
 from another session can also reduce the actual write. The `~` marks this uncertainty.
-After a model switch, Cachemire uses a separate target-tokenizer estimate instead of the
-old model's billed count.
+After a model switch, Cachemire estimates canonical history in the target tokenizer
+and keeps that estimate through send. A new user message or provider wrapper can make
+the eventual billed count differ.
 
 ## Aborted sends do not create evidence
 
