@@ -35,9 +35,9 @@ Divisors depend on content shape: repetitive prose tokenizes around chars ÷ 7, 
 
 The session divisors were validated by replaying 194 local session transcripts (16,479 assistant turns) against recorded provider usage: chars ÷ 2.6 beat a blanket chars ÷ 4 on 20 of 24 Anthropic transcripts, with median error 0.6 to 2.1% against 2.8 to 4.7%. OpenAI-Codex session material sits at chars ÷ 4, so the blanket value is already right there. `pi-contextimate-evaluate-transcripts` re-runs this evaluation.
 
-A second study on 5 August 2026 covered Kimi, GLM, Cohere and Grok. It counted 54,719 characters of public instructions and 33,590 characters of TypeScript and tests. Local checks used pinned official tokenizer artifacts. xAI checks used exact token IDs and bytes from `TokenizeText`.
+A second study on 5 August 2026 covered Gemini, Kimi, GLM, Cohere, Grok, DeepSeek and Qwen. It counted 54,719 characters of public instructions and 33,590 characters of TypeScript and tests. Gemini used the official `countTokens` endpoint. Local checks used pinned official tokenizer artifacts. xAI checks used exact token IDs and bytes from `TokenizeText`.
 
-| Raw tokenizer profile | Text divisor | Session divisor |
+| Visible-text profile | Text divisor | Session divisor |
 |---|---:|---:|
 | Kimi K2 through K3 | 4.1 | 3.8 |
 | GLM 4.5 variants, 4.6 variants and standard 4.7 | 4.0 | 3.9 |
@@ -46,8 +46,12 @@ A second study on 5 August 2026 covered Kimi, GLM, Cohere and Grok. It counted 5
 | North Mini Code | 4.2 | 3.9 |
 | Grok 4.20 variants, 4.3 and Build 0.1 | 4.2 | 3.9 |
 | Grok 4.5 | 4.1 | 3.6 |
+| Gemini 2.x and 3.x exact counted models | 3.9 | 3.4 |
+| DeepSeek V3, R1 and V4 | 4.0 | 3.6 |
+| Qwen 2.5 and 3 | 4.0 | 3.8 |
+| Qwen 3.5 | 3.9 | 3.5 |
 
-These profiles cover visible text only. Dynamic aliases and unverified GLM Turbo variants use the fallback until routing identifies a concrete model. The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) contains the tokenizer hashes, xAI fingerprints and family boundaries.
+These profiles cover visible text only. Dynamic aliases and unverified Gemini, GLM Turbo, DeepSeek and Qwen variants use the existing generic estimate or fallback until routing identifies a counted model. The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) contains the count fingerprints, tokenizer hashes, token-stream fingerprints, xAI fingerprints and family boundaries.
 
 ## Tool schemas
 
@@ -67,7 +71,7 @@ raw minified chars ÷ 4             78.4%
 
 Two changes made the formula win: counting nested-object and array-item properties recursively, and moving text fragments from chars ÷ 4 to chars ÷ 6.6.
 
-Claude tool payloads measured near their text divisors (÷ 3.36 on Claude 4.5/4.6, ÷ 2.5 on the Claude 4.7+ family), so they use divisors of 3.3 and 2.6. Direct OpenAI Responses and Codex routes use ÷ 5.5 from OpenAI-Codex probes. Models that merely share Anthropic, OpenAI Chat or Responses wire formats use the matching payload shape with the fallback ÷ 4, not the upstream tokenizer. Gemini and Bedrock also use ÷ 4 until measured.
+Claude tool payloads measured near their text divisors (÷ 3.36 on Claude 4.5/4.6, ÷ 2.5 on the Claude 4.7+ family), so they use divisors of 3.3 and 2.6. Direct OpenAI Responses and Codex routes use ÷ 5.5 from OpenAI-Codex probes. Models that merely share Anthropic, OpenAI Chat or Responses wire formats use the matching payload shape with the fallback ÷ 4, not the upstream tokenizer. Unmeasured Gemini and Bedrock tool payloads also use ÷ 4.
 
 In the UI, a formula-counted tools row says `OpenAI formula · schema text ÷ 6.6` and its character count is a payload-size cue only: it is not what gets divided. Divisor-counted rows say things like `÷ 2.6 · Anthropic tool payload`. Each tool's own row is counted on that tool's own shaped payload or formula subtotal, and the schema tree is just the readable rendering of it.
 

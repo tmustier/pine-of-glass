@@ -79,6 +79,7 @@
     "pi-contextimate-probe-prefix": "scripts/contextimate/probe-live-prefix.mjs",
     "pi-contextimate-evaluate-transcripts": "scripts/contextimate/evaluate-transcripts.mjs",
     "pi-contextimate-check-provider-tokens": "scripts/contextimate/check-provider-tokens.ts",
+    "pi-contextimate-check-gemini-tokenizers": "scripts/contextimate/check-gemini-tokenizers.py",
     "pi-contextimate-check-xai-tokenizers": "scripts/contextimate/check-xai-tokenizers.py"
   }
 }

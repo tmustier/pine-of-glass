@@ -10,6 +10,7 @@ import {
 } from "../../extensions/pi-contextimate/model-heuristics.ts";
 import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
+import { tokenizerFamilies } from "./heuristic-family-fixtures.ts";
 
 const { parseContextimateConfig, resolveHeuristic, cleanDenominator } = internals;
 
@@ -88,55 +89,7 @@ test("Claude profiles follow the model through supported routes", () => {
 });
 
 test("measured tokenizer families match their published model IDs", () => {
-  const families = [
-    ["Kimi tokenizer", 4.1, 3.8, [
-      "moonshotai/kimi-k2",
-      "moonshotai/kimi-k2-0905-preview",
-      "moonshotai/kimi-k2-thinking-turbo",
-      "moonshotai/kimi-k2.5",
-      "@cf/moonshotai/kimi-k2.6",
-      "moonshotai/kimi-k2.7-code-highspeed",
-      "accounts/fireworks/routers/kimi-k2p7-code-fast",
-      "moonshotai/kimi-k3-fast",
-    ]],
-    ["GLM 4.5 tokenizer", 4, 3.9, [
-      "z-ai/glm-4.5",
-      "z-ai/glm-4.5-air",
-      "z-ai/glm-4.5v",
-      "z-ai/glm-4.6",
-      "z-ai/glm-4.6v",
-      "z-ai/glm-4.6v-flash",
-      "zai-glm-4.7",
-    ]],
-    ["GLM 5 tokenizer", 4, 3.9, [
-      "z-ai/glm-4.7-flash",
-      "z-ai/glm-5",
-      "z-ai/glm-5.1",
-      "zai-org/glm-5.2",
-      "accounts/fireworks/routers/glm-5p2-fast",
-    ]],
-    ["Command R tokenizer", 4, 3.4, [
-      "cohere/command-r-08-2024",
-      "cohere/command-r-plus-08-2024",
-    ]],
-    ["North Mini Code tokenizer", 4.2, 3.9, [
-      "cohere/north-mini-code:free",
-      "north-mini-code-free",
-      "coherelabs/north-mini-code-1.0",
-    ]],
-    ["Grok 4.20/4.3 tokenizer", 4.2, 3.9, [
-      "x-ai/grok-4.20",
-      "xai/grok-4.20-reasoning",
-      "xai/grok-4.20-non-reasoning",
-      "grok-4.20-0309-reasoning",
-      "grok-4.20-multi-agent-0309",
-      "xai.grok-4.3",
-      "grok-build-0.1",
-    ]],
-    ["Grok 4.5 tokenizer", 4.1, 3.6, ["x-ai/grok-4.5"]],
-  ] as const;
-
-  for (const [label, textDenominator, sessionDenominator, ids] of families) {
+  for (const [label, textDenominator, sessionDenominator, ids] of tokenizerFamilies) {
     for (const id of ids) {
       const heuristic = resolveHeuristic(model("relay", id, "openai-completions"), {});
       assert.equal(heuristic.label, label, id);
@@ -151,6 +104,9 @@ test("measured tokenizer families remain independent of their wire API", () => {
     [model("kimi-coding", "k3-256k", "anthropic-messages"), "Kimi tokenizer", "anthropic"],
     [model("amazon-bedrock", "zai.glm-4.7", "bedrock-converse-stream"), "GLM 4.5 tokenizer", "bedrock"],
     [model("xai", "grok-4.5", "openai-responses"), "Grok 4.5 tokenizer", "openai-responses"],
+    [model("vercel-ai-gateway", "google/gemini-3.5-flash", "anthropic-messages"), "Gemini 2/3 countTokens", "anthropic"],
+    [model("vercel-ai-gateway", "deepseek/deepseek-v3.2", "anthropic-messages"), "DeepSeek tokenizer", "anthropic"],
+    [model("amazon-bedrock", "qwen.qwen3-coder-next", "bedrock-converse-stream"), "Qwen 2.5/3 tokenizer", "bedrock"],
   ] as const;
 
   for (const [current, label, toolNumerator] of cases) {
@@ -171,12 +127,35 @@ test("dynamic selectors and unverified variants keep the fallback tokenizer", ()
     model("zai", "glm-5v-turbo", "openai-completions"),
     model("vercel-ai-gateway", "xai/grok-4.20-reasoning-beta", "anthropic-messages"),
     model("xai", "grok-build-latest", "openai-completions"),
+    model("openrouter", "deepseek/deepseek-chat", "openai-completions"),
+    model("openrouter", "qwen/qwen-plus", "openai-completions"),
+    model("openrouter", "qwen/qwen3-coder", "openai-completions"),
+    model("openrouter", "qwen/qwen3-max", "openai-completions"),
+    model("openrouter", "qwen/qwen3.5-flash-02-23", "openai-completions"),
+    model("vercel-ai-gateway", "alibaba/qwen3.5-plus", "anthropic-messages"),
+    model("openrouter", "qwen/qwen3.6-27b", "openai-completions"),
   ]) {
     assert.equal(
       resolveHeuristic(current, {}).label,
       "fallback chars/4",
       `${current.provider}/${current.id}`,
     );
+  }
+});
+
+test("unmeasured Gemini routes keep the existing generic estimate", () => {
+  for (const id of [
+    "~google/gemini-flash-latest",
+    "google/gemini-2.5-pro-preview",
+    "google/gemini-2.5-pro-preview-05-06",
+    "google/gemini-3-flash",
+    "gemini-3.1-pro",
+    "gemini-3.1-flash-live-preview",
+  ]) {
+    const heuristic = resolveHeuristic(model("relay", id, "openai-completions"), {});
+    assert.equal(heuristic.label, "Gemini/Vertex heuristic", id);
+    assert.equal(heuristic.textDenominator, 4, id);
+    assert.equal(heuristic.sessionDenominator, 4, id);
   }
 });
 
