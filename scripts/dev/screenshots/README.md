@@ -18,7 +18,8 @@ inspect exactly what was on screen. Pass `--keep` to leave the tmux session and 
 HOME in place for debugging (attach with `tmux -L pogshots attach -t pog-shots-<pid>`).
 
 Requirements: `pi` on PATH, `tmux`, Google Chrome (headless), `python3` with PIL,
-`~/.pi/agent/auth.json` (copied into the fixture; live scenarios need working credentials).
+`~/.pi/agent/auth.json` (copied into the fixture; live scenarios need working credentials,
+including Anthropic for Cachemire's no-call model switch).
 
 ## How it works
 
@@ -97,10 +98,10 @@ the full dump is a wall and one tree gives the sense.
 ### cachemire: fully live (costs money)
 
 Cache behaviour can't be honestly mocked, so this scenario makes **real model calls**:
-two tiny turns against a small fixture README, then `/cache`. It runs on
-`openai-codex/gpt-5.6-sol`; cachemire degrades honestly to OpenAI's band-cache wording,
-which also demonstrates the cross-provider story. Expect the table to vary run to run:
-cold start, hit, or an occasional honestly attributed miss are all authentic.
+three tiny turns against a small fixture README, then `/cache`. It uses
+`openai-codex/gpt-5.6-sol`, switches to Anthropic without calling it to capture the
+model-switch warning, then switches back for the OpenAI ledger. Expect the table to vary:
+cold start, hit, or an honestly attributed miss are all authentic.
 
 ### meantime: fully live (costs money)
 

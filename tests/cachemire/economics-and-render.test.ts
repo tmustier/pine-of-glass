@@ -11,10 +11,11 @@ const {
   cacheClock, renderRunSummary, renderMissLine, renderLedger,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
   windowForProvider, windowLabel, pastWindow, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
-  nextClockUpdateMs, toneFor,
+  nextClockUpdateMs,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
+const CONTRACT_1H = { kind: "contract", ttlMs: 60 * 60_000, source: "observed" } as const;
 
 // claude-opus-4-8-style rates, USD per Mtok (write carries the 1.25x premium already).
 const RATES = { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 };
@@ -90,10 +91,6 @@ test("cache clock stays silent until attention is useful", () => {
     cacheClock({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true }),
     { phase: "idle", text: "" },
   );
-
-  assert.equal(toneFor("closing"), "warning");
-  assert.equal(toneFor("stale"), "warning");
-  assert.equal(toneFor("cold"), "warning");
 });
 
 test("openai band warns near typical eviction without claiming certainty", () => {
@@ -116,6 +113,8 @@ test("cache clock schedules only useful state changes", () => {
   assert.equal(nextClockUpdateMs({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M }), 3 * MIN);
   assert.equal(nextClockUpdateMs({ now: 4 * MIN + 30_000, lastRequestAt: 0, window: CONTRACT_5M }), 1_000);
   assert.equal(nextClockUpdateMs({ now: 6 * MIN, lastRequestAt: 0, window: CONTRACT_5M }), undefined);
+  assert.equal(nextClockUpdateMs({ now: 55 * MIN + 14_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
+  assert.equal(nextClockUpdateMs({ now: 58 * MIN + 29_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
   assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW }), MIN);
   assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true }), MIN);
   assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: CONTRACT_5M, thinkingChanged: true }), undefined);

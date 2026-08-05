@@ -7,7 +7,8 @@
   expiry; OpenAI's best-effort window uses hedged warnings. Stale and invalidated states
   use warning emphasis, and compaction says only that changed history may be re-written.
   The widget now sleeps until the next warning boundary instead of waking every second
-  for the whole session. Fixes #25.
+  for the whole session, with coarse countdown wakes aligned to their displayed steps.
+  Fixes #25.
 - **Contextimate: recognise the Claude 4.7+ tokenizer across routes.** Fable 5,
   Opus 5 and explicit Claude 4.7+ models relayed through Radius or OpenRouter now
   use the same measured profile as Claude 4.7/4.8. Bedrock retains its own payload
