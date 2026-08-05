@@ -18,10 +18,10 @@ The founding measurement (2026-06-02, fresh `gpt-5.5`, prompt `hi`):
 
 Providers convert tool schemas into an internal function representation, so no raw JSON count reproduces their number. Hence the policy:
 
-- text sections count provider-visible text with a per-model divisor
-- tool sections count the minified provider-shaped payload, the same JSON Pi's adapter sends
+- text sections use the identified model family's divisor
+- the wire API selects the tool payload shape independently
 - OpenAI-style tools use a schema-summary formula instead of a divisor (below)
-- unknown providers fall back to chars ÷ 4
+- unidentified model families fall back to chars ÷ 4
 
 ## Text divisors by model
 
@@ -53,7 +53,7 @@ raw minified chars ÷ 4             78.4%
 
 Two changes made the formula win: counting nested-object and array-item properties recursively, and moving text fragments from chars ÷ 4 to chars ÷ 6.6.
 
-Anthropic tool payloads measured near their text divisors (÷ 3.36 on Claude 4.5/4.6, ÷ 2.5 on the Claude 4.7+ family), so they use plain divisors of 3.3 and 2.6 on the Anthropic-shaped payload. Chat-style and plain Responses tools use ÷ 5.5 (measured on OpenAI-Codex live probes); Gemini and Bedrock use ÷ 4 until someone measures them.
+Claude tool payloads measured near their text divisors (÷ 3.36 on Claude 4.5/4.6, ÷ 2.5 on the Claude 4.7+ family), so they use divisors of 3.3 and 2.6. Direct OpenAI Responses and Codex routes use ÷ 5.5 from OpenAI-Codex probes. Models that merely share Anthropic, OpenAI Chat or Responses wire formats use the matching payload shape with the fallback ÷ 4, not the upstream tokenizer. Gemini and Bedrock also use ÷ 4 until measured.
 
 In the UI, a formula-counted tools row says `OpenAI formula · schema text ÷ 6.6` and its character count is a payload-size cue only: it is not what gets divided. Divisor-counted rows say things like `÷ 2.6 · Anthropic tool payload`. Each tool's own row is counted on that tool's own shaped payload or formula subtotal, and the schema tree is just the readable rendering of it.
 
@@ -142,7 +142,7 @@ Unknown names fall back to the Responses shape. Custom `toolShapes` templates an
 ## Recalibrating for a new provider or model
 
 1. Capture what Pi actually sends: `pi-contextimate-probe-prefix`.
-2. Get provider-exact counts and suggested divisors from the captured payload: `pi-contextimate-check-provider-tokens` (Anthropic counts are free; OpenAI probes cost a fraction of a cent).
+2. Get provider counts and suggested divisors from the captured payload: `pi-contextimate-check-provider-tokens`.
 3. Paste the suggested values into a `rules` entry, with the closest built-in `toolNumerator` shape.
 
 If the provider has no count endpoint, run controlled live probes instead: hold everything else constant, vary one section, and subtract a minimal baseline from the recorded usage. Record chars per token separately for prose and for tool schemas; they usually differ. [`scripts/contextimate/README.md`](../scripts/contextimate/README.md) documents the scripts, credentials and safety notes (captured payloads can contain sensitive prompt data; keep them local).

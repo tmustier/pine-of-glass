@@ -57,66 +57,71 @@ test("OpenAI reasoning-retention boundaries follow the effective context default
   }
 });
 
-test("built-in model routing boundaries", () => {
-  // Claude 4.7+ tokenizer family, including explicit relays.
-  assert.equal(resolveHeuristic(anthropicModel, {}).label, "Claude 4.7+ heuristic");
-  assert.equal(resolveHeuristic(anthropicModel, {}).textDenominator, 2.6);
-  for (const modern of [
+test("Claude profiles follow the model through supported routes", () => {
+  for (const current of [
+    anthropicModel,
     model("anthropic", "claude-fable-5", "anthropic-messages"),
-    model("anthropic", "claude-fable-5-20260801", "anthropic-messages"),
-    model("anthropic", "claude-opus-5", "anthropic-messages"),
-    model("anthropic", "claude-opus-4-9", "anthropic-messages"),
     model("radius", "claude-opus-4-8", "pi-messages"),
-    model("openrouter", "anthropic/claude-fable-5@20260801", "openai-completions"),
+    model("openrouter", "anthropic/claude-fable-5", "openai-completions"),
+    model("github-copilot", "claude-fable-5", "openai-completions"),
+    model("amazon-bedrock", "anthropic.claude-opus-4-8-v1:0", "bedrock-converse-stream"),
   ]) {
-    assert.equal(resolveHeuristic(modern, {}).label, "Claude 4.7+ heuristic");
-    assert.equal(resolveHeuristic(modern, {}).toolNumerator, "anthropic");
+    const heuristic = resolveHeuristic(current, {});
+    assert.equal(heuristic.label, "Claude 4.7+ heuristic");
+    assert.equal(heuristic.textDenominator, 2.6);
   }
-  assert.equal(
-    resolveHeuristic(model("anthropic", "claude-opus-4-70", "anthropic-messages"), {}).label,
-    "Anthropic heuristic",
-    "4.7 must not prefix-match 4.70",
-  );
-  // Claude 4.5/4.6 family.
-  const sonnet45 = resolveHeuristic(model("anthropic", "claude-sonnet-4-5", "anthropic-messages"), {});
-  assert.equal(sonnet45.label, "Claude 4.5/4.6 heuristic");
-  assert.equal(sonnet45.textDenominator, 3.8);
-  assert.equal(sonnet45.toolDenominator, 3.3);
-  assert.equal(
-    resolveHeuristic(model("radius", "claude-sonnet-4-5", "pi-messages"), {}).label,
-    "Claude 4.5/4.6 heuristic",
-  );
-  // "3-5" must NOT match the 4.5/4.6 regex — falls through to generic Anthropic.
-  const haiku35 = resolveHeuristic(model("anthropic", "claude-haiku-3-5", "anthropic-messages"), {});
-  assert.equal(haiku35.label, "Anthropic heuristic");
-  assert.equal(haiku35.textDenominator, 3.5);
-  // Codex routes to the cookbook formula.
+
+  const sonnet = resolveHeuristic(model("anthropic", "claude-sonnet-4-5", "anthropic-messages"), {});
+  assert.equal(sonnet.label, "Claude 4.5/4.6 heuristic");
+  assert.equal(sonnet.textDenominator, 3.8);
+  assert.equal(resolveHeuristic(model("anthropic", "claude-3-haiku", "anthropic-messages"), {}).label, "Anthropic heuristic");
+
+  const bedrock = resolveHeuristic(model("amazon-bedrock", "anthropic.claude-opus-4-8-v1:0", "bedrock-converse-stream"), {});
+  assert.equal(bedrock.toolNumerator, "bedrock");
+  assert.equal(bedrock.toolDenominator, 4);
+  const openrouter = resolveHeuristic(model("openrouter", "anthropic/claude-fable-5", "openai-completions"), {});
+  assert.equal(openrouter.toolNumerator, "openai-chat");
+  assert.equal(openrouter.toolDenominator, 4);
+  const radius = resolveHeuristic(model("radius", "claude-opus-4-8", "pi-messages"), {});
+  assert.equal(radius.toolNumerator, "pi-messages");
+  assert.equal(radius.toolDenominator, 4);
+});
+
+test("wire compatibility does not select a tokenizer family", () => {
+  for (const compatible of [
+    model("kimi-coding", "kimi-k3", "anthropic-messages"),
+    model("minimax", "MiniMax-M2.7", "anthropic-messages"),
+    model("vercel-ai-gateway", "alibaba/qwen-3.5-plus", "anthropic-messages"),
+  ]) {
+    const heuristic = resolveHeuristic(compatible, {});
+    assert.equal(heuristic.label, "fallback chars/4");
+    assert.equal(heuristic.toolNumerator, "anthropic");
+    assert.equal(heuristic.toolDenominator, 4);
+  }
+
   const codex = resolveHeuristic(codexModel, {});
-  assert.equal(codex.label, "OpenAI-Codex heuristic");
   assert.equal(codex.toolNumerator, "openai-cookbook");
   assert.equal(codex.toolDenominator, 5.5);
-  // Other providers.
-  assert.equal(resolveHeuristic(model("openai", "gpt-5.5", "openai-responses"), {}).label, "OpenAI Responses heuristic");
-  assert.equal(resolveHeuristic(model("google", "gemini-2.5-pro", "google-generative-ai"), {}).toolNumerator, "gemini");
-  assert.equal(resolveHeuristic(model("bedrock", "claude-x", "bedrock-converse-stream"), {}).label, "Bedrock heuristic");
-  const bedrockModern = resolveHeuristic(model("amazon-bedrock", "claude-opus-4-8", "bedrock-converse-stream"), {});
-  assert.equal(bedrockModern.label, "Claude 4.7+ on Bedrock heuristic");
-  assert.equal(bedrockModern.textDenominator, 2.6, "Bedrock Claude keeps its model tokenizer");
-  assert.equal(bedrockModern.toolDenominator, 4, "Bedrock Claude keeps its provider payload shape");
-  assert.equal(bedrockModern.toolNumerator, "bedrock");
-  assert.equal(
-    resolveHeuristic(model("amazon-bedrock", "us.anthropic.claude-opus-4-6-v1", "bedrock-converse-stream"), {}).label,
-    "Claude 4.5/4.6 on Bedrock heuristic",
-  );
-  assert.equal(resolveHeuristic(model("mistral", "mistral-large", "mistral-conversations"), {}).toolNumerator, "openai-chat");
+  const openai = resolveHeuristic(model("openai", "gpt-5.5", "openai-responses"), {});
+  assert.equal(openai.label, "OpenAI Responses heuristic");
+  assert.equal(openai.toolDenominator, 5.5);
+  assert.equal(resolveHeuristic(model("zai", "glm-4.7", "openai-completions"), {}).toolDenominator, 4);
+  assert.equal(resolveHeuristic(model("opencode", "qwen3-coder", "openai-responses"), {}).toolDenominator, 4);
+  assert.equal(resolveHeuristic(model("google", "gemini-3.6-flash", "google-generative-ai"), {}).toolNumerator, "gemini");
+  assert.equal(resolveHeuristic(model("amazon-bedrock", "amazon.nova-2-lite-v1:0", "bedrock-converse-stream"), {}).toolNumerator, "bedrock");
+  const mistral = resolveHeuristic(model("mistral", "mistral-large", "mistral-conversations"), {});
+  assert.equal(mistral.toolNumerator, "openai-chat");
+  assert.equal(mistral.toolDenominator, 4);
 });
 
 test("precedence: defaults < built-in rule < config rules, in rule order", () => {
   const config: ContextimateConfig = { defaults: { textDenominator: 9 } };
   // Built-in model rule overrides flat config defaults.
   assert.equal(resolveHeuristic(anthropicModel, config).textDenominator, 2.6);
-  // ...but defaults apply when no built-in rule matches.
+  // ...but defaults apply when no tokenizer profile matches.
   assert.equal(resolveHeuristic(undefined, config).textDenominator, 9);
+  assert.equal(resolveHeuristic(model("kimi-coding", "kimi-k3", "anthropic-messages"), config).textDenominator, 9);
+  assert.equal(resolveHeuristic(model("ollama", "llama-4", "llama-local-api"), config).textDenominator, 9);
 
   // Config rules override built-in rules; later rules override earlier ones.
   const ruled: ContextimateConfig = {

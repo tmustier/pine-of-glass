@@ -260,10 +260,9 @@ Designed now so the features land with their proofs:
   in all three views; unit test that the section id stays `"system"` (config/signature
   compat) while the title changes.
 - **#8 (provider token check):** the checker is a script (`scripts/contextimate/
-  check-provider-tokens.mjs`) whose *request-building* is pure and unit-tested: given the
-  snapshot fixture, the exact Anthropic `count_tokens` body and OpenAI Responses body it
-  would send, asserting the counted payload equals the displayed payload (shared shaping
-  code, not a re-implementation). Network execution is manual; tests never call providers.
+  check-provider-tokens.ts`) whose request builders are pure and unit-tested against current
+  Pi payload shapes and provider count schemas. Network execution is manual; tests never
+  call providers.
 - **#7 (click UX decision):** resolved by removal; click-to-expand shipped, proved
   unusable in practice, and was deleted (v0.5.18). Ctrl+T is the whole surface.
 

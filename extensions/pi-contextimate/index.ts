@@ -9,7 +9,7 @@ import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE, type ContainerLike 
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import {
-  builtInHeuristicForModel,
+  builtInHeuristicPatchForModel,
   cleanDenominator,
   estimateCharsAsTokens,
   fallbackHeuristicNumbers,
@@ -550,40 +550,35 @@ function defaultHeuristic(): ResolvedHeuristic {
   return { ...fallbackHeuristicNumbers(), source: "fallback" };
 }
 
-function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | Partial<ResolvedHeuristic> | undefined, source: string): ResolvedHeuristic {
-  const normalized: Partial<ResolvedHeuristic> = patch ? {
+function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | Partial<ResolvedHeuristic>, source: string): ResolvedHeuristic {
+  const next = {
     label: patch.label,
     textDenominator: patch.textDenominator,
     sessionDenominator: patch.sessionDenominator,
     toolDenominator: patch.toolDenominator,
     toolNumerator: patch.toolNumerator,
-  } : {};
+  };
   return {
     ...base,
-    ...normalized,
-    // An absent label in a patch must not clobber the base label: unknown providers
-    // otherwise reach renderHeader with label undefined and crash methodologyHint.
-    label: normalized.label ?? base.label,
+    ...next,
+    label: next.label ?? base.label,
     source,
-    textDenominator: cleanDenominator(normalized.textDenominator, base.textDenominator),
-    sessionDenominator: cleanDenominator(normalized.sessionDenominator, base.sessionDenominator),
-    toolDenominator: cleanDenominator(normalized.toolDenominator, base.toolDenominator),
-    toolNumerator: normalized.toolNumerator ?? base.toolNumerator,
+    textDenominator: cleanDenominator(next.textDenominator, base.textDenominator),
+    sessionDenominator: cleanDenominator(next.sessionDenominator, base.sessionDenominator),
+    toolDenominator: cleanDenominator(next.toolDenominator, base.toolDenominator),
+    toolNumerator: next.toolNumerator ?? base.toolNumerator,
   };
 }
 
-// Heuristic resolution is one flat candidate list merged left to right with a single
-// patch function: fallback < defaults.profile < defaults < built-in model rule <
-// matching config rules (each optionally pulling in a named profile first).
 function resolveHeuristic(model: ModelSummary | undefined, config: ContextimateConfig): ResolvedHeuristic {
-  const candidates: Array<{ patch: HeuristicProfile | Partial<ResolvedHeuristic> | undefined; source: string }> = [];
+  const candidates: Array<{ patch: HeuristicProfile | Partial<ResolvedHeuristic>; source: string }> = [];
   const defaults = config.defaults ?? {};
   if (defaults.profile && config.profiles?.[defaults.profile]) {
     candidates.push({ patch: config.profiles[defaults.profile], source: `profile:${defaults.profile}` });
   }
   candidates.push({ patch: defaults, source: "configured defaults" });
-  const builtIn = builtInHeuristicForModel(model);
-  if (builtIn) candidates.push({ patch: builtIn, source: builtIn.label ?? "provider-aware heuristic" });
+  const builtIn = builtInHeuristicPatchForModel(model);
+  if (builtIn) candidates.push({ patch: builtIn, source: builtIn.label });
   for (const rule of config.rules ?? []) {
     if (!ruleMatchesModel(rule, model)) continue;
     if (rule.profile && config.profiles?.[rule.profile]) {
