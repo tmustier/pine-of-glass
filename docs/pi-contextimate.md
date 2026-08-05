@@ -4,6 +4,8 @@
 
 This note records the counting policy, the evidence behind it, and the user configuration. Live provider profiles are in `extensions/_lib/heuristics.ts`, tool formulas are in `extensions/_lib/tool-payloads.ts`, and active-path accounting is in `extensions/pi-contextimate/session-accounting.ts`. This note explains why they hold the values they do; it does not duplicate them.
 
+The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) maps Pi's complete model catalog to provider count endpoints, public tokenizers and realistic calibration methods.
+
 ## Count what the provider sees
 
 Local object size is not context size. Pi's provider adapters reshape everything before sending: for example, OpenAI Responses tools go out as compact `{ type, name, description, parameters, strict }` objects, Anthropic tools as `{ name, description, input_schema }`. Counting anything else, above all pretty-printed or debug JSON, produces confident nonsense.
