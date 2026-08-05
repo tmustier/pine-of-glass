@@ -12,6 +12,12 @@ A provider name alone is not enough. The generated policy and evidence matrix is
 [`cache retention audit`](./cache-retention-audit-2026-08-04.md). Unmatched routes make
 no idle-time or warmth claim.
 
+The wider provider inventory and implementation plan are in
+[`cache-provider-stocktake-2026-08-05.md`](./cache-provider-stocktake-2026-08-05.md).
+That stocktake also records a current activation gap: general prompt usage confirms a
+billed request, while only reported cache reads or writes confirm that a cache entry
+exists.
+
 ## Four rules shape the UI
 
 1. Evidence: Cachemire distinguishes a TTL, a minimum, a maximum and unknown retention.
