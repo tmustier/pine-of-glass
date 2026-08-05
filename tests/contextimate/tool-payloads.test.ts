@@ -60,6 +60,11 @@ test("per-provider payload shapes are exact", () => {
   assert.deepEqual(toolPayloadForShape(ping, "bedrock"), {
     toolSpec: { name: "ping", description: "Send a ping.", inputSchema: { json: ping.schema } },
   });
+  assert.deepEqual(toolPayloadForShape(ping, "pi-messages"), {
+    name: "ping",
+    description: "Send a ping.",
+    parameters: ping.schema,
+  });
   // Gemini aggregates into one functionDeclarations wrapper.
   assert.deepEqual(aggregateToolPayloadForShape([ping, mode], "gemini"), {
     functionDeclarations: [

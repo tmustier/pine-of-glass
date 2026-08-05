@@ -108,6 +108,8 @@ export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: strin
           inputSchema: { json: tool.schema },
         },
       };
+    case "pi-messages":
+      return { name: tool.name, description: tool.description, parameters: tool.schema };
     case "raw-schema":
       return {
         name: tool.name,
@@ -150,6 +152,8 @@ export function toolPayloadLabel(shape: string): string {
       return "Gemini/Vertex tool payload";
     case "bedrock":
       return "Bedrock tool payload";
+    case "pi-messages":
+      return "Pi Messages tool payload";
     case "raw-schema":
       return "Raw tool schema payload";
     default:

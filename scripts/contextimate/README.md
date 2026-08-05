@@ -29,23 +29,28 @@ Pass extra Pi flags after `--`, for example:
 node scripts/contextimate/probe-live-prefix.mjs -- --no-tools --no-skills --no-context-files
 ```
 
-## Provider-exact token checks
+## Provider token checks
 
 ```bash
-# 1. capture what pi actually sends (see Live prefix probe above)
 node scripts/contextimate/probe-live-prefix.mjs --output-dir /tmp/probe
-
-# 2. preview the counting plan (no network)
-node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl
-
-# 3. get provider-exact counts
-node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl --live
+node scripts/contextimate/check-provider-tokens.ts --payload /tmp/probe/*.payloads.jsonl
+node scripts/contextimate/check-provider-tokens.ts --payload /tmp/probe/*.payloads.jsonl --provider anthropic --live
 ```
 
-This builds a matrix of minimal counting requests (baseline, system-only, all-tools, and per-tool) from a captured payload, passing each section through **byte-identical** (never reshaped), so the counted payload is exactly what pi sent and exactly what contextimate estimates. Use `--tools name1,name2` to focus on specific tools (e.g. one lazy-loaded MCP server whose hot-path footprint the startup estimator cannot see), `--model` to count against a different model, and `--json` for machine output.
+The checker measures the system prompt and tools against a minimal message. Add `--full` to count the complete captured request where the provider supports it. Use `--tools name1,name2`, `--model` or `--json` to narrow or structure the result.
 
-- **Anthropic**: uses the free `count_tokens` endpoint. Credentials: `ANTHROPIC_API_KEY`, or automatically pi's own OAuth token from `~/.pi/agent/auth.json` (used locally against the official API only, never printed).
-- **OpenAI**: uses tiny real `/v1/responses` probes (`max_output_tokens: 16`, `store: false`) and reads exact `usage.input_tokens`. **Not free**: costs a fraction of a cent per probe. Requires `OPENAI_API_KEY` (pi's `openai-codex` OAuth token cannot call `api.openai.com`).
-- Providers inject a fixed tool-block overhead once per request whenever any tool is present; with ≥2 per-tool counts the script solves for it and reports `net` per-tool costs so small tools are not overstated. The suggested `textDenominator`/`toolDenominator` overrides come from the net numbers and can be pasted into a `contextimate.rules` entry.
-- Adding another provider is one entry in the `PROVIDERS` registry inside the script (`build` + `execute` + credential hints); no contextimate changes needed. Types in `check-provider-tokens.d.mts`.
-- Request-building and the overhead math are unit-tested (`tests/contextimate/provider-check.test.ts`); tests never touch the network.
+Supported count APIs:
+
+| Provider | Credential | Coverage |
+|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` or Pi OAuth | sections and full countable input |
+| OpenAI | `OPENAI_API_KEY` | sections and full countable Responses input |
+| Gemini Developer API | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | sections and full request |
+| Vertex AI | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` and `GOOGLE_CLOUD_ACCESS_TOKEN` | sections and full request |
+| Amazon Bedrock | standard AWS credentials and `AWS_REGION` | sections and full request for supported models |
+| Kimi | `MOONSHOT_API_KEY` | message sections |
+| Z.AI | `ZAI_API_KEY` | message and tool sections for supported GLM models |
+
+Live calls always require `--provider`, because wire compatibility does not identify the service. Dry runs can infer Anthropic, OpenAI, Gemini or Bedrock from the payload shape.
+
+With at least 2 tools, the checker removes the shared tool-block overhead before suggesting Contextimate denominators. Tests cover request construction and this calculation. Network execution remains manual.
