@@ -4,7 +4,6 @@
 // inside its agent context budget.
 
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
-import type { Tone } from "../_lib/style.ts";
 import type { SwitchForecast } from "./forecast.ts";
 import type { CacheWindow } from "./types.ts";
 
@@ -28,7 +27,7 @@ function warningLeadMs(window: Exclude<CacheWindow, { kind: "unknown" }>): numbe
 }
 
 export interface ClockState {
-  phase: "idle" | "fresh" | "closing" | "cold" | "stale" | "fading" | "warm-unknown" | "cold-unknown";
+  phase: "idle" | "closing" | "cold" | "stale" | "fading" | "warm-unknown";
   text: string;
 }
 
@@ -148,14 +147,11 @@ export function nextClockUpdateMs(input: ClockInput): number | undefined {
   if (window.kind === "contract") {
     const remaining = window.ttlMs - since;
     if (remaining <= 0) return undefined;
-    return Math.min(remaining, remaining > 90_000 ? 15_000 : 1_000);
+    if (remaining <= 90_000) return Math.min(remaining, 1_000);
+    return (remaining % 15_000) + 1;
   }
 
   if (since < window.softMs) return Math.min(window.softMs - since, 1_000);
   if (since < window.hardMs) return window.hardMs - since;
   return undefined;
-}
-
-export function toneFor(phase: ClockState["phase"]): Tone {
-  return phase === "idle" ? "dim" : "warning";
 }

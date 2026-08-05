@@ -25,7 +25,7 @@ import {
   pastWindow,
   stripCacheControl,
 } from "./classify.ts";
-import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, toneFor, withinWarmHorizon } from "./clock.ts";
+import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, withinWarmHorizon } from "./clock.ts";
 import { activeToolShapes, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
 import { restoreBranchRecords } from "./ledger.ts";
 import {
@@ -36,7 +36,7 @@ import {
   restoreLineageSnapshots,
 } from "./lineage.ts";
 import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
-import { clearCacheWidgetTimer, type CacheWidgetRuntime, resetCacheWidget, updateCacheWidget } from "./widget.ts";
+import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
   BreakPrediction,
   CacheLineageSnapshot,
@@ -558,7 +558,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
       s.tui = tui as CachemireState["tui"];
     });
-    resetCacheWidget(cacheWidget);
+    cacheWidget.lastText = undefined;
     updateWidget();
   });
 
@@ -921,7 +921,6 @@ export const internals = {
   reattachAnchored,
   cacheClock,
   nextClockUpdateMs,
-  toneFor,
   renderRunSummary,
   renderMissLine,
   renderLedger,
