@@ -20,7 +20,6 @@ import {
   expiryCause,
   fingerprintPayload,
   pastWindow,
-  stripCacheMarkers,
 } from "./classify.ts";
 import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, withinWarmHorizon } from "./clock.ts";
 import { activeToolShapes, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
@@ -38,7 +37,6 @@ import {
   inferAnthropicTtlMs,
   OPENAI_EXTENDED_WINDOW,
   OPENAI_MINIMUM_WINDOW,
-  retentionForModel,
   retentionForRequest,
   type RetentionMatch,
   windowLabel,
@@ -830,14 +828,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
 
 // Test-only surface. Pi's loader imports only the default export, so this is runtime-inert.
 export const internals = {
-  stripCacheMarkers,
   fingerprintPayload,
   inferAnthropicTtlMs,
   wireThinkingEffort,
   thinkingLevelsDiffer,
-  retentionForModel,
-  retentionForRequest,
-  confirmedWindow,
   windowLabel,
   pastWindow,
   OPENAI_EXTENDED_WINDOW,

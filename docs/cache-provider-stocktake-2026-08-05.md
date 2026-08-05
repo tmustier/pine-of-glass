@@ -125,20 +125,16 @@ evidence.
 
 ## Existing direct route decisions still hold
 
-Direct Anthropic supports explicit 5-minute and 1-hour cache entries. A hit refreshes
-the TTL. Cachemire can observe the outgoing `cache_control` and use request time as the
-clock anchor after provider usage confirms a read or write.
-
-A short prompt can return usage without creating or reading an entry. Cachemire now
-keeps the observed marker as a pending policy and activates its window only when
-`cacheRead > 0` or `cacheWrite > 0` confirms that an entry exists.
+Direct Anthropic supports explicit 5-minute and 1-hour cache entries, refreshed by a
+hit. Cachemire observes the outgoing `cache_control` but activates the request-time
+window only after `cacheRead > 0` or `cacheWrite > 0` confirms an entry.
 
 Direct OpenAI automatically caches eligible prefixes. Supported models below GPT-5.6
 can request `prompt_cache_retention: "24h"`. The field defines a maximum policy and
-supports no warmth claim before it. Because the Responses API exposes no write count
-for this route, Cachemire activates the maximum only after `cacheRead > 0`. The read
-request is a safe observation anchor: 24 hours later the
-observed entry must have reached the documented maximum, even if it was created earlier.
+supports no warmth claim before it. Although Pi accepts a normalized cache-write field,
+this direct OpenAI route does not report one, so Cachemire activates the maximum only
+after `cacheRead > 0`. The read is a safe anchor: 24 hours later the observed entry must
+have reached the documented maximum, even if it was created earlier.
 
 For GPT-5.6 and later GPT-5 families, OpenAI documents a 30-minute minimum lifetime.
 The only supported `prompt_cache_options.ttl` value is `30m`, and it is the default even
@@ -164,20 +160,9 @@ MiniMax documents explicit `cache_control` for M2.7 and M2.7 highspeed on both r
 routes. The cache lasts 5 minutes and a hit refreshes it at no extra cost. The provider
 returns Anthropic-compatible read and write fields, which Pi already normalizes.
 
-Cachemire uses an observed `cache_control: {"type":"ephemeral"}` only when all of
-these match:
-
-- provider is `minimax` or `minimax-cn`
-- wire API is `anthropic-messages`
-- model is `MiniMax-M2.7` or `MiniMax-M2.7-highspeed`
-- the outgoing payload contains the marker
-- successful provider usage reports `cacheRead > 0` or `cacheWrite > 0`
-
-The request supplies the clock anchor. Later usage confirms whether Cachemire activates
-it. A marker without read or write usage remains a pending policy only.
-
-MiniMax M3 uses passive automatic caching. It has a 512-token minimum and no published
-lifetime. Keep M3 retention unknown.
+Cachemire limits this policy to the `minimax` and `minimax-cn` Anthropic routes, the 2
+M2.7 model IDs, an observed marker, and confirmed read or write usage. MiniMax M3 uses
+passive automatic caching with no published lifetime, so its retention remains unknown.
 
 Primary sources:
 
@@ -193,13 +178,11 @@ Successful hits reset the TTL. Pi places `cachePoint: {"type":"default"}` in sup
 Claude requests. It adds `ttl: "1h"` for long retention and maps Bedrock's read and write
 usage.
 
-Cachemire parses the observed `cachePoint`, checks an exact dated Bedrock model allowlist,
-and activates the window only after Bedrock reports a cache read or write. Bedrock's
-current overview and model cards do not always agree for newer Claude aliases. Unknown
-aliases remain unknown.
+Cachemire accepts only an observed `cachePoint`, a dated allowlist of documented Claude
+4.5 and 4.6 IDs, and confirmed read or write usage. Bedrock's overview and model cards do
+not always agree for newer Claude aliases, which remain unknown.
 
-The implementation must not apply this policy to every model on Bedrock. Pi uses the
-same Converse adapter for 114 entries. Model-family support differs. In particular:
+Pi uses the same Converse adapter for 114 entries, but cache support differs by model:
 
 - Nova has automatic and explicit caching, but Pi currently uses the automatic path
 - GPT-5.6's documented breakpoint cache uses Bedrock's Responses endpoint and gives a
@@ -223,12 +206,11 @@ Groq documents automatic exact-prefix caching for:
 Cached data expires after 2 hours without use. Cacheable prompt minimums vary from 128
 to 1,024 tokens. Groq reports reads but no writes.
 
-A first miss does not prove that Groq created an entry. Cachemire starts or refreshes
+A first miss does not prove that Groq created an entry, so Cachemire starts or refreshes
 the 2-hour window only after `cacheRead > 0`.
 
-Pi's current GPT-OSS safeguard price card has no cache-read rate even though Groq now
-lists it as supported. Cost forecasts for that model need a catalogue refresh or a
-separate guard before display.
+Pi's GPT-OSS safeguard price card records no cache-read rate, so Cachemire cannot
+accurately price those reads.
 
 Primary source:
 
@@ -241,8 +223,8 @@ Cerebras documents automatic 128-token-block caching for `zai-glm-4.7` and
 It does not say that a read refreshes the guarantee. Reads and uncached input have the
 same price.
 
-After a confirmed read, Cachemire records a 1-hour maximum and makes no warmth claim
-before it. This is accurate but less useful than the MiniMax, Bedrock and Groq policies.
+After a confirmed read, Cachemire records the 1-hour maximum without claiming prior
+warmth.
 
 Primary source:
 
@@ -255,16 +237,10 @@ the 1-hour option works across Anthropic, Amazon Bedrock and Google Vertex provi
 OpenRouter also uses sticky provider routing after cache use or when `session_id` is
 present.
 
-A provider fallback can still move the next request to another physical cache. The
-current `contract` window implies a more stable cache identity than OpenRouter exposes.
-Support should wait for a gateway or requested-policy kind that can say:
-
-- the request asked for a 5-minute or 1-hour entry
-- a hit confirmed that one physical route reused it
-- fallback can cause an earlier miss
-
-Do not apply OpenRouter's Anthropic policy to all 303 models. Pi currently adds
-Anthropic-style markers only to `anthropic/*` model IDs.
+A fallback can move the next request to another physical cache, while Cachemire's
+`contract` window assumes stable cache identity. OpenRouter retention therefore remains
+unknown. Its Anthropic policy also cannot cover all 303 models: Pi adds Anthropic-style
+markers only to `anthropic/*` model IDs.
 
 Primary source:
 
@@ -274,8 +250,8 @@ Primary source:
 
 ### Automatic caches with unpublished or variable lifetimes
 
-These routes report enough information for hit and cost reporting. Their retention must
-stay unknown:
+These routes report enough information for hit and cost reporting, but their retention
+remains unknown:
 
 - DeepSeek: automatic per-user cache, usually cleared within hours to days
 - xAI: automatic cache, with eviction allowed at any time
@@ -302,14 +278,10 @@ Primary sources:
 
 Google Gemini supports explicit `cachedContents` resources with a default 1-hour TTL.
 Former Vertex AI context-cache documentation now redirects to the Gemini Enterprise
-Agent Platform. Revalidate the exact Vertex Generative API lifecycle before adding a
-route policy. Pi's normal Generative AI and Vertex requests do not create cache resources
-or send a `cachedContent` resource name. Cachemire sees only implicit-cache usage, whose
-lifetime is unpublished.
-
-The resource creation and update calls also happen outside `before_provider_request`.
-Supporting explicit Google clocks would require observing or managing that separate
-lifecycle.
+Agent Platform, leaving the exact Vertex Generative API lifecycle unverified. Pi's normal
+Generative AI and Vertex requests do not create cache resources or send a `cachedContent`
+resource name. Cachemire sees only implicit-cache usage, whose lifetime is unpublished.
+Resource creation and updates also happen outside `before_provider_request`.
 
 Primary sources:
 
@@ -325,8 +297,7 @@ can use up to 24 hours. Newer model generations have different defaults.
 
 Pi's Azure Responses adapter sends `prompt_cache_key`, but it does not send or expose
 `prompt_cache_retention`. Deployment names can also hide the exact deployed model.
-Cachemire cannot prove which policy applied. Keep the clock unknown until Pi exposes an
-observed policy or enough deployment identity to apply a safe default.
+Cachemire cannot prove which policy applied, so the clock remains unknown.
 
 Primary source:
 
@@ -350,13 +321,12 @@ physical provider, replica or retention policy.
 
 Cloudflare AI Gateway also offers a separate whole-response cache. It is controlled by
 HTTP headers, lasts from 60 seconds to one month and returns a stored response on a hit.
-That feature is not prompt-prefix caching. Pi does not set its cache headers. Cachemire
-must not treat replayed provider usage inside a response-cache hit as a new prompt-cache
-read.
+That feature is not prompt-prefix caching. Pi does not set its cache headers, so the
+current route does not expose response-cache replays to Cachemire.
 
 Qwen's ordinary Model Studio API documents a 5-minute explicit cache. The Token Plan
-uses isolated keys and endpoints and does not publish the same route contract. Do not
-transfer the ordinary API policy to Pi's Token Plan provider.
+uses isolated keys and endpoints and does not publish the same route contract, so
+Cachemire leaves its retention unknown.
 
 Primary sources:
 
@@ -391,35 +361,6 @@ Primary sources:
 - [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
 - [NVIDIA NIM environment variables](https://docs.nvidia.com/nim/large-language-models/latest/reference/environment-variables.html)
 - [Mistral documentation index](https://docs.mistral.ai/llms.txt)
-
-## Implemented design
-
-`retention.ts` holds one route policy registry. A policy match carries its window and
-whether read usage alone, or read or write usage, can activate it. The outgoing request
-supplies the policy and timestamp. `message_end` activates the window only when normalized
-usage contains the required evidence. Until then, the clock stays unknown.
-
-Restored sessions use the same registry and require persisted read or write usage. Exact
-provider, wire API and model checks keep gateway aliases and unsupported models unknown.
-The Bedrock allowlist stays beside its policy and contract tests.
-
-This preserves the important distinctions:
-
-- a minimum supports a limited availability claim, not an expiry clock
-- a maximum supports a stale boundary, not a warmth claim before it
-- a requested gateway TTL does not guarantee stable routing
-- restored sessions recover only windows backed by persisted usage evidence
-
-## Remaining work
-
-Fix or guard the Moonshot and Together top-level `cached_tokens` normalization gap. This
-may require a Pi adapter change before Cachemire can see the evidence.
-
-Design a gateway policy kind before supporting OpenRouter Anthropic routes. Keep fallback
-and resolved upstream identity visible in the wording.
-
-Consider Azure only after its selected retention becomes observable. Consider explicit
-Google cache resources only if Pi starts using or exposing their lifecycle.
 
 ## Refresh procedure
 

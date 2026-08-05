@@ -18,8 +18,6 @@ The generated evidence matrix and runtime resolution use the same typed registry
 - Installed Pi request builders and model records, reviewed 5 August 2026: Pi 0.83.0 provider payloads, normalized usage and generated model catalogue
 <!-- END GENERATED CACHE RETENTION: evidence-sources -->
 
-We also checked Cachemire's request, lifecycle, lineage and rendering paths.
-
 OpenAI states that `prompt_cache_options.ttl` applies to GPT-5.6 and later model
 families. Its only supported value is `30m`, which is also the default. A cached prefix
 remains eligible for reuse for at least 30 minutes. OpenAI may retain it longer. The

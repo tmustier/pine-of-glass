@@ -11,7 +11,6 @@ export function inferAnthropicTtlMs(
 
 const OPENAI_MINIMUM_MINOR = 6;
 const OPENAI_EXTENDED_VALUE = "24h";
-const TWO_HOURS_MS = 2 * TTL_LONG_MS;
 
 type KnownCacheWindow = Exclude<CacheWindow, { kind: "unknown" }>;
 type Activation = "read" | "read-or-write";
@@ -33,7 +32,7 @@ export const OPENAI_EXTENDED_WINDOW = {
 
 const GROQ_WINDOW = {
   kind: "contract",
-  ttlMs: TWO_HOURS_MS,
+  ttlMs: 2 * TTL_LONG_MS,
   source: "observed",
 } as const satisfies CacheWindow;
 
@@ -128,7 +127,7 @@ interface RetentionPolicy {
   route: string;
   evidence: string;
   behavior: string;
-  sourceIds: readonly RetentionEvidenceSourceId[];
+  sourceIds: readonly [RetentionEvidenceSourceId, ...RetentionEvidenceSourceId[]];
   activation: Activation;
   resolveModel?: (input: ModelRetentionEvidence) => KnownCacheWindow | undefined;
   resolveRequest?: (input: RequestRetentionEvidence) => KnownCacheWindow | undefined;
@@ -150,22 +149,6 @@ function usesMinimumRetention(input: RetentionIdentity): boolean {
   const route = onRoute(input, "openai", "openai-responses") ||
     onRoute(input, "openai-codex", "openai-codex-responses");
   return route && minor !== undefined && minor >= OPENAI_MINIMUM_MINOR;
-}
-
-function bedrockModelId(model: string | undefined): string {
-  return (model ?? "").replace(/^(?:au|eu|global|jp|us)\./, "");
-}
-
-function bedrockWindow(
-  model: string | undefined,
-  ttlMs: number,
-  source: "observed" | "inferred",
-): KnownCacheWindow | undefined {
-  const id = bedrockModelId(model);
-  if (!BEDROCK_CACHE_MODELS.has(id) || (ttlMs === TTL_LONG_MS && !BEDROCK_LONG_MODELS.has(id))) {
-    return undefined;
-  }
-  return { kind: "contract", ttlMs, source };
 }
 
 function bedrockCacheTtlMs(payload: unknown): number | undefined {
@@ -268,7 +251,10 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
     resolveRequest: (input) => {
       if (!onRoute(input, "amazon-bedrock", "bedrock-converse-stream")) return undefined;
       const ttlMs = bedrockCacheTtlMs(input.payload);
-      return ttlMs === undefined ? undefined : bedrockWindow(input.model, ttlMs, "observed");
+      const model = (input.model ?? "").replace(/^(?:au|eu|global|jp|us)\./, "");
+      if (ttlMs === undefined || !BEDROCK_CACHE_MODELS.has(model) ||
+          (ttlMs === TTL_LONG_MS && !BEDROCK_LONG_MODELS.has(model))) return undefined;
+      return { kind: "contract", ttlMs, source: "observed" };
     },
   },
   {

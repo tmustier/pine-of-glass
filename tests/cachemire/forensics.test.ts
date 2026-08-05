@@ -1,11 +1,9 @@
-// Pi moves cache breakpoints as conversations grow, so fingerprints exclude them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
-import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 
-const { stripCacheMarkers, fingerprintPayload, diffFingerprints, classifyCall } = internals;
+const { fingerprintPayload, diffFingerprints, classifyCall } = internals;
 
 const MIN = 60_000;
 
@@ -46,18 +44,6 @@ function anthropicPayload(options: {
     })),
   };
 }
-
-test("stripCacheMarkers removes breakpoints recursively, preserving everything else", () => {
-  const stripped = stripCacheMarkers(anthropicPayload());
-  if (!isJsonObject(stripped)) assert.fail("stripCacheMarkers should preserve an object payload");
-  assert.equal(JSON.stringify(stripped).includes("cache_control"), false);
-  assert.ok(Array.isArray(stripped.system));
-  assert.ok(isJsonObject(stripped.system[0]));
-  assert.equal(stripped.system[0].text, "You are a fixture.");
-  assert.ok(Array.isArray(stripped.tools));
-  assert.ok(isJsonObject(stripped.tools[0]));
-  assert.equal(stripped.tools[0].name, "bash");
-});
 
 test("moving the breakpoint between calls is NOT a mutation", () => {
   const call1 = fingerprintPayload(anthropicPayload({ userTexts: ["a"], breakpointIndex: 0 }));

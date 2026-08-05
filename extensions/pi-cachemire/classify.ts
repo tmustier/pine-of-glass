@@ -43,7 +43,7 @@ const MISS_RATIO = 0.2;
 
 // Pi moves Anthropic and Bedrock breakpoints as the conversation grows. They are
 // placement metadata, not prompt mutations.
-export function stripCacheMarkers(value: unknown): unknown {
+function stripCacheMarkers(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value
       .filter((entry) => !isJsonObject(entry) || !isJsonObject(entry.cachePoint) ||
@@ -200,12 +200,6 @@ export interface ClassifyInput {
   fingerprintCause?: CallCause;
 }
 
-// Provider usage proves the miss, but it does not expose why an otherwise compatible
-// entry was unavailable. Do not turn routing or eviction hypotheses into a cause.
-function unknownMissDetail(): string {
-  return "unknown (provider did not expose why)";
-}
-
 export function classifyCall(args: ClassifyInput): CallClassification {
   if (args.inCompaction) {
     return { kind: "miss", cause: { kind: "compaction-work", detail: "compaction summarizer call" } };
@@ -236,8 +230,7 @@ export function classifyCall(args: ClassifyInput): CallClassification {
   } else if (idleCause) {
     cause = idleCause;
   } else {
-    // Rendered behind "cause: " — the detail must not restate the word.
-    cause = { kind: "unknown", detail: unknownMissDetail() };
+    cause = { kind: "unknown", detail: "unknown (provider did not expose why)" };
   }
   return { kind: ratio <= MISS_RATIO ? "miss" : "partial", cause };
 }

@@ -130,14 +130,14 @@ unknown.
 ## Causes follow observed evidence
 
 Every live request is fingerprinted across system instructions, tools, messages and
-relevant parameters. Cachemire strips moving `cache_control` breakpoints before
-comparison because Pi can move them between calls.
+relevant parameters. Cachemire excludes moving Anthropic `cache_control` and Bedrock
+`cachePoint` markers from the comparison.
 
 Causes resolve in this order:
 
 1. a Pi compaction event
 2. a named payload mutation, such as model, system, tools, history or thinking
-3. a reached observed Anthropic TTL or observed 24-hour OpenAI maximum
+3. a reached active TTL or retention maximum
 4. unknown
 
 The end of a 30-minute minimum is a state boundary, not a miss cause. Cachemire keeps

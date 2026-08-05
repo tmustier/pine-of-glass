@@ -5,8 +5,6 @@ import {
   confirmedWindow,
   OPENAI_EXTENDED_WINDOW,
   OPENAI_MINIMUM_WINDOW,
-  RETENTION_EVIDENCE_SOURCES,
-  RETENTION_POLICIES,
   retentionForModel,
   retentionForRequest,
 } from "../../extensions/pi-cachemire/retention.ts";
@@ -52,16 +50,6 @@ test("model retention is limited to documented provider, API and model routes", 
 });
 
 test("live request evidence resolves the supported retention contracts", () => {
-  assert.deepEqual(
-    retentionForRequest({
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      api: "anthropic-messages",
-      ttlMs: TTL_LONG_MS,
-      payload: {},
-    })?.window,
-    { kind: "contract", ttlMs: TTL_LONG_MS, source: "observed" },
-  );
   assert.equal(
     retentionForRequest({
       provider: "openai",
@@ -70,15 +58,6 @@ test("live request evidence resolves the supported retention contracts", () => {
       payload: {},
     })?.window,
     OPENAI_MINIMUM_WINDOW,
-  );
-  assert.equal(
-    retentionForRequest({
-      provider: "openai",
-      model: "gpt-5.5-codex",
-      api: "openai-responses",
-      payload: { prompt_cache_retention: "24h" },
-    })?.window,
-    OPENAI_EXTENDED_WINDOW,
   );
   assert.equal(
     retentionForRequest({
@@ -133,15 +112,6 @@ test("live request evidence resolves the supported retention contracts", () => {
   );
   assert.deepEqual(
     retentionForRequest({
-      provider: "groq",
-      model: "openai/gpt-oss-20b",
-      api: "openai-completions",
-      payload: {},
-    })?.window,
-    { kind: "contract", ttlMs: 2 * TTL_LONG_MS, source: "observed" },
-  );
-  assert.deepEqual(
-    retentionForRequest({
       provider: "cerebras",
       model: "zai-glm-4.7",
       api: "openai-completions",
@@ -181,18 +151,16 @@ test("usage activates only the evidence each provider exposes", () => {
     payload: { prompt_cache_retention: "24h" },
   });
 
-  assert.deepEqual(confirmedWindow(anthropic, CACHE_WRITE), anthropic?.window);
+  assert.deepEqual(
+    confirmedWindow(anthropic, CACHE_WRITE),
+    { kind: "contract", ttlMs: TTL_SHORT_MS, source: "observed" },
+  );
   assert.equal(confirmedWindow(groq, CACHE_WRITE), undefined);
-  assert.deepEqual(confirmedWindow(groq, CACHE_READ), groq?.window);
+  assert.deepEqual(
+    confirmedWindow(groq, CACHE_READ),
+    { kind: "contract", ttlMs: 2 * TTL_LONG_MS, source: "observed" },
+  );
   assert.equal(confirmedWindow(openaiExtended, CACHE_WRITE), undefined);
   assert.equal(confirmedWindow(openaiExtended, CACHE_READ), OPENAI_EXTENDED_WINDOW);
   assert.equal(confirmedWindow(anthropic, { cacheRead: 0, cacheWrite: 0 }), undefined);
-});
-
-test("every retention policy cites a registered evidence source", () => {
-  assert.ok(RETENTION_POLICIES.length > 0);
-  for (const policy of RETENTION_POLICIES) {
-    assert.ok(policy.sourceIds.length > 0, `${policy.route} has no evidence source`);
-    for (const sourceId of policy.sourceIds) assert.ok(sourceId in RETENTION_EVIDENCE_SOURCES);
-  }
 });
