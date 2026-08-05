@@ -4,6 +4,8 @@ scripts/dev/bash-corpus/out/
 .pi/
 *.log
 *.local.md
+__pycache__/
+*.py[cod]
 
 # pi-contextimate local validation artifacts
 .pi-contextimate-*/

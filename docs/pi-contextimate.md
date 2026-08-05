@@ -35,6 +35,22 @@ Divisors depend on content shape: repetitive prose tokenizes around chars ÷ 7, 
 
 The session divisors were validated by replaying 194 local session transcripts (16,479 assistant turns) against recorded provider usage: chars ÷ 2.6 beat a blanket chars ÷ 4 on 20 of 24 Anthropic transcripts, with median error 0.6 to 2.1% against 2.8 to 4.7%. OpenAI-Codex session material sits at chars ÷ 4, so the blanket value is already right there. `pi-contextimate-evaluate-transcripts` re-runs this evaluation.
 
+A second study on 5 August 2026 covered Kimi, GLM, Cohere and Grok. It counted 54,719 characters of public instructions and 33,590 characters of TypeScript and tests. Local checks used pinned official tokenizer artifacts. xAI checks used exact token IDs and bytes from `TokenizeText`.
+
+| Raw tokenizer profile | Text divisor | Session divisor |
+|---|---:|---:|
+| Kimi K2 through K3 | 4.1 | 3.8 |
+| GLM 4.5 variants, 4.6 variants and standard 4.7 | 4.0 | 3.9 |
+| GLM 4.7-Flash, 5, 5.1 and 5.2 | 4.0 | 3.9 |
+| Command R/R+ 08-2024 | 4.0 | 3.4 |
+| North Mini Code | 4.2 | 3.9 |
+| Grok 4.20 variants, 4.3 and Build 0.1 | 4.2 | 3.9 |
+| Grok 4.5 | 4.1 | 3.6 |
+
+These profiles cover visible text only. Kimi versions share one base rank file but use different control vocabularies. GLM has two proven tokenizer generations. Command R and R+ share ordinary-text merges, but some special tokens differ.
+
+Exact xAI fingerprints put Grok 4.20 reasoning, non-reasoning and multi-agent, 4.3 and Build 0.1 together. Grok 4.5 is separate. Dynamic aliases and unverified GLM Turbo variants use the fallback until routing identifies a concrete model. The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) contains the full evidence.
+
 ## Tool schemas
 
 Raw size fails in both directions: minified JSON at chars ÷ 4 overcounts OpenAI schemas by roughly 2x, and no single divisor tracks schema shape (enums, nesting, description length).

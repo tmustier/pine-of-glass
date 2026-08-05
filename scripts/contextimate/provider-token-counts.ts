@@ -78,15 +78,19 @@ function jsonChars(value: JsonValue): number {
   return typeof value === "string" ? value.length : JSON.stringify(value).length;
 }
 
+function visibleText(value: JsonValue): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(visibleText).join("");
+  if (!isJsonObject(value)) return "";
+  if (typeof value.text === "string") return value.text;
+  if (typeof value.content === "string") return value.content;
+  if (Array.isArray(value.content)) return visibleText(value.content);
+  if (Array.isArray(value.parts)) return visibleText(value.parts);
+  return "";
+}
+
 function textChars(value: JsonValue): number {
-  if (typeof value === "string") return value.length;
-  if (Array.isArray(value)) return value.reduce<number>((sum, item) => sum + textChars(item), 0);
-  if (!isJsonObject(value)) return 0;
-  if (typeof value.text === "string") return value.text.length;
-  if (typeof value.content === "string") return value.content.length;
-  if (Array.isArray(value.content)) return textChars(value.content);
-  if (Array.isArray(value.parts)) return textChars(value.parts);
-  return 0;
+  return visibleText(value).length;
 }
 
 function toolRequests(
@@ -326,6 +330,17 @@ export function buildKimiRequests(payload: JsonObject, options: BuildOptions = {
   return requests;
 }
 
+export function buildCohereRequests(payload: JsonObject, options: BuildOptions = {}): CountRequest[] {
+  const text = systemMessages(payload).map(visibleText).filter(Boolean).join("\n");
+  if (!text) throw new Error("payload has no system message text for Cohere to tokenize");
+  return [{
+    id: "system",
+    label: "raw system text",
+    body: { model: modelId(payload, options.model), text },
+    chars: text.length,
+  }];
+}
+
 export function buildZaiRequests(payload: JsonObject, options: BuildOptions = {}): CountRequest[] {
   const model = modelId(payload, options.model);
   const messages = systemMessages(payload);
@@ -520,6 +535,20 @@ export const PROVIDERS: Record<string, Provider> = {
       });
       if (isJsonObject(data) && isJsonObject(data.data) && typeof data.data.total_tokens === "number") return data.data.total_tokens;
       throw new Error("Kimi returned no data.total_tokens");
+    },
+  },
+  cohere: {
+    kinds: ["openai-chat"],
+    method: "Cohere tokenize for raw system text",
+    build: buildCohereRequests,
+    async execute(body) {
+      const data = await postJson("https://api.cohere.com/v1/tokenize", body, {
+        authorization: `Bearer ${requiredEnv("COHERE_API_KEY")}`,
+      });
+      if (isJsonObject(data) && Array.isArray(data.tokens) && data.tokens.every((token) => typeof token === "number")) {
+        return data.tokens.length;
+      }
+      throw new Error("Cohere returned no numeric tokens array");
     },
   },
   zai: {

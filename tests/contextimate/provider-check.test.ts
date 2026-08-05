@@ -6,6 +6,7 @@ import {
   buildAnthropicRequests,
   buildBedrockFullRequest,
   buildBedrockRequests,
+  buildCohereRequests,
   buildGoogleFullRequest,
   buildGoogleRequests,
   buildKimiRequests,
@@ -16,6 +17,7 @@ import {
   detectPayloadKind,
   geminiCountUrl,
   parsePayloadFile,
+  PROVIDERS,
   summarizeCounts,
   vertexCountRequest,
 } from "../../scripts/contextimate/provider-token-counts.ts";
@@ -150,7 +152,7 @@ test("Google count requests translate Pi SDK parameters", () => {
   assert.match(vertexCountRequest(vertexBody, "project", "eu").url, /^https:\/\/aiplatform\.eu\.rep\.googleapis\.com\//);
 });
 
-test("Bedrock, Kimi and Z.AI builders match their count APIs", () => {
+test("Bedrock, Kimi, Cohere and Z.AI builders match their count APIs", () => {
   const bedrock = {
     modelId: "amazon.nova-2-lite-v1:0",
     messages: [{ role: "user", content: [{ text: "real" }] }],
@@ -182,7 +184,57 @@ test("Bedrock, Kimi and Z.AI builders match their count APIs", () => {
   const kimi = rowsById(buildKimiRequests({ ...chat, model: "kimi-k3" }));
   assert.deepEqual(kimi.system.body.messages, [chat.messages[0], { role: "user", content: "hi" }]);
   assert.equal(kimi.tools, undefined);
+
+  const cohere = buildCohereRequests({
+    ...chat,
+    messages: [
+      { role: "system", content: [{ type: "text", text: "first" }, { type: "text", text: " second" }] },
+      { role: "system", content: "third" },
+      chat.messages[1],
+    ],
+  }, { model: "command-r-08-2024" });
+  assert.deepEqual(cohere, [{
+    id: "system",
+    label: "raw system text",
+    body: { model: "command-r-08-2024", text: "first second\nthird" },
+    chars: 18,
+  }]);
+  assert.throws(
+    () => buildCohereRequests({ model: "command-r-08-2024", messages: [{ role: "user", content: "hi" }] }),
+    /no system message text/,
+  );
+
   assert.deepEqual(rowsById(buildZaiRequests(chat))["tool:ping"].body.tools, chat.tools);
+});
+
+test("Cohere live counting validates the raw tokenizer response", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.COHERE_API_KEY;
+  process.env.COHERE_API_KEY = "fixture-key";
+  let malformed = false;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), "https://api.cohere.com/v1/tokenize");
+    assert.equal(init?.method, "POST");
+    assert.deepEqual(init?.headers, {
+      "content-type": "application/json",
+      authorization: "Bearer fixture-key",
+    });
+    assert.equal(init?.body, JSON.stringify({ model: "command-r-08-2024", text: "system" }));
+    return Response.json(malformed ? { tokens: [1, "bad"] } : { tokens: [1, 2, 3] });
+  };
+
+  try {
+    assert.equal(await PROVIDERS.cohere.execute({ model: "command-r-08-2024", text: "system" }), 3);
+    malformed = true;
+    await assert.rejects(
+      PROVIDERS.cohere.execute({ model: "command-r-08-2024", text: "system" }),
+      /no numeric tokens array/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.COHERE_API_KEY;
+    else process.env.COHERE_API_KEY = originalKey;
+  }
 });
 
 test("summary removes the shared tool-block overhead", () => {

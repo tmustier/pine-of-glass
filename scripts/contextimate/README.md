@@ -49,8 +49,35 @@ Supported count APIs:
 | Vertex AI | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` and `GOOGLE_CLOUD_ACCESS_TOKEN` | sections and full request |
 | Amazon Bedrock | standard AWS credentials and `AWS_REGION` | sections and full request for supported models |
 | Kimi | `MOONSHOT_API_KEY` | message sections |
+| Cohere | `COHERE_API_KEY` | raw system text for a named model |
 | Z.AI | `ZAI_API_KEY` | message and tool sections for supported GLM models |
 
-Live calls always require `--provider`, because wire compatibility does not identify the service. Dry runs can infer Anthropic, OpenAI, Gemini or Bedrock from the payload shape.
+Live calls always require `--provider`, because wire compatibility does not identify the service. Dry runs can infer Anthropic, OpenAI, Gemini or Bedrock from the payload shape. Cohere's endpoint counts raw text, not chat roles or tools; pass the direct Cohere model name with `--model` when the capture came through a relay.
 
 With at least 2 tools, the checker removes the shared tool-block overhead before suggesting Contextimate denominators. Tests cover request construction and this calculation. Network execution remains manual.
+
+## Open tokenizer calibration
+
+Reproduce the Kimi, GLM and Cohere raw-text profiles from a source checkout:
+
+```bash
+uv run --with 'huggingface-hub==1.26.0' --with 'tokenizers==0.22.2' \
+  --with 'tiktoken==0.13.0' scripts/contextimate/study-open-tokenizers.py --json
+```
+
+The script pins every model revision and tokenizer hash. It reads a public corpus from git revision `556dd115a77839773e143afc0d982afa59eb7479`. Later code changes cannot move the baseline silently. The script downloads tokenizer artifacts and makes no generation calls. It reads Kimi's pinned rank file and configuration directly. It checks both hashes and executes no repository code.
+
+## xAI tokenizer fingerprints
+
+xAI exposes exact token IDs and bytes through `TokenizeText`. The separate checker keeps its optional Python SDK out of the extension and npm dependency tree:
+
+```bash
+uv run --with 'xai-sdk==1.17.0' \
+  scripts/contextimate/check-xai-tokenizers.py --json
+```
+
+It reads `XAI_API_KEY`, or a fresh xAI OAuth login from Pi. The fixed public corpus covers prose, code, multilingual text, whitespace, control-like strings and deterministic random text. Models join one group only when every token record matches.
+
+Add `--contextimate-corpus` to calculate divisors from the pinned open-tokenizer corpus. Add `--file <path>` for another local corpus, but never send sensitive files. Use repeated `--model` options to inspect aliases. The script reports the resolved model. It never prints credentials or source text.
+
+This is an explicit live diagnostic. It makes no generation calls, and Contextimate never calls it at startup.

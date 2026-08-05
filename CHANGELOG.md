@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Contextimate adds measured Kimi, GLM, Cohere and Grok text profiles. Exact
+  tokenizer artifacts or xAI token streams define conservative model groups across
+  concrete relay IDs. Dynamic aliases and unverified GLM Turbo variants stay unknown.
+  The manual provider checker now supports Cohere raw text. A separate optional xAI
+  SDK checker fingerprints exact token streams without adding runtime dependencies.
+
 ## 0.10.0 (2026-08-05)
 
 - Cachemire now forecasts model switches in the target model's tokens and prices. It

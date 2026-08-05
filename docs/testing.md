@@ -261,8 +261,9 @@ Designed now so the features land with their proofs:
   compat) while the title changes.
 - **#8 (provider token check):** the checker is a script (`scripts/contextimate/
   check-provider-tokens.ts`) whose request builders are pure and unit-tested against current
-  Pi payload shapes and provider count schemas. Network execution is manual; tests never
-  call providers.
+  Pi payload shapes and provider count schemas. The Cohere executor is tested with a mocked
+  response. The separate xAI Python checker has an offline fingerprint self-test. Network
+  execution is manual; tests never call providers.
 - **#7 (click UX decision):** resolved by removal; click-to-expand shipped, proved
   unusable in practice, and was deleted (v0.5.18). Ctrl+T is the whole surface.
 
