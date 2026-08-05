@@ -4,7 +4,6 @@
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
-import { forecastProviderPrompt } from "../_lib/provider-prompt.ts";
 import type { ToolShape } from "../_lib/tool-payloads.ts";
 import { findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
@@ -28,11 +27,9 @@ export interface SwitchForecast {
   targetProvider: string;
   /** Estimated first prompt in the target currency; absent when estimation failed. */
   estTokens?: number;
-  /** Direct provider serialization vs a pi-messages gateway that may transform the
-   * request upstream — gateways demote the wording to a rougher claim. */
+  /** Gateway routes use rougher estimate wording because they can rewrite the prompt. */
   basis: "direct" | "gateway";
-  /** The target model's own most recent path-compatible billed call, if any: its
-   * cache entry (not the old model's) is what a switch-back could revive. */
+  /** The target's latest path-compatible billed call, used for switch-back warmth. */
   prior?: { requestAt: number; window?: CacheWindow };
 }
 
@@ -43,8 +40,6 @@ export function computeSwitchForecast(args: {
   systemPromptChars: number;
   tools: ToolShape[];
   snapshots: readonly CacheLineageSnapshot[];
-  /** Final local provider body, when called from before_provider_request. */
-  providerPayload?: unknown;
 }): SwitchForecast {
   const forecast: SwitchForecast = {
     targetId: args.target.id,
@@ -76,9 +71,6 @@ export function computeSwitchForecast(args: {
       systemPromptChars: args.systemPromptChars,
       tools: args.tools,
       target: args.target,
-      providerPrompt: args.providerPayload === undefined
-        ? undefined
-        : forecastProviderPrompt(args.providerPayload, args.target),
     });
     forecast.estTokens = prompt.tokens;
   }

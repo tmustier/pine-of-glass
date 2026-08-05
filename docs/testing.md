@@ -167,13 +167,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   Switch-back warmth requires exact provider, API and model identity plus an active TTL
   or minimum. Unknown retention makes no warmth claim, and compaction invalidates prior
   warmth.
-- **Send-time prompt sizing**: recognized Anthropic, OpenAI, Google and `pi-messages`
-  payloads count only system, tool and message fields. Tests pin transformed-payload
-  precedence, metadata exclusion, flat image sizing and canonical-history fallback.
-  The immediate canonical forecast counts stored tool-call IDs; provider-specific ID
-  rewriting is deliberately left to the authoritative send-time payload. For live
-  accuracy work, the explicit [model-switch forecast probe](../scripts/cachemire/README.md)
-  captures sanitized component counts and exact usage without prompt content.
+- **Stable model-switch forecast**: tests pin the target-family estimate from canonical
+  system, tools and history. An event test proves that the outgoing payload does not
+  replace that estimate. The [forecast probe](../scripts/cachemire/README.md) records
+  aggregate estimates and exact usage without prompt content.
 - **Retention evidence**: `retention.ts` drives runtime resolution and generated policy
   docs. `retention-evidence.test.ts` pins routes and boundaries; clock tests pin visible
   wording; `pi-cache-retention-seams.test.ts` covers installed Pi routes. `npm run lint`

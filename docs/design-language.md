@@ -204,14 +204,11 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
 - a model switch re-prices the conversation; the wording leads with the consequence
   (the whole prompt goes uncached to the new provider): `cache cold expected · model
   switched · next send ~32.4k uncached to anthropic (est)`. The headline is the
-  estimated first prompt in the target model's currency. Before a send, it estimates
-  canonical history; at `before_provider_request`, recognized system, tool and message
-  fields from the observed provider payload replace that target estimate so pi
-  normalization and earlier payload transforms are reflected. Request options and image base64
-  are never sized as text. Unknown payload shapes retain the canonical estimate, and
-  gateway routes remain rough because the gateway can still rewrite them upstream.
-  The target estimate is never rescaled from a source-model bill: token density is not
-  transferable across tokenizers, and the source bill may describe an earlier request.
+  estimate of canonical history in the target model's currency. It remains stable
+  through the send while the provider payload supplies cache evidence. The next user
+  message or a gateway rewrite can change the exact result. The estimate is never
+  rescaled from a source-model bill: token density is not transferable across
+  tokenizers, and the source bill may describe an earlier request.
   Switch-back warmth anchors require exact provider, API and model identity plus an
   active TTL or minimum. Unknown retention makes no warmth claim. The
   send-time notice keeps the grammar in progressive tense: `cache breaking · sending

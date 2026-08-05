@@ -36,10 +36,9 @@ expiry, and unknown retention never earns an elapsed-time claim. Cachemire does 
 
 The `~` re-write count starts from the prior billed prompt-side usage. It is not the
 whole next prompt, which adds your new message and other suffix content. After a model
-switch, Cachemire uses a separate estimate in the new model's tokenizer and labels it.
-At send time, it sizes recognized system, tool and message fields from the provider
-payload it observes. Gateway estimates stay rough because an upstream rewrite can still
-change them.
+switch, Cachemire estimates canonical history in the new model's tokenizer and keeps
+that estimate through send. A new message or gateway rewrite can make the eventual
+provider count differ.
 
 <!-- BEGIN GENERATED CACHE RETENTION: clock-examples -->
 ```text

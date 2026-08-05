@@ -1,16 +1,15 @@
-// Contract: _lib/forecast.ts mirrors the material transform rules that significantly
-// affect size. The forecast cannot import transformMessages at runtime (pi's loader
-// only aliases the compat surface), so this suite runs both implementations over the
-// same histories. Provider-specific tool ID rewriting is deliberately left to the
-// authoritative send-time payload.
+// Contract: forecastHistoryForTarget mirrors the size-relevant transformMessages rules.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import type { Message, Model, Api } from "@earendil-works/pi-ai";
 
-import { forecastHistoryForTarget, type ForecastMessage } from "../../extensions/_lib/forecast.ts";
-import { ESTIMATED_IMAGE_CHARS } from "../../extensions/_lib/provider-prompt.ts";
+import {
+  ESTIMATED_IMAGE_CHARS,
+  forecastHistoryForTarget,
+  type ForecastMessage,
+} from "../../extensions/_lib/forecast.ts";
 import { assistantMessage } from "../helpers.ts";
 
 function fakeModel(overrides: Partial<Model<Api>> = {}): Model<Api> {
