@@ -41,16 +41,19 @@ const MISS_RATIO = 0.2;
 
 // --- fingerprinting --------------------------------------------------------------------
 
-// pi moves its cache_control breakpoint to the last user message on every request, so
-// breakpoints MUST be stripped before hashing or every call would diff as "history
-// mutated" at the previous breakpoint.
-export function stripCacheControl(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripCacheControl);
+// Pi moves Anthropic and Bedrock breakpoints as the conversation grows. They are
+// placement metadata, not prompt mutations.
+export function stripCacheMarkers(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry) => !isJsonObject(entry) || !isJsonObject(entry.cachePoint) ||
+        entry.cachePoint.type !== "default" || Object.keys(entry).length !== 1)
+      .map(stripCacheMarkers);
+  }
   if (!isJsonObject(value)) return value;
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (key === "cache_control") continue;
-    out[key] = stripCacheControl(entry);
+    if (key !== "cache_control") out[key] = stripCacheMarkers(entry);
   }
   return out;
 }
@@ -96,18 +99,29 @@ export function fingerprintPayload(payload: unknown): RequestFingerprint {
     };
   }
   if (Array.isArray(body.messages)) {
-    const tools = Array.isArray(body.tools) ? body.tools : [];
+    const toolConfig = isJsonObject(body.toolConfig) ? body.toolConfig : undefined;
+    const tools = Array.isArray(body.tools)
+      ? body.tools
+      : Array.isArray(toolConfig?.tools) ? toolConfig.tools : [];
+    const additional = isJsonObject(body.additionalModelRequestFields)
+      ? body.additionalModelRequestFields
+      : undefined;
     return {
       kind: "anthropic",
-      model: typeof body.model === "string" ? body.model : undefined,
-      systemHash: body.system !== undefined ? hashOf(stripCacheControl(body.system)) : undefined,
-      toolHashes: tools.map((tool) => ({
-        name: (tool as { name?: string }).name ?? "?",
-        hash: hashOf(stripCacheControl(tool)),
-      })),
-      messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheControl(message))),
+      model: typeof body.model === "string"
+        ? body.model
+        : typeof body.modelId === "string" ? body.modelId : undefined,
+      systemHash: body.system !== undefined ? hashOf(stripCacheMarkers(body.system)) : undefined,
+      toolHashes: tools.map((tool) => {
+        const value = tool as { name?: string; toolSpec?: { name?: string } };
+        return { name: value.name ?? value.toolSpec?.name ?? "?", hash: hashOf(stripCacheMarkers(tool)) };
+      }),
+      messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheMarkers(message))),
       ttlMs: findTtlMs(body),
-      thinking: describeAnthropicThinking(body.thinking, body.output_config),
+      thinking: describeAnthropicThinking(
+        body.thinking ?? additional?.thinking,
+        body.output_config ?? additional?.output_config,
+      ),
     };
   }
   return { kind: "unknown", toolHashes: [], messageHashes: [] };

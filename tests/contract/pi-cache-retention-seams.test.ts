@@ -34,3 +34,23 @@ test("installed GPT-5.6 models keep direct API and Codex routes distinct", () =>
   assert.equal(codex.provider, "openai-codex");
   assert.equal(codex.baseUrl, "https://chatgpt.com/backend-api");
 });
+
+test("installed provider records keep Cachemire's new routes exact", () => {
+  for (const [file, api, model, provider] of [
+    ["minimax.json", "anthropic-messages", "MiniMax-M2.7", "minimax"],
+    ["minimax-cn.json", "anthropic-messages", "MiniMax-M2.7-highspeed", "minimax-cn"],
+    ["amazon-bedrock.json", "bedrock-converse-stream", "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "amazon-bedrock"],
+    ["groq.json", "openai-completions", "openai/gpt-oss-120b", "groq"],
+    ["cerebras.json", "openai-completions", "zai-glm-4.7", "cerebras"],
+  ]) {
+    assert.equal(modelRecord(file, api, model).provider, provider);
+  }
+});
+
+test("Bedrock exposes cache points and normalized read/write usage", () => {
+  const bedrock = source("bedrock-converse-stream.js");
+  assert.match(bedrock, /cachePoint: \{ type: CachePointType\.DEFAULT/);
+  assert.match(bedrock, /ttl: CacheTTL\.ONE_HOUR/);
+  assert.match(bedrock, /usage\.cacheRead = event\.usage\.cacheReadInputTokens/);
+  assert.match(bedrock, /usage\.cacheWrite = event\.usage\.cacheWriteInputTokens/);
+});

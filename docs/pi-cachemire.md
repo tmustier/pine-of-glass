@@ -12,11 +12,10 @@ A provider name alone is not enough. The generated policy and evidence matrix is
 [`cache retention audit`](./cache-retention-audit-2026-08-04.md). Unmatched routes make
 no idle-time or warmth claim.
 
-The wider provider inventory and implementation plan are in
+The wider provider inventory and implementation record are in
 [`cache-provider-stocktake-2026-08-05.md`](./cache-provider-stocktake-2026-08-05.md).
-That stocktake also records a current activation gap: general prompt usage confirms a
-billed request, while only reported cache reads or writes confirm that a cache entry
-exists.
+Cachemire keeps an observed request policy pending until reported cache reads or writes
+confirm that an entry exists.
 
 ## Four rules shape the UI
 
@@ -25,9 +24,10 @@ exists.
 2. Scope: a cache entry belongs to a provider, model, wire API and byte-exact prefix.
    Model-switch checks require all 3 identity fields. A switch-back hint needs an active
    TTL or minimum. Unknown retention stays unknown until the next send reports usage.
-3. Retention: an Anthropic TTL supports a countdown and expiry claim. The GPT-5.6
-   minimum blocks stale claims for 30 minutes, then changes to unknown. An observed
-   24-hour OpenAI maximum supports a stale claim once reached. Healthy states stay hidden.
+3. Retention: Anthropic-compatible, MiniMax, Bedrock and Groq TTLs support countdowns
+   and expiry claims. The GPT-5.6 minimum blocks stale claims for 30 minutes, then changes
+   to unknown. OpenAI and Cerebras maxima support stale claims only when reached. Healthy
+   states stay hidden.
 4. Currency: exact token and cost numbers stay in the tokenizer and price card that
    billed them. A model-switch forecast is a labelled estimate in the target model's
    tokenizer. Exact values return with the first billed call on the new model.
@@ -36,28 +36,31 @@ At `before_provider_request`, Cachemire sizes recognized prompt fields from the 
 it observes. This captures Pi normalization and earlier payload transforms. Gateway
 estimates remain rough because the upstream request shape is not visible.
 
-## Anthropic clocks start at request time
+## Confirmed clocks start at request time
 
-An observed Anthropic TTL starts when Cachemire sees the outgoing request. Anthropic
-reads, refreshes and writes cache entries while processing the input. Generation time
-therefore uses some of the TTL. A long thinking block can make the warning appear while
-the response is still streaming.
+The outgoing request supplies the clock anchor, but Cachemire does not activate its
+window until normalized usage reports the required cache read or write. Generation time
+therefore uses some of the TTL before the confirmed clock becomes visible.
 
 A known 5-minute TTL appears during its final minute. A known 1-hour TTL appears during
 its final 5 minutes. After expiry, the warning remains until the next provider call
 reports the outcome.
 
-A restored Anthropic session has no persisted `cache_control`. Cachemire mirrors Pi's
-ordinary-call default: `PI_CACHE_RETENTION=long` means 1 hour, otherwise 5 minutes. The
-first live payload replaces that inference.
+A restored Anthropic session has no persisted `cache_control`. When persisted usage
+contains a cache read or write, Cachemire mirrors Pi's ordinary-call default:
+`PI_CACHE_RETENTION=long` means 1 hour, otherwise 5 minutes. The first confirmed live
+payload replaces that inference.
 
 For GPT-5.6 and later GPT-5 models, OpenAI documents a 30-minute minimum. This default
 applies on OpenAI and OpenAI Codex. Cachemire stays silent during the minimum. At the
 boundary it reports an unknown cache state because OpenAI may retain the prefix longer.
 Reaching the minimum does not classify a later miss as eviction.
 
-For an observed 24-hour OpenAI maximum, Cachemire stays silent before the maximum and
-marks the cache stale once the maximum is reached. Unknown routes remain silent at every
+For an observed 24-hour OpenAI maximum, Cachemire waits for a cache read, stays silent
+before the maximum, and marks the cache stale once the maximum is reached. MiniMax M2.7
+uses a confirmed 5-minute TTL. Documented Bedrock Claude models use their observed
+5-minute or 1-hour cache point. Groq GPT-OSS uses a 2-hour inactivity TTL after a read.
+Cerebras records a 1-hour maximum after a read. Unknown routes remain silent at every
 elapsed time.
 
 The widget schedules its next update at a known boundary. It updates once per second
@@ -77,10 +80,9 @@ old model's billed count.
 
 ## Aborted sends do not create evidence
 
-A request start is confirmed when provider usage arrives. Anthropic reports prompt usage
-in `message_start`, so a mid-stream abort can still confirm the request.
+A request start is confirmed when Cachemire receives provider usage with cache evidence.
 
-A fast abort or error with no usage proves nothing about the cache. Cachemire restores
+An abort or error with no usage proves nothing about the cache. Cachemire restores
 the previous timestamp and retention policy. A first-send abort leaves no confirmed
 clock to show.
 
@@ -91,7 +93,7 @@ can invalidate message cache entries. A known Anthropic TTL therefore supports a
 in-flight warning when the outgoing wire value changes. Levels that map to the same wire
 value stay silent.
 
-Other routes get no retention-based prediction. If billed usage later proves a miss,
+Unknown routes get no retention-based prediction. If billed usage later proves a miss,
 Cachemire can report an observed payload mutation. A miss without such evidence keeps an
 unknown cause.
 
@@ -119,10 +121,11 @@ The stored prompt-side total is exact for the prior billed request. It remains o
 baseline for the next request, which adds a new suffix. Cachemire withholds a divergent
 suffix estimate until provider usage makes the new request exact.
 
-Restored snapshots retain provider usage, model identity and timestamps. GPT-5.6 and
-later GPT-5 models keep their documented 30-minute minimum. Restored Anthropic routes
-may use the `PI_CACHE_RETENTION` inference described above. Legacy OpenAI routes lose
-request-only policy evidence, so their retention becomes unknown.
+Restored snapshots retain provider usage, model identity and timestamps. Only a
+persisted cache read or supported write activates a recovered window. Exact model and API
+checks recover GPT-5.6, Anthropic, MiniMax, Groq and Cerebras policies. Bedrock and
+legacy OpenAI routes lose request-only policy evidence, so their retention becomes
+unknown.
 
 ## Causes follow observed evidence
 
