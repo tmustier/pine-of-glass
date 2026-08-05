@@ -34,7 +34,7 @@ import {
 } from "./lineage.ts";
 import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
 import {
-  inferAnthropicTtlMs, OPENAI_EXTENDED_WINDOW, windowForModel, windowForRequest, windowLabel,
+  inferAnthropicTtlMs, OPENAI_EXTENDED_WINDOW, OPENAI_MINIMUM_WINDOW, windowForModel, windowForRequest, windowLabel,
 } from "./retention.ts";
 import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
@@ -84,8 +84,8 @@ export type {
  * the exact counts on hand are old-model currency, so the prompt is forecast in the
  * target tokenizer and marked est (issue #57). Display is UI-only: nothing cachemire
  * renders enters LLM context, session entries, or exports.
- * Anthropic's observed 5m/1h TTLs get countdowns. An observed OpenAI 24h maximum
- * appears only when reached; unknown retention stays silent.
+ * Anthropic's observed 5m/1h TTLs get countdowns. GPT-5.6+ gets its documented
+ * 30m minimum; an observed legacy OpenAI 24h maximum appears only when reached.
  */
 
 const DEFAULT_CONFIG: CachemireConfig = {
@@ -130,7 +130,6 @@ function thinkingLevelsDiffer(
   if (a === undefined || b === undefined) return false;
   return wireThinkingEffort(map, a) !== wireThinkingEffort(map, b);
 }
-
 
 // Glyphs and ink come from the family style (_lib/style.ts, design language §§1–3):
 // ◍ opens every loop-economics line, ○ ● ◑ ◌ are the status scale, and all colour
@@ -594,7 +593,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
           ...s.switchForecast,
           priorMayBeWarm: s.switchForecast.prior !== undefined && (
             s.switchForecast.prior.window === undefined ||
-            s.switchForecast.prior.window.kind === "unknown" ||
+            s.switchForecast.prior.window.kind === "unknown" || s.switchForecast.prior.window.kind === "minimum" ||
             (s.switchForecast.prior.window.kind === "maximum" &&
               requestAt - s.switchForecast.prior.requestAt < s.switchForecast.prior.window.maxMs) ||
             withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt)
@@ -854,6 +853,7 @@ export const internals = {
   windowLabel,
   pastWindow,
   OPENAI_EXTENDED_WINDOW,
+  OPENAI_MINIMUM_WINDOW,
   predictBreak,
   renderBreakingLine,
   withinWarmHorizon,

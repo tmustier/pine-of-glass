@@ -7,6 +7,7 @@ import { pastWindow } from "../../extensions/pi-cachemire/classify.ts";
 import {
   inferAnthropicTtlMs,
   OPENAI_EXTENDED_WINDOW,
+  OPENAI_MINIMUM_WINDOW,
   windowForModel,
   windowForRequest,
   windowLabel,
@@ -24,9 +25,11 @@ test("retention resolution requires route, model family and observed request pol
   });
 
   assert.deepEqual(windowForModel("anthropic"), { kind: "contract", ttlMs: 5 * MIN, source: "inferred" });
-  assert.equal(windowForModel("openai-codex", "gpt-5.6-sol"), undefined);
-  assert.equal(windowForModel("openai", "gpt-5.6"), undefined);
-  assert.equal(windowForModel("mistral"), undefined);
+  assert.equal(windowForModel("openai-codex", "gpt-5.6-sol"), OPENAI_MINIMUM_WINDOW);
+  assert.equal(windowForModel("openai", "gpt-5.6"), OPENAI_MINIMUM_WINDOW);
+  assert.equal(windowForModel("openai", "gpt-5.10"), OPENAI_MINIMUM_WINDOW);
+  assert.equal(windowForModel("openai", "gpt-5.5"), undefined);
+  assert.equal(windowForModel("mistral", "gpt-5.6"), undefined);
 
   assert.equal(
     windowForRequest("openai", "gpt-5.4", { prompt_cache_retention: "24h" }),
@@ -45,8 +48,8 @@ test("retention resolution requires route, model family and observed request pol
   );
   assert.equal(
     windowForRequest("openai", "gpt-5.6", { prompt_cache_retention: "24h" }),
-    undefined,
-    "GPT-5.6 does not use the legacy maximum policy",
+    OPENAI_MINIMUM_WINDOW,
+    "GPT-5.6 uses the default minimum, not the deprecated maximum policy",
   );
   assert.equal(
     windowForRequest("openai", "gpt-5-6-sol", { prompt_cache_retention: "24h" }),
@@ -54,20 +57,23 @@ test("retention resolution requires route, model family and observed request pol
     "an unrecognized alias fails closed",
   );
   assert.equal(
-    windowForRequest("openai-codex", "gpt-5.6-sol", { prompt_cache_retention: "24h" }),
-    undefined,
-    "openai-codex is a separate route with no retention contract",
+    windowForRequest("openai-codex", "gpt-5.6-sol", {}),
+    OPENAI_MINIMUM_WINDOW,
+    "the documented GPT-5.6 default also applies through Codex",
   );
 });
 
 test("retention labels and hard expiry match the evidence type", () => {
   assert.equal(windowLabel(CONTRACT_5M), "5m TTL");
   assert.equal(windowLabel({ kind: "contract", ttlMs: 60 * MIN, source: "inferred" }), "1h TTL (inferred)");
+  assert.equal(windowLabel(OPENAI_MINIMUM_WINDOW), "30m minimum");
   assert.equal(windowLabel(OPENAI_EXTENDED_WINDOW), "24h maximum");
   assert.equal(windowLabel({ kind: "unknown" }), "retention unknown");
 
   assert.equal(pastWindow(CONTRACT_5M, 5 * MIN - 1), false);
   assert.equal(pastWindow(CONTRACT_5M, 5 * MIN), true, "the exact TTL boundary is expired");
+  assert.equal(pastWindow(OPENAI_MINIMUM_WINDOW, 30 * MIN - 1), false);
+  assert.equal(pastWindow(OPENAI_MINIMUM_WINDOW, 30 * MIN), false, "a minimum is not an expiry");
   assert.equal(pastWindow(OPENAI_EXTENDED_WINDOW, 24 * 60 * MIN - 1), false);
   assert.equal(
     pastWindow(OPENAI_EXTENDED_WINDOW, 24 * 60 * MIN),

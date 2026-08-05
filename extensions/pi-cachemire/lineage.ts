@@ -198,6 +198,7 @@ function sameIdentity(a: CacheLineageSnapshot, b: CacheLineageSnapshot): boolean
 function sameWindow(a: CacheWindow | undefined, b: CacheWindow | undefined): boolean {
   if (!a || !b || a.kind !== b.kind) return false;
   if (a.kind === "contract" && b.kind === "contract") return a.ttlMs === b.ttlMs;
+  if (a.kind === "minimum" && b.kind === "minimum") return a.minMs === b.minMs;
   if (a.kind === "maximum" && b.kind === "maximum") return a.maxMs === b.maxMs;
   return a.kind === "unknown" && b.kind === "unknown";
 }

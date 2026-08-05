@@ -19,8 +19,10 @@ export const TTL_SHORT_MS = 5 * 60 * 1000;
 export const TTL_LONG_MS = 60 * 60 * 1000;
 
 export function pastWindow(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
-  if (!window || window.kind === "unknown" || gapMs === undefined) return false;
-  return window.kind === "contract" ? gapMs >= window.ttlMs : gapMs >= window.maxMs;
+  if (!window || gapMs === undefined) return false;
+  if (window.kind === "contract") return gapMs >= window.ttlMs;
+  if (window.kind === "maximum") return gapMs >= window.maxMs;
+  return false;
 }
 
 // Shared cause wording for predictions and resolved classifications.

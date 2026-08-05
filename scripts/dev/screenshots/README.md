@@ -99,8 +99,8 @@ the full dump is a wall and one tree gives the sense.
 
 Cache behaviour needs live evidence, so this scenario makes **real model calls**:
 3 tiny turns against a small fixture README, then `/cache`. It uses
-`openai-codex/gpt-5.6-sol`, whose retention is unknown, switches to Anthropic without
-calling it to capture the model-switch warning, then switches back for the OpenAI
+`openai-codex/gpt-5.6-sol`, with its documented 30-minute minimum, switches to Anthropic
+without calling it to capture the model-switch warning, then switches back for the OpenAI
 ledger. Expect the table to vary: cold starts, hits and observed misses are authentic.
 An unexplained miss keeps an unknown cause.
 
