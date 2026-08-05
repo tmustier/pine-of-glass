@@ -199,6 +199,8 @@ The DeepSeek and Qwen study checked every pinned artifact before counting. Full 
 
 The resulting rules cover 42 of the 43 DeepSeek route entries in Pi AI 0.83.0. Only the moving `deepseek-chat` alias keeps the fallback. They also cover 49 Qwen 2.5/3 entries and 11 Qwen 3.5 entries. The other 55 Qwen entries are unpinned proprietary aliases or later model generations, so they keep the fallback.
 
+The public relay catalogs resolved the abbreviated serving IDs. OpenRouter linked all 36 profiled routes to an exact pinned Hugging Face artifact. Vercel's full names resolved all 17 profiled routes unambiguously to pinned artifacts, including architecture and instruction suffixes omitted from serving IDs. `DeepSeek V3.2 Thinking` resolves to the pinned V3.2 artifact; thinking is a serving mode here, not a tokenizer claim. The checked route remains separate from its wire API.
+
 GLM 5 Turbo, GLM 5V Turbo, GLM 4.7 FlashX, beta Grok aliases, `deepseek-chat` and proprietary Qwen aliases remain unknown. Retired Gemini previews, `gemini-3-flash`, `gemini-3.1-pro` and Gemini Live also keep the existing generic estimate because the official endpoint did not count them. The same rule applies to `auto`, `free`, fusion and picker routes.
 
 The hosted sweep made 78 tiny requests across 26 routes and cost about $0.1215. One GLM request produced 38,918 hidden reasoning tokens despite `max_tokens: 1`. Future studies should prefer count or tokenizer endpoints because some models require generation reasoning.
@@ -274,6 +276,8 @@ The family follow-up used about $0.1215 of paid OpenRouter generation. Direct xA
 - [DeepSeek V3 tokenizer artifacts](https://huggingface.co/deepseek-ai/DeepSeek-V3/tree/e815299b0bcbac849fa540c768ef21845365c9eb)
 - [Qwen 3 tokenizer artifacts](https://huggingface.co/Qwen/Qwen3-8B/tree/b968826d9c46dd6066d109eabc6255188de91218)
 - [Qwen 3.5 tokenizer artifacts](https://huggingface.co/Qwen/Qwen3.5-9B/tree/c202236235762e1c871ad0ccb60c8ee5ba337b9a)
+- [OpenRouter model catalog](https://openrouter.ai/api/v1/models)
+- [Vercel AI Gateway model catalog](https://ai-gateway.vercel.sh/v1/models)
 - [Gemini `countTokens`](https://ai.google.dev/api/tokens#method:-models.counttokens)
 - [Google local tokenizer](https://github.com/googleapis/python-genai/blob/main/google/genai/local_tokenizer.py)
 - [Mistral common](https://github.com/mistralai/mistral-common)
