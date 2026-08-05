@@ -25,7 +25,7 @@ import {
   pastWindow,
   stripCacheControl,
 } from "./classify.ts";
-import { UNKNOWN_WINDOW, cacheClock, toneFor, withinWarmHorizon } from "./clock.ts";
+import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, toneFor, withinWarmHorizon } from "./clock.ts";
 import { activeToolShapes, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
 import { restoreBranchRecords } from "./ledger.ts";
 import {
@@ -36,6 +36,7 @@ import {
   restoreLineageSnapshots,
 } from "./lineage.ts";
 import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
+import { clearCacheWidgetTimer, type CacheWidgetRuntime, resetCacheWidget, updateCacheWidget } from "./widget.ts";
 import type {
   BreakPrediction,
   CacheLineageSnapshot,
@@ -68,8 +69,8 @@ export type {
  * pi-cachemire — explains the cache and loop economics of a pi session.
  *
  * pi's footer already *counts* (input/output/cache read/write/cost); cachemire *explains*:
- *   1. "Am I past TTL?"            → a live cache clock above the editor, counting down the
- *      provider cache TTL from the last request, with the re-write bill once likely cold.
+ *   1. "Am I past TTL?"            → a warning above the editor shortly before a known
+ *      cache window closes, with the possible re-write bill once stale.
  *   2. "Why did the cache break?"  → forensics: every provider request is fingerprinted
  *      (system / tools / history segments, cache_control stripped); on a miss the diff
  *      names the culprit — TTL expiry, compaction, model switch, system prompt edit,
@@ -84,7 +85,7 @@ export type {
  * target tokenizer and marked est (issue #57). Display is UI-only: nothing cachemire
  * renders enters LLM context, session entries, or exports.
  * Anthropic gets the full treatment (explicit breakpoints, 5m/1h TTL, priced writes);
- * other providers degrade honestly to observed reads and soft "likely warm/cold" wording.
+ * documented best-effort windows use hedged warnings and unknown lifetimes stay silent.
  */
 
 const DEFAULT_CONFIG: CachemireConfig = {
@@ -95,7 +96,6 @@ const DEFAULT_CONFIG: CachemireConfig = {
   missWarnUsd: 0.05,
   missWarnTokens: 20_000,
 };
-
 
 // pi-coding-agent never passes cacheRetention to pi-ai, so pi-ai's resolveCacheRetention
 // falls through to this env var alone ("long" → 1h where the model supports it, else 5m).
@@ -133,7 +133,6 @@ function windowLabel(window: CacheWindow): string {
       return "TTL unknown";
   }
 }
-
 
 /**
  * What a pi thinking level becomes on the anthropic wire — mirrors pi-ai's
@@ -424,16 +423,15 @@ interface CachemireState {
   theme?: Theme;
   ui?: Pick<ExtensionUIContext, "setWidget" | "notify">;
   tui?: { requestRender?: (force?: boolean) => void };
-  lastWidgetText?: string;
 }
 
 type CachemireGlobal = typeof globalThis & {
   __piCachemire?: CachemireState;
-  __piCachemireTimer?: ReturnType<typeof setInterval>;
+  __piCachemireWidget?: CacheWidgetRuntime;
   __piCachemireOwner?: symbol;
 };
 const g = globalThis as CachemireGlobal;
-
+const cacheWidget = g.__piCachemireWidget ??= {};
 function state(): CachemireState {
   if (!g.__piCachemire) {
     g.__piCachemire = {
@@ -457,27 +455,25 @@ function state(): CachemireState {
 function econLine(tone: Tone, text: string): string {
   return ink(state().theme, tone, `${GLYPH.econ} ${text}`);
 }
-
 function updateWidget(now = Date.now()): void {
   const s = state();
-  if (!s.ui || !s.config.widget) return;
-  const clock = cacheClock({
-    now,
-    lastRequestAt: s.lastRequestAt,
-    window: s.window,
-    cachedTokens: s.expectedRead,
-    rewriteUsd: s.expectedRead > 0 ? rewriteCostUsd(s.expectedRead, s.rates) : undefined,
-    compacted: s.compacted,
-    modelSwitched: s.modelSwitched,
-    switchForecast: s.switchForecast,
-    thinkingChanged: s.thinkingChanged,
+  updateCacheWidget(cacheWidget, {
+    enabled: s.config.widget,
+    ui: s.ui,
+    renderLine: econLine,
+    clock: {
+      now,
+      lastRequestAt: s.lastRequestAt,
+      window: s.window,
+      cachedTokens: s.expectedRead,
+      rewriteUsd: s.expectedRead > 0 ? rewriteCostUsd(s.expectedRead, s.rates) : undefined,
+      compacted: s.compacted,
+      modelSwitched: s.modelSwitched,
+      switchForecast: s.switchForecast,
+      thinkingChanged: s.thinkingChanged,
+    },
   });
-  const text = clock.phase === "idle" ? "" : econLine(toneFor(clock.phase), clock.text);
-  if (text === s.lastWidgetText) return;
-  s.lastWidgetText = text;
-  s.ui.setWidget("pi-cachemire", text === "" ? undefined : [text]);
 }
-
 function appendChatLine(text: string): Text | undefined {
   const s = state();
   s.notifyFallback ??= (plainText) => s.ui?.notify(plainText, "info");
@@ -562,15 +558,13 @@ export default function piCachemire(pi: ExtensionAPI): void {
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
       s.tui = tui as CachemireState["tui"];
     });
-    if (g.__piCachemireTimer) clearInterval(g.__piCachemireTimer);
-    g.__piCachemireTimer = s.config.widget ? setInterval(() => updateWidget(), 1000) : undefined;
+    resetCacheWidget(cacheWidget);
     updateWidget();
   });
 
   pi.on("session_shutdown", async () => {
     if (!ownsState()) return;
-    if (g.__piCachemireTimer) clearInterval(g.__piCachemireTimer);
-    g.__piCachemireTimer = undefined;
+    clearCacheWidgetTimer(cacheWidget);
     g.__piCachemireOwner = undefined;
   });
 
@@ -634,8 +628,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
         rates: s.rates,
         switchForecast: s.switchForecast === undefined ? undefined : {
           ...s.switchForecast,
-          priorMayBeWarm: s.switchForecast.prior !== undefined &&
-            withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt),
+          priorMayBeWarm: s.switchForecast.prior !== undefined && (
+            s.switchForecast.prior.window === undefined ||
+            s.switchForecast.prior.window.kind === "unknown" ||
+            withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt)
+          ),
         },
       });
       const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;
@@ -726,6 +723,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (!ownsState()) return;
     s.inCompaction = false;
     s.compacted = true;
+    updateWidget();
   });
 
   pi.on("message_end", async (event) => {
@@ -922,6 +920,8 @@ export const internals = {
   anchorForAppend,
   reattachAnchored,
   cacheClock,
+  nextClockUpdateMs,
+  toneFor,
   renderRunSummary,
   renderMissLine,
   renderLedger,

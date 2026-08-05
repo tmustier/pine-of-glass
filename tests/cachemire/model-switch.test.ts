@@ -39,20 +39,24 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
   // The target model's own last billed call is inside its window: "cold" would overclaim.
   const back = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: BAND } } });
   assert.equal(back.phase, "warm-unknown");
-  assert.equal(back.text, "cache may still be warm \u00b7 last gpt-5.6-luna call 1m ago \u00b7 next send confirms");
+  assert.equal(back.text, "cache may still be warm \u00b7 switched back to gpt-5.6-luna \u00b7 next send confirms");
   // Past the prior's soft horizon the switch-back is cold expected like any other switch.
   const backCold = cacheClock({ now: 10 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: BAND } } });
   assert.equal(backCold.phase, "cold");
+  // Unknown retention cannot support either a warm or cold claim.
+  const unknown = cacheClock({ now: 10 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: { kind: "unknown" } } } });
+  assert.equal(unknown.text, "cache state unknown \u00b7 model switched \u00b7 next send confirms");
+  const compacted = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, compacted: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: BAND } } });
+  assert.equal(compacted.text, "cache stale after compaction \u00b7 next send may re-write changed history");
 });
 
-test("warm horizon: contract TTL, band soft edge, implicit-cache horizon", () => {
+test("warm horizon: contract TTL and documented band only", () => {
   assert.equal(withinWarmHorizon(CONTRACT_5M, 4 * MIN), true);
   assert.equal(withinWarmHorizon(CONTRACT_5M, 6 * MIN), false);
   const band = { kind: "band", softMs: 5 * MIN, hardMs: 60 * MIN } as const;
   assert.equal(withinWarmHorizon(band, 4 * MIN), true);
   assert.equal(withinWarmHorizon(band, 30 * MIN), false, "the band maybe-zone must not claim warm");
-  assert.equal(withinWarmHorizon(undefined, 9 * MIN), true);
-  assert.equal(withinWarmHorizon(undefined, 11 * MIN), false);
+  assert.equal(withinWarmHorizon(undefined, 1 * MIN), false, "unknown retention must not guess at warmth");
 });
 
 test("break prediction: model switch sized in the target currency, or silent when warm", () => {

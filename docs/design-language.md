@@ -170,7 +170,10 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   50k ch. Thresholds live in `style.ts`, overridable through the family config
   convention (`~/.pi/agent/pi-<name>.json`, `<cwd>/.pi/pi-<name>.json`)
 - cache materiality (cachemire): notices only above $0.05 or 20k re-written
-  tokens; silence when healthy
+  tokens; silence when healthy. The live cache warning appears only during the final
+  `min(5m, 20%)` of a contract TTL, or the final `min(1m, 20%)` before a documented
+  best-effort window begins. It remains visible after that boundary until the next
+  provider call resolves the state. Unknown cache lifetimes stay silent
 - severity colour is reserved for exceeded thresholds and real states. Nothing is
   tinted for visual interest
 
@@ -219,9 +222,9 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   28.2k (100% of prompt) · the new model already had the prefix cached`, never
   `read 28.2k of 20.6k expected`, which composes two currencies into an impossible
   137% claim
-- certainty ladder: contract-backed evidence gets definite words (`cache cold`);
-  a documented band gets hedged words (`cache fading`); an unknown provider gets
-  `likely`. Never write definite words on soft evidence
+- certainty ladder: contract-backed evidence gets definite words (`cache stale`);
+  a documented band gets hedged words (`cache may be stale`); an unknown provider stays
+  silent. Never write definite words on soft evidence
 - status one-liners are lowercase; Title Case only for panel headers and row labels
 - state causes from observed evidence (payload diffs, usage), never inference,
   and say `unknown` when unknown

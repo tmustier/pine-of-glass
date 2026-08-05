@@ -10,20 +10,20 @@
   caching saved ~$3.00 vs uncached $7.77 (−39%) · API-priced; notional on subscription
 
 === clock states (widget) ===
-[fresh] ◍ cache 4m
-[closing] ◍ cache 30s
-[cold] ◍ cache cold · next send re-writes ~150.3k (~$2.82)
-[stale] ◍ cache stale · history compacted · next send re-writes the new prefix
-[stale] ◍ cache stale · thinking level changed · next send re-writes the prompt
+[idle] (hidden)
+[closing] ◍ cache expires in 30s · next send may re-write ~150.3k (~$2.82)
+[cold] ◍ cache stale · TTL expired · next send may re-write ~150.3k (~$2.82)
+[stale] ◍ cache stale after compaction · next send may re-write changed history
+[stale] ◍ cache stale · thinking level changed · next send may re-write the prompt
 [cold] ◍ cache cold expected · model switched · next send ~96.4k uncached to openai-codex (est)
 [cold] ◍ cache cold expected · model switched · next send ~96.4k uncached to radius (rough est · gateway route)
-[warm-unknown] ◍ cache may still be warm · last claude-opus-4-8 call 1m ago · next send confirms
+[warm-unknown] ◍ cache may still be warm · switched back to claude-opus-4-8 · next send confirms
 [cold] ◍ cache cold expected · model switched · prompt size known at next send
-[cold] ◍ cache cold (idle 1h10m > 1h cap) · next send re-sends ~64.3k uncached (~$0.12)
+[cold] ◍ cache stale · beyond 1h cache cap · next send may re-send ~64.3k uncached (~$0.12)
 
 === notices (chat lines) ===
 ◍ cache breaking · re-writing ~150.3k (~$2.82) · cause: idle 7m00s > 5m TTL
-◍ cache breaking · re-writing the new prefix · cause: history compacted
+◍ cache breaking · re-writing changed history · cause: history compacted
 ◍ cache breaking · sending ~96.4k uncached to openai-codex (est · ~$0.12) · cause: model switched claude-opus-4-8 → gpt-5.6-luna
 ◍ cache after compaction · reused 34.9k of the last pre-compaction 72.5k prompt (48%) · processed 39.1k uncached
 ◍ cache broke · re-wrote 153.0k of 153.2k prompt (100%) · $2.97 · cause: idle 7m00s > 5m TTL

@@ -11,25 +11,29 @@ explains when the cache will go cold, why it broke and what the loop cost.
 
 ![Turn ledger lines in the transcript, a resolved break notice naming its cause (thinking changed), and the cache clock above the editor](../../docs/img/pi-cachemire-clock.png)
 
-## Check cache freshness before you send
+## Get warned before the cache expires
 
-A cache clock above the input box counts down the provider's cache freshness from
-the last request. Check it before you press Enter to see whether the next send will
-be cheap or will re-bill the whole prefix.
+Cachemire stays hidden while the cache is healthy. It appears above the input box only
+when the cache is close to expiring, may already be stale, or a change such as compaction
+or a model switch puts the next send at risk.
 
-For Anthropic, the clock shows a contract-TTL countdown. It reads the observed
-`cache_control`, not config. For OpenAI, it shows a documented three-zone band. For
-unknown providers, it uses softer wording. The promised re-write size uses
-provider-exact usage, with one exception: after a model switch it is an estimate in
-the new model's tokenizer, and says so. The pre-send clock estimates canonical history;
-at send time Cachemire re-sizes recognized system, tool and message fields from the
-provider payload it observes, including pi normalization and earlier payload transforms.
-Gateway estimates stay rough because an upstream rewrite can still change them.
+For Anthropic, Cachemire reads the exact TTL from the observed `cache_control`. A
+5-minute cache appears during its final minute; a 1-hour cache appears during its final
+5 minutes. For OpenAI's less certain window, it warns shortly before typical eviction
+begins and uses `may` wording. Providers with unknown cache lifetimes get no guessed
+countdown.
+
+The possible re-write size uses provider-exact usage, with one exception: after a model
+switch it is an estimate in the new model's tokenizer, and says so. At send time
+Cachemire re-sizes recognized system, tool and message fields from the provider payload
+it observes. Gateway estimates stay rough because an upstream rewrite can still change
+them.
 
 ```
-◍ cache 4m30s                                    (green → yellow under 60s)
-◍ cache fading · idle 12m of 5m–1h window · next send may re-send ~109.8k (~$1.37)
-◍ cache cold · next send re-writes ~142.3k (~$2.67)
+◍ cache expires in 58s · next send may re-write ~138.2k (~$2.59)
+◍ cache may be stale · typical eviction window 5m–1h · next send may re-send ~109.8k (~$1.37)
+◍ cache stale · TTL expired · next send may re-write ~142.3k (~$2.67)
+◍ cache stale after compaction · next send may re-write changed history
 ```
 
 ## Find out why the cache broke
@@ -112,9 +116,9 @@ pi -e ./extensions/pi-cachemire
 
 ## Use Cachemire
 
-You do not need to press anything. The clock ticks above the editor, notices appear
-automatically and the turn line follows each turn. Run `/cache` to print the per-call
-ledger table.
+You do not need to press anything. Warnings appear above the editor when the cache needs
+attention, notices appear automatically and the turn line follows each turn. Run `/cache`
+to print the per-call ledger table.
 
 Config lives at `~/.pi/agent/pi-cachemire.json` or `<project>/.pi/pi-cachemire.json`.
 Set `turnSummaryMinCalls` higher if you only want a ledger line for multi-call turns.
@@ -139,9 +143,9 @@ Cachemire follows these rules:
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
 - Everything Cachemire draws is UI-only. It does not enter LLM context, session
   entries or exports.
-- Freshness wording reflects how much is known. A contract TTL gets a definite
-  countdown. A documented band gets fading or cap wording. When nothing is known,
-  Cachemire says "likely". Under subscription auth, it marks savings as notional.
+- Freshness wording reflects how much is known. A contract TTL gets a definite warning.
+  A documented band gets `may` or cap wording. When nothing is known, Cachemire stays
+  silent. Under subscription auth, it marks savings as notional.
 - Sessions restored with `--continue` rebuild the active ledger and all-branch cache
   baselines from session usage. Cachemire marks restored rows and excludes them from
   savings because their pricing context is unknown. Payload fingerprints are not

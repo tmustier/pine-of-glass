@@ -78,7 +78,7 @@ const ANTHROPIC_PAYLOAD = {
   messages: [{ role: "user", content: [{ type: "text", text: "next" }] }],
 };
 
-test("event flow: an aborted first send clears its speculative cache clock", async () => {
+test("event flow: a healthy first send and an abort both stay silent", async () => {
   const notifications: string[] = [];
   const widgets: string[] = [];
   const probe = extensionProbe();
@@ -87,9 +87,9 @@ test("event flow: an aborted first send clears its speculative cache clock", asy
   await fire(probe, "session_start", {}, ctx);
   try {
     await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
-    assert.notEqual(widgets.at(-1), "", "the in-flight request starts the cache clock");
+    assert.equal(widgets.at(-1), "", "a healthy cache must not show ambient status");
     await fire(probe, "agent_end");
-    assert.equal(widgets.at(-1), "", "an abort without usage must not leave a fictitious TTL anchor");
+    assert.equal(widgets.at(-1), "", "an abort without usage must not leave a fictitious warning");
   } finally {
     await fire(probe, "session_shutdown", {});
   }
