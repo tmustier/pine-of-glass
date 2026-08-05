@@ -131,21 +131,30 @@ export function buildTracelineSession(cwd) {
   result(verify, "/resources ok\n/releases ok");
   result(worklog, `Wrote ${cwd}/worklog/2026-07-01-pricing-pass.md`, { details: { diff: diff(18, 0) } });
 
-  // Records of consequence (§9.10): commit + push porcelain becomes verb-first facts.
-  const ship = call("bash", { command: "git add -A && git commit -m 'product: tighten pricing copy, repoint nav links' && git push", timeout: 120 });
+  const ship = call("bash", {
+    command: "git add -A && git commit -m 'product: tighten pricing copy, repoint nav links' && git push -u origin pricing-copy && gh pr create --fill",
+    timeout: 120,
+  });
   msg({
     role: "assistant",
-    content: [{ type: "text", text: "Green — shipping the pass." }, ship],
+    content: [{ type: "text", text: "Green — pushing the pass for review." }, ship],
   });
   msg({
     role: "toolResult", toolCallId: ship.id, toolName: "bash",
-    content: [{ type: "text", text: `[main a4f21c9] product: tighten pricing copy, repoint nav links\n 4 files changed, 25 insertions(+), 14 deletions(-)\nTo github.com:acme/site.git\n   1f0d2a3..a4f21c9  main -> main` }],
+    content: [{ type: "text", text: `[pricing-copy a4f21c9] product: tighten pricing copy, repoint nav links\n 4 files changed, 25 insertions(+), 14 deletions(-)\nTo github.com:acme/site.git\n * [new branch] pricing-copy -> pricing-copy\nhttps://github.com/acme/site/pull/120` }],
     isError: false,
   });
 
+  const merge = call("bash", { command: "gh pr merge 120 --squash --delete-branch", timeout: 120 });
   msg({
     role: "assistant",
-    content: [{ type: "text", text: "Done — the pricing section now makes its case once, both nav links resolve, and the pass is on main." }],
+    content: [{ type: "text", text: "Review is clear — landing PR #120." }, merge],
+  });
+  result(merge, "(no output)");
+
+  msg({
+    role: "assistant",
+    content: [{ type: "text", text: "Done — the pricing section now makes its case once, both nav links resolve, and PR #120 is merged." }],
   });
 
   return { id: randomUUID(), entries };

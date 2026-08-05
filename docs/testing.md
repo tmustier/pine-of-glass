@@ -75,6 +75,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | A real Pi-built system prompt (constructed via Pi's own prompt assembly against a fixture project dir with an AGENTS.md and one skill) matches `PROJECT_INSTRUCTIONS_RE`, `AVAILABLE_SKILLS_RE`, `SKILL_RE`, and `getPromptRemainder` strips both blocks | contextimate section parsing; it silently renders wrong buckets if the prompt format drifts |
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
+| A successful silent built-in bash call returns exactly `(no output)` | traceline's terminal `gh pr merge` evidence rule |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
@@ -105,6 +106,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   are user-facing grammar).
 - **`toolStatus`**: result+`isError` → error; result+complete → success; partial/none →
   running.
+- **Record evidence**: a successful terminal `gh pr merge <number>` may graduate from
+  Pi's exact `(no output)` result; auto modes, status masks and later commands do not.
+  Same-row state verification accepts bare or JSON `MERGED` state and matches the
+  explicit merge and view targets.
 - **Collapsed thinking previews**: three adjacent non-empty blocks and every non-empty
   line inside them append into one ` · `-separated display row; source paragraph breaks
   never add rows; empty thinking fragments do not consume labels or break adjacency;

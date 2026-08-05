@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Traceline: show silent `gh pr merge` outcomes.** A successful terminal merge
+  with an explicit PR number now renders `merged PR #N` when `gh` returns no text.
+  Same-row JSON `MERGED` state is also recognised.
 - **Cachemire: show cache status only when evidence supports action.** Observed
   Anthropic 5-minute and 1-hour TTLs warn shortly before expiry. Restored Anthropic
   sessions may infer the TTL from `PI_CACHE_RETENTION`. GPT-5.6 and later GPT-5 models
