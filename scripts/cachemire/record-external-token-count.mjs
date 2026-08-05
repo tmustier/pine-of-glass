@@ -3,8 +3,24 @@ import { appendFileSync, readFileSync } from "node:fs";
 
 function usage(message) {
   if (message) console.error(message);
-  console.error("usage: record-external-token-count.mjs --capture aggregate.jsonl --tokens N --source anthropic-count-tokens --counted-model MODEL [--request-id ID]");
+  console.error("usage: record-external-token-count.mjs --capture aggregate.jsonl --result exact-count.json [--request-id ID]");
   process.exit(message ? 1 : 0);
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function parseExactResult(path) {
+  const value = readJson(path);
+  const stringFields = ["provider", "api", "source", "model", "capturedPayloadSha256", "countRequestSha256"];
+  const digest = /^[0-9a-f]{64}$/;
+  if (!value || typeof value !== "object" || stringFields.some((key) => typeof value[key] !== "string") ||
+      !Number.isInteger(value.exactTokens) || value.exactTokens <= 0 ||
+      !digest.test(value.capturedPayloadSha256) || !digest.test(value.countRequestSha256)) {
+    throw new Error("result must be structured --exact --live --json output from check-provider-tokens.mjs");
+  }
+  return value;
 }
 
 const args = process.argv.slice(2);
@@ -15,15 +31,13 @@ for (let index = 0; index < args.length; index += 2) {
   if (key === "--help" || key === "-h") usage();
   if (value === undefined) usage(`missing value for ${key}`);
   if (key === "--capture") options.capture = value;
-  else if (key === "--tokens") options.tokens = Number(value);
-  else if (key === "--source") options.source = value;
+  else if (key === "--result") options.result = value;
   else if (key === "--request-id") options.requestId = value;
-  else if (key === "--counted-model") options.countedModel = value;
   else usage(`unknown option: ${key}`);
 }
-if (!options.capture || !Number.isInteger(options.tokens) || options.tokens <= 0 || !options.source || !options.countedModel) {
-  usage("capture, positive whole tokens, source, and counted model are required");
-}
+if (!options.capture || !options.result) usage("capture and result are required");
+
+const exact = parseExactResult(options.result);
 const records = readFileSync(options.capture, "utf8")
   .split("\n")
   .filter(Boolean)
@@ -34,9 +48,18 @@ const candidates = records.filter((record) => record.type === "request" &&
 if (candidates.length === 0) throw new Error("no matching unresolved request found");
 if (candidates.length > 1) throw new Error("more than one unresolved request; pass --request-id");
 const [request] = candidates;
-if (request.target?.model !== options.countedModel) {
-  throw new Error(`counted model does not match captured target model ${request.target?.model ?? "unknown"}`);
+const mismatches = [
+  ["provider", request.target?.provider, exact.provider],
+  ["API", request.target?.api, exact.api],
+  ["model", request.target?.model, exact.model],
+  ["captured payload", request.providerPayloadSha256, exact.capturedPayloadSha256],
+].filter(([, captured, counted]) => captured !== counted);
+if (mismatches.length > 0) {
+  throw new Error(mismatches.map(([field]) => `${field} does not match captured request`).join("; "));
 }
+const acceptedSource = exact.provider === "anthropic" && exact.api === "anthropic-messages" &&
+  exact.source === "anthropic-count-tokens";
+if (!acceptedSource) throw new Error("result source is not a supported exact-count route");
 const record = {
   schemaVersion: 1,
   type: "resolved",
@@ -47,10 +70,14 @@ const record = {
   strata: request.strata,
   requestId: request.requestId,
   target: request.target,
-  actualPromptTokens: options.tokens,
-  usage: { input: options.tokens, cacheRead: 0, cacheWrite: 0 },
-  exactSource: options.source,
-  countedModel: options.countedModel,
+  actualPromptTokens: exact.exactTokens,
+  usage: { input: exact.exactTokens, cacheRead: 0, cacheWrite: 0 },
+  exactSource: exact.source,
+  countedProvider: exact.provider,
+  countedApi: exact.api,
+  countedModel: exact.model,
+  capturedPayloadSha256: exact.capturedPayloadSha256,
+  countRequestSha256: exact.countRequestSha256,
 };
 appendFileSync(options.capture, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
-console.log(`recorded ${options.tokens} exact tokens for ${request.caseId}`);
+console.log(`recorded ${exact.exactTokens} exact tokens for ${request.caseId}`);

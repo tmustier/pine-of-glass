@@ -50,21 +50,49 @@ PI_TOKEN_ESTIMATOR_STRATA=component:system,direction:none \
   --model openai-codex/gpt-5.6-sol -p 'Reply only: hi. Do not think.'
 ```
 
-The capture contains aggregate components and exact response usage. It never contains
-prompt text or provider payloads. If a provider count endpoint supplies the exact count,
-append it to one unambiguous request with `record-external-token-count.mjs`. Pass the
-count endpoint's model through `--counted-model`. The helper rejects a model mismatch.
-Pass `--request-id` whenever the capture has more than one unresolved request.
+The aggregate capture contains components, response usage and a SHA-256 digest of each
+provider payload. It never contains prompt text or provider payloads.
 
-Build the committed aggregate dataset and analysis with:
+When using a provider count endpoint, load the sensitive payload capture under `/tmp`
+alongside the aggregate capture. Count the exact payload and save the structured result:
+
+```bash
+node scripts/contextimate/check-provider-tokens.mjs \
+  --payload /tmp/token-study/request.payloads.jsonl \
+  --exact --live --json > /tmp/token-study/exact-count.json
+
+node scripts/cachemire/record-external-token-count.mjs \
+  --capture /tmp/token-study/capture.jsonl \
+  --result /tmp/token-study/exact-count.json \
+  --request-id REQUEST_ID
+```
+
+The recorder rejects provider, API, model or payload-digest mismatches. Pass
+`--request-id` whenever the aggregate capture has more than one unresolved request.
+
+Build the aggregate dataset and analysis with:
 
 ```bash
 node scripts/cachemire/analyze-token-estimator-study.mjs \
   --input /tmp/token-study/capture.jsonl \
   --candidates scripts/cachemire/token-estimator-candidates.json \
+  --clusters scripts/cachemire/token-estimator-session-clusters.json \
   --dataset /tmp/token-study-data.json \
   --json /tmp/token-study-analysis.json \
   --markdown /tmp/token-study-summary.md
 ```
 
-Keep full provider payload captures under `/tmp`. Never commit them.
+The privacy-safe committed dataset is also a deterministic analyzer input:
+
+```bash
+node scripts/cachemire/analyze-token-estimator-study.mjs \
+  --input-dataset scripts/cachemire/token-estimator-study-data.json \
+  --candidates scripts/cachemire/token-estimator-candidates.json \
+  --clusters scripts/cachemire/token-estimator-session-clusters.json \
+  --dataset /tmp/token-study-data.json \
+  --json /tmp/token-study-analysis.json \
+  --markdown /tmp/token-study-summary.md
+```
+
+Keep full provider payload captures and structured live results under `/tmp`. Never
+commit them.

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -59,6 +59,15 @@ function enumValue<T extends string>(value: string | undefined, allowed: readonl
   return allowed.includes(value as T) ? value as T : fallback;
 }
 
+export function providerPayloadSha256(payload: unknown): string | undefined {
+  try {
+    const serialized = JSON.stringify(payload);
+    return serialized === undefined ? undefined : createHash("sha256").update(serialized).digest("hex");
+  } catch {
+    return undefined;
+  }
+}
+
 function metadata(): StudyMetadata {
   const runId = process.env.PI_TOKEN_ESTIMATOR_RUN_ID?.trim() || randomUUID();
   const caseId = process.env.PI_TOKEN_ESTIMATOR_CASE?.trim() || "unlabeled";
@@ -115,6 +124,8 @@ function requestRecord(
   canonical: CanonicalPromptMeasurement,
   provider: ProviderPromptMeasurement | undefined,
   currentProviderTokens: number | undefined,
+  providerPayloadHash: string | undefined,
+  compaction: boolean,
   requestOrdinal: number,
 ): object {
   return {
@@ -124,12 +135,13 @@ function requestRecord(
     ...meta,
     requestId,
     requestOrdinal,
-    compaction: false,
+    compaction,
     ...(selectionId === undefined ? {} : { selectionId }),
     target: { provider: target.provider, api: target.api, model: target.id },
     canonical,
     provider,
     currentProviderTokens,
+    ...(providerPayloadHash === undefined ? {} : { providerPayloadSha256: providerPayloadHash }),
   };
 }
 
@@ -158,6 +170,7 @@ export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
   let pendingRequest: PendingRequest | undefined;
   let pendingSelection: PendingSelection | undefined;
   let inCompaction = false;
+  let compacted = false;
   let recordSequence = 0;
   let requestOrdinal = 0;
   mkdirSync(dirname(outputPath), { recursive: true });
@@ -204,6 +217,13 @@ export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
 
   pi.on("session_compact", () => {
     inCompaction = false;
+    compacted = true;
+  });
+
+  pi.on("agent_start", () => {
+    // A cancelled or failed compaction has no completion event. The next agent run is
+    // the first boundary that proves subsequent provider traffic is conversational.
+    inCompaction = false;
   });
 
   pi.on("before_provider_request", (event, ctx) => {
@@ -233,6 +253,8 @@ export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
       canonical,
       provider,
       providerForecast?.tokens,
+      providerPayloadSha256(event.payload),
+      compacted,
       ++requestOrdinal,
     ));
   });

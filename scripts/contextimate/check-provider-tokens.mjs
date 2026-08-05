@@ -23,6 +23,7 @@
 // Usage:
 //   node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/<x>.payloads.jsonl
 //     [--provider anthropic|openai] [--tools read,bash] [--model <id>] [--live] [--json]
+import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -68,6 +69,10 @@ function selectTools(payloadTools, onlyNames) {
   return tools.filter((tool) => wanted.has(tool?.name ?? tool?.function?.name));
 }
 
+export function jsonSha256(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
 // ---------------------------------------------------------------------------------------
 // Request builders (pure; unit-tested). Sections pass through byte-identical.
 
@@ -76,7 +81,7 @@ export function buildAnthropicExactCountRequest(payload, options = {}) {
   if (!model) throw new Error("payload has no model; pass --model");
   if (!Array.isArray(payload.messages)) throw new Error("payload has no messages array");
   const body = { model, messages: payload.messages };
-  for (const key of ["system", "tools", "tool_choice", "thinking"]) {
+  for (const key of ["system", "tools", "tool_choice", "thinking", "output_config", "cache_control"]) {
     if (payload[key] !== undefined) body[key] = payload[key];
   }
   return { id: "exact", label: "exact captured prompt", body };
@@ -190,6 +195,8 @@ export const PROVIDERS = {
     detect: (kind) => kind === "anthropic",
     build: buildAnthropicCountRequests,
     exact: buildAnthropicExactCountRequest,
+    api: "anthropic-messages",
+    exactSource: "anthropic-count-tokens",
     cost: "free (count_tokens endpoint)",
     env: "ANTHROPIC_API_KEY",
     // Credential resolution: ANTHROPIC_API_KEY → x-api-key; otherwise pi's own OAuth
@@ -286,8 +293,9 @@ function parseArgs(argv) {
 const HELP = `check-provider-tokens — provider-exact token counts for a captured pi payload
 
   1. Capture a payload:  node scripts/contextimate/probe-live-prefix.mjs --output-dir /tmp/probe
-  2. Dry-run the plan:   node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl
-  3. Execute:            ... --live   (anthropic: free count_tokens; openai: tiny real cost)
+  2. Copy the single payload path printed by the probe
+  3. Dry-run the plan:   node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/CAPTURE.payloads.jsonl
+  4. Execute:            ... --live   (anthropic: free count_tokens; openai: tiny real cost)
 
 Options: --payload <file>  --provider anthropic|openai  --tools a,b  --model <id>  --live  --exact  --json
 
@@ -327,7 +335,15 @@ async function main() {
     process.stderr.write(`counted ${request.id}: ${counts[request.id]}\n`);
   }
   if (args.exact) {
-    const output = { provider: providerName, exactTokens: counts.exact, model: args.model ?? payload.model };
+    const output = {
+      provider: providerName,
+      api: provider.api,
+      source: provider.exactSource,
+      model: args.model ?? payload.model,
+      exactTokens: counts.exact,
+      capturedPayloadSha256: jsonSha256(payload),
+      countRequestSha256: jsonSha256(requests[0].body),
+    };
     console.log(args.json ? JSON.stringify(output, null, 2) : `provider-exact captured prompt: ${counts.exact} tokens (${providerName}, model ${output.model})`);
     return;
   }

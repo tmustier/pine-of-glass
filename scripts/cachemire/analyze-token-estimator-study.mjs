@@ -12,7 +12,7 @@ const BOOTSTRAP_SEED = 20260804;
 
 function usage(message) {
   if (message) console.error(message);
-  console.error("usage: analyze-token-estimator-study.mjs --input capture.jsonl [--input more.jsonl] --dataset rows.json --json report.json --markdown report.md [--candidates candidates.json]");
+  console.error("usage: analyze-token-estimator-study.mjs (--input capture.jsonl | --input-dataset rows.json) --dataset rows.json --json report.json --markdown report.md [--candidates candidates.json] [--clusters clusters.json]");
   process.exit(message ? 1 : 0);
 }
 
@@ -24,13 +24,16 @@ function parseArgs(argv) {
     const value = argv[++index];
     if (value === undefined) usage(`missing value for ${arg}`);
     if (arg === "--input") options.inputs.push(value);
+    else if (arg === "--input-dataset") options.datasetInput = value;
     else if (arg === "--dataset") options.dataset = value;
     else if (arg === "--json") options.json = value;
     else if (arg === "--markdown") options.markdown = value;
     else if (arg === "--candidates") options.candidates = value;
+    else if (arg === "--clusters") options.clusters = value;
     else usage(`unknown option: ${arg}`);
   }
-  if (options.inputs.length === 0 || !options.dataset || !options.json || !options.markdown) usage("missing required option");
+  const sourceCount = (options.inputs.length > 0 ? 1 : 0) + (options.datasetInput ? 1 : 0);
+  if (sourceCount !== 1 || !options.dataset || !options.json || !options.markdown) usage("choose one input source and all output paths");
   return options;
 }
 
@@ -102,10 +105,22 @@ function candidateDefinitions(path) {
   });
 }
 
-function flatSelectionEstimate(selection, request) {
+function sessionClusterDefinitions(path) {
+  if (!path) return {};
+  const parsed = readJson(path);
+  if (!parsed || typeof parsed !== "object" || !parsed.clusters || typeof parsed.clusters !== "object" ||
+      Array.isArray(parsed.clusters)) throw new Error("cluster config needs a clusters object");
+  for (const [run, cluster] of Object.entries(parsed.clusters)) {
+    if (run.length === 0 || typeof cluster !== "string" || cluster.length === 0) {
+      throw new Error("cluster config keys and values must be non-empty strings");
+    }
+  }
+  return parsed.clusters;
+}
+
+function flatSelectionEstimate(selection) {
   if (!selection) return undefined;
-  const toolChars = request.provider?.toolJsonChars ?? selection.toolChars ?? 0;
-  const chars = selection.systemChars + toolChars + selection.historyTextChars +
+  const chars = selection.systemChars + (selection.toolChars ?? 0) + selection.historyTextChars +
     selection.historyReasoningChars + selection.historyImageChars;
   return Math.ceil(chars / 4);
 }
@@ -132,7 +147,23 @@ function candidateEstimate(candidate, request) {
   return estimate;
 }
 
-function joinRecords(records, candidates) {
+function estimatesFor(request, candidates) {
+  return {
+    "B0-selection": flatSelectionEstimate(request.selection),
+    "B1-selection": request.selection?.totalTokens,
+    "B0-send": request.provider?.flatTokens ?? request.canonical?.flatTokens,
+    "B1-send": request.canonical?.totalTokens,
+    "P0-current-send": request.currentProviderTokens,
+    "C1-normalized-send": request.provider?.normalizedTokens,
+    ...Object.fromEntries(candidates.map((candidate) => [candidate.name, candidateEstimate(candidate, request)])),
+  };
+}
+
+function targetKey(target) {
+  return `${target.provider}/${target.api}/${target.model}`;
+}
+
+function joinRecords(records, candidates, clusters) {
   const requests = new Map();
   const selections = new Map();
   const resolutions = new Map();
@@ -140,14 +171,14 @@ function joinRecords(records, candidates) {
   const skipRecords = [];
   const skipCounts = {};
   const identityFailures = [];
+  const externalCountProvenanceFailures = [];
   for (const record of records) {
     if (record.type === "request") requests.set(record.requestId, record);
     else if (record.type === "selection") selections.set(record.selectionId, record);
     else if (record.type === "resolved") {
       if (resolutions.has(record.requestId)) duplicateResolutions++;
       resolutions.set(record.requestId, record);
-    }
-    else skipRecords.push(record);
+    } else skipRecords.push(record);
   }
   for (const record of skipRecords) {
     if (record.requestId && resolutions.has(record.requestId)) continue;
@@ -162,25 +193,27 @@ function joinRecords(records, candidates) {
       continue;
     }
     const externalCount = resolved.exactSource !== undefined;
-    if (externalCount && resolved.countedModel !== request.target.model) {
-      identityFailures.push(requestId);
-      continue;
-    }
+    const digest = /^[0-9a-f]{64}$/;
+    const externalCountBound = !externalCount || (
+      resolved.exactSource === "anthropic-count-tokens" &&
+      resolved.countedProvider === "anthropic" &&
+      resolved.countedProvider === request.target.provider &&
+      resolved.countedApi === request.target.api &&
+      resolved.countedModel === request.target.model &&
+      typeof request.providerPayloadSha256 === "string" &&
+      digest.test(request.providerPayloadSha256) &&
+      resolved.capturedPayloadSha256 === request.providerPayloadSha256 &&
+      typeof resolved.countRequestSha256 === "string" &&
+      digest.test(resolved.countRequestSha256)
+    );
+    if (!externalCountBound) externalCountProvenanceFailures.push({ requestId, target: targetKey(request.target) });
     const selection = request.selectionId ? selections.get(request.selectionId) : undefined;
     if (selection && !sameTarget(selection.target, request.target)) identityFailures.push(requestId);
     const userTurn = request.configuredTurn ?? request.requestOrdinal;
     const requestOrdinal = request.requestOrdinal ?? 1;
-    const estimates = {
-      "B0-selection": flatSelectionEstimate(selection?.canonical, request),
-      "B1-selection": selection?.canonical?.totalTokens,
-      "B0-send": request.provider?.flatTokens ?? request.canonical?.flatTokens,
-      "B1-send": request.canonical?.totalTokens,
-      "P0-current-send": request.currentProviderTokens,
-      "C1-normalized-send": request.provider?.normalizedTokens,
-    };
-    for (const candidate of candidates) estimates[candidate.name] = candidateEstimate(candidate, request);
-    rows.push({
+    const row = {
       studyRun: request.runId,
+      sessionCluster: clusters[request.runId] ?? request.runId,
       caseId: request.caseId,
       split: request.split,
       route: request.route,
@@ -192,16 +225,88 @@ function joinRecords(records, candidates) {
       target: request.target,
       actualPromptTokens: resolved.actualPromptTokens,
       exactSource: resolved.exactSource ?? "provider-response",
-      identityVerification: externalCount ? "count-endpoint-model" : "provider-response",
+      identityVerification: externalCount
+        ? (externalCountBound ? "count-endpoint-bound" : "count-endpoint-unverified")
+        : "provider-response",
       usage: resolved.usage,
       canonical: request.canonical,
       provider: request.provider,
       selection: selection?.canonical,
-      estimates,
-    });
+      currentProviderTokens: request.currentProviderTokens,
+      ...(request.providerPayloadSha256 === undefined ? {} : { providerPayloadSha256: request.providerPayloadSha256 }),
+      ...(externalCount ? {
+        countEvidence: {
+          provider: resolved.countedProvider,
+          api: resolved.countedApi,
+          model: resolved.countedModel,
+          capturedPayloadSha256: resolved.capturedPayloadSha256,
+          countRequestSha256: resolved.countRequestSha256,
+        },
+      } : {}),
+    };
+    rows.push({ ...row, estimates: estimatesFor(row, candidates) });
   }
   const unresolvedRequests = [...requests.keys()].filter((requestId) => !resolutions.has(requestId)).length;
-  return { rows, skipCounts, identityFailures, unresolvedRequests, duplicateResolutions };
+  return {
+    rows,
+    skipCounts,
+    identityFailures,
+    unresolvedRequests,
+    duplicateResolutions,
+    externalCountProvenanceFailures,
+    unrecordedSkipTargets: [],
+  };
+}
+
+function aggregateDataset(path, candidates, clusters) {
+  const parsed = readJson(path);
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.rows) ||
+      !parsed.captureAudit || typeof parsed.captureAudit !== "object") {
+    throw new Error("aggregate dataset needs rows and captureAudit");
+  }
+  const rows = parsed.rows.map((source) => {
+    const externalCount = source.exactSource !== "provider-response";
+    const digest = /^[0-9a-f]{64}$/;
+    const evidence = source.countEvidence;
+    const externalCountBound = !externalCount || (
+      source.exactSource === "anthropic-count-tokens" &&
+      source.target?.provider === "anthropic" &&
+      evidence?.provider === source.target.provider &&
+      evidence?.api === source.target.api &&
+      evidence?.model === source.target.model &&
+      typeof source.providerPayloadSha256 === "string" &&
+      digest.test(source.providerPayloadSha256) &&
+      evidence?.capturedPayloadSha256 === source.providerPayloadSha256 &&
+      typeof evidence?.countRequestSha256 === "string" &&
+      digest.test(evidence.countRequestSha256)
+    );
+    const identityVerification = externalCount
+      ? (externalCountBound ? "count-endpoint-bound" : "count-endpoint-unverified")
+      : "provider-response";
+    const row = {
+      ...source,
+      sessionCluster: clusters[source.studyRun] ?? source.sessionCluster ?? source.studyRun,
+      identityVerification,
+      currentProviderTokens: source.currentProviderTokens ?? source.estimates?.["P0-current-send"],
+    };
+    return { ...row, estimates: estimatesFor(row, candidates) };
+  });
+  const audit = parsed.captureAudit;
+  const count = (value) => Number.isInteger(value) && value >= 0 ? value : 0;
+  const externalCountProvenanceFailures = rows
+    .filter((row) => row.exactSource !== "provider-response" && row.identityVerification !== "count-endpoint-bound")
+    .map((row, index) => ({ requestId: `aggregate-row-${index + 1}`, target: targetKey(row.target) }));
+  return {
+    rows,
+    skipCounts: audit.skipCounts && typeof audit.skipCounts === "object" ? audit.skipCounts : {},
+    identityFailures: Array.from({ length: count(audit.identityFailures) }),
+    unresolvedRequests: count(audit.unresolvedRequests),
+    duplicateResolutions: count(audit.duplicateResolutions),
+    externalCountProvenanceFailures,
+    unrecordedSkipTargets: Array.isArray(audit.unrecordedSkipTargets)
+      ? audit.unrecordedSkipTargets.filter((value) => typeof value === "string")
+      : [],
+  };
 }
 
 function mean(values) {
@@ -224,7 +329,7 @@ function sizeBand(tokens) {
   return "50k-plus";
 }
 
-function estimateMetrics(rows, estimator, suppressPercentages = false) {
+function estimateMetrics(rows, estimator) {
   const comparable = rows.filter((row) => Number.isFinite(row.estimates[estimator]) && row.actualPromptTokens > 0);
   if (comparable.length === 0) return undefined;
   const errors = comparable.map((row) => row.estimates[estimator] - row.actualPromptTokens);
@@ -236,11 +341,12 @@ function estimateMetrics(rows, estimator, suppressPercentages = false) {
   return {
     requests: comparable.length,
     studyRuns: new Set(comparable.map((row) => row.studyRun)).size,
+    sessionClusters: new Set(comparable.map((row) => row.sessionCluster)).size,
     signedMeanTokens: mean(errors),
     meanAbsoluteTokens: mean(absoluteErrors),
     medianAbsoluteTokens: quantile(absoluteErrors, 0.5),
     rawAbsoluteErrors: comparable.length < 3 ? absoluteErrors : undefined,
-    ...(suppressPercentages ? {} : {
+    ...(comparable.length < 3 ? {} : {
       signedMeanPercent: mean(percentages),
       meanAbsolutePercent: mean(absolutePercentages),
       medianAbsolutePercent: quantile(absolutePercentages, 0.5),
@@ -269,20 +375,29 @@ function randomGenerator(seed) {
 
 function bootstrapImprovement(rows, simple, complex) {
   const comparable = rows.filter((row) => Number.isFinite(row.estimates[simple]) && Number.isFinite(row.estimates[complex]));
-  const clusters = [...Map.groupBy(comparable, (row) => row.studyRun).values()];
-  if (clusters.length < 2) return undefined;
+  const clusters = [...Map.groupBy(comparable, (row) => row.sessionCluster).values()];
+  if (comparable.length < 3 || clusters.length < 2) return undefined;
+  const improvement = (row) => {
+    const simpleError = Math.abs(row.estimates[simple] - row.actualPromptTokens) / row.actualPromptTokens * 100;
+    const complexError = Math.abs(row.estimates[complex] - row.actualPromptTokens) / row.actualPromptTokens * 100;
+    return simpleError - complexError;
+  };
   const random = randomGenerator(BOOTSTRAP_SEED);
   const values = [];
   for (let iteration = 0; iteration < BOOTSTRAP_SAMPLES; iteration++) {
     const sampled = [];
     for (let index = 0; index < clusters.length; index++) sampled.push(...clusters[Math.floor(random() * clusters.length)]);
-    values.push(mean(sampled.map((row) => {
-      const simpleError = Math.abs(row.estimates[simple] - row.actualPromptTokens) / row.actualPromptTokens * 100;
-      const complexError = Math.abs(row.estimates[complex] - row.actualPromptTokens) / row.actualPromptTokens * 100;
-      return simpleError - complexError;
-    })));
+    values.push(mean(sampled.map(improvement)));
   }
-  return { lower: quantile(values, 0.025), upper: quantile(values, 0.975), samples: BOOTSTRAP_SAMPLES, seed: BOOTSTRAP_SEED };
+  return {
+    mean: mean(comparable.map(improvement)),
+    lower: quantile(values, 0.025),
+    upper: quantile(values, 0.975),
+    requests: comparable.length,
+    sessionClusters: clusters.length,
+    samples: BOOTSTRAP_SAMPLES,
+    seed: BOOTSTRAP_SEED,
+  };
 }
 
 function groupDefinitions(rows) {
@@ -322,7 +437,7 @@ function summarize(rows, estimatorNames) {
   return groupDefinitions(rows).map((group) => {
     const metrics = Object.fromEntries(estimatorNames.map((name) => [
       name,
-      estimateMetrics(group.rows, name, group.rows.length < 3),
+      estimateMetrics(group.rows, name),
     ]));
     const comparisons = {};
     const pairs = [
@@ -330,6 +445,7 @@ function summarize(rows, estimatorNames) {
       ["B0-send", "B1-send"],
       ["B1-send", "C1-normalized-send"],
       ["B1-send", "P0-current-send"],
+      ["B1-selection", "P0-current-send"],
     ];
     for (const name of estimatorNames.filter((name) => ![
       "B0-selection", "B1-selection", "B0-send", "B1-send", "P0-current-send", "C1-normalized-send",
@@ -367,11 +483,14 @@ function acceptanceSummary(groups, validation) {
         if (metrics.medianAbsolutePercent > limits.medianAbsolutePercent) failures.push("median");
         if (metrics.p95AbsolutePercent > limits.p95AbsolutePercent) failures.push("p95");
         if (populatedDirections.some((item) => item.metrics.meanAbsolutePercent > limits.directionMapePercent)) failures.push("direction");
-        if (metrics.requests < 12 || metrics.studyRuns < 6) failures.push("coverage");
+        if (metrics.requests < 12 || metrics.sessionClusters < 6) failures.push("coverage");
+        const target = group.value.slice("holdout / direct / ".length);
+        if ((validation.externalCountProvenanceFailuresByTarget[target] ?? 0) > 0) failures.push("provenance");
+        if (validation.unrecordedSkipTargets.includes(target)) failures.push("skip-accounting");
         if (validation.identityFailures > 0 || validation.unresolvedRequests > 0 ||
             validation.duplicateResolutions > 0 || validation.privacyViolations.length > 0) failures.push("validation");
         summaries.push({
-          target: group.value.slice("holdout / direct / ".length),
+          target,
           phase,
           estimator,
           acceptable: failures.length === 0,
@@ -393,8 +512,9 @@ function markdownReport(report) {
   const lines = [
     "# Token estimator study analysis",
     "",
-    `Dataset: ${report.dataset.requests} resolved requests across ${report.dataset.studyRuns} study runs.`,
+    `Dataset: ${report.dataset.requests} resolved requests across ${report.dataset.sessionClusters} session clusters.`,
     `Identity failures: ${report.validation.identityFailures}; unresolved requests: ${report.validation.unresolvedRequests}; duplicate resolutions: ${report.validation.duplicateResolutions}; privacy violations: ${report.validation.privacyViolations.length}; split failures: ${report.validation.splitFailures.length}.`,
+    `Identity evidence: ${report.validation.responseIdentityVerified} provider responses; ${report.validation.countEndpointBoundVerified} payload-bound count-endpoint rows; ${report.validation.countEndpointUnverified} unverified count-endpoint rows.`,
     "",
     "## Primary metrics",
     "",
@@ -408,25 +528,58 @@ function markdownReport(report) {
       lines.push(`| ${group.value} | ${name} | ${metrics.requests} | ${fixed(metrics.signedMeanPercent)}% | ${fixed(metrics.meanAbsolutePercent)}% | ${fixed(metrics.medianAbsolutePercent)}% | ${fixed(metrics.p95AbsolutePercent)}% | ${fixed(metrics.within10Percent)}% | ${fixed(metrics.wrong10kBand)}% |`);
     }
   }
+  lines.push(
+    "",
+    "## Paired holdout comparisons",
+    "",
+    "Positive mean improvement means the second estimator has lower absolute percentage error.",
+    "",
+    "| Split / route / target | Comparison | n | Session clusters | Mean improvement | 95% bootstrap interval |",
+    "|---|---|---:|---:|---:|---:|",
+  );
+  for (const group of report.groups.filter((item) =>
+    item.dimension === "split-route-target" && item.value.startsWith("holdout / ")
+  )) {
+    for (const [name, comparison] of Object.entries(group.comparisons)) {
+      if (!comparison) continue;
+      lines.push(`| ${group.value} | ${name} | ${comparison.requests} | ${comparison.sessionClusters} | ${fixed(comparison.mean, 2)} points | ${fixed(comparison.lower, 2)} to ${fixed(comparison.upper, 2)} |`);
+    }
+  }
+  lines.push(
+    "",
+    "## Formal acceptance",
+    "",
+    "| Target | Phase | Estimator | n | Session clusters | Acceptable | Failures |",
+    "|---|---|---|---:|---:|---|---|",
+  );
+  for (const summary of report.acceptance.summaries) {
+    lines.push(`| ${summary.target} | ${summary.phase} | ${summary.estimator} | ${summary.metrics.requests} | ${summary.metrics.sessionClusters} | ${summary.acceptable ? "yes" : "no"} | ${summary.failures.join(", ") || "none"} |`);
+  }
   lines.push("", "## Coverage", "");
   for (const [key, value] of Object.entries(report.coverage)) lines.push(`- ${key}: ${value}`);
-  lines.push("", "## Capture exclusions", "");
+  lines.push("", "## Capture exclusions and gaps", "");
   const skips = Object.entries(report.validation.skipCounts);
-  if (skips.length === 0) lines.push("- None recorded.");
+  if (skips.length === 0) lines.push("- No skip records.");
   else for (const [key, value] of skips) lines.push(`- ${key}: ${value}`);
+  for (const target of report.validation.unrecordedSkipTargets) {
+    lines.push(`- Unrecorded skip accounting: ${target}`);
+  }
   lines.push("", "Full split, route, size, turn, reasoning, image and declared-stratum metrics are in the JSON report.", "");
   return lines.join("\n");
 }
 
 const options = parseArgs(process.argv.slice(2));
-const records = readJsonl(options.inputs);
 const candidates = candidateDefinitions(options.candidates);
-const joined = joinRecords(records, candidates);
+const clusters = sessionClusterDefinitions(options.clusters);
+const joined = options.datasetInput
+  ? aggregateDataset(options.datasetInput, candidates, clusters)
+  : joinRecords(readJsonl(options.inputs), candidates, clusters);
 const violations = privacyViolations({ candidates, rows: joined.rows });
 const runs = Map.groupBy(joined.rows, (row) => row.studyRun);
-const splitFailures = [...runs.entries()]
+const sessionClusters = Map.groupBy(joined.rows, (row) => row.sessionCluster);
+const splitFailures = [...sessionClusters.entries()]
   .filter(([, rows]) => new Set(rows.map((row) => row.split)).size > 1)
-  .map(([run]) => run);
+  .map(([cluster]) => cluster);
 const estimatorNames = [
   "B0-selection",
   "B1-selection",
@@ -437,25 +590,40 @@ const estimatorNames = [
   ...candidates.map((item) => item.name),
 ];
 const dataset = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   bootstrap: { samples: BOOTSTRAP_SAMPLES, seed: BOOTSTRAP_SEED },
   candidates,
+  captureAudit: {
+    identityFailures: joined.identityFailures.length,
+    unresolvedRequests: joined.unresolvedRequests,
+    duplicateResolutions: joined.duplicateResolutions,
+    skipCounts: joined.skipCounts,
+    unrecordedSkipTargets: joined.unrecordedSkipTargets,
+  },
   rows: joined.rows,
 };
 const groups = summarize(joined.rows, estimatorNames);
+const externalCountProvenanceFailuresByTarget = Object.fromEntries(
+  [...Map.groupBy(joined.externalCountProvenanceFailures, (failure) => failure.target)]
+    .map(([target, failures]) => [target, failures.length]),
+);
 const validation = {
   identityFailures: joined.identityFailures.length,
   responseIdentityVerified: joined.rows.filter((row) => row.identityVerification === "provider-response").length,
-  countEndpointIdentityVerified: joined.rows.filter((row) => row.identityVerification === "count-endpoint-model").length,
+  countEndpointBoundVerified: joined.rows.filter((row) => row.identityVerification === "count-endpoint-bound").length,
+  countEndpointUnverified: joined.rows.filter((row) => row.identityVerification === "count-endpoint-unverified").length,
+  externalCountProvenanceFailures: joined.externalCountProvenanceFailures.length,
+  externalCountProvenanceFailuresByTarget,
   unresolvedRequests: joined.unresolvedRequests,
   duplicateResolutions: joined.duplicateResolutions,
   privacyViolations: violations,
   splitFailures,
   skipCounts: joined.skipCounts,
+  unrecordedSkipTargets: joined.unrecordedSkipTargets,
 };
 const report = {
-  schemaVersion: 1,
-  dataset: { requests: joined.rows.length, studyRuns: runs.size },
+  schemaVersion: 2,
+  dataset: { requests: joined.rows.length, studyRuns: runs.size, sessionClusters: sessionClusters.size },
   validation,
   coverage: {
     "direct development": joined.rows.filter((row) => row.route === "direct" && row.split === "development").length,
@@ -470,4 +638,4 @@ const report = {
 writeFileSync(options.dataset, `${JSON.stringify(dataset, null, 2)}\n`);
 writeFileSync(options.json, `${JSON.stringify(report, null, 2)}\n`);
 writeFileSync(options.markdown, markdownReport(report));
-console.log(`analyzed ${joined.rows.length} resolved requests from ${runs.size} study runs`);
+console.log(`analyzed ${joined.rows.length} resolved requests from ${sessionClusters.size} session clusters`);

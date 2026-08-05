@@ -79,6 +79,34 @@ test("Anthropic provider measurement counts injected system text and signed reas
   assert.ok(measured.messageJsonChars < 10_000);
 });
 
+test("Pi-message provider measurement uses Pi tool-call and reasoning block shapes", () => {
+  const call = { id: "tool-1", name: "read", arguments: { path: "x" } };
+  const measured = measureProviderPrompt({
+    context: {
+      systemPrompt: "system",
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "thoughts", thinkingSignature: "signature" },
+            { type: "toolCall", ...call, thoughtSignature: "tool-signature" },
+          ],
+        },
+        { role: "toolResult", content: [{ type: "text", text: "result" }, { type: "image", data: "large-base64" }] },
+      ],
+      tools: [],
+    },
+  }, { provider: "radius", api: "pi-messages", id: "gpt-5.6-sol" });
+  assert.ok(measured);
+  assert.equal(measured.shape, "pi-messages");
+  assert.equal(measured.toolCallChars, safeMinifiedJson(call).length);
+  assert.equal(measured.toolResultChars, 6);
+  assert.equal(measured.readableReasoningChars, 8);
+  assert.equal(measured.opaqueReasoningChars, 9 + 14);
+  assert.equal(measured.retainedReasoningChars, 9 + 14);
+  assert.equal(measured.imageCount, 1);
+});
+
 test("unknown payload shapes are not guessed", () => {
   assert.equal(measureProviderPrompt({ prompt: "text" }, openAITarget), undefined);
 });

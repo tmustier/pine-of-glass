@@ -117,7 +117,7 @@ function safeRole(value: string | undefined): string {
 function safeBlockType(value: string | undefined): string {
   const known = [
     "message", "text", "input_text", "output_text", "input_image", "image", "document",
-    "reasoning", "thinking", "redacted_thinking", "tool_use", "tool_result",
+    "reasoning", "thinking", "redacted_thinking", "toolCall", "tool_use", "tool_result",
     "function_call", "function_call_output", "refusal", "other",
   ];
   return value !== undefined && known.includes(value) ? value : "other";
@@ -263,20 +263,43 @@ function measureAnthropicHistory(messages: unknown): MutableHistoryMeasurement {
   return history;
 }
 
+function measurePiContent(history: MutableHistoryMeasurement, content: unknown, toolResult = false): void {
+  if (typeof content === "string") {
+    if (toolResult) history.toolResultChars += content.length;
+    else history.textChars += content.length;
+    return;
+  }
+  for (const block of objectList(content)) {
+    const type = stringField(block, "type") ?? "";
+    bump(history.blockCounts, safeBlockType(type));
+    if (type === "text") {
+      const chars = stringField(block, "text")?.length ?? 0;
+      if (toolResult) history.toolResultChars += chars;
+      else history.textChars += chars;
+    } else if (type === "thinking") {
+      const readable = stringField(block, "thinking")?.length ?? 0;
+      const opaque = stringField(block, "thinkingSignature")?.length ?? 0;
+      history.readableReasoningChars += readable;
+      history.opaqueReasoningChars += opaque;
+      history.retainedReasoningChars += opaque > 0 ? opaque : readable;
+    } else if (type === "toolCall") {
+      history.toolCallChars += toolCallChars(block.id, block.name, block.arguments);
+      const opaque = stringField(block, "thoughtSignature")?.length ?? 0;
+      history.opaqueReasoningChars += opaque;
+      history.retainedReasoningChars += opaque;
+    } else if (type === "image") {
+      countImage(history);
+    }
+  }
+}
+
 function measurePiHistory(messages: unknown): MutableHistoryMeasurement {
   const history = emptyHistoryMeasurement();
   for (const message of objectList(messages)) {
     history.messageCount++;
     const role = stringField(message, "role");
     bump(history.roleCounts, safeRole(role));
-    const content = message.content;
-    if (role === "assistant") {
-      measureAnthropicContent(history, content);
-    } else if (role === "toolResult") {
-      measureAnthropicContent(history, content, true);
-    } else {
-      measureAnthropicContent(history, content);
-    }
+    measurePiContent(history, message.content, role === "toolResult");
   }
   return history;
 }

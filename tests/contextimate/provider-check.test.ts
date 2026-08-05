@@ -12,6 +12,7 @@ import {
   buildAnthropicCountRequests,
   buildOpenAIResponsesProbes,
   computeToolOverhead,
+  jsonSha256,
   summarizeCounts,
   suggestDenominators,
   PROVIDERS,
@@ -65,6 +66,7 @@ test("anthropic exact count preserves the complete captured prompt and accepted 
     tool_choice: { type: "auto" },
     thinking: { type: "enabled", budget_tokens: 1024 },
     output_config: { effort: "high" },
+    cache_control: { type: "ephemeral" },
   };
   const request = buildAnthropicExactCountRequest(payload);
   assert.equal(request.id, "exact");
@@ -73,8 +75,11 @@ test("anthropic exact count preserves the complete captured prompt and accepted 
   assert.equal(request.body.tools, payload.tools);
   assert.equal(request.body.tool_choice, payload.tool_choice);
   assert.equal(request.body.thinking, payload.thinking);
-  assert.equal(request.body.output_config, undefined);
+  assert.equal(request.body.output_config, payload.output_config);
+  assert.equal(request.body.cache_control, payload.cache_control);
   assert.equal(request.body.max_tokens, undefined);
+  assert.match(jsonSha256(payload), /^[0-9a-f]{64}$/);
+  assert.equal(jsonSha256(payload), jsonSha256({ ...payload }));
 });
 
 test("tool limiting and model override", () => {

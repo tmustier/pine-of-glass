@@ -15,6 +15,8 @@ export interface CountRequest {
     input?: unknown[];
     max_tokens?: number;
     max_output_tokens?: number;
+    output_config?: unknown;
+    cache_control?: unknown;
     store?: boolean;
   };
 }
@@ -49,6 +51,8 @@ export interface ProviderEntry {
   detect(kind: PayloadKind | undefined): boolean;
   build(payload: Record<string, unknown>, options?: BuildOptions): CountRequest[];
   exact?: (payload: Record<string, unknown>, options?: BuildOptions) => CountRequest;
+  api?: string;
+  exactSource?: string;
   cost: string;
   env: string;
   resolveCredential(): { apiKey?: string; oauthToken?: string } | undefined;
@@ -57,6 +61,7 @@ export interface ProviderEntry {
 }
 
 export function detectPayloadKind(payload: unknown): PayloadKind | undefined;
+export function jsonSha256(value: unknown): string;
 export function parsePayloadFile(text: string): { kind: PayloadKind; payload: Record<string, unknown> };
 export function buildAnthropicExactCountRequest(payload: Record<string, unknown>, options?: BuildOptions): CountRequest;
 export function buildAnthropicCountRequests(payload: Record<string, unknown>, options?: BuildOptions): CountRequest[];

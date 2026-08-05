@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "bootstrap": {
     "samples": 4000,
     "seed": 20260804
@@ -15,6 +15,15 @@
       "mechanism": "toolBlockTokens"
     }
   ],
+  "captureAudit": {
+    "identityFailures": 0,
+    "unresolvedRequests": 0,
+    "duplicateResolutions": 0,
+    "skipCounts": {},
+    "unrecordedSkipTargets": [
+      "anthropic/anthropic-messages/claude-fable-5"
+    ]
+  },
   "rows": [
     {
       "studyRun": "openai-dev-baseline",
@@ -96,7 +105,9 @@
         "B1-send": 249,
         "P0-current-send": 264,
         "C1-normalized-send": 249
-      }
+      },
+      "sessionCluster": "openai-dev-baseline",
+      "currentProviderTokens": 264
     },
     {
       "studyRun": "openai-dev-prose-short",
@@ -178,7 +189,9 @@
         "B1-send": 542,
         "P0-current-send": 557,
         "C1-normalized-send": 542
-      }
+      },
+      "sessionCluster": "openai-dev-prose-short",
+      "currentProviderTokens": 557
     },
     {
       "studyRun": "openai-dev-prose-long",
@@ -260,7 +273,9 @@
         "B1-send": 11472,
         "P0-current-send": 11487,
         "C1-normalized-send": 11472
-      }
+      },
+      "sessionCluster": "openai-dev-prose-long",
+      "currentProviderTokens": 11487
     },
     {
       "studyRun": "openai-dev-dense-short",
@@ -342,7 +357,9 @@
         "B1-send": 424,
         "P0-current-send": 439,
         "C1-normalized-send": 424
-      }
+      },
+      "sessionCluster": "openai-dev-dense-short",
+      "currentProviderTokens": 439
     },
     {
       "studyRun": "openai-dev-dense-long",
@@ -424,7 +441,9 @@
         "B1-send": 16400,
         "P0-current-send": 16415,
         "C1-normalized-send": 16400
-      }
+      },
+      "sessionCluster": "openai-dev-dense-long",
+      "currentProviderTokens": 16415
     },
     {
       "studyRun": "openai-dev-tool-one",
@@ -506,7 +525,9 @@
         "B1-send": 352,
         "P0-current-send": 389,
         "C1-normalized-send": 352
-      }
+      },
+      "sessionCluster": "openai-dev-tool-one",
+      "currentProviderTokens": 389
     },
     {
       "studyRun": "openai-dev-tool-four",
@@ -588,7 +609,9 @@
         "B1-send": 631,
         "P0-current-send": 782,
         "C1-normalized-send": 631
-      }
+      },
+      "sessionCluster": "openai-dev-tool-four",
+      "currentProviderTokens": 782
     },
     {
       "studyRun": "anthropic-dev-baseline",
@@ -670,7 +693,9 @@
         "P0-current-send": 492,
         "C1-normalized-send": 405,
         "C2-anthropic-tool-block": 405
-      }
+      },
+      "sessionCluster": "anthropic-dev-baseline",
+      "currentProviderTokens": 492
     },
     {
       "studyRun": "anthropic-dev-prose-short",
@@ -752,7 +777,9 @@
         "P0-current-send": 947,
         "C1-normalized-send": 856,
         "C2-anthropic-tool-block": 856
-      }
+      },
+      "sessionCluster": "anthropic-dev-prose-short",
+      "currentProviderTokens": 947
     },
     {
       "studyRun": "anthropic-dev-prose-long",
@@ -834,7 +861,9 @@
         "P0-current-send": 17986,
         "C1-normalized-send": 17671,
         "C2-anthropic-tool-block": 17671
-      }
+      },
+      "sessionCluster": "anthropic-dev-prose-long",
+      "currentProviderTokens": 17986
     },
     {
       "studyRun": "anthropic-dev-dense-short",
@@ -916,7 +945,9 @@
         "P0-current-send": 817,
         "C1-normalized-send": 674,
         "C2-anthropic-tool-block": 674
-      }
+      },
+      "sessionCluster": "anthropic-dev-dense-short",
+      "currentProviderTokens": 817
     },
     {
       "studyRun": "anthropic-dev-dense-long",
@@ -998,7 +1029,9 @@
         "P0-current-send": 29832,
         "C1-normalized-send": 25252,
         "C2-anthropic-tool-block": 25252
-      }
+      },
+      "sessionCluster": "anthropic-dev-dense-long",
+      "currentProviderTokens": 29832
     },
     {
       "studyRun": "anthropic-dev-tool-one",
@@ -1080,7 +1113,9 @@
         "P0-current-send": 771,
         "C1-normalized-send": 658,
         "C2-anthropic-tool-block": 948
-      }
+      },
+      "sessionCluster": "anthropic-dev-tool-one",
+      "currentProviderTokens": 771
     },
     {
       "studyRun": "anthropic-dev-tool-four",
@@ -1162,7 +1197,9 @@
         "P0-current-send": 1599,
         "C1-normalized-send": 1453,
         "C2-anthropic-tool-block": 1743
-      }
+      },
+      "sessionCluster": "anthropic-dev-tool-four",
+      "currentProviderTokens": 1599
     },
     {
       "studyRun": "openai-dev-growing",
@@ -1243,7 +1280,9 @@
         "B1-send": 249,
         "P0-current-send": 264,
         "C1-normalized-send": 249
-      }
+      },
+      "sessionCluster": "openai-dev-growing",
+      "currentProviderTokens": 264
     },
     {
       "studyRun": "openai-dev-growing",
@@ -1326,7 +1365,9 @@
         "B1-send": 256,
         "P0-current-send": 338,
         "C1-normalized-send": 256
-      }
+      },
+      "sessionCluster": "openai-dev-growing",
+      "currentProviderTokens": 338
     },
     {
       "studyRun": "openai-dev-growing",
@@ -1409,7 +1450,9 @@
         "B1-send": 264,
         "P0-current-send": 412,
         "C1-normalized-send": 264
-      }
+      },
+      "sessionCluster": "openai-dev-growing",
+      "currentProviderTokens": 412
     },
     {
       "studyRun": "openai-dev-growing",
@@ -1492,7 +1535,9 @@
         "B1-send": 272,
         "P0-current-send": 487,
         "C1-normalized-send": 272
-      }
+      },
+      "sessionCluster": "openai-dev-growing",
+      "currentProviderTokens": 487
     },
     {
       "studyRun": "openai-dev-tool-history",
@@ -1573,7 +1618,9 @@
         "B1-send": 362,
         "P0-current-send": 399,
         "C1-normalized-send": 362
-      }
+      },
+      "sessionCluster": "openai-dev-tool-history",
+      "currentProviderTokens": 399
     },
     {
       "studyRun": "openai-dev-tool-history",
@@ -1656,7 +1703,9 @@
         "B1-send": 952,
         "P0-current-send": 1082,
         "C1-normalized-send": 939
-      }
+      },
+      "sessionCluster": "openai-dev-tool-history",
+      "currentProviderTokens": 1082
     },
     {
       "studyRun": "openai-dev-reasoning",
@@ -1737,7 +1786,9 @@
         "B1-send": 257,
         "P0-current-send": 272,
         "C1-normalized-send": 257
-      }
+      },
+      "sessionCluster": "openai-dev-reasoning",
+      "currentProviderTokens": 272
     },
     {
       "studyRun": "openai-dev-reasoning",
@@ -1820,7 +1871,9 @@
         "B1-send": 265,
         "P0-current-send": 347,
         "C1-normalized-send": 265
-      }
+      },
+      "sessionCluster": "openai-dev-reasoning",
+      "currentProviderTokens": 347
     },
     {
       "studyRun": "openai-dev-image-small",
@@ -1902,7 +1955,9 @@
         "B1-send": 1464,
         "P0-current-send": 1494,
         "C1-normalized-send": 1464
-      }
+      },
+      "sessionCluster": "openai-dev-image-small",
+      "currentProviderTokens": 1494
     },
     {
       "studyRun": "openai-dev-image-ordinary",
@@ -1984,7 +2039,9 @@
         "B1-send": 1465,
         "P0-current-send": 1495,
         "C1-normalized-send": 1465
-      }
+      },
+      "sessionCluster": "openai-dev-image-ordinary",
+      "currentProviderTokens": 1495
     },
     {
       "studyRun": "openai-dev-reasoning-high",
@@ -2065,7 +2122,9 @@
         "B1-send": 261,
         "P0-current-send": 276,
         "C1-normalized-send": 261
-      }
+      },
+      "sessionCluster": "openai-dev-reasoning-high",
+      "currentProviderTokens": 276
     },
     {
       "studyRun": "openai-dev-reasoning-high",
@@ -2149,7 +2208,9 @@
         "B1-send": 721,
         "P0-current-send": 803,
         "C1-normalized-send": 670
-      }
+      },
+      "sessionCluster": "openai-dev-reasoning-high",
+      "currentProviderTokens": 803
     },
     {
       "studyRun": "anthropic-dev-growing",
@@ -2230,7 +2291,9 @@
         "P0-current-send": 492,
         "C1-normalized-send": 405,
         "C2-anthropic-tool-block": 405
-      }
+      },
+      "sessionCluster": "anthropic-dev-growing",
+      "currentProviderTokens": 492
     },
     {
       "studyRun": "anthropic-dev-growing",
@@ -2312,7 +2375,9 @@
         "P0-current-send": 547,
         "C1-normalized-send": 417,
         "C2-anthropic-tool-block": 417
-      }
+      },
+      "sessionCluster": "anthropic-dev-growing",
+      "currentProviderTokens": 547
     },
     {
       "studyRun": "anthropic-dev-growing",
@@ -2394,7 +2459,9 @@
         "P0-current-send": 603,
         "C1-normalized-send": 428,
         "C2-anthropic-tool-block": 428
-      }
+      },
+      "sessionCluster": "anthropic-dev-growing",
+      "currentProviderTokens": 603
     },
     {
       "studyRun": "anthropic-dev-growing",
@@ -2476,7 +2543,9 @@
         "P0-current-send": 658,
         "C1-normalized-send": 440,
         "C2-anthropic-tool-block": 440
-      }
+      },
+      "sessionCluster": "anthropic-dev-growing",
+      "currentProviderTokens": 658
     },
     {
       "studyRun": "anthropic-dev-tool-history",
@@ -2557,7 +2626,9 @@
         "P0-current-send": 786,
         "C1-normalized-send": 673,
         "C2-anthropic-tool-block": 963
-      }
+      },
+      "sessionCluster": "anthropic-dev-tool-history",
+      "currentProviderTokens": 786
     },
     {
       "studyRun": "anthropic-dev-tool-history",
@@ -2641,7 +2712,9 @@
         "P0-current-send": 1835,
         "C1-normalized-send": 1561,
         "C2-anthropic-tool-block": 1851
-      }
+      },
+      "sessionCluster": "anthropic-dev-tool-history",
+      "currentProviderTokens": 1835
     },
     {
       "studyRun": "anthropic-dev-reasoning",
@@ -2722,7 +2795,9 @@
         "P0-current-send": 505,
         "C1-normalized-send": 417,
         "C2-anthropic-tool-block": 417
-      }
+      },
+      "sessionCluster": "anthropic-dev-reasoning",
+      "currentProviderTokens": 505
     },
     {
       "studyRun": "anthropic-dev-reasoning",
@@ -2805,7 +2880,9 @@
         "P0-current-send": 714,
         "C1-normalized-send": 563,
         "C2-anthropic-tool-block": 563
-      }
+      },
+      "sessionCluster": "anthropic-dev-reasoning",
+      "currentProviderTokens": 714
     },
     {
       "studyRun": "anthropic-dev-image-small",
@@ -2887,7 +2964,9 @@
         "P0-current-send": 2394,
         "C1-normalized-send": 2275,
         "C2-anthropic-tool-block": 2275
-      }
+      },
+      "sessionCluster": "anthropic-dev-image-small",
+      "currentProviderTokens": 2394
     },
     {
       "studyRun": "anthropic-dev-image-ordinary",
@@ -2969,7 +3048,9 @@
         "P0-current-send": 2395,
         "C1-normalized-send": 2276,
         "C2-anthropic-tool-block": 2276
-      }
+      },
+      "sessionCluster": "anthropic-dev-image-ordinary",
+      "currentProviderTokens": 2395
     },
     {
       "studyRun": "openai-holdout-natural-a",
@@ -3061,13 +3142,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9196,
+        "B0-selection": 9160,
         "B1-selection": 8867,
         "B0-send": 9203,
         "B1-send": 8875,
         "P0-current-send": 9026,
         "C1-normalized-send": 8875
-      }
+      },
+      "sessionCluster": "openai-holdout-natural-ancestor",
+      "currentProviderTokens": 9026
     },
     {
       "studyRun": "openai-holdout-natural-a",
@@ -3161,13 +3244,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9204,
+        "B0-selection": 9168,
         "B1-selection": 8875,
         "B0-send": 9211,
         "B1-send": 8883,
         "P0-current-send": 9101,
         "C1-normalized-send": 8883
-      }
+      },
+      "sessionCluster": "openai-holdout-natural-ancestor",
+      "currentProviderTokens": 9101
     },
     {
       "studyRun": "openai-holdout-natural-b",
@@ -3259,13 +3344,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9196,
+        "B0-selection": 9160,
         "B1-selection": 8867,
         "B0-send": 9207,
         "B1-send": 8879,
         "P0-current-send": 9030,
         "C1-normalized-send": 8879
-      }
+      },
+      "sessionCluster": "openai-holdout-natural-ancestor",
+      "currentProviderTokens": 9030
     },
     {
       "studyRun": "openai-holdout-natural-b",
@@ -3359,13 +3446,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9208,
+        "B0-selection": 9172,
         "B1-selection": 8880,
         "B0-send": 9220,
         "B1-send": 8892,
         "P0-current-send": 9109,
         "C1-normalized-send": 8892
-      }
+      },
+      "sessionCluster": "openai-holdout-natural-ancestor",
+      "currentProviderTokens": 9109
     },
     {
       "studyRun": "openai-holdout-natural-c",
@@ -3457,13 +3546,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9196,
+        "B0-selection": 9160,
         "B1-selection": 8867,
         "B0-send": 9208,
         "B1-send": 8880,
         "P0-current-send": 9031,
         "C1-normalized-send": 8880
-      }
+      },
+      "sessionCluster": "openai-holdout-natural-ancestor",
+      "currentProviderTokens": 9031
     },
     {
       "studyRun": "openai-holdout-natural-c",
@@ -3557,13 +3648,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9208,
+        "B0-selection": 9172,
         "B1-selection": 8880,
         "B0-send": 9221,
         "B1-send": 8893,
         "P0-current-send": 9111,
         "C1-normalized-send": 8893
-      }
+      },
+      "sessionCluster": "openai-holdout-natural-ancestor",
+      "currentProviderTokens": 9111
     },
     {
       "studyRun": "openai-holdout-image",
@@ -3656,13 +3749,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9196,
+        "B0-selection": 9160,
         "B1-selection": 8867,
         "B0-send": 10419,
         "B1-send": 10091,
         "P0-current-send": 10256,
         "C1-normalized-send": 10091
-      }
+      },
+      "sessionCluster": "openai-holdout-image",
+      "currentProviderTokens": 10256
     },
     {
       "studyRun": "openai-holdout-image",
@@ -3757,13 +3852,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 10420,
+        "B0-selection": 10384,
         "B1-selection": 10091,
         "B0-send": 10427,
         "B1-send": 10099,
         "P0-current-send": 10331,
         "C1-normalized-send": 10099
-      }
+      },
+      "sessionCluster": "openai-holdout-image",
+      "currentProviderTokens": 10331
     },
     {
       "studyRun": "openai-holdout-reasoning",
@@ -3855,13 +3952,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9196,
+        "B0-selection": 9160,
         "B1-selection": 8867,
         "B0-send": 9215,
         "B1-send": 8887,
         "P0-current-send": 9038,
         "C1-normalized-send": 8887
-      }
+      },
+      "sessionCluster": "openai-holdout-reasoning",
+      "currentProviderTokens": 9038
     },
     {
       "studyRun": "openai-holdout-reasoning",
@@ -3956,13 +4055,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9722,
+        "B0-selection": 9686,
         "B1-selection": 9393,
         "B0-send": 9677,
         "B1-send": 9401,
         "P0-current-send": 9619,
         "C1-normalized-send": 9349
-      }
+      },
+      "sessionCluster": "openai-holdout-reasoning",
+      "currentProviderTokens": 9619
     },
     {
       "studyRun": "openai-holdout-tool",
@@ -4054,13 +4155,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9196,
+        "B0-selection": 9160,
         "B1-selection": 8867,
         "B0-send": 9213,
         "B1-send": 8885,
         "P0-current-send": 9036,
         "C1-normalized-send": 8885
-      }
+      },
+      "sessionCluster": "openai-holdout-tool",
+      "currentProviderTokens": 9036
     },
     {
       "studyRun": "openai-holdout-tool",
@@ -4143,7 +4246,9 @@
         "B1-send": 9475,
         "P0-current-send": 9719,
         "C1-normalized-send": 9462
-      }
+      },
+      "sessionCluster": "openai-holdout-tool",
+      "currentProviderTokens": 9719
     },
     {
       "studyRun": "openai-holdout-tool",
@@ -4239,13 +4344,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 9804,
+        "B0-selection": 9768,
         "B1-selection": 9476,
         "B0-send": 9798,
         "B1-send": 9483,
         "P0-current-send": 9794,
         "C1-normalized-send": 9470
-      }
+      },
+      "sessionCluster": "openai-holdout-tool",
+      "currentProviderTokens": 9794
     },
     {
       "studyRun": "anthropic-holdout-natural-a",
@@ -4268,7 +4375,7 @@
       },
       "actualPromptTokens": 13919,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13919,
         "cacheRead": 0,
@@ -4336,14 +4443,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9204,
+        "B0-selection": 9160,
         "B1-selection": 14101,
         "B0-send": 9225,
         "B1-send": 14113,
         "P0-current-send": 14444,
         "C1-normalized-send": 14135,
         "C2-anthropic-tool-block": 14425
-      }
+      },
+      "sessionCluster": "anthropic-holdout-natural-ancestor",
+      "currentProviderTokens": 14444
     },
     {
       "studyRun": "anthropic-holdout-natural-a",
@@ -4366,7 +4475,7 @@
       },
       "actualPromptTokens": 13933,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13933,
         "cacheRead": 0,
@@ -4434,14 +4543,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9211,
+        "B0-selection": 9167,
         "B1-selection": 14113,
         "B0-send": 9233,
         "B1-send": 14124,
         "P0-current-send": 14476,
         "C1-normalized-send": 14146,
         "C2-anthropic-tool-block": 14436
-      }
+      },
+      "sessionCluster": "anthropic-holdout-natural-ancestor",
+      "currentProviderTokens": 14476
     },
     {
       "studyRun": "anthropic-holdout-natural-b",
@@ -4464,7 +4575,7 @@
       },
       "actualPromptTokens": 13921,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13921,
         "cacheRead": 0,
@@ -4532,14 +4643,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9204,
+        "B0-selection": 9160,
         "B1-selection": 14101,
         "B0-send": 9230,
         "B1-send": 14119,
         "P0-current-send": 14451,
         "C1-normalized-send": 14141,
         "C2-anthropic-tool-block": 14431
-      }
+      },
+      "sessionCluster": "anthropic-holdout-natural-ancestor",
+      "currentProviderTokens": 14451
     },
     {
       "studyRun": "anthropic-holdout-natural-b",
@@ -4562,7 +4675,7 @@
       },
       "actualPromptTokens": 13936,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13936,
         "cacheRead": 0,
@@ -4630,14 +4743,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9215,
+        "B0-selection": 9171,
         "B1-selection": 14119,
         "B0-send": 9241,
         "B1-send": 14137,
         "P0-current-send": 14489,
         "C1-normalized-send": 14159,
         "C2-anthropic-tool-block": 14449
-      }
+      },
+      "sessionCluster": "anthropic-holdout-natural-ancestor",
+      "currentProviderTokens": 14489
     },
     {
       "studyRun": "anthropic-holdout-natural-c",
@@ -4660,7 +4775,7 @@
       },
       "actualPromptTokens": 13921,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13921,
         "cacheRead": 0,
@@ -4728,14 +4843,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9204,
+        "B0-selection": 9160,
         "B1-selection": 14101,
         "B0-send": 9230,
         "B1-send": 14120,
         "P0-current-send": 14452,
         "C1-normalized-send": 14142,
         "C2-anthropic-tool-block": 14432
-      }
+      },
+      "sessionCluster": "anthropic-holdout-natural-ancestor",
+      "currentProviderTokens": 14452
     },
     {
       "studyRun": "anthropic-holdout-natural-c",
@@ -4758,7 +4875,7 @@
       },
       "actualPromptTokens": 13937,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13937,
         "cacheRead": 0,
@@ -4826,14 +4943,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9216,
+        "B0-selection": 9172,
         "B1-selection": 14120,
         "B0-send": 9244,
         "B1-send": 14141,
         "P0-current-send": 14493,
         "C1-normalized-send": 14163,
         "C2-anthropic-tool-block": 14453
-      }
+      },
+      "sessionCluster": "anthropic-holdout-natural-ancestor",
+      "currentProviderTokens": 14493
     },
     {
       "studyRun": "anthropic-holdout-image",
@@ -4856,7 +4975,7 @@
       },
       "actualPromptTokens": 14594,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 14594,
         "cacheRead": 0,
@@ -4925,14 +5044,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9204,
+        "B0-selection": 9160,
         "B1-selection": 14101,
         "B0-send": 10442,
         "B1-send": 15984,
         "P0-current-send": 16347,
         "C1-normalized-send": 16006,
         "C2-anthropic-tool-block": 16296
-      }
+      },
+      "sessionCluster": "anthropic-holdout-image",
+      "currentProviderTokens": 16347
     },
     {
       "studyRun": "anthropic-holdout-image",
@@ -4955,7 +5076,7 @@
       },
       "actualPromptTokens": 14608,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 14608,
         "cacheRead": 0,
@@ -5024,14 +5145,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 10427,
+        "B0-selection": 10383,
         "B1-selection": 15984,
         "B0-send": 10449,
         "B1-send": 15995,
         "P0-current-send": 16379,
         "C1-normalized-send": 16017,
         "C2-anthropic-tool-block": 16307
-      }
+      },
+      "sessionCluster": "anthropic-holdout-image",
+      "currentProviderTokens": 16379
     },
     {
       "studyRun": "anthropic-holdout-reasoning",
@@ -5054,7 +5177,7 @@
       },
       "actualPromptTokens": 13938,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13938,
         "cacheRead": 0,
@@ -5122,14 +5245,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9204,
+        "B0-selection": 9160,
         "B1-selection": 14101,
         "B0-send": 9238,
         "B1-send": 14132,
         "P0-current-send": 14463,
         "C1-normalized-send": 14154,
         "C2-anthropic-tool-block": 14444
-      }
+      },
+      "sessionCluster": "anthropic-holdout-reasoning",
+      "currentProviderTokens": 14463
     },
     {
       "studyRun": "anthropic-holdout-reasoning",
@@ -5152,7 +5277,7 @@
       },
       "actualPromptTokens": 13952,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13952,
         "cacheRead": 0,
@@ -5220,14 +5345,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9224,
+        "B0-selection": 9179,
         "B1-selection": 14132,
         "B0-send": 9245,
         "B1-send": 14143,
         "P0-current-send": 14495,
         "C1-normalized-send": 14165,
         "C2-anthropic-tool-block": 14455
-      }
+      },
+      "sessionCluster": "anthropic-holdout-reasoning",
+      "currentProviderTokens": 14495
     },
     {
       "studyRun": "anthropic-holdout-tool",
@@ -5250,7 +5377,7 @@
       },
       "actualPromptTokens": 13930,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13930,
         "cacheRead": 0,
@@ -5318,14 +5445,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9204,
+        "B0-selection": 9160,
         "B1-selection": 14101,
         "B0-send": 9235,
         "B1-send": 14128,
         "P0-current-send": 14459,
         "C1-normalized-send": 14150,
         "C2-anthropic-tool-block": 14440
-      }
+      },
+      "sessionCluster": "anthropic-holdout-tool",
+      "currentProviderTokens": 14459
     },
     {
       "studyRun": "anthropic-holdout-tool",
@@ -5348,7 +5477,7 @@
       },
       "actualPromptTokens": 13944,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13944,
         "cacheRead": 0,
@@ -5416,14 +5545,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9221,
+        "B0-selection": 9177,
         "B1-selection": 14128,
         "B0-send": 9243,
         "B1-send": 14140,
         "P0-current-send": 14492,
         "C1-normalized-send": 14162,
         "C2-anthropic-tool-block": 14452
-      }
+      },
+      "sessionCluster": "anthropic-holdout-tool",
+      "currentProviderTokens": 14492
     },
     {
       "studyRun": "anthropic-holdout-imported-reasoning",
@@ -5446,7 +5577,7 @@
       },
       "actualPromptTokens": 15878,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 15878,
         "cacheRead": 0,
@@ -5519,14 +5650,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 10930,
+        "B0-selection": 10886,
         "B1-selection": 16757,
         "B0-send": 10951,
         "B1-send": 16768,
         "P0-current-send": 17361,
         "C1-normalized-send": 16790,
         "C2-anthropic-tool-block": 17080
-      }
+      },
+      "sessionCluster": "anthropic-holdout-imported-reasoning",
+      "currentProviderTokens": 17361
     },
     {
       "studyRun": "openai-holdout-natural-a",
@@ -5549,7 +5682,7 @@
       },
       "actualPromptTokens": 13973,
       "exactSource": "anthropic-count-tokens",
-      "identityVerification": "count-endpoint-model",
+      "identityVerification": "count-endpoint-unverified",
       "usage": {
         "input": 13973,
         "cacheRead": 0,
@@ -5618,14 +5751,16 @@
         "heuristic": "Claude 4.7+ heuristic"
       },
       "estimates": {
-        "B0-selection": 9228,
+        "B0-selection": 9183,
         "B1-selection": 14138,
         "B0-send": 9249,
         "B1-send": 14149,
         "P0-current-send": 14588,
         "C1-normalized-send": 14171,
         "C2-anthropic-tool-block": 14461
-      }
+      },
+      "sessionCluster": "openai-holdout-natural-ancestor",
+      "currentProviderTokens": 14588
     },
     {
       "studyRun": "cross-anthropic-to-openai",
@@ -5721,13 +5856,15 @@
         "heuristic": "OpenAI-Codex heuristic"
       },
       "estimates": {
-        "B0-selection": 10748,
+        "B0-selection": 10712,
         "B1-selection": 10420,
         "B0-send": 9555,
         "B1-send": 10427,
         "P0-current-send": 10752,
         "C1-normalized-send": 9227
-      }
+      },
+      "sessionCluster": "cross-anthropic-to-openai",
+      "currentProviderTokens": 10752
     },
     {
       "studyRun": "gateway-a",
@@ -5818,13 +5955,15 @@
         "heuristic": "fallback chars/4"
       },
       "estimates": {
-        "B0-selection": 9179,
+        "B0-selection": 9160,
         "B1-selection": 9196,
         "B0-send": 9186,
         "B1-send": 9204,
         "P0-current-send": 9208,
         "C1-normalized-send": 9204
-      }
+      },
+      "sessionCluster": "gateway-a",
+      "currentProviderTokens": 9208
     },
     {
       "studyRun": "gateway-a",
@@ -5916,13 +6055,15 @@
         "heuristic": "fallback chars/4"
       },
       "estimates": {
-        "B0-selection": 9187,
+        "B0-selection": 9168,
         "B1-selection": 9204,
         "B0-send": 9194,
         "B1-send": 9212,
         "P0-current-send": 9378,
         "C1-normalized-send": 9212
-      }
+      },
+      "sessionCluster": "gateway-a",
+      "currentProviderTokens": 9378
     },
     {
       "studyRun": "gateway-b",
@@ -6013,13 +6154,15 @@
         "heuristic": "fallback chars/4"
       },
       "estimates": {
-        "B0-selection": 9179,
+        "B0-selection": 9160,
         "B1-selection": 9196,
         "B0-send": 9186,
         "B1-send": 9204,
         "P0-current-send": 9208,
         "C1-normalized-send": 9204
-      }
+      },
+      "sessionCluster": "gateway-b",
+      "currentProviderTokens": 9208
     },
     {
       "studyRun": "gateway-b",
@@ -6111,13 +6254,15 @@
         "heuristic": "fallback chars/4"
       },
       "estimates": {
-        "B0-selection": 9187,
+        "B0-selection": 9168,
         "B1-selection": 9204,
         "B0-send": 9194,
         "B1-send": 9212,
         "P0-current-send": 9378,
         "C1-normalized-send": 9212
-      }
+      },
+      "sessionCluster": "gateway-b",
+      "currentProviderTokens": 9378
     }
   ]
 }
