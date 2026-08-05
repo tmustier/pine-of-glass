@@ -170,10 +170,10 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   50k ch. Thresholds live in `style.ts`, overridable through the family config
   convention (`~/.pi/agent/pi-<name>.json`, `<cwd>/.pi/pi-<name>.json`)
 - cache materiality (cachemire): notices only above $0.05 or 20k re-written
-  tokens; silence when healthy. The live cache warning appears only during the final
-  `min(5m, 20%)` of a contract TTL, or the final `min(1m, 20%)` before a documented
-  best-effort window begins. It remains visible after that boundary until the next
-  provider call resolves the state. Unknown cache lifetimes stay silent
+  tokens; silence when healthy. An Anthropic TTL warning appears only during its final
+  `min(5m, 20%)`. It remains visible after expiry until the next provider call resolves
+  the state. An observed 24-hour OpenAI maximum appears once reached. It earns no warm
+  state or pre-maximum warning. Unknown retention stays silent
 - severity colour is reserved for exceeded thresholds and real states. Nothing is
   tinted for visual interest
 
@@ -192,12 +192,12 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   not a cache read. It therefore carries no share. If the model also changed,
   withhold the prior count and share rather than compare tokenizers
 - after tree navigation, the cache baseline follows the selected branch, not the
-  abandoned leaf. Use the last provider-billed prompt on the selected path as the
-  expected reusable prefix. A later request refreshes that baseline only when session
-  ancestry and its provider, model, cache window and payload fingerprint prove
-  compatibility. The
-  intentional suffix divergence is therefore ordinary prefix growth, not a suppressed
-  mutation; withhold a divergent-tail estimate until provider usage makes it exact
+  abandoned leaf. Use the last provider-billed prompt on the selected path as a
+  comparison baseline. It is not the whole next prompt, which includes new suffix
+  content. A later request refreshes that baseline only when session ancestry and its
+  provider, model, cache evidence and payload fingerprint prove compatibility. The
+  intentional suffix divergence is ordinary prefix growth; withhold its estimate until
+  provider usage makes the new request exact
 - a model switch re-prices the conversation; the wording leads with the consequence
   (the whole prompt goes uncached to the new provider): `cache cold expected · model
   switched · next send ~32.4k uncached to anthropic (est)`. The headline is the
@@ -209,7 +209,8 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   gateway routes remain rough because the gateway can still rewrite them upstream.
   The target estimate is never rescaled from a source-model bill: token density is not
   transferable across tokenizers, and the source bill may describe an earlier request.
-  Switch-back warmth anchors require exact provider, API and model identity. The
+  Switch-back warmth anchors require exact provider, API and model identity plus a
+  known active Anthropic TTL. Unknown retention makes no warmth claim. The
   send-time notice keeps the grammar in progressive tense: `cache breaking · sending
   ~32.4k uncached to anthropic (est · ~$0.41) · cause: model switched
   openai-codex/gpt-5.6-sol → anthropic/claude-fable-5`; gateway routes use `(rough est ·
@@ -222,9 +223,10 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   28.2k (100% of prompt) · the new model already had the prefix cached`, never
   `read 28.2k of 20.6k expected`, which composes two currencies into an impossible
   137% claim
-- certainty ladder: contract-backed evidence gets definite words (`cache stale`);
-  a documented band gets hedged words (`cache may be stale`); an unknown provider stays
-  silent. Never write definite words on soft evidence
+- certainty ladder: an observed Anthropic TTL supports definite expiry wording. An
+  observed 24-hour OpenAI maximum supports definite wording only after it is reached.
+  Unknown retention stays silent. Never infer idle-time warmth, eviction, routing,
+  replica identity or cache entry identity from provider usage
 - status one-liners are lowercase; Title Case only for panel headers and row labels
 - state causes from observed evidence (payload diffs, usage), never inference,
   and say `unknown` when unknown

@@ -18,27 +18,19 @@ import type {
 export const TTL_SHORT_MS = 5 * 60 * 1000;
 export const TTL_LONG_MS = 60 * 60 * 1000;
 
-/** Definitely past the window: contract TTL elapsed, or the band's documented hard cap.
- * The band's maybe-zone is deliberately not a claim — expiryCause words it only once an
- * observed miss confirms the eviction. */
 export function pastWindow(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
   if (!window || window.kind === "unknown" || gapMs === undefined) return false;
-  return gapMs > (window.kind === "contract" ? window.ttlMs : window.hardMs);
+  return window.kind === "contract" ? gapMs >= window.ttlMs : gapMs >= window.maxMs;
 }
 
 // Shared cause wording for predictions and resolved classifications.
 export function expiryCause(window: CacheWindow | undefined, gapMs: number | undefined): CallCause | undefined {
   if (!window || gapMs === undefined) return undefined;
-  if (window.kind === "contract" && gapMs > window.ttlMs) {
-    return { kind: "ttl", detail: `idle ${formatDuration(gapMs)} > ${formatDuration(window.ttlMs)} TTL` };
+  if (window.kind === "contract" && gapMs >= window.ttlMs) {
+    return { kind: "ttl", detail: `${formatDuration(window.ttlMs)} TTL reached after ${formatDuration(gapMs)} idle` };
   }
-  if (window.kind === "band") {
-    if (gapMs > window.hardMs) {
-      return { kind: "ttl", detail: `idle ${formatDuration(gapMs)} > ${formatDuration(window.hardMs)} cache cap` };
-    }
-    if (gapMs > window.softMs) {
-      return { kind: "ttl", detail: `evicted after idle ${formatDuration(gapMs)} (typical window ${formatDuration(window.softMs)}\u2013${formatDuration(window.hardMs)})` };
-    }
+  if (window.kind === "maximum" && gapMs >= window.maxMs) {
+    return { kind: "ttl", detail: `${formatDuration(window.maxMs)} retention maximum reached after ${formatDuration(gapMs)} idle` };
   }
   return undefined;
 }
@@ -177,42 +169,6 @@ export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerpri
   return undefined;
 }
 
-// --- forensics: which entry did a best-effort read hit? --------------------------------
-
-// OpenAI's backend checkpoints cache entries at 512-token granularity: in live gpt-5.5
-// sessions (the README's double-break case; session 019e9758's burst of breaks within
-// seconds) every hit read exactly floor512 of an earlier call's prompt total. Matching a
-// later cacheRead against stored prompt totals therefore names *which* entry the request
-// hit — and a match behind the latest write is the replica-routing tell: a single cache
-// could not serve an older, shorter entry between two reads of a newer, longer one. The
-// public API documents 128-token increments; matching stays at the observed 512 until
-// live evidence demands widening (a looser bucket would multiply coincidental matches).
-const ENTRY_GRANULARITY = 512;
-
-export interface PriorEntry { index: number; at: number; promptTokens: number }
-export interface EntryMatch { index: number; ageMs: number }
-
-export function matchPriorEntry(
-  cacheRead: number,
-  priors: PriorEntry[],
-  now: number,
-  maxAgeMs: number,
-): EntryMatch | undefined {
-  if (cacheRead <= 0 || cacheRead % ENTRY_GRANULARITY !== 0) return undefined;
-  // Newest match wins: several prompts can share a 512-token bucket, and recent entries
-  // are the ones still alive. Age-gates on write time (read-refreshes are not tracked):
-  // an entry older than the hard cap cannot be asserted, so the match degrades to the
-  // generic unknown hint rather than naming a dead entry.
-  for (let i = priors.length - 1; i >= 0; i--) {
-    const prior = priors[i]!;
-    if (now - prior.at > maxAgeMs) break;
-    if (Math.floor(prior.promptTokens / ENTRY_GRANULARITY) * ENTRY_GRANULARITY === cacheRead) {
-      return { index: prior.index, ageMs: Math.max(0, now - prior.at) };
-    }
-  }
-  return undefined;
-}
-
 // --- classification --------------------------------------------------------------------
 
 export interface ClassifyInput {
@@ -226,25 +182,12 @@ export interface ClassifyInput {
   compacted?: boolean;
   inCompaction?: boolean;
   fingerprintCause?: CallCause;
-  /** The previous call re-wrote the prefix (was itself a miss/cold write). */
-  prevWrote?: boolean;
-  /** This read equals floor512 of an earlier call's prompt total (see matchPriorEntry). */
-  entryMatch?: EntryMatch;
 }
 
-// Hint wording for a miss nothing else explains. Window-aware: under a contract TTL
-// (Anthropic) an unexplained miss points at provider-side eviction. Under a best-effort
-// band (OpenAI) the cache is prefix-hash routed across replicas, so an entry can simply
-// be unreachable — most often right after the previous call wrote it (cacheRead 0 with a
-// byte-identical early prefix means the entry was not found, not that content changed;
-// a real content change would still hit the unchanged first increments).
-function unknownMissDetail(args: ClassifyInput): string {
-  if (args.window?.kind === "band") {
-    return args.prevWrote && args.usage.cacheRead === 0
-      ? "unknown (best-effort cache: fresh write not yet readable, or replica routing)"
-      : "unknown (best-effort cache: replica routing or early eviction)";
-  }
-  return "unknown (provider-side eviction?)";
+// Provider usage proves the miss, but it does not expose why an otherwise compatible
+// entry was unavailable. Do not turn routing or eviction hypotheses into a cause.
+function unknownMissDetail(): string {
+  return "unknown (provider did not expose why)";
 }
 
 export function classifyCall(args: ClassifyInput): CallClassification {
@@ -268,27 +211,17 @@ export function classifyCall(args: ClassifyInput): CallClassification {
   if (args.compacted) {
     cause = { kind: "compaction", detail: "compaction rewrote history" };
   } else if (args.fingerprintCause) {
+    const expiry = args.window?.kind === "maximum"
+      ? "retention maximum reached"
+      : "TTL reached";
     cause = pastWindow(args.window, args.gapMs)
-      ? { ...args.fingerprintCause, detail: `${args.fingerprintCause.detail} (also idle past TTL)` }
+      ? { ...args.fingerprintCause, detail: `${args.fingerprintCause.detail} (also ${expiry})` }
       : args.fingerprintCause;
   } else if (idleCause) {
-    // For a band window's "maybe" zone the observed miss is itself the confirmation:
-    // the prefix was evicted within the documented typical window. An entry match refines
-    // it: the newer entries were evicted, and the read fell back to a surviving older one.
-    cause = args.entryMatch
-      ? { ...idleCause, detail: `${idleCause.detail} \u00b7 fell back to call #${args.entryMatch.index}'s entry (${formatDuration(args.entryMatch.ageMs)} old)` }
-      : idleCause;
-  } else if (args.entryMatch && args.window?.kind === "band") {
-    // Nothing else explains the miss, but the arithmetic names the entry it hit. Behind
-    // the latest write with no idle gap, a different replica is the only consistent story.
-    cause = {
-      kind: "replica",
-      detail: `read matches call #${args.entryMatch.index}'s entry (${formatDuration(args.entryMatch.ageMs)} old)` +
-        " \u00b7 likely a different replica from the last write",
-    };
+    cause = idleCause;
   } else {
     // Rendered behind "cause: " — the detail must not restate the word.
-    cause = { kind: "unknown", detail: unknownMissDetail(args) };
+    cause = { kind: "unknown", detail: unknownMissDetail() };
   }
   return { kind: ratio <= MISS_RATIO ? "miss" : "partial", cause };
 }

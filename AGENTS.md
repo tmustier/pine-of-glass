@@ -30,6 +30,13 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
 - The contract suite pins every structural assumption about pi internals, so after
   `pi update` a quick `npm test` says exactly which seam (if any) drifted. Test design
   notes: [`docs/testing.md`](./docs/testing.md).
+- Before changing Cachemire retention logic, read the dated
+  [retention audit](./docs/cache-retention-audit-2026-08-04.md) and lifecycle rules in
+  [`docs/pi-cachemire.md`](./docs/pi-cachemire.md). Resolve retention from the exact
+  route, model and observed outgoing policy. Unknown retention earns no idle-time or
+  warmth claim. Usage proves reads and writes, not eviction, routing, replica identity
+  or the whole next prompt. Update `retention.ts`, its evidence tests and both docs
+  together.
 - Goldens regenerate with `UPDATE_GOLDENS=1 npm test`. Review the diff like code.
   Regenerate whenever rendering changes.
 - README screenshots regenerate with the rig in

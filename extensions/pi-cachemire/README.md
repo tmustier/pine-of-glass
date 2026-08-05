@@ -6,32 +6,40 @@
 > for updates.
 
 Use Cachemire to understand the cache and agent-loop costs of a pi session.
-pi's footer counts input, output, cache reads, cache writes and cost. Cachemire
-explains when the cache will go cold, why it broke and what the loop cost.
+Pi's footer counts input, output, cache reads, cache writes and cost. Cachemire
+shows observed cache outcomes, names supported causes and warns at known retention
+boundaries.
 
 ![Turn ledger lines in the transcript, a resolved break notice naming its cause (thinking changed), and the cache clock above the editor](../../docs/img/pi-cachemire-clock.png)
 
 ## Get warned before the cache expires
 
-Cachemire stays hidden while the cache is healthy. It appears above the input box only
-when the cache is close to expiring, may already be stale, or a change such as compaction
-or a model switch puts the next send at risk.
+Cachemire stays hidden while the cache is healthy or its retention is unknown. It
+appears above the input box only at a supported retention boundary, or when a change
+such as compaction or a model switch puts the next send at risk.
 
-For Anthropic, Cachemire reads the exact TTL from the observed `cache_control`. A
-5-minute cache appears during its final minute; a 1-hour cache appears during its final
-5 minutes. For OpenAI's less certain window, it warns shortly before typical eviction
-begins and uses `may` wording. Providers with unknown cache lifetimes get no guessed
-countdown.
+For Anthropic, Cachemire reads the 5-minute or 1-hour TTL from the outgoing
+`cache_control`. A 5-minute cache appears during its final minute. A 1-hour cache appears
+during its final 5 minutes. A restored Anthropic session may infer this value from
+`PI_CACHE_RETENTION` until the next live payload arrives.
 
-The possible re-write size uses provider-exact usage, with one exception: after a model
-switch it is an estimate in the new model's tokenizer, and says so. At send time
-Cachemire re-sizes recognized system, tool and message fields from the provider payload
-it observes. Gateway estimates stay rough because an upstream rewrite can still change
-them.
+A direct official OpenAI GPT-5 request below GPT-5.6 gets a 24-hour maximum only when
+its actual outgoing payload contains `prompt_cache_retention: "24h"`. Cachemire stays silent
+before that maximum and marks the cache stale when it is reached. GPT-5.6 and later,
+OpenAI Codex OAuth, direct OpenAI requests without that field, and other routes have
+unknown retention. Cachemire makes no idle-time or warmth claim for them. It does not
+support `in_memory` or a 5-minute to 1-hour OpenAI window.
+
+The `~` re-write count starts from the prior billed prompt-side usage. It is not the
+whole next prompt, which adds your new message and other suffix content. After a model
+switch, Cachemire uses a separate estimate in the new model's tokenizer and labels it.
+At send time, it sizes recognized system, tool and message fields from the provider
+payload it observes. Gateway estimates stay rough because an upstream rewrite can still
+change them.
 
 ```
 ◍ cache expires in 58s · next send may re-write ~138.2k (~$2.59)
-◍ cache may be stale · typical eviction window 5m–1h · next send may re-send ~109.8k (~$1.37)
+◍ cache stale · 24h retention maximum reached · next send may re-send ~109.8k uncached (~$1.37)
 ◍ cache stale · TTL expired · next send may re-write ~142.3k (~$2.67)
 ◍ cache stale after compaction · next send may re-write changed history
 ```
@@ -39,8 +47,10 @@ them.
 ## Find out why the cache broke
 
 Cachemire fingerprints every request, including the system prompt, each tool and
-each history message. If a call's `cacheRead` collapses, the break notice names the
-cause from exact byte-level differences.
+each history message. If a call's `cacheRead` collapses, the break notice names a cause
+only when payload or retention evidence supports it. Otherwise it reports the cause as
+unknown. Provider usage does not reveal eviction, routing, replica or cache entry
+identity.
 
 The notice appears at send time, where Cachemire can tie it to the request. It
 updates in place when usage arrives. Progressive wording and `~` show an in-flight
@@ -50,9 +60,9 @@ Healthy caches stay quiet. Notices appear only above a materiality threshold. Th
 default threshold is $0.05 or 20k re-written tokens.
 
 ```
-◍ cache breaking · re-writing ~138.2k (~$2.59) · cause: idle 9h50m > 5m TTL   (in flight)
+◍ cache breaking · re-writing ~138.2k (~$2.59) · cause: 5m TTL reached after 9h50m idle   (in flight)
 ◍ cache after compaction · reused 34.9k of the last pre-compaction 72.5k prompt (48%) · processed 39.1k uncached
-◍ cache broke · re-wrote 138.2k of 139.6k prompt (99%) · $0.52 · cause: idle 9h50m > 5m TTL
+◍ cache broke · re-wrote 138.2k of 139.6k prompt (99%) · $0.52 · cause: 5m TTL reached after 9h50m idle
 ◍ cache partial · read 41.2k of 138.2k expected · re-wrote 138.2k (76% of prompt) · cause: system prompt changed
 ◍ cache held · read 76.0k of 77.7k expected · prefix stayed warm              (prediction wrong, good news)
 ```
@@ -81,9 +91,9 @@ compare values from different tokenizers.
 Cachemire prints a turn ledger line after every user turn. Run `/cache` to see the
 full per-call table.
 
-The example below is a live capture on an OpenAI band cache. It shows a cold start,
-two hits and then a miss. The notice names a thinking-level change as the cause
-because it re-keyed the cache.
+The example below is a live capture. It shows a cold start, 2 hits and then an observed
+miss. The notice names a thinking-level change only when the request fingerprint supports
+that cause.
 
 ```
 ◍ turn: 7 calls · 2m41s · read 940.1k (99.6% cached) · wrote 11.2k · out 4.2k · $0.09
@@ -143,37 +153,32 @@ Cachemire follows these rules:
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
 - Everything Cachemire draws is UI-only. It does not enter LLM context, session
   entries or exports.
-- Freshness wording reflects how much is known. A contract TTL gets a definite warning.
-  A documented band gets `may` or cap wording. When nothing is known, Cachemire stays
-  silent. Under subscription auth, it marks savings as notional.
+- Freshness wording reflects observed evidence. An Anthropic TTL gets a countdown. An
+  observed 24-hour OpenAI maximum gets a stale state once reached. Unknown retention
+  stays silent. Under subscription auth, Cachemire marks savings as notional.
 - Sessions restored with `--continue` rebuild the active ledger and all-branch cache
   baselines from session usage. Cachemire marks restored rows and excludes them from
-  savings because their pricing context is unknown. Payload fingerprints are not
-  persisted. Restored branches use the parent session entry as the request-time anchor
-  when available, and fall back to response time; live requests replace that approximation
-  with observed request timing and payload compatibility evidence.
+  savings because their pricing context is unknown. Payload fingerprints and observed
+  OpenAI retention fields are not persisted. Restored OpenAI retention is unknown.
+  Restored Anthropic sessions may infer a TTL from `PI_CACHE_RETENTION` until the next
+  live request.
 
 ## Understand the model behind the wording
 
-Cachemire uses 4 provider-general rules:
+Cachemire uses 4 rules:
 
-- The freshness **anchor** is request processing. Generation time uses up the window.
-- The cache **scope** is the provider, model, wire API and byte-exact prefix. Warmth
-  checks require all 3 identity fields to match. A model switch therefore means the
-  cache is expected cold before you send anything, and the
-  widget forecasts the prompt in the *target* model's currency (est-marked). Switching
-  back to a model whose own cache may still be warm says so instead.
-- The **window** has different strengths for each provider. Anthropic has a contract
-  TTL, OpenAI has a documented band and the window is unknown for other providers.
-  The wording
-  reflects that strength.
-- The **currency** rule shows exact tokens and $ only in the tokenizer and price card
-  that billed them; cross-model sizes are explicit estimates in the target currency.
+- **Evidence** distinguishes an observed TTL, an observed maximum and unknown retention.
+- **Scope** ties a cache entry to the provider, model, wire API and byte-exact prefix.
+  Switch-back warmth needs exact identity and a known active Anthropic TTL. Unknown
+  retention waits for billed usage.
+- **Retention** shows an Anthropic countdown or a reached observed 24-hour OpenAI
+  maximum. It makes no elapsed-time claim for unknown routes.
+- **Currency** keeps exact tokens and cost in the tokenizer and price card that billed
+  them. Cross-model sizes are labelled estimates in the target currency. A prior billed
+  prompt count is a baseline, not the whole next prompt.
 
-Read [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for the full model and its
-evidence. It covers clock-anchor and aborted-send semantics, thinking-level cache
-keys verified on the wire, OpenAI's per-machine replica arithmetic (512-token entry
-matching), the cause ladder and the state and lifecycle trade-offs.
+Read [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for the evidence table, clock
+and aborted-send semantics, cause limits and lifecycle trade-offs.
 
 ## Compare Cachemire with the other extensions
 

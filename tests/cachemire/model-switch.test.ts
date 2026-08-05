@@ -8,16 +8,15 @@ import { internals } from "../../extensions/pi-cachemire/index.ts";
 import { computeSwitchForecast, type SwitchTarget } from "../../extensions/pi-cachemire/forecast.ts";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
-const { cacheClock, predictBreak, renderBreakingLine, restoreLineageSnapshots, withinWarmHorizon } = internals;
+const { cacheClock, nextClockUpdateMs, predictBreak, renderBreakingLine, restoreLineageSnapshots, withinWarmHorizon } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
-// The window an openai-codex snapshot really carries (contract TTLs are anthropic's).
-const BAND = { kind: "band", softMs: 5 * 60_000, hardMs: 60 * 60_000 } as const;
+const UNKNOWN = { kind: "unknown" } as const;
 const RATES = { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 };
 const MIN = 60_000;
 
 const FORECAST = {
-  targetId: "gpt-5.6-luna", targetProvider: "openai-codex",
+  targetId: "gpt-5.6-sol", targetProvider: "openai-codex",
   estTokens: 96_400, basis: "direct" as const,
 };
 
@@ -36,26 +35,52 @@ test("clock: model switch forecasts in the target currency, always marked est", 
 });
 
 test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry", () => {
-  // The target model's own last billed call is inside its window: "cold" would overclaim.
-  const back = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: BAND } } });
+  const anthropicForecast = {
+    targetId: "claude-opus-4-8",
+    targetProvider: "anthropic",
+    estTokens: 96_400,
+    basis: "direct" as const,
+    prior: { requestAt: 0, window: CONTRACT_5M },
+  };
+  const back = cacheClock({ now: 4 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
   assert.equal(back.phase, "warm-unknown");
-  assert.equal(back.text, "cache may still be warm \u00b7 switched back to gpt-5.6-luna \u00b7 next send confirms");
-  // Past the prior's soft horizon the switch-back is cold expected like any other switch.
-  const backCold = cacheClock({ now: 10 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: BAND } } });
-  assert.equal(backCold.phase, "cold");
-  // Unknown retention cannot support either a warm or cold claim.
-  const unknown = cacheClock({ now: 10 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: { kind: "unknown" } } } });
+  assert.equal(back.text, "cache may still be warm \u00b7 switched back to claude-opus-4-8 \u00b7 next send confirms");
+  const backCold = cacheClock({ now: 5 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
+  assert.equal(backCold.phase, "cold", "the exact contract boundary is no longer warm");
+
+  // openai-codex has no retention contract, so its earlier entry stays unknown.
+  const unknown = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: UNKNOWN } } });
   assert.equal(unknown.text, "cache state unknown \u00b7 model switched \u00b7 next send confirms");
-  const compacted = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, compacted: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: BAND } } });
+
+  const maximum = { kind: "maximum", maxMs: 24 * 60 * MIN } as const;
+  const extendedForecast = { ...FORECAST, prior: { requestAt: 0, window: maximum } };
+  assert.equal(
+    cacheClock({ now: 60 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: extendedForecast }).text,
+    "cache state unknown \u00b7 model switched \u00b7 next send confirms",
+  );
+  assert.equal(nextClockUpdateMs({
+    now: 60 * MIN,
+    lastRequestAt: 0,
+    window: UNKNOWN,
+    modelSwitched: true,
+    switchForecast: extendedForecast,
+  }), 23 * 60 * MIN);
+  const atMaximum = { now: 24 * 60 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: extendedForecast };
+  assert.equal(cacheClock(atMaximum).phase, "cold");
+  assert.equal(nextClockUpdateMs(atMaximum), undefined);
+
+  const compacted = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, compacted: true, switchForecast: anthropicForecast });
   assert.equal(compacted.text, "cache stale after compaction \u00b7 next send may re-write changed history");
 });
 
-test("warm horizon: contract TTL and documented band only", () => {
+test("warm horizon requires a contract TTL", () => {
   assert.equal(withinWarmHorizon(CONTRACT_5M, 4 * MIN), true);
-  assert.equal(withinWarmHorizon(CONTRACT_5M, 6 * MIN), false);
-  const band = { kind: "band", softMs: 5 * MIN, hardMs: 60 * MIN } as const;
-  assert.equal(withinWarmHorizon(band, 4 * MIN), true);
-  assert.equal(withinWarmHorizon(band, 30 * MIN), false, "the band maybe-zone must not claim warm");
+  assert.equal(withinWarmHorizon(CONTRACT_5M, 5 * MIN), false, "the exact TTL boundary is expired");
+  assert.equal(
+    withinWarmHorizon({ kind: "maximum", maxMs: 24 * 60 * MIN }, 4 * MIN),
+    false,
+    "a maximum does not promise minimum warmth",
+  );
   assert.equal(withinWarmHorizon(undefined, 1 * MIN), false, "unknown retention must not guess at warmth");
 });
 
@@ -88,8 +113,8 @@ test("break prediction: model switch sized in the target currency, or silent whe
     "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (rough est \u00b7 gateway route \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
   );
 
-  // A\u2192B\u2192A switch-back with the target's own entry possibly warm: no in-flight claim \u2014
-  // the resolved line reports the truth when usage arrives (band maybe-zone precedent).
+  // A\u2192B\u2192A switch-back with the target's own contract entry still warm: no
+  // in-flight claim. The resolved line reports the truth when usage arrives.
   assert.equal(
     predictBreak({
       ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
@@ -140,7 +165,7 @@ function entriesFixture(): SessionEntry[] {
 const OPUS: SwitchTarget = { provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages", input: ["text", "image"] };
 
 test("restored lineage anchors freshness at the parent request, not response end", () => {
-  const restored = restoreLineageSnapshots(entriesFixture(), () => BAND);
+  const restored = restoreLineageSnapshots(entriesFixture(), () => undefined);
   assert.equal(restored[0]?.requestAt, 1_000);
   assert.equal(restored[0]?.responseAt, 5_000);
 });
@@ -208,12 +233,12 @@ test("computeSwitchForecast: a switch-back prior needs an exact api and an uncom
   const snapshot = {
     requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
     promptTokens: 80_000,
-    provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses", window: BAND,
+    provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses",
   };
   const base = { target: sol, entries: entriesFixture(), activeLeafId: "a1", systemPromptChars: 0, tools: [] };
   assert.deepEqual(
     computeSwitchForecast({ ...base, snapshots: [snapshot] }).prior,
-    { requestAt: 1_000, window: BAND },
+    { requestAt: 1_000, window: undefined },
   );
   // Same id via a different (or unrecorded) wire API is a different cache: no warmth hint.
   assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: "openai-responses" }] }).prior, undefined);
@@ -244,14 +269,14 @@ test("computeSwitchForecast: gateway targets are labelled, not refused a number"
 
 test("computeSwitchForecast: finds the target's own prior call on the active path only", () => {
   const entries = entriesFixture();
-  const snapshots = restoreLineageSnapshots(entries, () => BAND);
+  const snapshots = restoreLineageSnapshots(entries, () => undefined);
   // Switching back to sol itself: its billed call at a1 is on the path.
   const backToSol = computeSwitchForecast({
     target: { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" },
     entries, activeLeafId: "a1", systemPromptChars: 0, tools: [], snapshots,
   });
   assert.ok(backToSol.prior, "the target's own billed call must be found");
-  assert.equal(backToSol.prior!.window!.kind, "band");
+  assert.equal(backToSol.prior!.window, undefined, "openai-codex retention stays unknown");
   // Switching to a model that never billed on this path: no prior.
   const toOpus = computeSwitchForecast({
     target: OPUS, entries, activeLeafId: "a1", systemPromptChars: 0, tools: [], snapshots,

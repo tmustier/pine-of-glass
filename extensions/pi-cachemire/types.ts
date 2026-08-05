@@ -29,7 +29,7 @@ export interface RequestFingerprint {
 
 export type CauseKind =
   | "cold" | "ttl" | "compaction" | "compaction-work" | "model" | "thinking" | "system"
-  | "tools" | "history" | "replica" | "restored" | "unknown";
+  | "tools" | "history" | "restored" | "unknown";
 
 export interface CallCause { kind: CauseKind; detail: string }
 
@@ -79,7 +79,7 @@ export interface CachemireConfig {
 
 export type CacheWindow =
   | { kind: "contract"; ttlMs: number; source: "observed" | "inferred" }
-  | { kind: "band"; softMs: number; hardMs: number }
+  | { kind: "maximum"; maxMs: number }
   | { kind: "unknown" };
 
 export interface BreakPrediction {

@@ -95,6 +95,38 @@ test("event flow: a healthy first send and an abort both stay silent", async () 
   }
 });
 
+test("event flow: an Anthropic-shaped gateway payload keeps retention unknown", async (t) => {
+  let now = Date.UTC(2026, 7, 4, 12);
+  t.mock.method(Date, "now", () => now);
+  const entries: unknown[] = [
+    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: now } },
+  ];
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const ctx = probeContext(entries, "pi-messages", notifications, widgets);
+  ctx.model = {
+    id: "claude-fable-5", provider: "radius", api: "pi-messages", reasoning: true, contextWindow: 200_000,
+    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
+  };
+  const payload = { ...ANTHROPIC_PAYLOAD, model: "claude-fable-5" };
+  const probe = extensionProbe();
+  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
+
+  await fire(probe, "session_start", {}, ctx);
+  await fire(probe, "before_provider_request", { payload }, ctx);
+  const firstMessage = {
+    role: "assistant", content: [], provider: "radius", api: "pi-messages", model: "claude-fable-5",
+    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 0, 100_000),
+  };
+  await fire(probe, "message_end", { message: firstMessage }, ctx);
+  entries.push({ type: "message", id: "a1", parentId: "u1", message: firstMessage });
+
+  now += 5 * 60_000;
+  await fire(probe, "before_provider_request", { payload }, ctx);
+  assert.equal(notifications.length, 0, "gateway payload shape must not create an Anthropic TTL");
+  assert.equal(widgets.at(-1), "", "unknown gateway retention stays silent");
+});
+
 test("event flow: the same model over a different wire API is a switch", async () => {
   // Baseline billed over anthropic-messages; the session resumes on bedrock-anthropic.
   const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200);
@@ -166,6 +198,99 @@ test("event flow: a material provider payload posts one est-marked notice", asyn
   }
 });
 
+test("event flow: classification uses the previous policy and abort restores it", async (t) => {
+  let now = Date.UTC(2026, 7, 4, 12);
+  t.mock.method(Date, "now", () => now);
+  const entries: unknown[] = [
+    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: now } },
+  ];
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const ctx = probeContext(entries, "openai-responses", notifications, widgets);
+  ctx.model = {
+    id: "gpt-5.4", provider: "openai", api: "openai-responses", reasoning: true, contextWindow: 200_000,
+    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
+  };
+  const probe = extensionProbe();
+  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
+  await fire(probe, "session_start", {}, ctx);
+  await fire(probe, "before_provider_request", {
+    payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" },
+  }, ctx);
+  const firstMessage = {
+    role: "assistant", content: [], provider: "openai", api: "openai-responses", model: "gpt-5.4",
+    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 0, 100_000),
+  };
+  await fire(probe, "message_end", { message: firstMessage }, ctx);
+  entries.push({ type: "message", id: "a1", parentId: "u1", message: firstMessage });
+
+  now += 24 * 60 * 60_000;
+  notifications.length = 0;
+  await fire(probe, "before_provider_request", {
+    payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }] },
+  }, ctx);
+  assert.equal(notifications.length, 1, "the prior 24h policy classifies the exact-boundary expiry");
+  assert.match(notifications[0]!, /24h retention maximum reached after 24h idle/);
+  assert.equal(widgets.at(-1), "", "the outgoing omitted policy is unknown and stays silent");
+
+  await fire(probe, "agent_end", {}, ctx);
+  assert.match(widgets.at(-1)!, /24h retention maximum reached/, "abort restores the prior policy");
+});
+
+test("event flow: switching back before an OpenAI maximum stays unknown", async (t) => {
+  let now = Date.UTC(2026, 7, 4, 12);
+  t.mock.method(Date, "now", () => now);
+  const entries: unknown[] = [
+    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: now } },
+  ];
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const ctx = probeContext(entries, "openai-responses", notifications, widgets);
+  const openaiModel = {
+    id: "gpt-5.4", provider: "openai", api: "openai-responses", reasoning: true, contextWindow: 200_000,
+    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
+  };
+  ctx.model = openaiModel;
+  const probe = extensionProbe();
+  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
+
+  await fire(probe, "session_start", {}, ctx);
+  await fire(probe, "before_provider_request", {
+    payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" },
+  }, ctx);
+  const openaiMessage = {
+    role: "assistant", content: [], provider: "openai", api: "openai-responses", model: "gpt-5.4",
+    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 0, 100_000),
+  };
+  await fire(probe, "message_end", { message: openaiMessage }, ctx);
+  entries.push({ type: "message", id: "a1", parentId: "u1", message: openaiMessage });
+
+  entries.push({ type: "message", id: "u2", parentId: "a1", message: { role: "user", content: "second", timestamp: now + 2_000 } });
+  ctx.model = {
+    id: "claude-opus-4-8", provider: "anthropic", api: "anthropic-messages", reasoning: true, contextWindow: 200_000,
+    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
+  };
+  await fire(probe, "model_select", { model: ctx.model }, ctx);
+  await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
+  const anthropicMessage = {
+    role: "assistant", content: [], provider: "anthropic", api: "anthropic-messages", model: "claude-opus-4-8",
+    stopReason: "stop", timestamp: now + 3_000, usage: usage(0, 0, 100_000),
+  };
+  await fire(probe, "message_end", { message: anthropicMessage }, ctx);
+  entries.push({ type: "message", id: "a2", parentId: "u2", message: anthropicMessage });
+
+  now += 60 * 60_000;
+  notifications.length = 0;
+  ctx.model = openaiModel;
+  await fire(probe, "model_select", { model: openaiModel }, ctx);
+  assert.match(widgets.at(-1)!, /cache state unknown · model switched/);
+  await fire(probe, "before_provider_request", {
+    payload: { model: "gpt-5.4", input: [{ role: "user", content: "third" }], prompt_cache_retention: "24h" },
+  }, ctx);
+  assert.equal(notifications.length, 0, "a maximum cannot make a pre-maximum switch-back cold");
+  assert.match(widgets.at(-1)!, /cache state unknown · model switched/);
+});
+
 test("event flow: model_select flips the clock before any send, and back again", async () => {
   const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 3_000, 2_000);
   const notifications: string[] = [];
@@ -177,7 +302,7 @@ test("event flow: model_select flips the clock before any send, and back again",
   try {
     assert.doesNotMatch(widgets.at(-1)!, /model switched/, "same identity: no switch at session_start");
     await fire(probe, "model_select", { model: {
-      id: "gpt-5.6-luna", provider: "openai-codex", api: "openai-codex-responses", reasoning: true,
+      id: "gpt-5.6-sol", provider: "openai-codex", api: "openai-codex-responses", reasoning: true,
       contextWindow: 272_000, cost: { input: 1, output: 4, cacheRead: 0.1, cacheWrite: 0 },
     } }, ctx);
     const line = widgets.at(-1)!;
