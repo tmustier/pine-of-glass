@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "studyDate": "2026-08-05",
   "purpose": "Evidence behind Contextimate raw-text tokenizer families and divisors. No source text or credentials.",
   "openTokenizers": {
@@ -407,187 +406,54 @@
         "resolvedModels": [
           "grok-4.20-0309-reasoning"
         ],
-        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
-        "samples": [
-          {
-            "fixture": "ascii",
-            "chars": 88,
-            "tokens": 29,
-            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
-          },
-          {
-            "fixture": "code",
-            "chars": 124,
-            "tokens": 38,
-            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
-          },
-          {
-            "fixture": "controls",
-            "chars": 79,
-            "tokens": 29,
-            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
-          },
-          {
-            "fixture": "multilingual",
-            "chars": 95,
-            "tokens": 35,
-            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
-          },
-          {
-            "fixture": "random-ascii-4096",
-            "chars": 4096,
-            "tokens": 2848,
-            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
-          },
-          {
-            "fixture": "whitespace",
-            "chars": 65,
-            "tokens": 25,
-            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
-          }
-        ]
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7"
       },
       {
         "requestedModel": "grok-4.20-0309-non-reasoning",
         "resolvedModels": [
           "grok-4.20-0309-non-reasoning"
         ],
-        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
-        "samples": [
-          {
-            "fixture": "ascii",
-            "chars": 88,
-            "tokens": 29,
-            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
-          },
-          {
-            "fixture": "code",
-            "chars": 124,
-            "tokens": 38,
-            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
-          },
-          {
-            "fixture": "controls",
-            "chars": 79,
-            "tokens": 29,
-            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
-          },
-          {
-            "fixture": "multilingual",
-            "chars": 95,
-            "tokens": 35,
-            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
-          },
-          {
-            "fixture": "random-ascii-4096",
-            "chars": 4096,
-            "tokens": 2848,
-            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
-          },
-          {
-            "fixture": "whitespace",
-            "chars": 65,
-            "tokens": 25,
-            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
-          }
-        ]
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7"
       },
       {
         "requestedModel": "grok-4.20-multi-agent",
         "resolvedModels": [
           "grok-4.20-multi-agent-0309"
         ],
-        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
-        "samples": [
-          {
-            "fixture": "ascii",
-            "chars": 88,
-            "tokens": 29,
-            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
-          },
-          {
-            "fixture": "code",
-            "chars": 124,
-            "tokens": 38,
-            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
-          },
-          {
-            "fixture": "controls",
-            "chars": 79,
-            "tokens": 29,
-            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
-          },
-          {
-            "fixture": "multilingual",
-            "chars": 95,
-            "tokens": 35,
-            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
-          },
-          {
-            "fixture": "random-ascii-4096",
-            "chars": 4096,
-            "tokens": 2848,
-            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
-          },
-          {
-            "fixture": "whitespace",
-            "chars": 65,
-            "tokens": 25,
-            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
-          }
-        ]
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7"
       },
       {
         "requestedModel": "grok-4.3",
         "resolvedModels": [
           "grok-4.3"
         ],
-        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
-        "samples": [
-          {
-            "fixture": "ascii",
-            "chars": 88,
-            "tokens": 29,
-            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
-          },
-          {
-            "fixture": "code",
-            "chars": 124,
-            "tokens": 38,
-            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
-          },
-          {
-            "fixture": "controls",
-            "chars": 79,
-            "tokens": 29,
-            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
-          },
-          {
-            "fixture": "multilingual",
-            "chars": 95,
-            "tokens": 35,
-            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
-          },
-          {
-            "fixture": "random-ascii-4096",
-            "chars": 4096,
-            "tokens": 2848,
-            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
-          },
-          {
-            "fixture": "whitespace",
-            "chars": 65,
-            "tokens": 25,
-            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
-          }
-        ]
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7"
       },
       {
         "requestedModel": "grok-build-0.1",
         "resolvedModels": [
           "grok-build-0.1"
         ],
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7"
+      },
+      {
+        "requestedModel": "grok-4.5",
+        "resolvedModels": [
+          "grok-4.5"
+        ],
+        "fingerprint": "f892196825e9e0e9cb782d8b18502de6e97c561a034a89ad256f0bb2f3b9a6a3"
+      }
+    ],
+    "groups": [
+      {
         "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
+        "models": [
+          "grok-4.20-0309-reasoning",
+          "grok-4.20-0309-non-reasoning",
+          "grok-4.20-multi-agent",
+          "grok-4.3",
+          "grok-build-0.1"
+        ],
         "samples": [
           {
             "fixture": "ascii",
@@ -628,11 +494,10 @@
         ]
       },
       {
-        "requestedModel": "grok-4.5",
-        "resolvedModels": [
+        "fingerprint": "f892196825e9e0e9cb782d8b18502de6e97c561a034a89ad256f0bb2f3b9a6a3",
+        "models": [
           "grok-4.5"
         ],
-        "fingerprint": "f892196825e9e0e9cb782d8b18502de6e97c561a034a89ad256f0bb2f3b9a6a3",
         "samples": [
           {
             "fixture": "ascii",
@@ -670,24 +535,6 @@
             "tokens": 28,
             "digest": "1fce01d76aa14a902c4909de7784fffb55dd547121c2ed24f86ff2b2073da2ed"
           }
-        ]
-      }
-    ],
-    "groups": [
-      {
-        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
-        "models": [
-          "grok-4.20-0309-reasoning",
-          "grok-4.20-0309-non-reasoning",
-          "grok-4.20-multi-agent",
-          "grok-4.3",
-          "grok-build-0.1"
-        ]
-      },
-      {
-        "fingerprint": "f892196825e9e0e9cb782d8b18502de6e97c561a034a89ad256f0bb2f3b9a6a3",
-        "models": [
-          "grok-4.5"
         ]
       }
     ]

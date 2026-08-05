@@ -47,9 +47,7 @@ A second study on 5 August 2026 covered Kimi, GLM, Cohere and Grok. It counted 5
 | Grok 4.20 variants, 4.3 and Build 0.1 | 4.2 | 3.9 |
 | Grok 4.5 | 4.1 | 3.6 |
 
-These profiles cover visible text only. Kimi versions share one base rank file but use different control vocabularies. GLM has two proven tokenizer generations. Command R and R+ share ordinary-text merges, but some special tokens differ.
-
-Exact xAI fingerprints put Grok 4.20 reasoning, non-reasoning and multi-agent, 4.3 and Build 0.1 together. Grok 4.5 is separate. Dynamic aliases and unverified GLM Turbo variants use the fallback until routing identifies a concrete model. The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) contains the full evidence.
+These profiles cover visible text only. Dynamic aliases and unverified GLM Turbo variants use the fallback until routing identifies a concrete model. The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) contains the tokenizer hashes, xAI fingerprints and family boundaries.
 
 ## Tool schemas
 

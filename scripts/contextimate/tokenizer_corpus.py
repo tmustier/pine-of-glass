@@ -22,18 +22,16 @@ CORPUS_FILES = {
 }
 
 
-def pinned_file(path: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(ROOT), "show", f"{CORPUS_REVISION}:{path}"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout
-
-
 def pinned_corpus() -> dict[str, str]:
+    def read(path: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(ROOT), "show", f"{CORPUS_REVISION}:{path}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
     return {
-        name: "\n".join(pinned_file(path) for path in files)
+        name: "\n".join(read(path) for path in files)
         for name, files in CORPUS_FILES.items()
     }
