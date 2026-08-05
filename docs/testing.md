@@ -80,6 +80,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
+| OpenAI Completions ignores top-level `usage.cached_tokens`; provider registration and custom fetch remain public extension seams | cachemire Moonshot and Together usage overlay |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 
 Where instantiating real components is impractical, the contract test asserts on the
@@ -175,6 +176,8 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   docs. `retention-evidence.test.ts` pins routes and boundaries; clock tests pin visible
   wording; `pi-cache-retention-seams.test.ts` covers installed Pi routes. `npm run lint`
   rejects stale generated blocks.
+- **Provider response normalization**: tests cover native-field precedence, fragmented
+  SSE, response metadata, provider collisions and cleanup.
 - **Restored freshness**: persisted lineage uses the parent entry timestamp as its
   request anchor and response time only as fallback. Model-level registry policies can
   resolve after restore; request-only evidence stays unknown because the outgoing payload

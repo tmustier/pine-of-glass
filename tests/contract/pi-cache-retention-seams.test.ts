@@ -17,6 +17,15 @@ test("direct OpenAI keeps the legacy retention field", () => {
   assert.match(source("openai-responses.js"), /prompt_cache_retention:/);
 });
 
+test("Cachemire's provider usage overlay still owns a real Pi normalization gap", () => {
+  const completions = source("openai-completions.js");
+  assert.match(
+    completions,
+    /rawUsage\.prompt_tokens_details\?\.cached_tokens \?\? rawUsage\.prompt_cache_hit_tokens/,
+  );
+  assert.doesNotMatch(completions, /rawUsage\.cached_tokens/);
+});
+
 function modelRecord(name: string, api: string, model: string): Record<string, unknown> {
   const raw: unknown = JSON.parse(readFileSync(join(piAiRoot, "providers", "data", name), "utf8"));
   if (!isJsonObject(raw) || !isJsonObject(raw[api]) || !isJsonObject(raw[api][model])) {

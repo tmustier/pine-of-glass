@@ -17,6 +17,15 @@ The wider provider inventory and implementation record are in
 Cachemire keeps an observed request policy pending until reported cache reads or writes
 confirm that an entry exists.
 
+## Moonshot and Together usage
+
+Moonshot and some Together responses report cache reads in top-level
+`usage.cached_tokens`, which Pi 0.83 does not read. Cachemire overlays `streamSimple` for
+those built-in providers and copies that value into Pi's supported nested field when no
+native cache-read field exists. It leaves custom streams alone and restores prior
+provider config on shutdown or reload. Corrected usage does not provide retention
+evidence.
+
 ## Four rules shape the UI
 
 1. Evidence: Cachemire distinguishes a TTL, a minimum, a maximum and unknown retention.
@@ -162,8 +171,9 @@ an old-model count as the denominator.
 
 ## State stays UI-only
 
-Working state lives in the extension process. Cachemire writes nothing to session
-entries or exports.
+Working state and rendered output live in the extension process. Cachemire adds no custom
+session entries or exports. Corrected Moonshot and Together counts become ordinary Pi
+assistant usage and follow Pi's normal session lifecycle.
 
 On restore, Cachemire rebuilds its ledger and branch baselines from billed usage in
 assistant messages. Payload fingerprints, request-start observations and live retention

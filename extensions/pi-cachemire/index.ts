@@ -31,6 +31,7 @@ import {
   resolveCacheLineage,
   restoreLineageSnapshots,
 } from "./lineage.ts";
+import { bindProviderUsageOverlays } from "./provider-usage.ts";
 import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
 import {
   confirmedWindow,
@@ -226,9 +227,6 @@ function sessionSavings(records: CallRecord[]): { actual: number; uncached: numb
   if (uncached <= 0) return undefined;
   return { actual, uncached, saved: uncached - actual, pct: (1 - actual / uncached) * 100 };
 }
-
-// All number formatting lives in _lib/fmt.ts (family number grammar); the test suite
-// reaches it through this module's internals surface.
 
 // --- ledger lines ----------------------------------------------------------------------
 
@@ -476,6 +474,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   const s = state();
   const ownerToken = Symbol("pi-cachemire-owner");
   const ownsState = () => g.__piCachemireOwner === ownerToken;
+  bindProviderUsageOverlays(pi);
 
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
