@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "clusters": {
+    "openai-holdout-natural-a": "openai-holdout-natural-ancestor",
+    "openai-holdout-natural-b": "openai-holdout-natural-ancestor",
+    "openai-holdout-natural-c": "openai-holdout-natural-ancestor",
+    "anthropic-holdout-natural-a": "anthropic-holdout-natural-ancestor",
+    "anthropic-holdout-natural-b": "anthropic-holdout-natural-ancestor",
+    "anthropic-holdout-natural-c": "anthropic-holdout-natural-ancestor"
+  }
+}

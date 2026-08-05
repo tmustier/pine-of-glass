@@ -35,14 +35,23 @@ node scripts/contextimate/probe-live-prefix.mjs -- --no-tools --no-skills --no-c
 # 1. capture what pi actually sends (see Live prefix probe above)
 node scripts/contextimate/probe-live-prefix.mjs --output-dir /tmp/probe
 
-# 2. preview the counting plan (no network)
-node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl
+# 2. use the single payload path printed by the probe, not a multi-file glob
+payload=/tmp/probe/REPLACE-WITH-CAPTURE.payloads.jsonl
 
-# 3. get provider-exact counts
-node scripts/contextimate/check-provider-tokens.mjs --payload /tmp/probe/*.payloads.jsonl --live
+# 3. preview the counting plan (no network)
+node scripts/contextimate/check-provider-tokens.mjs --payload "$payload"
+
+# 4. get provider-exact static-section counts
+node scripts/contextimate/check-provider-tokens.mjs --payload "$payload" --live
+
+# 5. count the complete captured prompt when a count endpoint supports it
+node scripts/contextimate/check-provider-tokens.mjs \
+  --payload "$payload" --exact --live --json
 ```
 
-This builds a matrix of minimal counting requests (baseline, system-only, all-tools, and per-tool) from a captured payload, passing each section through **byte-identical** (never reshaped), so the counted payload is exactly what pi sent and exactly what contextimate estimates. Use `--tools name1,name2` to focus on specific tools (e.g. one lazy-loaded MCP server whose hot-path footprint the startup estimator cannot see), `--model` to count against a different model, and `--json` for machine output.
+Default mode isolates the system and tools by replacing the conversation with one minimal message. It passes each measured section through unchanged. Use `--tools name1,name2` to focus on specific tools or `--model` to count another model.
+
+`--exact` preserves the complete Anthropic prompt, including accepted `thinking`, `output_config` and `cache_control` controls. Its JSON output includes provider, API and model identity plus payload and count-request SHA-256 digests. OpenAI has no non-generating exact-count endpoint in this script.
 
 - **Anthropic**: uses the free `count_tokens` endpoint. Credentials: `ANTHROPIC_API_KEY`, or automatically pi's own OAuth token from `~/.pi/agent/auth.json` (used locally against the official API only, never printed).
 - **OpenAI**: uses tiny real `/v1/responses` probes (`max_output_tokens: 16`, `store: false`) and reads exact `usage.input_tokens`. **Not free**: costs a fraction of a cent per probe. Requires `OPENAI_API_KEY` (pi's `openai-codex` OAuth token cannot call `api.openai.com`).

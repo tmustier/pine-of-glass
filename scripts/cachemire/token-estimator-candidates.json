@@ -1,0 +1,8 @@
+[
+  {
+    "name": "C2-anthropic-tool-block",
+    "providers": ["anthropic"],
+    "toolBlockTokens": 290,
+    "rationale": "Anthropic count_tokens solved a 290-token once-per-request tool block in the controlled four-tool development ablation. The constant was frozen before holdout analysis."
+  }
+]

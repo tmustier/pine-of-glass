@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   parsePayloadFile,
   detectPayloadKind,
+  buildAnthropicExactCountRequest,
   buildAnthropicCountRequests,
   buildOpenAIResponsesProbes,
   computeToolOverhead,
@@ -24,14 +25,13 @@ const { buildSnapshot, toolPayloadForShape } = internals;
 // estimates for (anthropic shape) — provenance shared with the estimator, not invented.
 function capturedAnthropicPayload() {
   const snapshot = buildSnapshot(fakePi(), () => fixtureSystemPrompt(), undefined, () => undefined, () => anthropicModel, {});
-  const activeTools = snapshot.tools.filter((tool) => tool.source !== "inactive");
   return {
     model: "claude-opus-4-8",
     max_tokens: 8192,
+    stream: true,
     system: [{ type: "text", text: fixtureSystemPrompt() }],
     messages: [{ role: "user", content: [{ type: "text", text: "real conversation" }] }],
     tools: snapshot.tools.slice(0, 3).map((tool) => toolPayloadForShape(tool, "anthropic")),
-    displayedToolCount: activeTools.length, // not part of the provider body; ignored by builders
   };
 }
 
@@ -56,6 +56,32 @@ test("anthropic count requests pass payload sections through byte-identical", ()
   }
   assert.equal(byId.baseline!.body.tools, undefined);
   assert.equal(byId.baseline!.body.system, undefined);
+});
+
+test("anthropic exact count preserves one Pi-shaped prompt", () => {
+  const base = capturedAnthropicPayload();
+  const payload = {
+    ...base,
+    system: base.system.map((block, index) => index === base.system.length - 1
+      ? { ...block, cache_control: { type: "ephemeral" } }
+      : block),
+    tool_choice: { type: "auto" },
+    thinking: { type: "adaptive", display: "summarized" },
+    output_config: { effort: "high" },
+    cache_control: { type: "ephemeral" },
+  };
+  const request = buildAnthropicExactCountRequest(payload);
+  assert.equal(request.id, "exact");
+  assert.deepEqual(request.body, {
+    model: payload.model,
+    messages: payload.messages,
+    system: payload.system,
+    tools: payload.tools,
+    tool_choice: payload.tool_choice,
+    thinking: payload.thinking,
+    output_config: payload.output_config,
+    cache_control: payload.cache_control,
+  });
 });
 
 test("tool limiting and model override", () => {
