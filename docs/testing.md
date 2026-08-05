@@ -252,21 +252,6 @@ model call required:
   documented manual step in the publish checklist, not a script dependency on provider
   auth.
 
-## Acceptance tests for the queued work
-
-Designed now so the features land with their proofs:
-
-- **#9 (system-prompt row clarity):** golden diff shows the renamed row + method caveat
-  in all three views; unit test that the section id stays `"system"` (config/signature
-  compat) while the title changes.
-- **#8 (provider token check):** the checker is a script (`scripts/contextimate/
-  check-provider-tokens.ts`) whose request builders are pure and unit-tested against current
-  Pi payload shapes and provider count schemas. The Cohere executor is tested with a mocked
-  response. The separate xAI Python checker has an offline fingerprint self-test. Network
-  execution is manual; tests never call providers.
-- **#7 (click UX decision):** resolved by removal; click-to-expand shipped, proved
-  unusable in practice, and was deleted (v0.5.18). Ctrl+T is the whole surface.
-
 ## What "passing" means
 
 `npm test` green on a machine with the current Pi installed means: our assumptions about

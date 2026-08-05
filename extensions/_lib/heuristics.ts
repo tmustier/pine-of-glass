@@ -98,7 +98,7 @@ const CLAUDE_GENERIC: TokenizerProfile = {
   textDenominator: 3.5,
   sessionDenominator: 3.5,
 };
-const KIMI_RAW: TokenizerProfile = {
+const KIMI: TokenizerProfile = {
   label: "Kimi tokenizer",
   textDenominator: 4.1,
   sessionDenominator: 3.8,
@@ -138,12 +138,6 @@ function isClaudeModel(model: ModelSummary): boolean {
   return model.provider.toLowerCase().includes("anthropic") || model.id.toLowerCase().includes("claude");
 }
 
-function isKimiModel(model: ModelSummary, id: string): boolean {
-  if (KIMI_MODEL.test(id)) return true;
-  if (model.provider.toLowerCase() !== "kimi-coding") return false;
-  return /^(?:k3(?:-256k)?|kimi-for-coding(?:-highspeed)?)$/.test(id);
-}
-
 function tokenizerProfile(model: ModelSummary): TokenizerProfile | undefined {
   const id = model.id.toLowerCase();
   if (isClaudeModel(model)) {
@@ -151,7 +145,9 @@ function tokenizerProfile(model: ModelSummary): TokenizerProfile | undefined {
     if (CLAUDE_45_46_MODEL.test(id)) return CLAUDE_45_46;
     return CLAUDE_GENERIC;
   }
-  if (isKimiModel(model, id)) return KIMI_RAW;
+  const kimiCoding = model.provider.toLowerCase() === "kimi-coding"
+    && /^(?:k3(?:-256k)?|kimi-for-coding(?:-highspeed)?)$/.test(id);
+  if (KIMI_MODEL.test(id) || kimiCoding) return KIMI;
   if (GLM_5_MODEL.test(id)) return GLM_5;
   if (GLM_45_MODEL.test(id)) return GLM_45;
   if (COMMAND_R_MODEL.test(id)) return COMMAND_R;

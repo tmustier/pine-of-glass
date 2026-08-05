@@ -13,12 +13,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib.metadata import version
 from importlib.util import find_spec
-from pathlib import Path
 
 sys.dont_write_bytecode = True
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
 
 from tokenizer_corpus import CORPUS_FILES, CORPUS_REVISION, pinned_corpus
 
@@ -46,18 +42,6 @@ GLM_5_HASH = "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
 COMMAND_CORE_HASH = "2bcc46184ba3b57d82c76cdeb373c32e65cb570633a7237e1b01c175faf3758e"
 KIMI_CONFIG_HASH = "12fcab43d2b6068f46769f5ff373960bf7c17a94d7abbc50e2491306b2f6cf58"
 KIMI_PATTERN_HASH = "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
-KIMI_PATTERN = "|".join(
-    [
-        r"[\p{Han}]+",
-        r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]*[\p{Ll}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
-        r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]+[\p{Ll}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
-        r"\p{N}{1,3}",
-        r" ?[^\s\p{L}\p{N}]+[\r\n]*",
-        r"\s*[\r\n]+",
-        r"\s+(?!\S)",
-        r"\s+",
-    ]
-)
 
 TOKENIZERS = [
     TokenizerSpec(
@@ -297,11 +281,12 @@ def load_encoder(
         revision=spec.representative.revision,
     )
     if spec.representative.filename == "tiktoken.model":
-        local_pattern_hash = hashlib.sha256(KIMI_PATTERN.encode()).hexdigest()
-        if local_pattern_hash != KIMI_PATTERN_HASH:
-            raise RuntimeError(
-                f"local Kimi tokenizer pattern changed: {local_pattern_hash}"
-            )
+        source = hf_hub_download(
+            spec.representative.repository,
+            "tokenization_kimi.py",
+            revision=spec.representative.revision,
+        )
+        pattern = extract_kimi_pattern(source)
         config = hf_hub_download(
             spec.representative.repository,
             "tokenizer_config.json",
@@ -325,7 +310,7 @@ def load_encoder(
         }
         encoding = tiktoken.Encoding(
             name="kimi-contextimate-calibration",
-            pat_str=KIMI_PATTERN,
+            pat_str=pattern,
             mergeable_ranks=ranks,
             special_tokens=special,
         )

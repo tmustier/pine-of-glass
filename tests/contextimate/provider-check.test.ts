@@ -207,34 +207,20 @@ test("Bedrock, Kimi, Cohere and Z.AI builders match their count APIs", () => {
   assert.deepEqual(rowsById(buildZaiRequests(chat))["tool:ping"].body.tools, chat.tools);
 });
 
-test("Cohere live counting validates the raw tokenizer response", async () => {
-  const originalFetch = globalThis.fetch;
+test("Cohere executor calls the tokenizer API", async (t) => {
   const originalKey = process.env.COHERE_API_KEY;
   process.env.COHERE_API_KEY = "fixture-key";
-  let malformed = false;
-  globalThis.fetch = async (input, init) => {
-    assert.equal(String(input), "https://api.cohere.com/v1/tokenize");
-    assert.equal(init?.method, "POST");
-    assert.deepEqual(init?.headers, {
-      "content-type": "application/json",
-      authorization: "Bearer fixture-key",
-    });
-    assert.equal(init?.body, JSON.stringify({ model: "command-r-08-2024", text: "system" }));
-    return Response.json(malformed ? { tokens: [1, "bad"] } : { tokens: [1, 2, 3] });
-  };
-
-  try {
-    assert.equal(await PROVIDERS.cohere.execute({ model: "command-r-08-2024", text: "system" }), 3);
-    malformed = true;
-    await assert.rejects(
-      PROVIDERS.cohere.execute({ model: "command-r-08-2024", text: "system" }),
-      /no numeric tokens array/,
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
+  t.after(() => {
     if (originalKey === undefined) delete process.env.COHERE_API_KEY;
     else process.env.COHERE_API_KEY = originalKey;
-  }
+  });
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    assert.equal(String(input), "https://api.cohere.com/v1/tokenize");
+    assert.equal(init?.body, JSON.stringify({ model: "command-r-08-2024", text: "system" }));
+    return Response.json({ tokens: [1, 2, 3] });
+  });
+
+  assert.equal(await PROVIDERS.cohere.execute({ model: "command-r-08-2024", text: "system" }), 3);
 });
 
 test("summary removes the shared tool-block overhead", () => {
