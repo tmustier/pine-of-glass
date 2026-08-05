@@ -336,4 +336,3 @@ test("event flow: model_select flips the clock before any send, and back again",
     await fire(probe, "session_shutdown", {});
   }
 });
-
