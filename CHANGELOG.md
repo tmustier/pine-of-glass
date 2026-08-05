@@ -1,53 +1,43 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 (2026-08-05)
 
-- **Cachemire: recover Moonshot and Together cache reads.** A provider overlay
-  normalizes top-level `usage.cached_tokens` before Pi accounts for the response.
-- **Cachemire: keep model-switch forecasts stable through send.** Outgoing payloads
-  still provide cache evidence, while provider usage supplies the exact result.
-- **Traceline: show silent `gh pr merge` outcomes.** A successful terminal merge
-  with an explicit PR number now renders `merged PR #N` when `gh` returns no text.
-  Same-row JSON `MERGED` state is also recognised.
-- **Cachemire: show cache status only when evidence supports action.** Observed
-  Anthropic 5-minute and 1-hour TTLs warn shortly before expiry. Restored Anthropic
-  sessions may infer the TTL from `PI_CACHE_RETENTION`. GPT-5.6 and later GPT-5 models
-  use OpenAI's documented 30-minute minimum on both
-  OpenAI and OpenAI Codex. A direct official OpenAI GPT-5 request below GPT-5.6 gets a
-  24-hour maximum only when its outgoing payload contains `prompt_cache_retention:
-  "24h"` and a later cache read confirms an entry. MiniMax M2.7, documented Bedrock
-  Claude 4.5 and 4.6 models, Groq GPT-OSS, and supported Cerebras models now get exact
-  route policies. Every window waits for a reported cache read or supported write;
-  unmatched routes make no idle-time or warmth claim. This removes the OpenAI
-  5-minute to 1-hour band, `in_memory` support, replica identity
-  and 512-token entry matching. Re-write forecasts use the prior billed prompt as a
-  baseline, not the whole next prompt. Stale and invalidated states retain warning
-  emphasis, compaction says only that changed history may be re-written, and the widget
-  sleeps until the next supported warning boundary. Runtime resolution and generated
-  retention docs now share one typed policy registry; lint rejects drift. Fixes #25.
-- **Contextimate: recognise the Claude 4.7+ tokenizer across routes.** Fable 5,
-  Opus 5 and explicit Claude 4.7+ models relayed through Radius or OpenRouter now
-  use the same measured profile as Claude 4.7/4.8. Bedrock retains its own payload
-  shape.
-- **Contextimate: make accounting uncertainty visible.** The former
-  `Other / reasoning` residual is now `Unattributed`, so static-prefix error cannot
-  masquerade as model reasoning. `Reasoning context` sums exact `usage.reasoning`
-  values for signed blocks retained by the provider response anchoring Pi's total,
-  including reported zero. Same-model Claude Fable 5, Mythos 5, Opus 4.5+ and Sonnet
-  4.6+ histories follow Anthropic's keep-all policy; older Claude families keep only
-  the current assistant turn. GPT-5.6 Responses histories follow OpenAI's all-turns
-  default; earlier models keep the current turn. Pi's exact prompt total rejects
-  impossible historical attribution, including cached input. Other providers' history
-  remains unattributed until retention is measured. Summaries not covered by exact
-  counts, including cross-model thinking converted to text, remain a clearly estimated
-  `Thinking summaries` row. Opaque signatures are never sized as tokens. `Total request`
-  keeps `~` when Pi includes local estimates for trailing messages, including excluded
-  `!!` bash executions.
-- The live prefix probe now verifies the provider and model that actually answered,
-  preventing a model-selection override from producing a confidently mislabeled
-  calibration.
-- Refresh the installed Pi lifecycle contract fixture for the new scoped-models
-  accessor.
+- Cachemire now forecasts model switches in the target model's tokens and prices. It
+  keeps the estimate stable while Pi sends the request, then replaces it with the
+  provider's billed result. Provider, model and wire API now form the cache identity,
+  so changing routes cannot reuse an incompatible baseline. Switching back can recover
+  a still-warm entry when the recorded route, retention window and session history all
+  support it.
+- Cachemire now shows cache warnings only when they can help you act. It waits for
+  evidence that a cache entry exists, warns near a known retention boundary, and says
+  when compaction, a thinking change or a model switch may force a rewrite. Unknown
+  routes and unexplained misses stay unknown. Rewrite estimates use the previous billed
+  prompt as their baseline.
+- Cachemire adds evidence-backed retention rules for Anthropic, OpenAI and OpenAI Codex,
+  MiniMax M2.7, supported Bedrock Claude models, Groq GPT-OSS and supported Cerebras
+  models. Generated policy docs now come from the same registry as the runtime. It also
+  recovers cache reads that Moonshot and Together report as top-level
+  `usage.cached_tokens`. Fixes #25.
+- Contextimate now separates exact retained reasoning from the remaining accounting
+  gap. The gap is labelled `Unattributed`; uncovered summaries remain estimated as
+  `Thinking summaries`; opaque signatures never become token estimates. Retention
+  follows the measured policy for each supported Claude and GPT family. Impossible
+  historical attribution is rejected against Pi's exact prompt total.
+- Contextimate now handles model switches without mixing token currencies. Before the
+  new model responds, it labels the exact total in the previous model's tokens and
+  withholds incompatible percentages. It also recognises Claude 4.7 and later tokenizer
+  profiles across supported routes, while keeping tokenizer choice separate from each
+  provider's wire format.
+- Traceline now folds identical compact tool calls from one assistant step into one
+  counted `×N` row. The fold combines result sizes, keeps the worst status and acts as
+  one target in drill mode. Calls from separate steps remain separate.
+- Traceline can infer `merged PR #N` when a successful terminal `gh pr merge <number>`
+  returns no text. A same-row `gh pr view --json state` check remains the reliable way
+  to distinguish a queued merge from a landed one.
+- The Contextimate token checker now supports Anthropic, OpenAI, Gemini, Vertex AI,
+  Bedrock, Kimi and Z.AI. Live checks now require `--provider`, because the payload shape
+  alone may not identify the service. The prefix probe also rejects results from a
+  different provider or model than the one requested.
 
 ## 0.9.1 (2026-07-27)
 
