@@ -155,10 +155,12 @@ Set `turnSummaryMinCalls` higher if you only want a ledger line for multi-call t
 Cachemire follows these rules:
 
 - Token and cost numbers come from provider-reported usage in assistant messages.
-  The one estimate is the model-switch forecast, which is always labelled `est`.
+  Cachemire normalizes top-level Moonshot and Together cache-read counts before Pi
+  records them.
+- The model-switch forecast is the only estimate and is always labelled `est`.
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
-- Everything Cachemire draws is UI-only. It does not enter LLM context, session
-  entries or exports.
+- Everything Cachemire draws is UI-only and does not enter LLM context. Corrected usage
+  follows Pi's normal session persistence; Cachemire adds no custom session entries.
 - Freshness wording follows the generated policy table above. Unknown retention stays
   silent. Under subscription auth, Cachemire marks savings as notional.
 - Sessions restored with `--continue` rebuild the active ledger and all-branch cache

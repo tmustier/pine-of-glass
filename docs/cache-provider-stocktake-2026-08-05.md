@@ -66,12 +66,10 @@ Cachemire therefore reports outcomes for many non-Anthropic and non-OpenAI route
 retention registry covers direct Anthropic and OpenAI, MiniMax M2.7, documented Bedrock
 Claude 4.5 and 4.6 models, Groq GPT-OSS, and supported Cerebras models.
 
-Two normalization gaps remain:
-
-- Moonshot uses top-level `usage.cached_tokens`, which Pi's OpenAI Completions adapter
-  does not read
-- Together can use either `usage.prompt_tokens_details.cached_tokens` or top-level
-  `usage.cached_tokens`; only the first shape reaches Cachemire
+Pi ignores top-level `usage.cached_tokens`, used by Moonshot and some Together
+responses. Cachemire overlays those providers and copies the count into Pi's supported
+nested field when no native cache-read field exists. Existing custom streams win, and
+the overlay is removed on shutdown or reload.
 
 Pricing and a non-zero cached-token count prove a read. They do not prove retention,
 eviction cause, replica identity or future warmth.
@@ -101,8 +99,8 @@ evidence.
 | `minimax` | 3 | Anthropic Messages | MiniMax M2.7, M2.7 highspeed and M3 | 5-minute clock for M2.7 models; usage only for M3 |
 | `minimax-cn` | 3 | Anthropic Messages | MiniMax M2.7, M2.7 highspeed and M3 | 5-minute clock for M2.7 models; usage only for M3 |
 | `mistral` | 30 | Mistral Conversations | Codestral, Devstral, Magistral, Ministral, Mistral, Mixtral and Pixtral | Pi can read returned cache usage, but Mistral publishes no hosted cache contract |
-| `moonshotai` | 10 | OpenAI Completions | Kimi K2 and K3 families | automatic cache, 256-token minimum, unknown lifetime; Pi usage gap |
-| `moonshotai-cn` | 10 | OpenAI Completions | Kimi K2 and K3 families | automatic cache, 256-token minimum, unknown lifetime; Pi usage gap |
+| `moonshotai` | 10 | OpenAI Completions | Kimi K2 and K3 families | observed usage through Cachemire's response shim; automatic cache, 256-token minimum, unknown lifetime |
+| `moonshotai-cn` | 10 | OpenAI Completions | Kimi K2 and K3 families | observed usage through Cachemire's response shim; automatic cache, 256-token minimum, unknown lifetime |
 | `nvidia` | 30 | OpenAI Completions | routed models from 11 vendors | no managed NIM cache contract |
 | `openai` | 38 | OpenAI Responses | GPT-4, GPT-5 and o-series | current 30-minute minimum for GPT-5.6 and later GPT-5 families; current 24-hour maximum for an observed supported pre-GPT-5.6 request |
 | `openai-codex` | 7 | Codex Responses | GPT-5 Codex and GPT-5.6 variants | current 30-minute minimum for GPT-5.6 variants; no backend-specific maximum |
@@ -111,7 +109,7 @@ evidence.
 | `openrouter` | 303 | OpenAI Completions | routed models from more than 30 vendors | explicit Anthropic policy candidate with gateway caveat; usage only otherwise |
 | `qwen-token-plan` | 15 | OpenAI Completions | Qwen, DeepSeek, Kimi, MiniMax and GLM | no Token Plan cache contract |
 | `qwen-token-plan-cn` | 15 | OpenAI Completions | Qwen, DeepSeek, Kimi, MiniMax and GLM | no Token Plan cache contract |
-| `together` | 17 | OpenAI Completions | routed models from 10 vendors | usage only; no retention window; partial Pi usage gap |
+| `together` | 17 | OpenAI Completions | routed models from 10 vendors | observed usage through native fields or Cachemire's response shim; no retention window |
 | `vercel-ai-gateway` | 193 | Anthropic Messages | routed models from more than 20 vendors | upstream policy and provider can vary |
 | `xai` | 3 | OpenAI Completions and Responses | Grok 4.3, 4.5 and Build | usage only; entries can be evicted at any time |
 | `xiaomi` | 6 | OpenAI Completions | MiMo V2, V2.5 and Pro variants | usage and pricing only; no public lifetime |

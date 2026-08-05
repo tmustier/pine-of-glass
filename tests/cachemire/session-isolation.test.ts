@@ -16,6 +16,8 @@ function extensionProbe(): { pi: ExtensionAPI; handlers: Map<string, Handler[]>;
     registerCommand(name: string, options: { handler: Handler }): void {
       commands.set(name, options.handler);
     },
+    registerProvider(): void {},
+    unregisterProvider(): void {},
     getThinkingLevel(): string {
       return "off";
     },
@@ -45,6 +47,10 @@ function sessionContext(id: string, notifications?: string[]): unknown {
       getSessionId: () => id,
       getEntries: () => [],
       getLeafId: () => undefined,
+    },
+    modelRegistry: {
+      getRegisteredNativeProvider: () => undefined,
+      getRegisteredProviderConfig: () => undefined,
     },
   };
 }

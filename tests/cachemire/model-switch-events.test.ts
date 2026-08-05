@@ -20,6 +20,8 @@ function extensionProbe(): { handlers: Map<string, Handler[]> } {
       handlers.set(event, [...(handlers.get(event) ?? []), handler]);
     },
     registerCommand(): void {},
+    registerProvider(): void {},
+    unregisterProvider(): void {},
     getThinkingLevel: () => "off",
     getActiveTools: () => [],
     getAllTools: () => [],
@@ -60,6 +62,10 @@ function probeContext(entries: unknown[], api: string, notifications: string[], 
     model: {
       id: "claude-opus-4-8", provider: "anthropic", api, reasoning: false, contextWindow: 200_000,
       cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    },
+    modelRegistry: {
+      getRegisteredNativeProvider: () => undefined,
+      getRegisteredProviderConfig: () => undefined,
     },
     sessionManager: {
       getEntries: () => entries,

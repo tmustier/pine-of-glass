@@ -47,12 +47,18 @@ test("real ExtensionRunner keeps a headless child out of Cachemire's interactive
       runtime,
       "pi-cachemire-contract",
     );
+    const modelRegistry = {
+      registerProvider(): void {},
+      unregisterProvider(): void {},
+      getRegisteredNativeProvider: () => undefined,
+      getRegisteredProviderConfig: () => undefined,
+    };
     const runner = new pi.ExtensionRunner(
       [extension],
       runtime,
       cwd,
       pi.SessionManager.inMemory(cwd),
-      {} as never,
+      modelRegistry as never,
     );
     runner.bindCore(
       { getThinkingLevel: (): "off" => "off" } as never,

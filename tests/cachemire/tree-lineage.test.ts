@@ -28,6 +28,8 @@ function extensionProbe(): { handlers: Map<string, Handler[]>; commands: Map<str
     registerCommand(name: string, options: { handler: Handler }): void {
       commands.set(name, options.handler);
     },
+    registerProvider(): void {},
+    unregisterProvider(): void {},
     getThinkingLevel(): string {
       return "off";
     },
@@ -132,6 +134,10 @@ function context(entries: unknown[], leaf: { id: string }, notifications: string
     sessionManager: {
       getEntries: () => entries,
       getLeafId: () => leaf.id,
+    },
+    modelRegistry: {
+      getRegisteredNativeProvider: () => undefined,
+      getRegisteredProviderConfig: () => undefined,
     },
   };
 }
