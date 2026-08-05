@@ -11,6 +11,7 @@ const {
   cacheClock, renderRunSummary, renderMissLine, renderLedger,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
   windowForProvider, windowLabel, pastWindow, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
+  nextClockUpdateMs, toneFor,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -52,57 +53,85 @@ test("formatting primitives", () => {
   assert.equal(formatDuration(64 * MIN), "1h4m");
 });
 
-test("cache clock phases", () => {
+test("cache clock stays silent until attention is useful", () => {
   assert.equal(cacheClock({ now: 0 }).phase, "idle");
 
-  // Fresh: coarse 15s steps above 90s remaining, so the widget re-renders sparsely.
-  const fresh = cacheClock({ now: 100_000, lastRequestAt: 0, window: CONTRACT_5M });
-  assert.equal(fresh.phase, "fresh");
-  assert.equal(fresh.text, "cache 3m15s"); // 200s remaining → floored to 195s
+  const healthy = cacheClock({ now: 100_000, lastRequestAt: 0, window: CONTRACT_5M });
+  assert.equal(healthy.phase, "idle");
+  assert.equal(healthy.text, "");
 
   const closing = cacheClock({ now: 4 * MIN + 15_000, lastRequestAt: 0, window: CONTRACT_5M });
   assert.equal(closing.phase, "closing");
-  assert.equal(closing.text, "cache 45s");
+  assert.equal(closing.text, "cache expires in 45s");
 
   const cold = cacheClock({ now: 6 * MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67 });
   assert.equal(cold.phase, "cold");
-  assert.equal(cold.text, "cache cold \u00b7 next send re-writes ~142.3k (~$2.67)");
+  assert.equal(cold.text, "cache stale \u00b7 TTL expired \u00b7 next send may re-write ~142.3k (~$2.67)");
 
-  // No TTL contract (OpenAI etc.): soft language, but the re-send size is still exact.
-  assert.equal(cacheClock({ now: 3 * MIN, lastRequestAt: 0 }).text, "cache likely warm \u00b7 3m since last call");
-  const coldUnknown = cacheClock({ now: 535 * MIN, lastRequestAt: 0, cachedTokens: 109_800, rewriteUsd: 1.37 });
-  assert.equal(coldUnknown.phase, "cold-unknown");
-  assert.equal(coldUnknown.text, "cache likely cold (idle 8h55m) \u00b7 next send re-sends ~109.8k uncached (~$1.37)");
-  // Without token info the bare form survives (e.g. before any usage was ever observed).
-  assert.equal(cacheClock({ now: 12 * MIN, lastRequestAt: 0 }).text, "cache likely cold (idle 12m)");
+  // Unknown cache lifetimes stay silent rather than guessing at warm or cold states.
+  assert.deepEqual(cacheClock({ now: 3 * MIN, lastRequestAt: 0 }), { phase: "idle", text: "" });
+  assert.deepEqual(
+    cacheClock({ now: 535 * MIN, lastRequestAt: 0, cachedTokens: 109_800, rewriteUsd: 1.37 }),
+    { phase: "idle", text: "" },
+  );
 
-  // Compaction invalidates the timed prefix outright — TTL is moot until the next send.
   const stale = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, compacted: true });
   assert.equal(stale.phase, "stale");
-  assert.equal(stale.text, "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix");
+  assert.equal(stale.text, "cache stale after compaction \u00b7 next send may re-write changed history");
 
   // Model-switch clock states (target-currency forecast, A→B→A warmth) live in
   // tests/cachemire/model-switch.test.ts.
 
-  // Thinking level change: Anthropic documents message-breakpoint invalidation with
-  // system/tools surviving — a contract-backed stale state. Compaction outranks it.
   const thinking = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, thinkingChanged: true });
   assert.equal(thinking.phase, "stale");
-  assert.equal(thinking.text, "cache stale \u00b7 thinking level changed \u00b7 next send re-writes the prompt");
+  assert.equal(thinking.text, "cache stale \u00b7 thinking level changed \u00b7 next send may re-write the prompt");
   // Effort lives outside OpenAI's prompt prefix: a band window makes no claim.
-  const bandThinking = cacheClock({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true });
-  assert.equal(bandThinking.text, "cache likely warm \u00b7 3m since last call");
+  assert.deepEqual(
+    cacheClock({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true }),
+    { phase: "idle", text: "" },
+  );
+
+  assert.equal(toneFor("closing"), "warning");
+  assert.equal(toneFor("stale"), "warning");
+  assert.equal(toneFor("cold"), "warning");
 });
 
-test("openai band: warm → fading → hard-cap cold", () => {
+test("openai band warns near typical eviction without claiming certainty", () => {
   const base = { lastRequestAt: 0, window: OPENAI_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
-  assert.equal(cacheClock({ ...base, now: 3 * MIN }).text, "cache likely warm \u00b7 3m since last call");
+  assert.deepEqual(cacheClock({ ...base, now: 3 * MIN }), { phase: "idle", text: "" });
+  assert.equal(
+    cacheClock({ ...base, now: 4 * MIN + 30_000 }).text,
+    "cache may expire in 30s \u00b7 typical eviction starts after 5m idle",
+  );
   const fading = cacheClock({ ...base, now: 12 * MIN });
   assert.equal(fading.phase, "fading");
-  assert.equal(fading.text, "cache fading \u00b7 idle 12m of 5m\u20131h window \u00b7 next send may re-send ~109.8k (~$1.37)");
+  assert.equal(fading.text, "cache may be stale \u00b7 typical eviction window 5m\u20131h \u00b7 next send may re-send ~109.8k (~$1.37)");
   const capped = cacheClock({ ...base, now: 90 * MIN });
   assert.equal(capped.phase, "cold");
-  assert.equal(capped.text, "cache cold (idle 1h30m > 1h cap) \u00b7 next send re-sends ~109.8k uncached (~$1.37)");
+  assert.equal(capped.text, "cache stale \u00b7 beyond 1h cache cap \u00b7 next send may re-send ~109.8k uncached (~$1.37)");
+});
+
+test("cache clock schedules only useful state changes", () => {
+  assert.equal(nextClockUpdateMs({ now: MIN, lastRequestAt: 0 }), undefined, "unknown TTL has no timer");
+  assert.equal(nextClockUpdateMs({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M }), 3 * MIN);
+  assert.equal(nextClockUpdateMs({ now: 4 * MIN + 30_000, lastRequestAt: 0, window: CONTRACT_5M }), 1_000);
+  assert.equal(nextClockUpdateMs({ now: 6 * MIN, lastRequestAt: 0, window: CONTRACT_5M }), undefined);
+  assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW }), MIN);
+  assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true }), MIN);
+  assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: CONTRACT_5M, thinkingChanged: true }), undefined);
+  assert.equal(nextClockUpdateMs({ now: 12 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW }), 48 * MIN);
+  assert.equal(nextClockUpdateMs({
+    now: MIN,
+    lastRequestAt: 0,
+    modelSwitched: true,
+    switchForecast: {
+      targetId: "openai/gpt",
+      targetProvider: "openai",
+      estTokens: 10_000,
+      basis: "direct",
+      prior: { requestAt: 0, window: OPENAI_WINDOW },
+    },
+  }), 4 * MIN + 1);
 });
 
 test("thinking level changes are material only when they change the wire params", () => {
@@ -289,7 +318,7 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   const compaction = predictBreak({ ...base, compacted: true, gapMs: 1_000, window: CONTRACT_5M })!;
   assert.equal(compaction.cause.kind, "compaction");
   assert.equal(compaction.expectedRewriteTokens, undefined);
-  assert.equal(renderBreakingLine(compaction), "cache breaking \u00b7 re-writing the new prefix \u00b7 cause: history compacted");
+  assert.equal(renderBreakingLine(compaction), "cache breaking \u00b7 re-writing changed history \u00b7 cause: history compacted");
 });
 
 test("ledger view: rows, totals, and the savings line", () => {

@@ -9,15 +9,22 @@ import type { SwitchForecast } from "./forecast.ts";
 import type { CacheWindow } from "./types.ts";
 
 export const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
-export const UNKNOWN_TTL_WARM_MS = 10 * 60 * 1000; // soft "likely cold" horizon for implicit caches
+const EXACT_WARNING_MAX_MS = 5 * 60 * 1000;
+const BAND_WARNING_MAX_MS = 60 * 1000;
 
-/** Conservative warmth: inside a contract TTL, inside a band's *soft* horizon, or
- * inside the implicit-cache horizon. Anything past this must not claim "warm". */
+/** Conservative warmth: inside a contract TTL or a documented band's soft horizon.
+ * Unknown retention never earns a warmth claim. */
 export function withinWarmHorizon(window: CacheWindow | undefined, sinceMs: number): boolean {
   const resolved = window ?? UNKNOWN_WINDOW;
   if (resolved.kind === "contract") return sinceMs <= resolved.ttlMs;
   if (resolved.kind === "band") return sinceMs <= resolved.softMs;
-  return sinceMs <= UNKNOWN_TTL_WARM_MS;
+  return false;
+}
+
+function warningLeadMs(window: Exclude<CacheWindow, { kind: "unknown" }>): number {
+  const boundary = window.kind === "contract" ? window.ttlMs : window.softMs;
+  const maximum = window.kind === "contract" ? EXACT_WARNING_MAX_MS : BAND_WARNING_MAX_MS;
+  return Math.min(maximum, boundary * 0.2);
 }
 
 export interface ClockState {
@@ -52,16 +59,21 @@ function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number,
 
 export function cacheClock(input: ClockInput): ClockState {
   if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
+  if (input.compacted) {
+    return { phase: "stale", text: "cache stale after compaction \u00b7 next send may re-write changed history" };
+  }
   if (input.modelSwitched) {
     const forecast = input.switchForecast;
+    if (forecast?.prior && (!forecast.prior.window || forecast.prior.window.kind === "unknown")) {
+      return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
+    }
     if (forecast !== undefined && forecast.prior !== undefined &&
         withinWarmHorizon(forecast.prior.window, input.now - forecast.prior.requestAt)) {
       // The target model's own last billed call is inside its freshness window: a
       // switch-back may revive that entry, so "cold" would overclaim.
       return {
         phase: "warm-unknown",
-        text: `cache may still be warm \u00b7 last ${forecast.targetId} call ` +
-          `${formatDuration(input.now - forecast.prior.requestAt)} ago \u00b7 next send confirms`,
+        text: `cache may still be warm \u00b7 switched back to ${forecast.targetId} \u00b7 next send confirms`,
       };
     }
     if (forecast?.estTokens === undefined) {
@@ -75,62 +87,75 @@ export function cacheClock(input: ClockInput): ClockState {
         ` to ${forecast.targetProvider} (${confidence})`,
     };
   }
-  if (input.compacted) {
-    // The prefix the clock was timing no longer exists; TTL is moot until the next send.
-    return { phase: "stale", text: "cache stale \u00b7 history compacted \u00b7 next send re-writes the new prefix" };
-  }
   const since = input.now - input.lastRequestAt;
   const window = input.window ?? UNKNOWN_WINDOW;
   if (input.thinkingChanged && window.kind === "contract") {
     // No survival promise here: docs say system/tools outlive *budget* changes, but a
     // live adaptive-effort change on claude-fable-5 re-wrote 100% of the prompt.
-    return { phase: "stale", text: "cache stale \u00b7 thinking level changed \u00b7 next send re-writes the prompt" };
+    return { phase: "stale", text: "cache stale \u00b7 thinking level changed \u00b7 next send may re-write the prompt" };
   }
   if (window.kind === "contract") {
     const remaining = window.ttlMs - since;
     if (remaining <= 0) {
-      return { phase: "cold", text: `cache cold${rewriteSuffix("re-writes", input.cachedTokens, input.rewriteUsd)}` };
+      return { phase: "cold", text: `cache stale \u00b7 TTL expired${rewriteSuffix("may re-write", input.cachedTokens, input.rewriteUsd)}` };
     }
-    // Coarse display above 90s so the widget only re-renders when the label changes.
+    if (remaining > warningLeadMs(window)) return { phase: "idle", text: "" };
+    // Coarse display above 90s so long-retention warnings do not re-render every second.
     const display = remaining > 90_000 ? Math.floor(remaining / 15_000) * 15_000 : remaining;
-    return {
-      phase: remaining <= 60_000 ? "closing" : "fresh",
-      text: `cache ${formatDuration(display)}`,
-    };
+    const suffix = rewriteSuffix("may re-write", input.cachedTokens, input.rewriteUsd);
+    return { phase: "closing", text: `cache expires in ${formatDuration(display)}${suffix}` };
   }
   if (window.kind === "band") {
-    if (since > window.hardMs) {
-      // The hard cap is documented ("always removed within one hour of last use"), so
-      // past it "cold" is definite even without a per-request TTL contract.
-      const suffix = rewriteSuffix("re-sends", input.cachedTokens, input.rewriteUsd, " uncached");
-      return { phase: "cold", text: `cache cold (idle ${formatDuration(since)} > ${formatDuration(window.hardMs)} cap)${suffix}` };
+    const untilTypicalExpiry = window.softMs - since;
+    if (untilTypicalExpiry > warningLeadMs(window)) return { phase: "idle", text: "" };
+    if (untilTypicalExpiry > 0) {
+      return {
+        phase: "closing",
+        text: `cache may expire in ${formatDuration(untilTypicalExpiry)} \u00b7 typical eviction starts after ${formatDuration(window.softMs)} idle`,
+      };
     }
-    if (since > window.softMs) {
+    if (since < window.hardMs) {
       const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd);
       return {
         phase: "fading",
-        text: `cache fading \u00b7 idle ${formatDuration(since)} of ${formatDuration(window.softMs)}\u2013${formatDuration(window.hardMs)} window${suffix}`,
+        text: `cache may be stale \u00b7 typical eviction window ${formatDuration(window.softMs)}\u2013${formatDuration(window.hardMs)}${suffix}`,
       };
     }
-    return { phase: "warm-unknown", text: `cache likely warm \u00b7 ${formatDuration(since)} since last call` };
+    const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd, " uncached");
+    return { phase: "cold", text: `cache stale \u00b7 beyond ${formatDuration(window.hardMs)} cache cap${suffix}` };
   }
-  // Unknown window: no contract, only soft language — but past the soft horizon we still
-  // know exactly how much prompt would be re-sent uncached.
-  if (since > UNKNOWN_TTL_WARM_MS) {
-    const suffix = rewriteSuffix("re-sends", input.cachedTokens, input.rewriteUsd, " uncached");
-    return { phase: "cold-unknown", text: `cache likely cold (idle ${formatDuration(since)})${suffix}` };
+  return { phase: "idle", text: "" };
+}
+
+/** Delay until the clock's visible wording can change. Undefined means no timer is needed. */
+export function nextClockUpdateMs(input: ClockInput): number | undefined {
+  if (input.lastRequestAt === undefined || input.compacted) return undefined;
+  if (input.modelSwitched) {
+    const prior = input.switchForecast?.prior;
+    const priorWindow = prior?.window;
+    if (!prior || !priorWindow || priorWindow.kind === "unknown") return undefined;
+    const horizon = priorWindow.kind === "contract" ? priorWindow.ttlMs : priorWindow.softMs;
+    const remaining = horizon - (input.now - prior.requestAt);
+    return remaining >= 0 ? remaining + 1 : undefined;
   }
-  return { phase: "warm-unknown", text: `cache likely warm \u00b7 ${formatDuration(since)} since last call` };
+  const since = input.now - input.lastRequestAt;
+  const window = input.window ?? UNKNOWN_WINDOW;
+  if (window.kind === "unknown" || (input.thinkingChanged && window.kind === "contract")) return undefined;
+
+  const warningAt = (window.kind === "contract" ? window.ttlMs : window.softMs) - warningLeadMs(window);
+  if (since < warningAt) return warningAt - since;
+
+  if (window.kind === "contract") {
+    const remaining = window.ttlMs - since;
+    if (remaining <= 0) return undefined;
+    return Math.min(remaining, remaining > 90_000 ? 15_000 : 1_000);
+  }
+
+  if (since < window.softMs) return Math.min(window.softMs - since, 1_000);
+  if (since < window.hardMs) return window.hardMs - since;
+  return undefined;
 }
 
 export function toneFor(phase: ClockState["phase"]): Tone {
-  switch (phase) {
-    case "fresh":
-    case "warm-unknown":
-      return "success";
-    case "closing":
-      return "warning";
-    default: // cold, stale, cold-unknown, idle
-      return "dim";
-  }
+  return phase === "idle" ? "dim" : "warning";
 }

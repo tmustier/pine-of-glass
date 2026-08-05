@@ -41,7 +41,7 @@ function breakingSize(p: BreakPrediction): string {
     return ` \u00b7 sending ~${compactCount(p.estimatedRewriteTokens)} uncached` +
       `${p.targetProvider === undefined ? "" : ` to ${p.targetProvider}`} (${parens})`;
   }
-  if (p.cause.kind === "compaction") return " \u00b7 re-writing the new prefix";
+  if (p.cause.kind === "compaction") return " \u00b7 re-writing changed history";
   if (p.cause.kind === "thinking") {
     // Anthropic documents that system/tools survive *budget* changes; for adaptive
     // effort changes a live test on claude-fable-5 broke 100% of the prompt

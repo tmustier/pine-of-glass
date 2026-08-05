@@ -17,15 +17,18 @@ Everything cachemire shows is four provider-general rules, which is the whole me
    upstream request shape is not observable, so the label weakens to `(rough est ·
    gateway route)`. One exception:
    switching *back* to a model whose own last billed call is still inside its
-   freshness window says `cache may still be warm · last <model> call 2m ago · next
+   freshness window says `cache may still be warm · switched back to <model> · next
    send confirms`, because claiming cold there would be wrong as often as right.
    The hint is deliberately hedged (the payload may have changed in ways only the
    next send reveals) and gated: the prior call must match on provider, model *and*
    wire API, with no compaction on the path since; either failing means its cache
-   entry cannot be revived, and the state stays `cache cold expected`.
+   entry cannot be revived, and the state stays `cache cold expected`. If the prior
+   model's cache lifetime is unknown, Cachemire says the state is unknown and waits for
+   the next send instead of guessing.
 3. **Window**: strength varies by provider: Anthropic has a contract TTL (observed,
    else inferred), OpenAI a documented band (soft ~5m / hard 1h), everyone else is
-   unknown. Wording always matches the strength: countdown / fading / likely.
+   unknown. Healthy and unknown windows stay hidden. A contract gets a countdown near
+   expiry; a documented band gets a hedged warning.
 4. **Currency**: exact token counts and $ are only shown in the tokenizer and price
    card that billed them. After a model switch the old exact count is never displayed
    against the new model. The forecast above is a labelled estimate in the target
@@ -43,9 +46,9 @@ Everything cachemire shows is four provider-general rules, which is the whole me
 
 The TTL anchor is *request start*, not response end: Anthropic reads/refreshes/writes
 cache entries while processing the request input (entries become available once the
-response begins), so a long thinking block burns TTL while it streams. The clock
-ticking during generation is correct: after a 4m thinking block on a 5m TTL, the
-prefix really does have ~1m left.
+response begins), so a long thinking block burns TTL while it streams. A warning can
+therefore appear during generation: after a 4m thinking block on a 5m TTL, the prefix
+really does have ~1m left.
 
 The re-write size the clock shows is provider-exact, not estimated: it is `input +
 cacheRead + cacheWrite` from the last assistant message's usage: the prompt-side token
@@ -64,30 +67,34 @@ simply hides, since no cache entry was ever confirmed. If the aborted send did r
 the prefix after all, the next call resolves green (`cache held`), the same correction
 path as any wrong prediction.
 
-## Cold vs likely cold
+## When the warning appears
 
-`cold` is contract-backed: an observed `cache_control` TTL passed (or, for a freshly
-restored anthropic session, the TTL inferred by the same rule pi-ai itself uses
-(`PI_CACHE_RETENTION=long` → 1h, else 5m) until the first live observation replaces
-it), or OpenAI's documented 1h hard cap passed. `fading` covers OpenAI's
-typical-eviction zone, and `likely` wording is reserved for providers cachemire knows
-nothing about.
+A known 5-minute TTL appears during its final minute. A known 1-hour TTL appears during
+its final 5 minutes. Once the TTL passes, the warning remains visible until the next
+provider call establishes the new state. A freshly restored Anthropic session infers the
+TTL by the same rule pi-ai uses (`PI_CACHE_RETENTION=long` means 1h; otherwise 5m) until
+the first live payload replaces it.
 
 OpenAI's implicit cache has no per-request TTL but does have documented behaviour
-(typically evicted after ~5–10m idle, *always* removed within 1h of last use), so it
-gets a three-zone band with honest wording per zone:
+(typically evicted after ~5–10m idle, always removed within 1h of last use). Cachemire
+warns during the final minute before the typical window begins, then uses `may` wording
+until the hard cap. It makes no idle-time claim for providers with an unknown lifetime.
 
 ```
-◍ cache likely warm · 3m since last call
-◍ cache fading · idle 12m of 5m–1h window · next send may re-send ~109.8k (~$1.37)
-◍ cache cold (idle 1h12m > 1h cap) · next send re-sends ~109.8k uncached (~$1.37)
+◍ cache may expire in 30s · typical eviction starts after 5m idle
+◍ cache may be stale · typical eviction window 5m–1h · next send may re-send ~109.8k (~$1.37)
+◍ cache stale · beyond 1h cache cap · next send may re-send ~109.8k uncached (~$1.37)
 ```
+
+Cachemire uses a scheduled wake-up for the next warning boundary. It only updates once
+per second while a visible countdown is in its final 90 seconds, so a healthy cache does
+not trigger continuous UI renders.
 
 ## Thinking levels
 
 Thinking levels are the model-switch pattern one notch weaker. On Anthropic a
 thinking-param change breaks cache, so on a contract window the widget flips at the
-keystroke (`cache stale · thinking level changed · next send re-writes the prompt`)
+keystroke (`cache stale · thinking level changed · next send may re-write the prompt`)
 and the send-time notice names the wire-level change: `cause: thinking changed
 (thinking effort xhigh → thinking effort low)`. How *much* breaks depends on the wire
 form: Anthropic documents that system/tools survive `budget_tokens` changes, but a
@@ -191,8 +198,10 @@ break (e.g. provider-side eviction) still gets a resolved-form line when usage
 arrives; a send that aborts before usage resolves the notice to an explicit "outcome
 unknown".
 
-Compaction is deliberately unsized in flight: Pi's compact event does not provide an
-exact provider-token split for the new prefix. The first billed agent call afterwards
+Compaction immediately warns that the cache is stale and the next send may re-write
+changed history. It does not claim that the whole prompt changed. The warning is
+unsized in flight because Pi's compact event does not provide an exact provider-token
+split for the new prefix. The first billed agent call afterwards
 does, so the resolved notice compares its exact `cacheRead` with the last normal agent
 prompt before compaction: `reused 34.9k of the last pre-compaction 72.5k prompt (48%) ·
 processed 39.1k uncached`. Pi's summarizer request has a separate prompt shape and does not

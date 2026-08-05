@@ -59,7 +59,7 @@ const COMPACTION_RECORD: CallRecord = {
 test("cachemire ledger and one-line surfaces golden", () => {
   const clock = (input: Parameters<typeof cacheClock>[0]) => {
     const state = cacheClock(input);
-    return `[${state.phase}] \u25cd ${state.text}`;
+    return state.phase === "idle" ? "[idle] (hidden)" : `[${state.phase}] \u25cd ${state.text}`;
   };
   const base = { lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 150_300, rewriteUsd: 2.82 };
 
