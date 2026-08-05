@@ -1855,5 +1855,287 @@
         ]
       }
     ]
+  },
+  "relayAliasResolutions": {
+    "checkedAt": "2026-08-05",
+    "catalogs": [
+      {
+        "provider": "openrouter",
+        "endpoint": "https://openrouter.ai/api/v1/models",
+        "routes": [
+          {
+            "id": "deepseek/deepseek-chat-v3-0324",
+            "canonicalSlug": "deepseek/deepseek-chat-v3-0324",
+            "huggingFaceId": "deepseek-ai/DeepSeek-V3-0324"
+          },
+          {
+            "id": "deepseek/deepseek-chat-v3.1",
+            "canonicalSlug": "deepseek/deepseek-chat-v3.1",
+            "huggingFaceId": "deepseek-ai/DeepSeek-V3.1"
+          },
+          {
+            "id": "deepseek/deepseek-r1",
+            "canonicalSlug": "deepseek/deepseek-r1",
+            "huggingFaceId": "deepseek-ai/DeepSeek-R1"
+          },
+          {
+            "id": "deepseek/deepseek-r1-0528",
+            "canonicalSlug": "deepseek/deepseek-r1-0528",
+            "huggingFaceId": "deepseek-ai/DeepSeek-R1-0528"
+          },
+          {
+            "id": "deepseek/deepseek-v3.1-terminus",
+            "canonicalSlug": "deepseek/deepseek-v3.1-terminus",
+            "huggingFaceId": "deepseek-ai/DeepSeek-V3.1-Terminus"
+          },
+          {
+            "id": "deepseek/deepseek-v3.2",
+            "canonicalSlug": "deepseek/deepseek-v3.2-20251201",
+            "huggingFaceId": "deepseek-ai/DeepSeek-V3.2"
+          },
+          {
+            "id": "deepseek/deepseek-v3.2-exp",
+            "canonicalSlug": "deepseek/deepseek-v3.2-exp",
+            "huggingFaceId": "deepseek-ai/DeepSeek-V3.2-Exp"
+          },
+          {
+            "id": "deepseek/deepseek-v4-flash",
+            "canonicalSlug": "deepseek/deepseek-v4-flash-20260423",
+            "huggingFaceId": "deepseek-ai/DeepSeek-V4-Flash"
+          },
+          {
+            "id": "deepseek/deepseek-v4-pro",
+            "canonicalSlug": "deepseek/deepseek-v4-pro-20260423",
+            "huggingFaceId": "deepseek-ai/DeepSeek-V4-Pro"
+          },
+          {
+            "id": "qwen/qwen-2.5-72b-instruct",
+            "canonicalSlug": "qwen/qwen-2.5-72b-instruct",
+            "huggingFaceId": "Qwen/Qwen2.5-72B-Instruct"
+          },
+          {
+            "id": "qwen/qwen-2.5-7b-instruct",
+            "canonicalSlug": "qwen/qwen-2.5-7b-instruct",
+            "huggingFaceId": "Qwen/Qwen2.5-7B-Instruct"
+          },
+          {
+            "id": "qwen/qwen3-14b",
+            "canonicalSlug": "qwen/qwen3-14b-04-28",
+            "huggingFaceId": "Qwen/Qwen3-14B"
+          },
+          {
+            "id": "qwen/qwen3-235b-a22b",
+            "canonicalSlug": "qwen/qwen3-235b-a22b-04-28",
+            "huggingFaceId": "Qwen/Qwen3-235B-A22B"
+          },
+          {
+            "id": "qwen/qwen3-235b-a22b-2507",
+            "canonicalSlug": "qwen/qwen3-235b-a22b-07-25",
+            "huggingFaceId": "Qwen/Qwen3-235B-A22B-Instruct-2507"
+          },
+          {
+            "id": "qwen/qwen3-235b-a22b-thinking-2507",
+            "canonicalSlug": "qwen/qwen3-235b-a22b-thinking-2507",
+            "huggingFaceId": "Qwen/Qwen3-235B-A22B-Thinking-2507"
+          },
+          {
+            "id": "qwen/qwen3-30b-a3b",
+            "canonicalSlug": "qwen/qwen3-30b-a3b-04-28",
+            "huggingFaceId": "Qwen/Qwen3-30B-A3B"
+          },
+          {
+            "id": "qwen/qwen3-30b-a3b-instruct-2507",
+            "canonicalSlug": "qwen/qwen3-30b-a3b-instruct-2507",
+            "huggingFaceId": "Qwen/Qwen3-30B-A3B-Instruct-2507"
+          },
+          {
+            "id": "qwen/qwen3-30b-a3b-thinking-2507",
+            "canonicalSlug": "qwen/qwen3-30b-a3b-thinking-2507",
+            "huggingFaceId": "Qwen/Qwen3-30B-A3B-Thinking-2507"
+          },
+          {
+            "id": "qwen/qwen3-32b",
+            "canonicalSlug": "qwen/qwen3-32b-04-28",
+            "huggingFaceId": "Qwen/Qwen3-32B"
+          },
+          {
+            "id": "qwen/qwen3-8b",
+            "canonicalSlug": "qwen/qwen3-8b-04-28",
+            "huggingFaceId": "Qwen/Qwen3-8B"
+          },
+          {
+            "id": "qwen/qwen3-coder-30b-a3b-instruct",
+            "canonicalSlug": "qwen/qwen3-coder-30b-a3b-instruct",
+            "huggingFaceId": "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+          },
+          {
+            "id": "qwen/qwen3-coder-next",
+            "canonicalSlug": "qwen/qwen3-coder-next-2025-02-03",
+            "huggingFaceId": "Qwen/Qwen3-Coder-Next"
+          },
+          {
+            "id": "qwen/qwen3-next-80b-a3b-instruct",
+            "canonicalSlug": "qwen/qwen3-next-80b-a3b-instruct-2509",
+            "huggingFaceId": "Qwen/Qwen3-Next-80B-A3B-Instruct"
+          },
+          {
+            "id": "qwen/qwen3-next-80b-a3b-thinking",
+            "canonicalSlug": "qwen/qwen3-next-80b-a3b-thinking-2509",
+            "huggingFaceId": "Qwen/Qwen3-Next-80B-A3B-Thinking"
+          },
+          {
+            "id": "qwen/qwen3-vl-235b-a22b-instruct",
+            "canonicalSlug": "qwen/qwen3-vl-235b-a22b-instruct",
+            "huggingFaceId": "Qwen/Qwen3-VL-235B-A22B-Instruct"
+          },
+          {
+            "id": "qwen/qwen3-vl-235b-a22b-thinking",
+            "canonicalSlug": "qwen/qwen3-vl-235b-a22b-thinking",
+            "huggingFaceId": "Qwen/Qwen3-VL-235B-A22B-Thinking"
+          },
+          {
+            "id": "qwen/qwen3-vl-30b-a3b-instruct",
+            "canonicalSlug": "qwen/qwen3-vl-30b-a3b-instruct",
+            "huggingFaceId": "Qwen/Qwen3-VL-30B-A3B-Instruct"
+          },
+          {
+            "id": "qwen/qwen3-vl-30b-a3b-thinking",
+            "canonicalSlug": "qwen/qwen3-vl-30b-a3b-thinking",
+            "huggingFaceId": "Qwen/Qwen3-VL-30B-A3B-Thinking"
+          },
+          {
+            "id": "qwen/qwen3-vl-32b-instruct",
+            "canonicalSlug": "qwen/qwen3-vl-32b-instruct",
+            "huggingFaceId": "Qwen/Qwen3-VL-32B-Instruct"
+          },
+          {
+            "id": "qwen/qwen3-vl-8b-instruct",
+            "canonicalSlug": "qwen/qwen3-vl-8b-instruct",
+            "huggingFaceId": "Qwen/Qwen3-VL-8B-Instruct"
+          },
+          {
+            "id": "qwen/qwen3-vl-8b-thinking",
+            "canonicalSlug": "qwen/qwen3-vl-8b-thinking",
+            "huggingFaceId": "Qwen/Qwen3-VL-8B-Thinking"
+          },
+          {
+            "id": "qwen/qwen3.5-122b-a10b",
+            "canonicalSlug": "qwen/qwen3.5-122b-a10b-20260224",
+            "huggingFaceId": "Qwen/Qwen3.5-122B-A10B"
+          },
+          {
+            "id": "qwen/qwen3.5-27b",
+            "canonicalSlug": "qwen/qwen3.5-27b-20260224",
+            "huggingFaceId": "Qwen/Qwen3.5-27B"
+          },
+          {
+            "id": "qwen/qwen3.5-35b-a3b",
+            "canonicalSlug": "qwen/qwen3.5-35b-a3b-20260224",
+            "huggingFaceId": "Qwen/Qwen3.5-35B-A3B"
+          },
+          {
+            "id": "qwen/qwen3.5-397b-a17b",
+            "canonicalSlug": "qwen/qwen3.5-397b-a17b-20260216",
+            "huggingFaceId": "Qwen/Qwen3.5-397B-A17B"
+          },
+          {
+            "id": "qwen/qwen3.5-9b",
+            "canonicalSlug": "qwen/qwen3.5-9b-20260310",
+            "huggingFaceId": "Qwen/Qwen3.5-9B"
+          }
+        ]
+      },
+      {
+        "provider": "vercel-ai-gateway",
+        "endpoint": "https://ai-gateway.vercel.sh/v1/models",
+        "routes": [
+          {
+            "id": "alibaba/qwen-3-14b",
+            "name": "Qwen3-14B",
+            "artifact": "Qwen/Qwen3-14B"
+          },
+          {
+            "id": "alibaba/qwen-3-235b",
+            "name": "Qwen3 235B A22B",
+            "artifact": "Qwen/Qwen3-235B-A22B"
+          },
+          {
+            "id": "alibaba/qwen-3-30b",
+            "name": "Qwen3-30B-A3B",
+            "artifact": "Qwen/Qwen3-30B-A3B"
+          },
+          {
+            "id": "alibaba/qwen-3-32b",
+            "name": "Qwen 3 32B",
+            "artifact": "Qwen/Qwen3-32B"
+          },
+          {
+            "id": "alibaba/qwen3-coder-30b-a3b",
+            "name": "Qwen 3 Coder 30B A3B Instruct",
+            "artifact": "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+          },
+          {
+            "id": "alibaba/qwen3-coder-next",
+            "name": "Qwen3 Coder Next",
+            "artifact": "Qwen/Qwen3-Coder-Next"
+          },
+          {
+            "id": "alibaba/qwen3-next-80b-a3b-instruct",
+            "name": "Qwen3 Next 80B A3B Instruct",
+            "artifact": "Qwen/Qwen3-Next-80B-A3B-Instruct"
+          },
+          {
+            "id": "alibaba/qwen3-next-80b-a3b-thinking",
+            "name": "Qwen3 Next 80B A3B Thinking",
+            "artifact": "Qwen/Qwen3-Next-80B-A3B-Thinking"
+          },
+          {
+            "id": "alibaba/qwen3-vl-235b-a22b-instruct",
+            "name": "Qwen3 VL 235B A22B Instruct",
+            "artifact": "Qwen/Qwen3-VL-235B-A22B-Instruct"
+          },
+          {
+            "id": "deepseek/deepseek-r1",
+            "name": "DeepSeek-R1",
+            "artifact": "deepseek-ai/DeepSeek-R1"
+          },
+          {
+            "id": "deepseek/deepseek-v3",
+            "name": "DeepSeek V3 0324",
+            "artifact": "deepseek-ai/DeepSeek-V3-0324"
+          },
+          {
+            "id": "deepseek/deepseek-v3.1",
+            "name": "DeepSeek V3.1",
+            "artifact": "deepseek-ai/DeepSeek-V3.1"
+          },
+          {
+            "id": "deepseek/deepseek-v3.1-terminus",
+            "name": "DeepSeek V3.1 Terminus",
+            "artifact": "deepseek-ai/DeepSeek-V3.1-Terminus"
+          },
+          {
+            "id": "deepseek/deepseek-v3.2",
+            "name": "DeepSeek V3.2",
+            "artifact": "deepseek-ai/DeepSeek-V3.2"
+          },
+          {
+            "id": "deepseek/deepseek-v3.2-thinking",
+            "name": "DeepSeek V3.2 Thinking",
+            "artifact": "deepseek-ai/DeepSeek-V3.2"
+          },
+          {
+            "id": "deepseek/deepseek-v4-flash",
+            "name": "DeepSeek V4 Flash",
+            "artifact": "deepseek-ai/DeepSeek-V4-Flash"
+          },
+          {
+            "id": "deepseek/deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro",
+            "artifact": "deepseek-ai/DeepSeek-V4-Pro"
+          }
+        ]
+      }
+    ]
   }
 }

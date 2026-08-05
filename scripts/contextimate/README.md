@@ -79,6 +79,17 @@ The checker sends each public corpus fixture as one user text part. Its 17 defau
 
 This is a live, date-stamped check. Google can retire preview model IDs, so the checked-in evidence remains the record for the measured revisions.
 
+## Relay alias verification
+
+OpenRouter and Vercel publish the concrete model behind each relay ID. Verify the profiled DeepSeek and Qwen routes against those public catalogs:
+
+```bash
+npm run link-pi
+scripts/contextimate/check-relay-tokenizer-routes.py
+```
+
+The checker reads model IDs from the installed Pi AI catalog and the checked-in route evidence. It compares OpenRouter's canonical and Hugging Face IDs and Vercel's full model names. It needs no API key, makes no generation calls and runs only when invoked.
+
 ## xAI tokenizer fingerprints
 
 xAI exposes exact token IDs and bytes through `TokenizeText`. The separate checker keeps its optional Python SDK out of the extension and npm dependency tree:
