@@ -170,12 +170,13 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   50k ch. Thresholds live in `style.ts`, overridable through the family config
   convention (`~/.pi/agent/pi-<name>.json`, `<cwd>/.pi/pi-<name>.json`)
 - cache materiality (cachemire): notices only above $0.05 or 20k re-written
-  tokens; silence when healthy. An Anthropic TTL warning appears only during its final
-  `min(5m, 20%)`. It remains visible after expiry until the next provider call resolves
-  the state. A GPT-5.6 30-minute minimum stays hidden until its boundary, then shows an
-  unknown cache state. An exact switch-back within that minimum may say the cache could
-  still be warm. An observed 24-hour OpenAI maximum appears once reached. It earns no
-  warm state or pre-maximum warning. Routes with unknown retention stay silent
+  tokens; silence when healthy. Retention values come from the typed policy registry,
+  not this visual specification. A contract warning appears only during its final
+  `min(5m, 20%)` and remains visible after expiry until the next provider call resolves
+  the state. A minimum stays hidden until its boundary, then shows an unknown cache
+  state. An exact switch-back within an active minimum may say the cache could still be
+  warm. A maximum appears only once reached, with no warmth claim or advance warning.
+  Routes with unknown retention stay silent
 - severity colour is reserved for exceeded thresholds and real states. Nothing is
   tinted for visual interest
 
@@ -225,11 +226,11 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   28.2k (100% of prompt) · the new model already had the prefix cached`, never
   `read 28.2k of 20.6k expected`, which composes two currencies into an impossible
   137% claim
-- certainty ladder: an observed Anthropic TTL supports definite expiry wording. The
-  documented GPT-5.6 30-minute minimum blocks stale wording until it ends, then changes
-  to an unknown state. An observed 24-hour OpenAI maximum supports definite wording only
-  after it is reached. Unknown retention stays silent. Never infer eviction, routing,
-  replica identity or cache entry identity from provider usage
+- certainty ladder: an observed contract supports definite expiry wording. A minimum
+  blocks stale wording until it ends, then changes to an unknown state. A maximum
+  supports definite wording only after it is reached. Unknown retention stays silent.
+  Never infer eviction, routing, replica identity or cache entry identity from provider
+  usage
 - status one-liners are lowercase; Title Case only for panel headers and row labels
 - state causes from observed evidence (payload diffs, usage), never inference,
   and say `unknown` when unknown

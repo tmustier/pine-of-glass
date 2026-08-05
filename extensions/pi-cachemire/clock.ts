@@ -1,8 +1,3 @@
-// The cache clock: pure freshness state → widget text (design language §6). Tones are
-// applied by the widget layer in index.ts; everything here is deterministic wording so
-// the golden suite can pin the exact strings. Split from index.ts to keep each file
-// inside its agent context budget.
-
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import type { SwitchForecast } from "./forecast.ts";
 import type { CacheWindow } from "./types.ts";

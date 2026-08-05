@@ -8,21 +8,9 @@ wording.
 ## Documented retention behaviour
 
 Cachemire resolves retention from the exact route, model and observed outgoing policy.
-A provider name alone is not enough.
-
-| Route | Retention evidence | Cachemire behaviour |
-|---|---|---|
-| Anthropic, live request | `cache_control` contains a 5-minute or 1-hour TTL | use the observed TTL |
-| Anthropic, restored session | Pi resolves ordinary calls from `PI_CACHE_RETENTION` | infer 5 minutes, or 1 hour when set to `long`, until a live payload replaces it |
-| OpenAI or OpenAI Codex, GPT-5.6 and later GPT-5 models | documented `prompt_cache_options.ttl` default | use a 30-minute minimum; after it ends, show that the cache state is unknown |
-| Direct official OpenAI API, GPT-5 below GPT-5.6 | outgoing payload contains `prompt_cache_retention: "24h"` | record a 24-hour maximum, with no warmth claim before it |
-| Direct official OpenAI API, GPT-5 below GPT-5.6 without that field | no supported observed policy | unknown |
-| Other and gateway routes | no route-specific supported evidence | unknown |
-
-Cachemire does not support `in_memory` as retention evidence. It does not model a
-5-minute to 1-hour OpenAI band. Unknown routes produce no idle-time or warmth claim.
-The dated evidence and source links are in
-[`cache-retention-audit-2026-08-04.md`](./cache-retention-audit-2026-08-04.md).
+A provider name alone is not enough. The generated policy and evidence matrix is in the
+[`cache retention audit`](./cache-retention-audit-2026-08-04.md). Unmatched routes make
+no idle-time or warmth claim.
 
 ## Four rules shape the UI
 
@@ -65,12 +53,6 @@ Reaching the minimum does not classify a later miss as eviction.
 For an observed 24-hour OpenAI maximum, Cachemire stays silent before the maximum and
 marks the cache stale once the maximum is reached. Unknown routes remain silent at every
 elapsed time.
-
-```text
-◍ cache expires in 30s · next send may re-write ~109.8k (~$1.37)
-◍ cache state unknown · 30m retention minimum reached · next send may re-send ~109.8k uncached (~$1.37)
-◍ cache stale · 24h retention maximum reached · next send may re-send ~109.8k uncached (~$1.37)
-```
 
 The widget schedules its next update at a known boundary. It updates once per second
 only during the final 90 seconds of a visible countdown. Healthy and unknown states do

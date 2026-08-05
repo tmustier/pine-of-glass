@@ -84,8 +84,6 @@ export type {
  * the exact counts on hand are old-model currency, so the prompt is forecast in the
  * target tokenizer and marked est (issue #57). Display is UI-only: nothing cachemire
  * renders enters LLM context, session entries, or exports.
- * Anthropic's observed 5m/1h TTLs get countdowns. GPT-5.6+ gets its documented
- * 30m minimum; an observed legacy OpenAI 24h maximum appears only when reached.
  */
 
 const DEFAULT_CONFIG: CachemireConfig = {
@@ -557,20 +555,17 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.pendingPreviousWindow = s.window;
     }
     s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
+    s.pendingRequestWindow = windowForRequest({
+      provider: ctx.model?.provider,
+      model: ctx.model?.id ?? s.pendingFingerprint.model,
+      fingerprint: s.pendingFingerprint,
+      payload: event.payload,
+    }) ?? UNKNOWN_WINDOW;
     if (s.pendingFingerprint.kind === "anthropic" && ctx.model?.provider === "anthropic") {
-      s.pendingRequestWindow = s.pendingFingerprint.ttlMs !== undefined
-        ? { kind: "contract", ttlMs: s.pendingFingerprint.ttlMs, source: "observed" }
-        : UNKNOWN_WINDOW;
       s.providerLabel = "anthropic";
     } else if (s.pendingFingerprint.kind === "openai-responses") {
-      s.pendingRequestWindow = windowForRequest(
-        ctx.model?.provider,
-        ctx.model?.id ?? s.pendingFingerprint.model,
-        event.payload,
-      ) ?? UNKNOWN_WINDOW;
       s.providerLabel = ctx.model?.provider ?? "openai";
     } else {
-      s.pendingRequestWindow = UNKNOWN_WINDOW;
       s.providerLabel = ctx.model?.provider;
     }
     s.pendingRequestAt = requestAt;

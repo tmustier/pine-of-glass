@@ -13,7 +13,8 @@ npm run check
 ```
 
 `npm run lint` runs `scripts/dev/agent-lint.mjs`, a zero-dependency source lint
-for repo-specific invariants. Existing violations are recorded in
+for repo-specific invariants, then checks generated Cachemire retention docs. Existing
+source violations are recorded in
 `scripts/dev/agent-lint-baseline.json` so the rule can prevent regressions while the
 codebase is migrated deliberately. Do not grow the baseline as a way to dodge the
 standard. Fix the code, add a precise `SAFETY:` comment for a real seam, or update a
