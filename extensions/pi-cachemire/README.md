@@ -18,20 +18,18 @@ Cachemire stays hidden while the cache is healthy or its retention is unknown. I
 appears above the input box only at a supported retention boundary, or when a change
 such as compaction or a model switch puts the next send at risk.
 
-For Anthropic, Cachemire reads the 5-minute or 1-hour TTL from the outgoing
-`cache_control`. A 5-minute cache appears during its final minute. A 1-hour cache appears
-during its final 5 minutes. A restored Anthropic session may infer this value from
-`PI_CACHE_RETENTION` until the next live payload arrives.
+<!-- BEGIN GENERATED CACHE RETENTION: policy-table -->
+| Route | Retention evidence | Cachemire behaviour | Evidence source |
+|---|---|---|---|
+| Anthropic, live request | `cache_control` contains a 5m or 1h TTL | use the observed TTL | [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), Installed Pi request builders and model records |
+| Anthropic, restored session | Pi resolves ordinary calls from `PI_CACHE_RETENTION` | infer 5m, or 1h when set to `long`, until a live payload replaces it | Installed Pi request builders and model records |
+| OpenAI or OpenAI Codex, GPT-5.6 and later GPT-5 models | documented `prompt_cache_options.ttl` default | use a 30m minimum; after it ends, show that the cache state is unknown | [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), Installed Pi request builders and model records |
+| Direct official OpenAI API, GPT-5 below GPT-5.6 | outgoing payload contains `prompt_cache_retention: "24h"` | record a 24h maximum, with no warmth claim before it | [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), Installed Pi request builders and model records |
+<!-- END GENERATED CACHE RETENTION: policy-table -->
 
-GPT-5.6 and later GPT-5 models have a documented 30-minute minimum on OpenAI and
-OpenAI Codex. Cachemire stays silent during that minimum. When it ends, Cachemire says
-the cache state is unknown because OpenAI may retain the prefix longer.
-
-A direct official OpenAI GPT-5 request below GPT-5.6 gets a 24-hour maximum only when
-its outgoing payload contains `prompt_cache_retention: "24h"`. Cachemire stays silent
-before that maximum and marks the cache stale when it is reached. Direct OpenAI requests
-without that field and other routes have unknown retention. Cachemire does not support
-`in_memory` or a 5-minute to 1-hour OpenAI window.
+The table is generated from Cachemire's runtime policy registry. A minimum is not an
+expiry, and unknown retention never earns an elapsed-time claim. Cachemire does not use
+`in_memory` or an undocumented 5-minute to 1-hour OpenAI band as retention evidence.
 
 The `~` re-write count starts from the prior billed prompt-side usage. It is not the
 whole next prompt, which adds your new message and other suffix content. After a model
@@ -40,13 +38,15 @@ At send time, it sizes recognized system, tool and message fields from the provi
 payload it observes. Gateway estimates stay rough because an upstream rewrite can still
 change them.
 
-```
-◍ cache expires in 58s · next send may re-write ~138.2k (~$2.59)
+<!-- BEGIN GENERATED CACHE RETENTION: clock-examples -->
+```text
+◍ cache expires in 30s · next send may re-write ~109.8k (~$1.37)
 ◍ cache state unknown · 30m retention minimum reached · next send may re-send ~109.8k uncached (~$1.37)
 ◍ cache stale · 24h retention maximum reached · next send may re-send ~109.8k uncached (~$1.37)
-◍ cache stale · TTL expired · next send may re-write ~142.3k (~$2.67)
+◍ cache stale · TTL expired · next send may re-write ~109.8k (~$1.37)
 ◍ cache stale after compaction · next send may re-write changed history
 ```
+<!-- END GENERATED CACHE RETENTION: clock-examples -->
 
 ## Find out why the cache broke
 
@@ -157,15 +157,12 @@ Cachemire follows these rules:
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
 - Everything Cachemire draws is UI-only. It does not enter LLM context, session
   entries or exports.
-- Freshness wording reflects supported evidence. An Anthropic TTL gets a countdown.
-  GPT-5.6 and later GPT-5 models get a 30-minute minimum. An observed 24-hour OpenAI
-  maximum gets a stale state once reached. Other unknown retention stays silent. Under
-  subscription auth, Cachemire marks savings as notional.
+- Freshness wording follows the generated policy table above. Unknown retention stays
+  silent. Under subscription auth, Cachemire marks savings as notional.
 - Sessions restored with `--continue` rebuild the active ledger and all-branch cache
   baselines from session usage. Cachemire marks restored rows and excludes them from
-  savings because their pricing context is unknown. The GPT-5.6 model default and the
-  Anthropic `PI_CACHE_RETENTION` inference survive restore. Payload fingerprints and
-  observed legacy OpenAI retention fields do not.
+  savings because their pricing context is unknown. Model-level policies resolve through
+  the same registry; request-only payload evidence does not survive restore.
 
 ## Understand the model behind the wording
 
@@ -175,15 +172,14 @@ Cachemire uses 4 rules:
 - **Scope** ties a cache entry to the provider, model, wire API and byte-exact prefix.
   Switch-back warmth needs exact identity and an active TTL or minimum. Unknown
   retention waits for billed usage.
-- **Retention** shows an Anthropic countdown, the end of the GPT-5.6 30-minute minimum,
-  or a reached observed 24-hour OpenAI maximum. It makes no elapsed-time claim for
+- **Retention** follows the generated policy table. It makes no elapsed-time claim for
   unknown routes.
 - **Currency** keeps exact tokens and cost in the tokenizer and price card that billed
   them. Cross-model sizes are labelled estimates in the target currency. A prior billed
   prompt count is a baseline, not the whole next prompt.
 
-Read [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for the evidence table, clock
-and aborted-send semantics, cause limits and lifecycle trade-offs.
+Read the [retention audit](../../docs/cache-retention-audit-2026-08-04.md) for policy
+evidence and [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for lifecycle semantics.
 
 ## Compare Cachemire with the other extensions
 

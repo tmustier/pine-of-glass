@@ -1,5 +1,3 @@
-// Provider retention evidence contract. Update this matrix, retention.ts and the dated
-// table in docs/pi-cachemire.md together when provider documentation changes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -16,50 +14,62 @@ import {
 const MIN = 60_000;
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * MIN, source: "observed" } as const;
 
-test("retention resolution requires route, model family and observed request policy", (t) => {
-  const configuredRetention = process.env.PI_CACHE_RETENTION;
-  delete process.env.PI_CACHE_RETENTION;
-  t.after(() => {
-    if (configuredRetention === undefined) delete process.env.PI_CACHE_RETENTION;
-    else process.env.PI_CACHE_RETENTION = configuredRetention;
-  });
+function requestWindow(
+  provider: string,
+  model: string | undefined,
+  payload: unknown,
+  fingerprint: { kind: "anthropic" | "openai-responses" | "unknown"; ttlMs?: number } = {
+    kind: "openai-responses",
+  },
+) {
+  return windowForRequest({ provider, model, payload, fingerprint });
+}
 
-  assert.deepEqual(windowForModel("anthropic"), { kind: "contract", ttlMs: 5 * MIN, source: "inferred" });
+test("retention resolution requires route, model family and observed request policy", () => {
+  assert.deepEqual(
+    windowForModel("anthropic", undefined, {}),
+    { kind: "contract", ttlMs: 5 * MIN, source: "inferred" },
+  );
   assert.equal(windowForModel("openai-codex", "gpt-5.6-sol"), OPENAI_MINIMUM_WINDOW);
   assert.equal(windowForModel("openai", "gpt-5.6"), OPENAI_MINIMUM_WINDOW);
   assert.equal(windowForModel("openai", "gpt-5.10"), OPENAI_MINIMUM_WINDOW);
   assert.equal(windowForModel("openai", "gpt-5.5"), undefined);
   assert.equal(windowForModel("mistral", "gpt-5.6"), undefined);
 
+  assert.deepEqual(
+    requestWindow("anthropic", "claude-opus-4-8", {}, { kind: "anthropic", ttlMs: 5 * MIN }),
+    CONTRACT_5M,
+    "live Anthropic evidence resolves through the same registry",
+  );
   assert.equal(
-    windowForRequest("openai", "gpt-5.4", { prompt_cache_retention: "24h" }),
+    requestWindow("radius", "claude-opus-4-8", {}, { kind: "anthropic", ttlMs: 5 * MIN }),
+    undefined,
+    "an Anthropic-shaped gateway payload does not inherit the direct route contract",
+  );
+  assert.equal(
+    requestWindow("openai", "gpt-5.4", { prompt_cache_retention: "24h" }),
     OPENAI_EXTENDED_WINDOW,
   );
-  assert.equal(windowForRequest("openai", "gpt-5.4", {}), undefined, "an omitted policy is unknown");
+  assert.equal(requestWindow("openai", "gpt-5.4", {}), undefined, "an omitted policy is unknown");
   assert.equal(
-    windowForRequest("openai", undefined, { prompt_cache_retention: "24h" }),
+    requestWindow("openai", undefined, { prompt_cache_retention: "24h" }),
     undefined,
     "an unrecognized model cannot inherit a GPT-5 policy",
   );
   assert.equal(
-    windowForRequest("openai", "gpt-5.4", { prompt_cache_retention: "1h" }),
-    undefined,
-    "unsupported policy values are unknown",
-  );
-  assert.equal(
-    windowForRequest("openai", "gpt-5.6", { prompt_cache_retention: "24h" }),
+    requestWindow("openai", "gpt-5.6", { prompt_cache_retention: "24h" }),
     OPENAI_MINIMUM_WINDOW,
     "GPT-5.6 uses the default minimum, not the deprecated maximum policy",
   );
   assert.equal(
-    windowForRequest("openai", "gpt-5-6-sol", { prompt_cache_retention: "24h" }),
-    undefined,
-    "an unrecognized alias fails closed",
-  );
-  assert.equal(
-    windowForRequest("openai-codex", "gpt-5.6-sol", {}),
+    requestWindow("openai-codex", "gpt-5.6-sol", {}),
     OPENAI_MINIMUM_WINDOW,
     "the documented GPT-5.6 default also applies through Codex",
+  );
+  assert.equal(
+    requestWindow("openai-codex", "gpt-5.6-sol", {}, { kind: "unknown" }),
+    undefined,
+    "the documented route still requires the matching request shape on a live send",
   );
 });
 

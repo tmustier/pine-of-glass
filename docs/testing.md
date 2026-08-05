@@ -44,7 +44,8 @@ Deliberately **not** tested:
   `internals` object consumed by tests. Pi imports only each extension's default entry
   point, so named test surfaces are runtime-inert. Split files by domain when the code
   needs it, as cachemire's renderer and meantime's timing/render modules do.
-- **Scripts:** `npm run lint` (agent coding-standard source checks),
+- **Scripts:** `npm run lint` (agent coding-standard and generated-doc drift checks),
+  `npm run docs:cache` (regenerate Cachemire retention docs),
   `npm run typecheck`, `npm test` (unit + render + contract),
   `npm run check` (lint + typecheck + tests), and `npm run test:smoke`
   (tmux startup smoke, local-only).
@@ -168,21 +169,14 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   rewriting is deliberately left to the authoritative send-time payload. For live
   accuracy work, the explicit [model-switch forecast probe](../scripts/cachemire/README.md)
   captures sanitized component counts and exact usage without prompt content.
-- **Retention evidence**: `retention-evidence.test.ts` is the route, model and outgoing
-  request-policy matrix. Anthropic uses an observed 5-minute or 1-hour TTL and may infer
-  it from `PI_CACHE_RETENTION` after restore. GPT-5.6 and later GPT-5 models use the
-  documented 30-minute minimum on OpenAI and OpenAI Codex. A direct official OpenAI
-  GPT-5 request below GPT-5.6 gets a 24-hour maximum only when its outgoing payload
-  contains `prompt_cache_retention: "24h"`. Direct OpenAI without that field,
-  `in_memory`, and other routes stay unknown. Unknown retention never becomes warm or
-  cold from elapsed time. The tests make no 5-minute to 1-hour band, replica-identity
-  or 512-token-arithmetic claim.
-  `pi-cache-retention-seams.test.ts` fails when installed Pi request shapes drift.
+- **Retention evidence**: `retention.ts` drives runtime resolution and generated policy
+  docs. `retention-evidence.test.ts` pins routes and boundaries; clock tests pin visible
+  wording; `pi-cache-retention-seams.test.ts` covers installed Pi routes. `npm run lint`
+  rejects stale generated blocks.
 - **Restored freshness**: persisted lineage uses the parent entry timestamp as its
-  request anchor and response time only as fallback. Restored Anthropic sessions may
-  use that anchor with their inferred TTL. Restored GPT-5.6 models keep their documented
-  minimum. Legacy OpenAI retention stays unknown because the outgoing policy was not
-  persisted.
+  request anchor and response time only as fallback. Model-level registry policies can
+  resolve after restore; request-only evidence stays unknown because the outgoing payload
+  was not persisted.
 
 ### meantime
 
