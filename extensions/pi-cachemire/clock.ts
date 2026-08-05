@@ -9,25 +9,17 @@ import type { CacheWindow } from "./types.ts";
 
 export const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
 const EXACT_WARNING_MAX_MS = 5 * 60 * 1000;
-const BAND_WARNING_MAX_MS = 60 * 1000;
 
-/** Conservative warmth: inside a contract TTL or a documented band's soft horizon.
- * Unknown retention never earns a warmth claim. */
 export function withinWarmHorizon(window: CacheWindow | undefined, sinceMs: number): boolean {
-  const resolved = window ?? UNKNOWN_WINDOW;
-  if (resolved.kind === "contract") return sinceMs <= resolved.ttlMs;
-  if (resolved.kind === "band") return sinceMs <= resolved.softMs;
-  return false;
+  return window?.kind === "contract" && sinceMs < window.ttlMs;
 }
 
-function warningLeadMs(window: Exclude<CacheWindow, { kind: "unknown" }>): number {
-  const boundary = window.kind === "contract" ? window.ttlMs : window.softMs;
-  const maximum = window.kind === "contract" ? EXACT_WARNING_MAX_MS : BAND_WARNING_MAX_MS;
-  return Math.min(maximum, boundary * 0.2);
+function warningLeadMs(window: Extract<CacheWindow, { kind: "contract" }>): number {
+  return Math.min(EXACT_WARNING_MAX_MS, window.ttlMs * 0.2);
 }
 
 export interface ClockState {
-  phase: "idle" | "closing" | "cold" | "stale" | "fading" | "warm-unknown";
+  phase: "idle" | "closing" | "cold" | "stale" | "warm-unknown";
   text: string;
 }
 
@@ -63,17 +55,19 @@ export function cacheClock(input: ClockInput): ClockState {
   }
   if (input.modelSwitched) {
     const forecast = input.switchForecast;
-    if (forecast?.prior && (!forecast.prior.window || forecast.prior.window.kind === "unknown")) {
-      return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
-    }
-    if (forecast !== undefined && forecast.prior !== undefined &&
-        withinWarmHorizon(forecast.prior.window, input.now - forecast.prior.requestAt)) {
-      // The target model's own last billed call is inside its freshness window: a
-      // switch-back may revive that entry, so "cold" would overclaim.
-      return {
-        phase: "warm-unknown",
-        text: `cache may still be warm \u00b7 switched back to ${forecast.targetId} \u00b7 next send confirms`,
-      };
+    if (forecast?.prior) {
+      const prior = forecast.prior;
+      const priorAge = input.now - prior.requestAt;
+      if (!prior.window || prior.window.kind === "unknown" ||
+          (prior.window.kind === "maximum" && priorAge < prior.window.maxMs)) {
+        return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
+      }
+      if (withinWarmHorizon(prior.window, priorAge)) {
+        return {
+          phase: "warm-unknown",
+          text: `cache may still be warm \u00b7 switched back to ${forecast.targetId} \u00b7 next send confirms`,
+        };
+      }
     }
     if (forecast?.estTokens === undefined) {
       return { phase: "cold", text: "cache cold expected \u00b7 model switched \u00b7 prompt size known at next send" };
@@ -104,24 +98,9 @@ export function cacheClock(input: ClockInput): ClockState {
     const suffix = rewriteSuffix("may re-write", input.cachedTokens, input.rewriteUsd);
     return { phase: "closing", text: `cache expires in ${formatDuration(display)}${suffix}` };
   }
-  if (window.kind === "band") {
-    const untilTypicalExpiry = window.softMs - since;
-    if (untilTypicalExpiry > warningLeadMs(window)) return { phase: "idle", text: "" };
-    if (untilTypicalExpiry > 0) {
-      return {
-        phase: "closing",
-        text: `cache may expire in ${formatDuration(untilTypicalExpiry)} \u00b7 typical eviction starts after ${formatDuration(window.softMs)} idle`,
-      };
-    }
-    if (since < window.hardMs) {
-      const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd);
-      return {
-        phase: "fading",
-        text: `cache may be stale \u00b7 typical eviction window ${formatDuration(window.softMs)}\u2013${formatDuration(window.hardMs)}${suffix}`,
-      };
-    }
+  if (window.kind === "maximum" && since >= window.maxMs) {
     const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd, " uncached");
-    return { phase: "cold", text: `cache stale \u00b7 beyond ${formatDuration(window.hardMs)} cache cap${suffix}` };
+    return { phase: "cold", text: `cache stale \u00b7 ${formatDuration(window.maxMs)} retention maximum reached${suffix}` };
   }
   return { phase: "idle", text: "" };
 }
@@ -133,25 +112,23 @@ export function nextClockUpdateMs(input: ClockInput): number | undefined {
     const prior = input.switchForecast?.prior;
     const priorWindow = prior?.window;
     if (!prior || !priorWindow || priorWindow.kind === "unknown") return undefined;
-    const horizon = priorWindow.kind === "contract" ? priorWindow.ttlMs : priorWindow.softMs;
+    const horizon = priorWindow.kind === "contract" ? priorWindow.ttlMs : priorWindow.maxMs;
     const remaining = horizon - (input.now - prior.requestAt);
-    return remaining >= 0 ? remaining + 1 : undefined;
+    return remaining > 0 ? remaining : undefined;
   }
   const since = input.now - input.lastRequestAt;
   const window = input.window ?? UNKNOWN_WINDOW;
   if (window.kind === "unknown" || (input.thinkingChanged && window.kind === "contract")) return undefined;
-
-  const warningAt = (window.kind === "contract" ? window.ttlMs : window.softMs) - warningLeadMs(window);
-  if (since < warningAt) return warningAt - since;
-
-  if (window.kind === "contract") {
-    const remaining = window.ttlMs - since;
-    if (remaining <= 0) return undefined;
-    if (remaining <= 90_000) return Math.min(remaining, 1_000);
-    return (remaining % 15_000) + 1;
+  if (window.kind === "maximum") {
+    const remaining = window.maxMs - since;
+    return remaining > 0 ? remaining : undefined;
   }
 
-  if (since < window.softMs) return Math.min(window.softMs - since, 1_000);
-  if (since < window.hardMs) return window.hardMs - since;
-  return undefined;
+  const warningAt = window.ttlMs - warningLeadMs(window);
+  if (since < warningAt) return warningAt - since;
+
+  const remaining = window.ttlMs - since;
+  if (remaining <= 0) return undefined;
+  if (remaining <= 90_000) return Math.min(remaining, 1_000);
+  return (remaining % 15_000) + 1;
 }

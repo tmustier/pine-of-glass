@@ -97,11 +97,12 @@ the full dump is a wall and one tree gives the sense.
 
 ### cachemire: fully live (costs money)
 
-Cache behaviour can't be honestly mocked, so this scenario makes **real model calls**:
-three tiny turns against a small fixture README, then `/cache`. It uses
-`openai-codex/gpt-5.6-sol`, switches to Anthropic without calling it to capture the
-model-switch warning, then switches back for the OpenAI ledger. Expect the table to vary:
-cold start, hit, or an honestly attributed miss are all authentic.
+Cache behaviour needs live evidence, so this scenario makes **real model calls**:
+3 tiny turns against a small fixture README, then `/cache`. It uses
+`openai-codex/gpt-5.6-sol`, whose retention is unknown, switches to Anthropic without
+calling it to capture the model-switch warning, then switches back for the OpenAI
+ledger. Expect the table to vary: cold starts, hits and observed misses are authentic.
+An unexplained miss keeps an unknown cause.
 
 ### meantime: fully live (costs money)
 

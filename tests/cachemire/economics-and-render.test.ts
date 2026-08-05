@@ -10,8 +10,7 @@ const {
   compactCount, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
-  windowForProvider, windowLabel, pastWindow, OPENAI_WINDOW, thinkingLevelsDiffer, wireThinkingEffort,
-  nextClockUpdateMs,
+  OPENAI_EXTENDED_WINDOW, thinkingLevelsDiffer, wireThinkingEffort, nextClockUpdateMs,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -86,26 +85,20 @@ test("cache clock stays silent until attention is useful", () => {
   const thinking = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, thinkingChanged: true });
   assert.equal(thinking.phase, "stale");
   assert.equal(thinking.text, "cache stale \u00b7 thinking level changed \u00b7 next send may re-write the prompt");
-  // Effort lives outside OpenAI's prompt prefix: a band window makes no claim.
+  // A maximum is not a minimum lifetime, so it stays silent before the boundary.
+  const maximum = { lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
   assert.deepEqual(
-    cacheClock({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true }),
+    cacheClock({ ...maximum, now: 23 * 60 * MIN, thinkingChanged: true }),
     { phase: "idle", text: "" },
   );
-});
-
-test("openai band warns near typical eviction without claiming certainty", () => {
-  const base = { lastRequestAt: 0, window: OPENAI_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
-  assert.deepEqual(cacheClock({ ...base, now: 3 * MIN }), { phase: "idle", text: "" });
-  assert.equal(
-    cacheClock({ ...base, now: 4 * MIN + 30_000 }).text,
-    "cache may expire in 30s \u00b7 typical eviction starts after 5m idle",
+  assert.deepEqual(
+    cacheClock({ ...maximum, now: 24 * 60 * MIN }),
+    {
+      phase: "cold",
+      text: "cache stale \u00b7 24h retention maximum reached \u00b7 next send may re-send ~109.8k uncached (~$1.37)",
+    },
+    "the exact maximum boundary is expired",
   );
-  const fading = cacheClock({ ...base, now: 12 * MIN });
-  assert.equal(fading.phase, "fading");
-  assert.equal(fading.text, "cache may be stale \u00b7 typical eviction window 5m\u20131h \u00b7 next send may re-send ~109.8k (~$1.37)");
-  const capped = cacheClock({ ...base, now: 90 * MIN });
-  assert.equal(capped.phase, "cold");
-  assert.equal(capped.text, "cache stale \u00b7 beyond 1h cache cap \u00b7 next send may re-send ~109.8k uncached (~$1.37)");
 });
 
 test("cache clock schedules only useful state changes", () => {
@@ -115,22 +108,24 @@ test("cache clock schedules only useful state changes", () => {
   assert.equal(nextClockUpdateMs({ now: 6 * MIN, lastRequestAt: 0, window: CONTRACT_5M }), undefined);
   assert.equal(nextClockUpdateMs({ now: 55 * MIN + 14_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
   assert.equal(nextClockUpdateMs({ now: 58 * MIN + 29_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
-  assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW }), MIN);
-  assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW, thinkingChanged: true }), MIN);
   assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: CONTRACT_5M, thinkingChanged: true }), undefined);
-  assert.equal(nextClockUpdateMs({ now: 12 * MIN, lastRequestAt: 0, window: OPENAI_WINDOW }), 48 * MIN);
+  assert.equal(
+    nextClockUpdateMs({ now: 23 * 60 * MIN, lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW }),
+    60 * MIN,
+  );
+  assert.equal(nextClockUpdateMs({ now: 24 * 60 * MIN, lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW }), undefined);
   assert.equal(nextClockUpdateMs({
     now: MIN,
     lastRequestAt: 0,
     modelSwitched: true,
     switchForecast: {
-      targetId: "openai/gpt",
+      targetId: "gpt-5.4",
       targetProvider: "openai",
       estTokens: 10_000,
       basis: "direct",
-      prior: { requestAt: 0, window: OPENAI_WINDOW },
+      prior: { requestAt: 0, window: OPENAI_EXTENDED_WINDOW },
     },
-  }), 4 * MIN + 1);
+  }), 24 * 60 * MIN - MIN);
 });
 
 test("thinking level changes are material only when they change the wire params", () => {
@@ -150,27 +145,6 @@ test("thinking level changes are material only when they change the wire params"
   assert.equal(thinkingLevelsDiffer(fable, "minimal", "off"), true, "off disables thinking on the wire");
   assert.equal(thinkingLevelsDiffer(fable, "off", "xhigh"), true);
   assert.equal(thinkingLevelsDiffer(fable, "xhigh", "high"), true);
-});
-
-test("window resolution and labels", () => {
-  assert.deepEqual(windowForProvider("anthropic"), { kind: "contract", ttlMs: 5 * MIN, source: "inferred" });
-  assert.equal(windowForProvider("openai-codex"), OPENAI_WINDOW);
-  assert.equal(windowForProvider("openai"), OPENAI_WINDOW);
-  assert.equal(windowForProvider("mistral"), undefined);
-  assert.equal(windowForProvider(undefined), undefined);
-
-  assert.equal(windowLabel(CONTRACT_5M), "5m TTL");
-  assert.equal(windowLabel({ kind: "contract", ttlMs: 60 * MIN, source: "inferred" }), "1h TTL (inferred)");
-  assert.equal(windowLabel(OPENAI_WINDOW), "5m\u20131h window");
-  assert.equal(windowLabel({ kind: "unknown" }), "TTL unknown");
-
-  assert.equal(pastWindow(CONTRACT_5M, 4 * MIN), false);
-  assert.equal(pastWindow(CONTRACT_5M, 6 * MIN), true);
-  assert.equal(pastWindow(OPENAI_WINDOW, 3 * MIN), false);
-  assert.equal(pastWindow(OPENAI_WINDOW, 12 * MIN), false, "band maybe-zone: eviction is not definite");
-  assert.equal(pastWindow(OPENAI_WINDOW, 90 * MIN), true, "band hard cap is documented — definite");
-  assert.equal(pastWindow({ kind: "unknown" }, 90 * MIN), false);
-  assert.equal(pastWindow(undefined, 90 * MIN), false);
 });
 
 test("anthropic TTL inference mirrors pi-ai's env resolution", () => {
@@ -205,13 +179,13 @@ test("run summary and miss lines read exactly as designed", () => {
     index: 3, at: 0, gapMs: 6.7 * MIN,
     usage: { input: 1_400, output: 900, cacheRead: 0, cacheWrite: 138_200 },
     expectedRead: 138_200,
-    classification: { kind: "miss", cause: { kind: "ttl", detail: "idle 6m42s > 5m TTL" } },
+    classification: { kind: "miss", cause: { kind: "ttl", detail: "5m TTL reached after 6m42s idle" } },
     rewroteTokens: 138_200, costUsd: 0.52,
   };
   // prompt = 1.4k input + 0 read + 138.2k write = 139.6k; 138.2/139.6 → 99%
   assert.equal(
     renderMissLine(miss),
-    "cache broke \u00b7 re-wrote 138.2k of 139.6k prompt (99%) \u00b7 $0.52 \u00b7 cause: idle 6m42s > 5m TTL",
+    "cache broke \u00b7 re-wrote 138.2k of 139.6k prompt (99%) \u00b7 $0.52 \u00b7 cause: 5m TTL reached after 6m42s idle",
   );
 
   const partial: CallRecord = {
@@ -270,10 +244,12 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   assert.equal(predictBreak({ ...base, expectedRead: 0, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
   // Unknown window: no contract, no definite prediction.
   assert.equal(predictBreak({ ...base, gapMs: 590 * MIN }), undefined);
-  // Band maybe-zone: eviction is not certain, so no in-flight claim — but the band's
-  // documented hard cap is contract enough.
-  assert.equal(predictBreak({ ...base, gapMs: 12 * MIN, window: OPENAI_WINDOW }), undefined);
-  assert.equal(predictBreak({ ...base, gapMs: 90 * MIN, window: OPENAI_WINDOW })!.cause.detail, "idle 1h30m > 1h cache cap");
+  // A maximum says nothing before the boundary, but is definite at the boundary.
+  assert.equal(predictBreak({ ...base, gapMs: 23 * 60 * MIN, window: OPENAI_EXTENDED_WINDOW }), undefined);
+  assert.equal(
+    predictBreak({ ...base, gapMs: 24 * 60 * MIN, window: OPENAI_EXTENDED_WINDOW })!.cause.detail,
+    "24h retention maximum reached after 24h idle",
+  );
 
   // Past TTL: sized from the last call's provider-billed prompt.
   const ttl = predictBreak({ ...base, gapMs: 590 * MIN, window: CONTRACT_5M })!;
@@ -282,7 +258,7 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   assert.equal(ttl.expectedUsd, 2.591_25); // 138.2k at $18.75/M write
   assert.equal(
     renderBreakingLine(ttl),
-    "cache breaking \u00b7 re-writing ~138.2k (~$2.59) \u00b7 cause: idle 9h50m > 5m TTL",
+    "cache breaking \u00b7 re-writing ~138.2k (~$2.59) \u00b7 cause: 5m TTL reached after 9h50m idle",
   );
 
   // A named segment mutation outranks the TTL explanation, same as classification.
@@ -295,8 +271,8 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   // Model-switch predictions (sized target-currency estimates, warm-prior silence)
   // live in tests/cachemire/model-switch.test.ts.
 
-  // Thinking change: contract window (Anthropic, documented) predicts an unsized
-  // re-write; a band window predicts nothing — effort is outside the prompt prefix.
+  // Thinking change: a contract window (Anthropic, documented) predicts an unsized
+  // re-write; a maximum predicts nothing because effort is outside the prompt prefix.
   // Budget changes carry the documented system/tools survival; adaptive effort changes
   // make no survival claim (live test on claude-fable-5: 100% of the prompt re-wrote).
   const budgetCause = { kind: "thinking", detail: "thinking changed (thinking budget 4096 \u2192 thinking budget 16384)" } as const;
@@ -311,7 +287,7 @@ test("break prediction: knowable at request time, silent when healthy", () => {
     renderBreakingLine(predictBreak({ ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: effortCause })!),
     "cache breaking \u00b7 re-writing the prompt \u00b7 cause: thinking changed (thinking effort xhigh \u2192 thinking effort low)",
   );
-  assert.equal(predictBreak({ ...base, gapMs: 1_000, window: OPENAI_WINDOW, fingerprintCause: budgetCause }), undefined);
+  assert.equal(predictBreak({ ...base, gapMs: 1_000, window: OPENAI_EXTENDED_WINDOW, fingerprintCause: budgetCause }), undefined);
 
   // Compaction: the event is material but the new prefix size is unknowable.
   const compaction = predictBreak({ ...base, compacted: true, gapMs: 1_000, window: CONTRACT_5M })!;

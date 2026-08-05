@@ -4,8 +4,8 @@
   call     gap    input     read    wrote     out    cost  event
      1       —    12.1k     0.0k   138.2k    0.4k   $0.55  ○ cold start
      2     14s     1.2k   150.3k     1.8k    1.1k  $0.040  ● hit (restored)
-     3   1m46s     0.2k    90.0k    62.1k    0.9k   $1.21  ◑ partial — unknown (provider-side eviction?)
-     4      7m     0.2k     0.0k   153.0k    1.4k   $2.97  ◌ miss — idle 7m00s > 5m TTL
+     3   1m46s     0.2k    90.0k    62.1k    0.9k   $1.21  ◑ partial — unknown (provider did not expose why)
+     4      7m     0.2k     0.0k   153.0k    1.4k   $2.97  ◌ miss — 5m TTL reached after 7m00s idle
   totals: 4 calls · input 13.7k · read 240.3k · wrote 355.1k · out 3.8k · $4.77
   caching saved ~$3.00 vs uncached $7.77 (−39%) · API-priced; notional on subscription
 
@@ -19,15 +19,15 @@
 [cold] ◍ cache cold expected · model switched · next send ~96.4k uncached to radius (rough est · gateway route)
 [warm-unknown] ◍ cache may still be warm · switched back to claude-opus-4-8 · next send confirms
 [cold] ◍ cache cold expected · model switched · prompt size known at next send
-[cold] ◍ cache stale · beyond 1h cache cap · next send may re-send ~64.3k uncached (~$0.12)
+[cold] ◍ cache stale · 24h retention maximum reached · next send may re-send ~64.3k uncached (~$0.12)
 
 === notices (chat lines) ===
-◍ cache breaking · re-writing ~150.3k (~$2.82) · cause: idle 7m00s > 5m TTL
+◍ cache breaking · re-writing ~150.3k (~$2.82) · cause: 5m TTL reached after 7m00s idle
 ◍ cache breaking · re-writing changed history · cause: history compacted
-◍ cache breaking · sending ~96.4k uncached to openai-codex (est · ~$0.12) · cause: model switched claude-opus-4-8 → gpt-5.6-luna
+◍ cache breaking · sending ~96.4k uncached to openai-codex (est · ~$0.12) · cause: model switched claude-opus-4-8 → gpt-5.6-sol
 ◍ cache after compaction · reused 34.9k of the last pre-compaction 72.5k prompt (48%) · processed 39.1k uncached
-◍ cache broke · re-wrote 153.0k of 153.2k prompt (100%) · $2.97 · cause: idle 7m00s > 5m TTL
-◍ cache partial · read 90.0k of 152.1k expected · re-wrote 62.1k (41% of prompt) · cause: unknown (provider-side eviction?)
+◍ cache broke · re-wrote 153.0k of 153.2k prompt (100%) · $2.97 · cause: 5m TTL reached after 7m00s idle
+◍ cache partial · read 90.0k of 152.1k expected · re-wrote 62.1k (41% of prompt) · cause: unknown (provider did not expose why)
 ◍ cache held · read 150.3k of 150.3k expected · prefix stayed warm
 ◍ cache held · read 28.2k (100% of prompt) · the new model already had the prefix cached
 ◍ turn: 3 calls · 4m30s · read 450.9k (99.5% cached) · wrote 3.6k · out 1.2k · $0.18

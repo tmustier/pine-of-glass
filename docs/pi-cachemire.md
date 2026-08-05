@@ -1,255 +1,179 @@
 # pi-cachemire: the cache model and its evidence
 
-This is the deep companion to [`extensions/pi-cachemire/README.md`](../extensions/pi-cachemire/README.md): the provider-general cache model, the wire-level evidence behind each claim, and the lifecycle trade-offs. The README says what you see; this doc says why it is worded that way.
+This is the engineering companion to
+[`extensions/pi-cachemire/README.md`](../extensions/pi-cachemire/README.md). The README
+explains what users see. This guide records the evidence and lifecycle rules behind that
+wording.
 
-## One model across providers
+## Documented retention behaviour
 
-Everything cachemire shows is four provider-general rules, which is the whole mental model:
+Cachemire resolves retention from the exact route, model and observed outgoing policy.
+A provider name alone is not enough.
 
-1. **Anchor**: the freshness clock starts at *request processing* (both Anthropic and
-   OpenAI create/refresh entries while reading the input; "inactivity" is measured from
-   last use). Generation time burns the window.
-2. **Scope**: a cache entry belongs to (provider, model, wire API, byte-exact prefix).
-   Caches are per-model everywhere, so **any model switch means expected cold**. The
-   widget flips before you send anything and leads with the consequence, sized in the
-   *target* model's tokenizer: `cache cold expected · model switched · next send
-   ~96.4k uncached to openai-codex (est)`. Through a gateway route (pi-messages) the
-   upstream request shape is not observable, so the label weakens to `(rough est ·
-   gateway route)`. One exception:
-   switching *back* to a model whose own last billed call is still inside its
-   freshness window says `cache may still be warm · switched back to <model> · next
-   send confirms`, because claiming cold there would be wrong as often as right.
-   The hint is deliberately hedged (the payload may have changed in ways only the
-   next send reveals) and gated: the prior call must match on provider, model *and*
-   wire API, with no compaction on the path since; either failing means its cache
-   entry cannot be revived, and the state stays `cache cold expected`. If the prior
-   model's cache lifetime is unknown, Cachemire says the state is unknown and waits for
-   the next send instead of guessing.
-3. **Window**: strength varies by provider: Anthropic has a contract TTL (observed,
-   else inferred), OpenAI a documented band (soft ~5m / hard 1h), everyone else is
-   unknown. Healthy and unknown windows stay hidden. A contract gets a countdown near
-   expiry; a documented band gets a hedged warning.
-4. **Currency**: exact token counts and $ are only shown in the tokenizer and price
-   card that billed them. After a model switch the old exact count is never displayed
-   against the new model. The forecast above is a labelled estimate in the target
-   model's tokenizer, priced from the target's own price card (tier-aware). The
-   estimate walks what the target will actually receive (pi drops cross-model
-   encrypted reasoning; readable summaries survive as text). Before send this comes
-   from canonical history; at `before_provider_request`, recognized prompt fields from
-   the provider payload Cachemire observes replace it, so normalization and earlier
-   payload transforms are reflected. It is not rescaled from the source model's bill:
-   measured token density does not transfer reliably across tokenizers, and a source bill
-   can describe an earlier request than the history being forecast. Exact numbers return
-   with the first new-model usage, which re-baselines everything.
+| Route | Retention evidence | Cachemire behaviour |
+|---|---|---|
+| Anthropic, live request | `cache_control` contains a 5-minute or 1-hour TTL | use the observed TTL |
+| Anthropic, restored session | Pi resolves ordinary calls from `PI_CACHE_RETENTION` | infer 5 minutes, or 1 hour when set to `long`, until a live payload replaces it |
+| Direct official OpenAI API, GPT-5 below GPT-5.6 | outgoing payload contains `prompt_cache_retention: "24h"` | record a 24-hour maximum, with no warmth claim before it |
+| Direct official OpenAI API, GPT-5 below GPT-5.6 without that field | no supported observed policy | unknown |
+| Direct official OpenAI API for GPT-5.6 and later | no usable retention maximum | unknown |
+| OpenAI Codex OAuth | separate ChatGPT backend shape with no public retention-policy field | unknown |
+| Other and gateway routes | no route-specific observed policy | unknown |
 
-## When the clock starts
+Cachemire does not support `in_memory` as retention evidence. It does not model a
+5-minute to 1-hour OpenAI band. Unknown retention produces no idle-time or warmth claim.
+The dated evidence and source links are in
+[`cache-retention-audit-2026-08-04.md`](./cache-retention-audit-2026-08-04.md).
 
-The TTL anchor is *request start*, not response end: Anthropic reads/refreshes/writes
-cache entries while processing the request input (entries become available once the
-response begins), so a long thinking block burns TTL while it streams. A warning can
-therefore appear during generation: after a 4m thinking block on a 5m TTL, the prefix
-really does have ~1m left.
+## Four rules shape the UI
 
-The re-write size the clock shows is provider-exact, not estimated: it is `input +
-cacheRead + cacheWrite` from the last assistant message's usage: the prompt-side token
-count of the last request as the provider billed it. The `~` covers what the clock
-cannot know: the next send adds your new message on top, and shared-prefix warmth
-(other sessions on the same org with an identical harness prefix) can make the actual
-write smaller.
+1. Evidence: Cachemire distinguishes an observed TTL, an observed maximum and unknown
+   retention. It does not turn a minimum lifetime into a maximum.
+2. Scope: a cache entry belongs to a provider, model, wire API and byte-exact prefix.
+   Model-switch checks require all 3 identity fields. Returning to an Anthropic model
+   may show a switch-back hint only while its own known TTL remains active. Unknown
+   retention stays unknown until the next send reports usage.
+3. Retention: an Anthropic TTL supports a countdown and expiry claim. An observed
+   24-hour OpenAI maximum supports a stale claim once reached, but no warmth claim
+   before then. Healthy and unknown states stay hidden.
+4. Currency: exact token and cost numbers stay in the tokenizer and price card that
+   billed them. A model-switch forecast is a labelled estimate in the target model's
+   tokenizer. Exact values return with the first billed call on the new model.
 
-## Aborted sends don't move the clock
+At `before_provider_request`, Cachemire sizes recognized prompt fields from the payload
+it observes. This captures Pi normalization and earlier payload transforms. Gateway
+estimates remain rough because the upstream request shape is not visible.
 
-The anchor a request claims at send time is confirmed by its usage: Anthropic delivers
-prompt-side usage in `message_start`, so even a mid-stream abort confirms it. A send
-that ends with *no* usage (a fast abort, or an error) proves nothing about the cache,
-so the anchor rolls back to the last billed request; on a first-send abort the clock
-simply hides, since no cache entry was ever confirmed. If the aborted send did refresh
-the prefix after all, the next call resolves green (`cache held`), the same correction
-path as any wrong prediction.
+## Anthropic clocks start at request time
 
-## When the warning appears
+An observed Anthropic TTL starts when Cachemire sees the outgoing request. Anthropic
+reads, refreshes and writes cache entries while processing the input. Generation time
+therefore uses some of the TTL. A long thinking block can make the warning appear while
+the response is still streaming.
 
 A known 5-minute TTL appears during its final minute. A known 1-hour TTL appears during
-its final 5 minutes. Once the TTL passes, the warning remains visible until the next
-provider call establishes the new state. A freshly restored Anthropic session infers the
-TTL by the same rule pi-ai uses (`PI_CACHE_RETENTION=long` means 1h; otherwise 5m) until
-the first live payload replaces it.
+its final 5 minutes. After expiry, the warning remains until the next provider call
+reports the outcome.
 
-OpenAI's implicit cache has no per-request TTL but does have documented behaviour
-(typically evicted after ~5–10m idle, always removed within 1h of last use). Cachemire
-warns during the final minute before the typical window begins, then uses `may` wording
-until the hard cap. It makes no idle-time claim for providers with an unknown lifetime.
+A restored Anthropic session has no persisted `cache_control`. Cachemire mirrors Pi's
+ordinary-call default: `PI_CACHE_RETENTION=long` means 1 hour, otherwise 5 minutes. The
+first live payload replaces that inference.
 
-```
-◍ cache may expire in 30s · typical eviction starts after 5m idle
-◍ cache may be stale · typical eviction window 5m–1h · next send may re-send ~109.8k (~$1.37)
-◍ cache stale · beyond 1h cache cap · next send may re-send ~109.8k uncached (~$1.37)
-```
+For an observed 24-hour OpenAI maximum, Cachemire stays silent before the maximum and
+marks the cache stale once the maximum is reached. All unknown routes remain silent at
+every elapsed time.
 
-Cachemire uses a scheduled wake-up for the next warning boundary. It only updates once
-per second while a visible countdown is in its final 90 seconds, so a healthy cache does
-not trigger continuous UI renders.
-
-## Thinking levels
-
-Thinking levels are the model-switch pattern one notch weaker. On Anthropic a
-thinking-param change breaks cache, so on a contract window the widget flips at the
-keystroke (`cache stale · thinking level changed · next send may re-write the prompt`)
-and the send-time notice names the wire-level change: `cause: thinking changed
-(thinking effort xhigh → thinking effort low)`. How *much* breaks depends on the wire
-form: Anthropic documents that system/tools survive `budget_tokens` changes, but a
-live adaptive-effort change on claude-fable-5 re-wrote 100% of the prompt (read 0,
-re-wrote 30.0k of 30.0k), so the survival claim only appears for budget-style
-payloads. Crucially, the flip keys on the *wire*, not the keystroke: pi levels that
-map to the same provider effort (fable's minimal→low, both effort "low") are
-byte-identical requests, live-verified as a 100% hit, and stay silent. OpenAI's
-`reasoning.effort` lives outside the prompt-prefix tokens that key its cache, so no
-claim is made there: the param is fingerprinted, and only if a miss materializes does
-the cause name it (live on gpt-5.5, effort changes did start 2/2 turns with
-`cacheRead 0`). Cycling the level back before the next send revives the cache, and the
-widget follows.
-
-## OpenAI's best-effort, per-machine cache
-
-OpenAI's cache is best-effort and per-machine: requests route by a hash of the first
-~256 tokens (+ `prompt_cache_key`, which pi sets to the session id), stickiness spills
-over under load, and "caching only works if two requests share the same prefix and
-land on the same machine" (OpenAI docs). Live on gpt-5.5 (session 019eb190) this
-produced a *double* break after one thinking change, and the arithmetic proves the
-mechanism: the Codex backend checkpoints entries at 512-token granularity, and every
-hit in the session read exactly `floor₅₁₂` of a specific earlier call's prompt total.
-Mapping reads to entries shows the turn alternated between two machines (A-write,
-B-write, A-hit 16,896 = floor₅₁₂(17,397), B-hit 18,432 = floor₅₁₂(18,500)): the effort
-change re-keyed both machines' caches and each paid one cold write. `cacheRead 0` (not
-partial) was the tell that effort participates in the cache key; a content change
-alone would still have hit the unchanged ~15k early prefix. The unknown-cause hint is
-window-aware for this: band windows say `best-effort cache: fresh write not yet
-readable, or replica routing` instead of Anthropic's `provider-side eviction?`.
-
-Cachemire runs that entry arithmetic itself. Every call's prompt total is kept, and
-when a later read on a band cache equals `floor₅₁₂` of one (within the 1h hard cap,
-newest match wins), the cause names the entry instead of shrugging:
-
-```
-◍ cache partial · read 49.2k of 63.1k expected · re-wrote 14.0k (22% of prompt)
-  · cause: read matches call #38's entry (13m24s old) · likely a different replica from the last write
+```text
+◍ cache expires in 30s · next send may re-write ~109.8k (~$1.37)
+◍ cache stale · 24h retention maximum reached · next send may re-send ~109.8k uncached (~$1.37)
 ```
 
-When an idle gap *does* explain the miss, the entry refines rather than replaces it:
-`evicted after idle 11m48s (typical window 5m–1h) · fell back to call #38's entry (13m
-old)`. Live motivation: session 019e9758 produced a burst of breaks within seconds,
-reads alternating 62,464 → 49,152 → 62,464 → 65,024, which a single cache cannot do
-(eviction cannot resurrect a shorter entry between two reads of a longer one); ≥3
-replica lineages were advancing independently, and each break was one replica's
-first-touch. The matcher turns that hand analysis into the default diagnosis.
+The widget schedules its next update at a known boundary. It updates once per second
+only during the final 90 seconds of a visible countdown. Healthy and unknown states do
+not trigger continuous renders.
 
-## Tree navigation and branch lineages
+## The displayed forecast is a prior-prompt baseline
 
-Pi sessions are trees, so Cachemire resolves cache lineage from the active path before
-every provider request, not only after `/tree`. Each live billed request records the
-session leaf it serialized, the assistant entry it produced, prompt usage, request time,
-provider, model, cache window and payload fingerprint. Restoring a session rebuilds the
-provider-usage subset from every branch; request-time fingerprints remain deliberately
-in-memory only.
+The clock starts with `input + cacheRead + cacheWrite` from the last billed assistant
+message. This is the prompt-side count for that completed request. It is not the whole
+next prompt.
 
-The nearest billed call anchored on the active path supplies the comparison baseline.
-This is normally an assistant response on the path; selecting a user/request leaf can
-also recover a prior call made from that exact leaf. Its provider-reported
-`input + cacheRead + cacheWrite` is the exact provider-known prompt size for that
-selected path. Cachemire then considers later requests whose session paths descend from
-that response. A candidate can refresh the baseline only when it uses the same provider,
-model and cache window and the baseline's system, tools, thinking parameters and message
-hashes remain a prefix of the candidate payload. A
-newer sibling with another model or prompt shape therefore cannot make the selected
-lineage look young.
+The next request adds the new user message and other suffix content. Shared prefixes
+from another session can also reduce the actual write. The `~` marks this uncertainty.
+After a model switch, Cachemire uses a separate target-tokenizer estimate instead of the
+old model's billed count.
 
-The next outgoing payload is checked against that same selected baseline. Continuing or
-editing after the selected point is ordinary suffix growth, so no history exception or
-one-call suppression flag is needed. A change inside the baseline still reports a
-history mutation; model, system, tool and thinking changes still take precedence. The
-size of the selected response and new divergent tail is not provider-known before the
-next usage arrives, so Cachemire withholds that suffix estimate rather than pricing the
-abandoned leaf. Provider usage then supplies the exact cached and uncached split.
+## Aborted sends do not create evidence
 
-Restored snapshots have provider, model, prompt size and response timestamps but no
-payload fingerprints or persisted request event. Their parent session entry supplies a
-request-time approximation when available, with response time as fallback. Cachemire
-does not claim that another restored descendant refreshed them without fingerprint proof.
+A request start is confirmed when provider usage arrives. Anthropic reports prompt usage
+in `message_start`, so a mid-stream abort can still confirm the request.
 
-## The cause ladder
+A fast abort or error with no usage proves nothing about the cache. Cachemire restores
+the previous timestamp and retention policy. A first-send abort leaves no confirmed
+clock to show.
 
-Every provider request is fingerprinted (system prompt, each tool, each history
-message; `cache_control` breakpoints stripped, since pi moves the breakpoint every
-call by design). When a call's `cacheRead` collapses, the diff names the culprit:
-exact bytes, not vibes.
+## Thinking changes follow wire evidence
 
-Causes resolve in order: compaction (from pi's compact events) → named segment
-mutation (model / system / tools / history) → TTL expiry (refined by an entry match
-when one exists) → entry match on band caches (`read matches call #N's entry · likely
-a different replica`) → unknown. Compaction's own summarizer call is labelled, not
-warned about.
+Cachemire fingerprints the wire form, not the Pi keystroke. Anthropic thinking changes
+can invalidate message cache entries. A known Anthropic TTL therefore supports an
+in-flight warning when the outgoing wire value changes. Levels that map to the same wire
+value stay silent.
 
-Almost every break cause is knowable at *send* time (idle gap vs TTL, compact events,
-fingerprint diff), so the notice is placed when the request goes out (between your
-action and the response, where the causality lives) and then updated **in place** when
-the provider's usage arrives. The tense tells you which state you're reading:
-progressive + `~` = in-flight expectation, past tense = exact actuals. An unpredicted
-break (e.g. provider-side eviction) still gets a resolved-form line when usage
-arrives; a send that aborts before usage resolves the notice to an explicit "outcome
-unknown".
+Other routes get no retention-based prediction. If billed usage later proves a miss,
+Cachemire can report an observed payload mutation. A miss without such evidence keeps an
+unknown cause.
 
-Compaction immediately warns that the cache is stale and the next send may re-write
-changed history. It does not claim that the whole prompt changed. The warning is
-unsized in flight because Pi's compact event does not provide an exact provider-token
-split for the new prefix. The first billed agent call afterwards
-does, so the resolved notice compares its exact `cacheRead` with the last normal agent
-prompt before compaction: `reused 34.9k of the last pre-compaction 72.5k prompt (48%) ·
-processed 39.1k uncached`. Pi's summarizer request has a separate prompt shape and does not
-reuse that prefix. The first normal agent call after compaction can instead read the
-unchanged prefix from the earlier pre-compaction cache lineage. `Reused` is not a claim
-about how many semantic conversation tokens Pi kept. The uncached count is the
-provider-reported ordinary input plus explicit cache-write input: everything in the new
-prompt that was not a cache read. It therefore carries no share of the old prompt. If
-the model also changed, the
-old-model prompt count and share are withheld rather than compared with usage from a
-different tokenizer.
+## Usage does not reveal cache identity
 
-Percentages on ordinary resolved miss notices remain the share of that request's
-prompt-side tokens (input + cacheRead + cacheWrite) that had to be re-written. `cache
-held` (green) appears when a predicted break did not happen, usually shared-prefix
-warmth: another session with the same harness prefix kept the early breakpoints alive
-past your idle gap.
+Provider usage reports cache reads and writes. It does not reveal eviction cause,
+routing, replica identity or cache entry identity. Matching token counts, including
+512-token alignment, cannot establish those facts.
 
-Resolution across a model switch follows the currency rule too. The stored
-expectation is denominated in the previous model's tokenizer, so the first call
-after a switch is classified and rendered against its own billed prompt only:
-`cache held · read 28.2k (100% of prompt) · the new model already had the prefix
-cached` (a twin session's identical prefix, or the model's own surviving entry),
-never `read 28.2k of 20.6k expected`, which would compose two currencies into an
-impossible >100% claim. Restored-session ledgers apply the same rule, and a
-restored call whose model identity differs from the previous billed call keeps
-`model switched …` as its cause instead of `restored (cause unknown)`.
+Cachemire therefore reports unexplained misses as `cause unknown`. It does not infer a
+replica or an idle eviction from token arithmetic.
 
-## State and lifecycle
+## Tree navigation follows the selected branch
 
-Working state is in-memory and dies with the process. What survives an exit is exactly
-what the provider billed (usage on assistant messages in the session transcript), from
-which `--continue` rebuilds the active ledger and all-branch lineage baselines.
-Request-time observations (payload fingerprints, true request-start anchors and the
-observed `cache_control` TTL) exist only at the event boundary and are never persisted.
-After restore, Cachemire approximates request start from the parent session entry and
-falls back to response time, withholds compatibility claims that need a fingerprint, and restarts
-replica-entry matching from live calls. Restored rows say `cause unknown` rather than reconstruct a
-diagnosis from vibes. Cachemire writes nothing into session entries or exports (UI-only
-contract).
+Pi sessions are trees. Before each request, Cachemire resolves the cache lineage from
+the active path. Each live billed call records its session leaf, assistant entry, prompt
+usage, request time, provider, model, cache evidence and payload fingerprint.
 
-Only the Pi extension instance with an interactive UI may own that process-global
-working state. A nested headless `AgentSession` still loads the extension, but its
-lifecycle and provider events are ignored; it cannot overwrite the interactive
-ledger, cache clock or model metadata. The interactive instance releases ownership
-on `session_shutdown` so the next interactive lifecycle can claim it cleanly.
+The nearest billed call on the active path supplies the comparison baseline. Later
+requests can refresh that baseline only when ancestry, provider, model, wire API and
+payload fingerprints prove compatibility. A sibling with another model or prompt shape
+cannot make the selected lineage look younger.
 
-This trade-off fits the current goal: live legibility (repo README, plan 1). Plan 2
-(post-hoc analysis of stored sessions and traces, RPC/remote runs, fleets of agent
-sessions) would need those request-time observations *after* the fact, which means
-persisting them to a sidecar artifact (never the session itself). Revisit then.
+The stored prompt-side total is exact for the prior billed request. It remains only a
+baseline for the next request, which adds a new suffix. Cachemire withholds a divergent
+suffix estimate until provider usage makes the new request exact.
+
+Restored snapshots retain provider usage, model identity and timestamps. They do not
+retain request payloads or an observed OpenAI policy. Restored OpenAI routes therefore
+have unknown retention. Restored Anthropic routes may use the `PI_CACHE_RETENTION`
+inference described above.
+
+## Causes follow observed evidence
+
+Every live request is fingerprinted across system instructions, tools, messages and
+relevant parameters. Cachemire strips moving `cache_control` breakpoints before
+comparison because Pi can move them between calls.
+
+Causes resolve in this order:
+
+1. a Pi compaction event
+2. a named payload mutation, such as model, system, tools, history or thinking
+3. a reached observed Anthropic TTL or observed 24-hour OpenAI maximum
+4. unknown
+
+The notice appears when a supported cause is known at send time. Provider usage updates
+it in place with exact actuals. Progressive wording and `~` identify an in-flight
+expectation. Past tense identifies a billed result. A send with no usage resolves to
+`outcome unknown`.
+
+A compaction warning stays unsized because Pi's event does not provide the next
+provider-token split. The first normal billed call can compare its cache read with the
+last normal pre-compaction prompt. `Reused` means the provider read an unchanged prefix.
+It does not measure semantic conversation content retained by the compactor.
+
+## Cross-model values do not mix
+
+A model-switch forecast walks the content the target model will receive. It never
+rescales the source model's billed count. Token density and prices do not transfer
+between models.
+
+The first billed call after a switch is classified against its own prompt. If it reads a
+cached prefix, the resolved line can report that observed result. Cachemire does not use
+an old-model count as the denominator.
+
+## State stays UI-only
+
+Working state lives in the extension process. Cachemire writes nothing to session
+entries or exports.
+
+On restore, Cachemire rebuilds its ledger and branch baselines from billed usage in
+assistant messages. Payload fingerprints, request-start observations and live retention
+fields are not persisted. Diagnoses that need those fields remain unknown.
+
+Only the interactive Pi extension instance owns the process-global state. Nested
+headless sessions cannot overwrite its ledger, clock or model metadata. The interactive
+instance releases ownership on `session_shutdown`.

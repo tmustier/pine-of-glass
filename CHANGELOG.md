@@ -2,13 +2,16 @@
 
 ## Unreleased
 
-- **Cachemire: show cache status only when it needs attention.** Healthy and unknown
-  cache lifetimes now stay hidden. Known 5-minute and 1-hour caches warn shortly before
-  expiry; OpenAI's best-effort window uses hedged warnings. Stale and invalidated states
-  use warning emphasis, and compaction says only that changed history may be re-written.
-  The widget now sleeps until the next warning boundary instead of waking every second
-  for the whole session, with coarse countdown wakes aligned to their displayed steps.
-  Fixes #25.
+- **Cachemire: show cache status only when evidence supports action.** Observed
+  Anthropic 5-minute and 1-hour TTLs warn shortly before expiry. Restored Anthropic
+  sessions may infer the TTL from `PI_CACHE_RETENTION`. A direct official OpenAI GPT-5
+  request below GPT-5.6 gets a 24-hour maximum only when its outgoing payload contains
+  `prompt_cache_retention: "24h"`; all other routes make no idle-time or warmth claim.
+  This removes the OpenAI 5-minute to 1-hour band, `in_memory` support, replica identity
+  and 512-token entry matching. Re-write forecasts use the prior billed prompt as a
+  baseline, not the whole next prompt. Stale and invalidated states retain warning
+  emphasis, compaction says only that changed history may be re-written, and the widget
+  sleeps until the next supported warning boundary. Fixes #25.
 - **Contextimate: recognise the Claude 4.7+ tokenizer across routes.** Fable 5,
   Opus 5 and explicit Claude 4.7+ models relayed through Radius or OpenRouter now
   use the same measured profile as Claude 4.7/4.8. Bedrock retains its own payload
@@ -295,8 +298,8 @@ expansion surface.
 - No visible change to trace rows; the goldens are byte-identical.
 - The `pi-traceline` and `pi-cachemire` READMEs are restructured to mirror
   `pi-contextimate`'s shape: pitch, screenshots, install, use, then depth.
-  Cachemire's wire-level evidence (thinking-level cache keys, OpenAI replica
-  arithmetic, lifecycle trade-offs) moves to `docs/pi-cachemire.md`, linked
+  Cachemire's wire-level evidence (thinking-level cache keys, cause limits and
+  lifecycle trade-offs) moves to `docs/pi-cachemire.md`, linked
   from the README the way contextimate links `docs/pi-contextimate.md`.
 
 ## 0.5.17 (2026-07-04)

@@ -23,7 +23,7 @@ function persistedEntryAt(entry: unknown): number | undefined {
 
 function billedSnapshotFromEntry(
   entry: unknown,
-  windowForProvider: (provider: string | undefined) => CacheWindow | undefined,
+  windowForModel: (provider: string | undefined, model: string | undefined) => CacheWindow | undefined,
   entryTimes: ReadonlyMap<string, number>,
 ): CacheLineageSnapshot | undefined {
   if (
@@ -49,7 +49,7 @@ function billedSnapshotFromEntry(
     provider,
     model: typeof entry.message.model === "string" ? entry.message.model : undefined,
     api: typeof entry.message.api === "string" ? entry.message.api : undefined,
-    window: windowForProvider(provider),
+    window: windowForModel(provider, typeof entry.message.model === "string" ? entry.message.model : undefined),
   };
 }
 
@@ -66,11 +66,11 @@ function persistedEntryTimes(entries: readonly unknown[]): Map<string, number> {
 /** Restore every normal provider call in the session tree, not only the active branch. */
 export function restoreLineageSnapshots(
   entries: readonly unknown[],
-  windowForProvider: (provider: string | undefined) => CacheWindow | undefined,
+  windowForModel: (provider: string | undefined, model: string | undefined) => CacheWindow | undefined,
 ): CacheLineageSnapshot[] {
   const entryTimes = persistedEntryTimes(entries);
   return entries
-    .map((entry) => billedSnapshotFromEntry(entry, windowForProvider, entryTimes))
+    .map((entry) => billedSnapshotFromEntry(entry, windowForModel, entryTimes))
     .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined);
 }
 
@@ -89,14 +89,14 @@ function responseLinkKey(snapshot: CacheLineageSnapshot): string {
 export function hydrateLineageResponseIds(
   snapshots: CacheLineageSnapshot[],
   entries: readonly unknown[],
-  windowForProvider: (provider: string | undefined) => CacheWindow | undefined,
+  windowForModel: (provider: string | undefined, model: string | undefined) => CacheWindow | undefined,
 ): void {
   const unresolved = snapshots.filter((snapshot) => snapshot.responseEntryId === undefined);
   if (unresolved.length === 0) return;
   const entryTimes = persistedEntryTimes(entries);
   const persisted = new Map(
     entries
-      .map((entry) => billedSnapshotFromEntry(entry, windowForProvider, entryTimes))
+      .map((entry) => billedSnapshotFromEntry(entry, windowForModel, entryTimes))
       .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined)
       .map((snapshot) => [responseLinkKey(snapshot), snapshot]),
   );
@@ -198,7 +198,7 @@ function sameIdentity(a: CacheLineageSnapshot, b: CacheLineageSnapshot): boolean
 function sameWindow(a: CacheWindow | undefined, b: CacheWindow | undefined): boolean {
   if (!a || !b || a.kind !== b.kind) return false;
   if (a.kind === "contract" && b.kind === "contract") return a.ttlMs === b.ttlMs;
-  if (a.kind === "band" && b.kind === "band") return a.softMs === b.softMs && a.hardMs === b.hardMs;
+  if (a.kind === "maximum" && b.kind === "maximum") return a.maxMs === b.maxMs;
   return a.kind === "unknown" && b.kind === "unknown";
 }
 
