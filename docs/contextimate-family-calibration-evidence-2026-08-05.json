@@ -1,0 +1,797 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "studyDate": "2026-08-05",
+  "purpose": "Evidence behind Contextimate raw-text tokenizer families and divisors. No source text or credentials.",
+  "openTokenizers": {
+    "corpusVersion": "2026-08-05.1",
+    "corpusRevision": "556dd115a77839773e143afc0d982afa59eb7479",
+    "corpusFiles": {
+      "config-json": [
+        "package.json",
+        "tsconfig.json"
+      ],
+      "instructions-core": [
+        "AGENTS.md",
+        "docs/agent-coding-standard.md"
+      ],
+      "instructions-design": [
+        "docs/design-language.md"
+      ],
+      "session-code": [
+        "extensions/_lib/heuristics.ts",
+        "extensions/_lib/tool-payloads.ts"
+      ],
+      "session-tests": [
+        "tests/contextimate/heuristics.test.ts",
+        "tests/contextimate/provider-check.test.ts"
+      ]
+    },
+    "pythonVersion": "3.12.13",
+    "dependencies": {
+      "huggingface-hub": "1.26.0",
+      "tiktoken": "0.13.0",
+      "tokenizers": "0.22.2"
+    },
+    "profiles": [
+      {
+        "profile": "Kimi",
+        "familyArtifacts": [
+          {
+            "repository": "moonshotai/Kimi-K2.5",
+            "revision": "4d01dfe0332d63057c186e0b262165819efb6611",
+            "sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+            "patternSha256": "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
+          },
+          {
+            "repository": "moonshotai/Kimi-K2-Instruct",
+            "revision": "fd1984e2b7a3350dbf7305fe73a4ede25c14de50",
+            "sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+            "patternSha256": "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
+          },
+          {
+            "repository": "moonshotai/Kimi-K2-Instruct-0905",
+            "revision": "ac6c49f04883bd0a0598b790693a72061c676629",
+            "sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+            "patternSha256": "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
+          },
+          {
+            "repository": "moonshotai/Kimi-K2.6",
+            "revision": "7eb5002f6aadc958aed6a9177b7ed26bb94011bb",
+            "sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+            "patternSha256": "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
+          },
+          {
+            "repository": "moonshotai/Kimi-K2.7-Code",
+            "revision": "74797c9c62378b951a1f6fcf5c4631024e9b8bef",
+            "sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+            "patternSha256": "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
+          },
+          {
+            "repository": "moonshotai/Kimi-K3",
+            "revision": "9f62e4e9fffbd0a83ddd60e1c209d828994b3569",
+            "sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+            "patternSha256": "de5781783b193d5ccf5b1b28edfa70fa816ce78d54603fdc422cfd8d4ea4411f"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 818,
+            "charsPerToken": 3.39
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1827,
+            "charsPerToken": 4.4319
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 11600,
+            "charsPerToken": 4.0191
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 3741,
+            "charsPerToken": 4.0331
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5035,
+            "charsPerToken": 3.6747
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13427,
+          "charsPerToken": 4.0753,
+          "recommendedDenominator": 4.1
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 8776,
+          "charsPerToken": 3.8275,
+          "recommendedDenominator": 3.8
+        },
+        "configurationSha256": "12fcab43d2b6068f46769f5ff373960bf7c17a94d7abbc50e2491306b2f6cf58"
+      },
+      {
+        "profile": "GLM 4.5",
+        "familyArtifacts": [
+          {
+            "repository": "zai-org/GLM-4.5",
+            "revision": "cbb2c7cfb52fa128a9660cb1a7a78e017899e115",
+            "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+          },
+          {
+            "repository": "zai-org/GLM-4.5-Air",
+            "revision": "a24ceef6ce4f3536971efe9b778bdaa1bab18daa",
+            "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+          },
+          {
+            "repository": "zai-org/GLM-4.5V",
+            "revision": "ed47433b37111465ec527affaaddceff371bca04",
+            "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+          },
+          {
+            "repository": "zai-org/GLM-4.6",
+            "revision": "be72194883d968d7923a07e2f61681ea9a2826d1",
+            "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+          },
+          {
+            "repository": "zai-org/GLM-4.6V",
+            "revision": "4e2d47eb0b41c5280d8294b17cef9e94fdcfff46",
+            "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+          },
+          {
+            "repository": "zai-org/GLM-4.6V-Flash",
+            "revision": "411bb4d77144a3f03accbf4b780f5acb8b7cde4e",
+            "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+          },
+          {
+            "repository": "zai-org/GLM-4.7",
+            "revision": "602d01efcdd332c5238ca4bcede555defbe83eb7",
+            "sha256": "9340665016419c825c4bdabbcc9acc43b7ca2c68ce142724afa829abb1be5efd"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 813,
+            "charsPerToken": 3.4108
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1847,
+            "charsPerToken": 4.3839
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 11681,
+            "charsPerToken": 3.9913
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 3704,
+            "charsPerToken": 4.0734
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5007,
+            "charsPerToken": 3.6952
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13528,
+          "charsPerToken": 4.0449,
+          "recommendedDenominator": 4.0
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 8711,
+          "charsPerToken": 3.856,
+          "recommendedDenominator": 3.9
+        }
+      },
+      {
+        "profile": "GLM 5",
+        "familyArtifacts": [
+          {
+            "repository": "zai-org/GLM-5",
+            "revision": "4e6698ba8e85059d749020e3c4d2123719f23926",
+            "sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
+          },
+          {
+            "repository": "zai-org/GLM-4.7-Flash",
+            "revision": "7dd20894a642a0aa287e9827cb1a1f7f91386b67",
+            "sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
+          },
+          {
+            "repository": "zai-org/GLM-5.1",
+            "revision": "26e1bd6e011feb778d25ae34b09b07074139d92d",
+            "sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
+          },
+          {
+            "repository": "zai-org/GLM-5.2",
+            "revision": "b4734de4facf877f85769a911abafc5283eab3d9",
+            "sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 813,
+            "charsPerToken": 3.4108
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1847,
+            "charsPerToken": 4.3839
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 11674,
+            "charsPerToken": 3.9937
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 3704,
+            "charsPerToken": 4.0734
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5007,
+            "charsPerToken": 3.6952
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13521,
+          "charsPerToken": 4.047,
+          "recommendedDenominator": 4.0
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 8711,
+          "charsPerToken": 3.856,
+          "recommendedDenominator": 3.9
+        }
+      },
+      {
+        "profile": "Command R",
+        "familyArtifacts": [
+          {
+            "repository": "mlx-community/c4ai-command-r-08-2024-4bit",
+            "revision": "563c818b2a8358765f78d30156f6e36f93b57110",
+            "sha256": "f7e773a231706a3ee5d05050ff27aa122a19df09ee7dd59eafa906b7487035b9",
+            "coreSha256": "2bcc46184ba3b57d82c76cdeb373c32e65cb570633a7237e1b01c175faf3758e"
+          },
+          {
+            "repository": "mlx-community/c4ai-command-r-plus-08-2024-4bit",
+            "revision": "c1793cf166ecc2e82bca7979d72cc91a95dd4d76",
+            "sha256": "c69a7ea6c0927dfac8c349186ebcf0466a4723c21cbdb2e850cf559f0bee92b8",
+            "coreSha256": "2bcc46184ba3b57d82c76cdeb373c32e65cb570633a7237e1b01c175faf3758e"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 872,
+            "charsPerToken": 3.18
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1975,
+            "charsPerToken": 4.0997
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 11823,
+            "charsPerToken": 3.9433
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 4117,
+            "charsPerToken": 3.6648
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 5677,
+            "charsPerToken": 3.2591
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13798,
+          "charsPerToken": 3.9657,
+          "recommendedDenominator": 4.0
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 9794,
+          "charsPerToken": 3.4297,
+          "recommendedDenominator": 3.4
+        }
+      },
+      {
+        "profile": "North Mini Code",
+        "familyArtifacts": [
+          {
+            "repository": "CohereLabs/North-Mini-Code-1.0",
+            "revision": "d11e61a842617a22dc328552fa5bb86231ee4f37",
+            "sha256": "14bd1c49d7d11874921d324986713df4be21cd06060530c497dacef99919b7a5"
+          }
+        ],
+        "samples": {
+          "config-json": {
+            "chars": 2773,
+            "tokens": 758,
+            "charsPerToken": 3.6583
+          },
+          "instructions-core": {
+            "chars": 8097,
+            "tokens": 1784,
+            "charsPerToken": 4.5387
+          },
+          "instructions-design": {
+            "chars": 46622,
+            "tokens": 11336,
+            "charsPerToken": 4.1127
+          },
+          "session-code": {
+            "chars": 15088,
+            "tokens": 3629,
+            "charsPerToken": 4.1576
+          },
+          "session-tests": {
+            "chars": 18502,
+            "tokens": 4884,
+            "charsPerToken": 3.7883
+          }
+        },
+        "text": {
+          "chars": 54719,
+          "tokens": 13120,
+          "charsPerToken": 4.1707,
+          "recommendedDenominator": 4.2
+        },
+        "session": {
+          "chars": 33590,
+          "tokens": 8513,
+          "charsPerToken": 3.9457,
+          "recommendedDenominator": 3.9
+        }
+      }
+    ]
+  },
+  "xaiTokenStreams": {
+    "corpusVersion": "2026-08-05.1",
+    "corpus": [
+      {
+        "fixture": "ascii",
+        "chars": 88,
+        "sha256": "79fd1b070b589b5db9499a98dae340ced185e78e2b47f2419b804402ebad89a1"
+      },
+      {
+        "fixture": "code",
+        "chars": 124,
+        "sha256": "5da8f986203dfbd14b59efc45a78c7a109886eca950f12f984ccc7bcae852716"
+      },
+      {
+        "fixture": "controls",
+        "chars": 79,
+        "sha256": "114b849424765a0c4cd4553368292231df80afe8c59795f450d009dc7927a7ff"
+      },
+      {
+        "fixture": "multilingual",
+        "chars": 95,
+        "sha256": "f841df94670956da67d24aa6e206b1d87544f852a293ffcebef674c9225832bc"
+      },
+      {
+        "fixture": "random-ascii-4096",
+        "chars": 4096,
+        "sha256": "c29e2f0d06cdddb3482b4a563d0126a876ff73500e8484dba59a4ff32857d86a"
+      },
+      {
+        "fixture": "whitespace",
+        "chars": 65,
+        "sha256": "2adb3fcc987b6a67e58eadd3b4d3c2ab7f3514f8ea7121b442183b0794b26ed4"
+      }
+    ],
+    "contextimateCorpusRevision": null,
+    "pythonVersion": "3.12.13",
+    "xaiSdkVersion": "1.17.0",
+    "models": [
+      {
+        "requestedModel": "grok-4.20-0309-reasoning",
+        "resolvedModels": [
+          "grok-4.20-0309-reasoning"
+        ],
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
+        "samples": [
+          {
+            "fixture": "ascii",
+            "chars": 88,
+            "tokens": 29,
+            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
+          },
+          {
+            "fixture": "code",
+            "chars": 124,
+            "tokens": 38,
+            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
+          },
+          {
+            "fixture": "controls",
+            "chars": 79,
+            "tokens": 29,
+            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
+          },
+          {
+            "fixture": "multilingual",
+            "chars": 95,
+            "tokens": 35,
+            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
+          },
+          {
+            "fixture": "random-ascii-4096",
+            "chars": 4096,
+            "tokens": 2848,
+            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
+          },
+          {
+            "fixture": "whitespace",
+            "chars": 65,
+            "tokens": 25,
+            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
+          }
+        ]
+      },
+      {
+        "requestedModel": "grok-4.20-0309-non-reasoning",
+        "resolvedModels": [
+          "grok-4.20-0309-non-reasoning"
+        ],
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
+        "samples": [
+          {
+            "fixture": "ascii",
+            "chars": 88,
+            "tokens": 29,
+            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
+          },
+          {
+            "fixture": "code",
+            "chars": 124,
+            "tokens": 38,
+            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
+          },
+          {
+            "fixture": "controls",
+            "chars": 79,
+            "tokens": 29,
+            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
+          },
+          {
+            "fixture": "multilingual",
+            "chars": 95,
+            "tokens": 35,
+            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
+          },
+          {
+            "fixture": "random-ascii-4096",
+            "chars": 4096,
+            "tokens": 2848,
+            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
+          },
+          {
+            "fixture": "whitespace",
+            "chars": 65,
+            "tokens": 25,
+            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
+          }
+        ]
+      },
+      {
+        "requestedModel": "grok-4.20-multi-agent",
+        "resolvedModels": [
+          "grok-4.20-multi-agent-0309"
+        ],
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
+        "samples": [
+          {
+            "fixture": "ascii",
+            "chars": 88,
+            "tokens": 29,
+            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
+          },
+          {
+            "fixture": "code",
+            "chars": 124,
+            "tokens": 38,
+            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
+          },
+          {
+            "fixture": "controls",
+            "chars": 79,
+            "tokens": 29,
+            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
+          },
+          {
+            "fixture": "multilingual",
+            "chars": 95,
+            "tokens": 35,
+            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
+          },
+          {
+            "fixture": "random-ascii-4096",
+            "chars": 4096,
+            "tokens": 2848,
+            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
+          },
+          {
+            "fixture": "whitespace",
+            "chars": 65,
+            "tokens": 25,
+            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
+          }
+        ]
+      },
+      {
+        "requestedModel": "grok-4.3",
+        "resolvedModels": [
+          "grok-4.3"
+        ],
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
+        "samples": [
+          {
+            "fixture": "ascii",
+            "chars": 88,
+            "tokens": 29,
+            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
+          },
+          {
+            "fixture": "code",
+            "chars": 124,
+            "tokens": 38,
+            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
+          },
+          {
+            "fixture": "controls",
+            "chars": 79,
+            "tokens": 29,
+            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
+          },
+          {
+            "fixture": "multilingual",
+            "chars": 95,
+            "tokens": 35,
+            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
+          },
+          {
+            "fixture": "random-ascii-4096",
+            "chars": 4096,
+            "tokens": 2848,
+            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
+          },
+          {
+            "fixture": "whitespace",
+            "chars": 65,
+            "tokens": 25,
+            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
+          }
+        ]
+      },
+      {
+        "requestedModel": "grok-build-0.1",
+        "resolvedModels": [
+          "grok-build-0.1"
+        ],
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
+        "samples": [
+          {
+            "fixture": "ascii",
+            "chars": 88,
+            "tokens": 29,
+            "digest": "50f7be3af3d98d3681cd2c38abff469b96a3e41e0bafd30a786e742349f99a2b"
+          },
+          {
+            "fixture": "code",
+            "chars": 124,
+            "tokens": 38,
+            "digest": "2116e4b10cac86c8162a1761869afebf77808cd50c39077937acd3b767bb1ad4"
+          },
+          {
+            "fixture": "controls",
+            "chars": 79,
+            "tokens": 29,
+            "digest": "537cec32879bb1d916575b8bd1912b5047b53483c0379e0d7d1e96fb9d1288c9"
+          },
+          {
+            "fixture": "multilingual",
+            "chars": 95,
+            "tokens": 35,
+            "digest": "aaeff9f916380a6a1c8ced749f9a69a6b67ad626aa0c6a7334b020bd6edc18fa"
+          },
+          {
+            "fixture": "random-ascii-4096",
+            "chars": 4096,
+            "tokens": 2848,
+            "digest": "3fb386f7cd57aa74ea0812740bd7e6802f255c12f066945818891fbaafaa582a"
+          },
+          {
+            "fixture": "whitespace",
+            "chars": 65,
+            "tokens": 25,
+            "digest": "20182f7d8b130705deba7bb17df1606521873aeb55098015e1f35b7ea1e28855"
+          }
+        ]
+      },
+      {
+        "requestedModel": "grok-4.5",
+        "resolvedModels": [
+          "grok-4.5"
+        ],
+        "fingerprint": "f892196825e9e0e9cb782d8b18502de6e97c561a034a89ad256f0bb2f3b9a6a3",
+        "samples": [
+          {
+            "fixture": "ascii",
+            "chars": 88,
+            "tokens": 30,
+            "digest": "88fad8485419cd1b4eefbc0b2ac67eeef94d7c9407cf381c1a30615d2cbd3327"
+          },
+          {
+            "fixture": "code",
+            "chars": 124,
+            "tokens": 42,
+            "digest": "54531335be6cb5b4929dceaf023c75b377393e6518a87b6e1ef9633c65b06a8b"
+          },
+          {
+            "fixture": "controls",
+            "chars": 79,
+            "tokens": 33,
+            "digest": "3129d8c045771dbabb08434020960991ef8113fcc53fe685975b4f8ec75f1f83"
+          },
+          {
+            "fixture": "multilingual",
+            "chars": 95,
+            "tokens": 23,
+            "digest": "9a239dd3c922d12a10433dbec56b4bc9cd667b6c26084658e9c27b1b2c164a4d"
+          },
+          {
+            "fixture": "random-ascii-4096",
+            "chars": 4096,
+            "tokens": 3136,
+            "digest": "0360d76b930196e29a61faf2484c3130b691d3c4b63649319bafd59728781b55"
+          },
+          {
+            "fixture": "whitespace",
+            "chars": 65,
+            "tokens": 28,
+            "digest": "1fce01d76aa14a902c4909de7784fffb55dd547121c2ed24f86ff2b2073da2ed"
+          }
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7",
+        "models": [
+          "grok-4.20-0309-reasoning",
+          "grok-4.20-0309-non-reasoning",
+          "grok-4.20-multi-agent",
+          "grok-4.3",
+          "grok-build-0.1"
+        ]
+      },
+      {
+        "fingerprint": "f892196825e9e0e9cb782d8b18502de6e97c561a034a89ad256f0bb2f3b9a6a3",
+        "models": [
+          "grok-4.5"
+        ]
+      }
+    ]
+  },
+  "xaiAliases": [
+    {
+      "requestedModel": "grok-4.20",
+      "resolvedModels": [
+        "grok-4.20-0309-reasoning"
+      ],
+      "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7"
+    },
+    {
+      "requestedModel": "grok-latest",
+      "resolvedModels": [
+        "grok-4.3"
+      ],
+      "fingerprint": "6b272011725749c3a0036f41d41febec981f3112ca619793f5a5ba56091f43f7"
+    },
+    {
+      "requestedModel": "grok-build-latest",
+      "resolvedModels": [
+        "grok-4.5"
+      ],
+      "fingerprint": "f892196825e9e0e9cb782d8b18502de6e97c561a034a89ad256f0bb2f3b9a6a3"
+    }
+  ],
+  "xaiContextimateProfiles": {
+    "corpusRevision": "556dd115a77839773e143afc0d982afa59eb7479",
+    "corpus": [
+      {
+        "fixture": "contextimate:config-json",
+        "chars": 2773,
+        "sha256": "acb1f1523d91d863c98e5f048cf760f9faf3318e6151176bcc33fb2333383e8b"
+      },
+      {
+        "fixture": "contextimate:instructions-core",
+        "chars": 8097,
+        "sha256": "fd175991b2936dbbfbf4bc8dc9511c1802bafd3ef6fb2005dc720829e2e19be7"
+      },
+      {
+        "fixture": "contextimate:instructions-design",
+        "chars": 46622,
+        "sha256": "e73b587f20a5db5eab012898e32f4fc0c3a6f06b1ab9919398d25a83a09f4add"
+      },
+      {
+        "fixture": "contextimate:session-code",
+        "chars": 15088,
+        "sha256": "84c16e153c98677aa7f9b4aa04b5e104f1541c2eed3e6d7d619c2255c79fcb81"
+      },
+      {
+        "fixture": "contextimate:session-tests",
+        "chars": 18502,
+        "sha256": "0047a58314e01fa664c9cba0528ff32576a9b1a4831a6c1cc716dc7b132aa22a"
+      }
+    ],
+    "models": [
+      {
+        "requestedModel": "grok-4.3",
+        "resolvedModels": [
+          "grok-4.3"
+        ],
+        "contextimateProfile": {
+          "text": {
+            "chars": 54719,
+            "tokens": 13177,
+            "charsPerToken": 4.1526,
+            "recommendedDenominator": 4.2
+          },
+          "session": {
+            "chars": 33590,
+            "tokens": 8659,
+            "charsPerToken": 3.8792,
+            "recommendedDenominator": 3.9
+          }
+        }
+      },
+      {
+        "requestedModel": "grok-4.5",
+        "resolvedModels": [
+          "grok-4.5"
+        ],
+        "contextimateProfile": {
+          "text": {
+            "chars": 54719,
+            "tokens": 13506,
+            "charsPerToken": 4.0515,
+            "recommendedDenominator": 4.1
+          },
+          "session": {
+            "chars": 33590,
+            "tokens": 9274,
+            "charsPerToken": 3.622,
+            "recommendedDenominator": 3.6
+          }
+        }
+      }
+    ]
+  },
+  "hostedProbe": {
+    "status": "Exploratory cross-check only; it did not define the shipped raw-text profiles.",
+    "requests": 78,
+    "models": 26,
+    "reportedCostUsd": 0.1215,
+    "caveat": "One GLM request generated 38,918 hidden reasoning tokens despite max_tokens 1."
+  }
+}

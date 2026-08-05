@@ -44,7 +44,7 @@ Count a captured Pi request with a provider's token-count endpoint.
 Without --live, print the request plan without making network calls.
 
 Options:
-  --provider <name>  anthropic, openai, google, vertex, bedrock, kimi or zai
+  --provider <name>  anthropic, openai, google, vertex, bedrock, kimi, cohere or zai
   --model <id>       override the captured model
   --tools <a,b>      limit static-section checks to named tools
   --full             count the complete captured request when supported

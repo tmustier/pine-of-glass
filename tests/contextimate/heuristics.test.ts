@@ -87,9 +87,138 @@ test("Claude profiles follow the model through supported routes", () => {
   assert.equal(radius.toolDenominator, 4);
 });
 
+test("measured tokenizer families follow concrete models through serving routes", () => {
+  const cases: Array<[ModelSummary, string, number, number]> = [
+    [model("moonshotai", "kimi-k2-0905-preview", "openai-completions"), "Kimi tokenizer", 4.1, 3.8],
+    [model("fireworks", "accounts/fireworks/routers/kimi-k2p6-fast", "anthropic-messages"), "Kimi tokenizer", 4.1, 3.8],
+    [model("kimi-coding", "k3-256k", "anthropic-messages"), "Kimi tokenizer", 4.1, 3.8],
+    [model("kimi-coding", "kimi-for-coding-highspeed", "anthropic-messages"), "Kimi tokenizer", 4.1, 3.8],
+    [model("amazon-bedrock", "moonshot.kimi-k2-thinking", "bedrock-converse-stream"), "Kimi tokenizer", 4.1, 3.8],
+    [model("openrouter", "z-ai/glm-4.5v", "openai-completions"), "GLM 4.5 tokenizer", 4, 3.9],
+    [model("vercel-ai-gateway", "zai/glm-4.6v-flash", "anthropic-messages"), "GLM 4.5 tokenizer", 4, 3.9],
+    [model("amazon-bedrock", "zai.glm-4.7", "bedrock-converse-stream"), "GLM 4.5 tokenizer", 4, 3.9],
+    [model("openrouter", "z-ai/glm-4.7-flash", "openai-completions"), "GLM 5 tokenizer", 4, 3.9],
+    [model("fireworks", "accounts/fireworks/routers/glm-5p2-fast", "openai-completions"), "GLM 5 tokenizer", 4, 3.9],
+    [model("huggingface", "zai-org/GLM-5.1", "openai-completions"), "GLM 5 tokenizer", 4, 3.9],
+    [model("openrouter", "cohere/command-r-plus-08-2024", "openai-completions"), "Command R tokenizer", 4, 3.4],
+    [model("openrouter", "cohere/north-mini-code:free", "openai-completions"), "North Mini Code tokenizer", 4.2, 3.9],
+    [model("opencode", "north-mini-code-free", "openai-completions"), "North Mini Code tokenizer", 4.2, 3.9],
+    [model("xai", "grok-4.3", "openai-completions"), "Grok 4.20/4.3 tokenizer", 4.2, 3.9],
+    [model("openrouter", "x-ai/grok-4.20", "openai-completions"), "Grok 4.20/4.3 tokenizer", 4.2, 3.9],
+    [model("xai", "grok-4.20-0309-non-reasoning", "openai-completions"), "Grok 4.20/4.3 tokenizer", 4.2, 3.9],
+    [model("vercel-ai-gateway", "xai/grok-4.20-multi-agent", "anthropic-messages"), "Grok 4.20/4.3 tokenizer", 4.2, 3.9],
+    [model("xai", "grok-4.20-multi-agent-0309", "openai-completions"), "Grok 4.20/4.3 tokenizer", 4.2, 3.9],
+    [model("opencode", "grok-build-0.1", "openai-completions"), "Grok 4.20/4.3 tokenizer", 4.2, 3.9],
+    [model("xai", "grok-4.5", "openai-responses"), "Grok 4.5 tokenizer", 4.1, 3.6],
+  ];
+
+  for (const [current, label, textDenominator, sessionDenominator] of cases) {
+    const heuristic = resolveHeuristic(current, {});
+    assert.equal(heuristic.label, label, `${current.provider}/${current.id}`);
+    assert.equal(heuristic.textDenominator, textDenominator, `${current.provider}/${current.id}`);
+    assert.equal(heuristic.sessionDenominator, sessionDenominator, `${current.provider}/${current.id}`);
+  }
+
+  const relayedKimi = resolveHeuristic(
+    model("fireworks", "accounts/fireworks/routers/kimi-k2p6-fast", "anthropic-messages"),
+    {},
+  );
+  assert.equal(relayedKimi.toolNumerator, "anthropic");
+  assert.equal(relayedKimi.toolDenominator, 4);
+  const bedrockGlm = resolveHeuristic(model("amazon-bedrock", "zai.glm-4.7", "bedrock-converse-stream"), {});
+  assert.equal(bedrockGlm.toolNumerator, "bedrock");
+  const directGrok45 = resolveHeuristic(model("xai", "grok-4.5", "openai-responses"), {});
+  assert.equal(directGrok45.toolNumerator, "openai-responses");
+});
+
+test("published tokenizer siblings stay inside their measured family boundary", () => {
+  const families = [
+    ["Kimi tokenizer", [
+      "moonshotai/kimi-k2",
+      "moonshotai/kimi-k2-0711-preview",
+      "moonshotai/kimi-k2-0905",
+      "moonshotai/kimi-k2-thinking-turbo",
+      "moonshotai/kimi-k2.5",
+      "@cf/moonshotai/kimi-k2.6",
+      "moonshotai/kimi-k2.7-code-highspeed",
+      "accounts/fireworks/models/kimi-k2p6",
+      "accounts/fireworks/routers/kimi-k2p7-code-fast",
+      "moonshotai/kimi-k3-fast",
+    ]],
+    ["GLM 4.5 tokenizer", [
+      "z-ai/glm-4.5",
+      "z-ai/glm-4.5-air",
+      "z-ai/glm-4.5v",
+      "z-ai/glm-4.6",
+      "z-ai/glm-4.6v",
+      "z-ai/glm-4.6v-flash",
+      "zai-glm-4.7",
+    ]],
+    ["GLM 5 tokenizer", [
+      "z-ai/glm-4.7-flash",
+      "z-ai/glm-5",
+      "z-ai/glm-5.1",
+      "zai-org/glm-5.2",
+      "accounts/fireworks/models/glm-5p2",
+      "accounts/fireworks/routers/glm-5p2-fast",
+    ]],
+    ["Command R tokenizer", [
+      "cohere/command-r-08-2024",
+      "cohere/command-r-plus-08-2024",
+    ]],
+    ["North Mini Code tokenizer", [
+      "cohere/north-mini-code:free",
+      "north-mini-code-free",
+      "coherelabs/north-mini-code-1.0",
+    ]],
+    ["Grok 4.20/4.3 tokenizer", [
+      "x-ai/grok-4.20",
+      "xai/grok-4.20-reasoning",
+      "xai/grok-4.20-non-reasoning",
+      "grok-4.20-0309-reasoning",
+      "grok-4.20-multi-agent-0309",
+      "xai.grok-4.3",
+      "grok-build-0.1",
+    ]],
+    ["Grok 4.5 tokenizer", ["x-ai/grok-4.5"]],
+  ] as const;
+
+  for (const [label, ids] of families) {
+    for (const id of ids) {
+      assert.equal(resolveHeuristic(model("relay", id, "openai-completions"), {}).label, label, id);
+    }
+  }
+});
+
+test("dynamic selectors and unverified sibling models keep the fallback tokenizer", () => {
+  for (const current of [
+    model("openrouter", "~moonshotai/kimi-latest", "openai-completions"),
+    model("openrouter", "~x-ai/grok-latest", "openai-completions"),
+    model("radius", "auto", "pi-messages"),
+    model("openrouter", "free", "openai-completions"),
+    model("fireworks", "k3", "anthropic-messages"),
+    model("openrouter", "z-ai/glm-4.7-flashx", "openai-completions"),
+    model("zai", "glm-5-turbo", "openai-completions"),
+    model("zai", "glm-5v-turbo", "openai-completions"),
+    model("openrouter", "z-ai/glm-5.3", "openai-completions"),
+    model("openrouter", "cohere/command-r", "openai-completions"),
+    model("vercel-ai-gateway", "xai/grok-4.20-reasoning-beta", "anthropic-messages"),
+    model("xai", "grok-build-latest", "openai-completions"),
+    model("openrouter", "x-ai/grok-4.6", "openai-completions"),
+  ]) {
+    const heuristic = resolveHeuristic(current, {});
+    assert.equal(heuristic.label, "fallback chars/4", `${current.provider}/${current.id}`);
+    assert.equal(heuristic.textDenominator, 4, `${current.provider}/${current.id}`);
+    assert.equal(heuristic.sessionDenominator, 4, `${current.provider}/${current.id}`);
+  }
+
+  const selector = resolveHeuristic(model("openrouter", "free", "openai-completions"), {});
+  assert.equal(selector.toolNumerator, "openai-chat");
+});
+
 test("wire compatibility does not select a tokenizer family", () => {
   for (const compatible of [
-    model("kimi-coding", "kimi-k3", "anthropic-messages"),
+    model("kimi-coding", "unknown-coding-model", "anthropic-messages"),
     model("minimax", "MiniMax-M2.7", "anthropic-messages"),
     model("vercel-ai-gateway", "alibaba/qwen-3.5-plus", "anthropic-messages"),
   ]) {
@@ -120,7 +249,7 @@ test("precedence: defaults < built-in rule < config rules, in rule order", () =>
   assert.equal(resolveHeuristic(anthropicModel, config).textDenominator, 2.6);
   // ...but defaults apply when no tokenizer profile matches.
   assert.equal(resolveHeuristic(undefined, config).textDenominator, 9);
-  assert.equal(resolveHeuristic(model("kimi-coding", "kimi-k3", "anthropic-messages"), config).textDenominator, 9);
+  assert.equal(resolveHeuristic(model("kimi-coding", "kimi-latest", "anthropic-messages"), config).textDenominator, 9);
   assert.equal(resolveHeuristic(model("ollama", "llama-4", "llama-local-api"), config).textDenominator, 9);
 
   // Config rules override built-in rules; later rules override earlier ones.

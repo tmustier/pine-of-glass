@@ -46,6 +46,13 @@ export function estimateCharsAsTokens(chars: number, denominator: number): numbe
 
 const CLAUDE_47_PLUS_MODEL = /claude.*(?:4[-.]?[7-9](?=$|[-.:@])|(?:fable|opus|sonnet|haiku)[-.]?5(?=$|[-.:@]))|4[-.]?[7-9](?=$|[-.:@]).*claude/;
 const CLAUDE_45_46_MODEL = /claude.*4[-.]?[56]|4[-.]?[56].*claude/;
+const KIMI_MODEL = /(?:^|[/@._-])kimi-k(?:2(?:p6|p7-code|[.]5|[.]6|[.]7-code|-(?:0711-preview|0905(?:-preview)?|thinking(?:-turbo)?|turbo-preview|instruct(?:-0905)?))?|3)(?:-(?:fast|highspeed|turbo)|:free)?$/;
+const GLM_45_MODEL = /(?:^|[/@._-])glm-4[.](?:5(?:-air|v)?|6(?:v(?:-flash)?)?|7)(?::free)?$/;
+const GLM_5_MODEL = /(?:^|[/@._-])glm-(?:4[.]7-flash|5(?:[.](?:1|2)|p2)?)(?:-(?:fast|free)|:free)?$/;
+const COMMAND_R_MODEL = /(?:^|[/@._-])command-r(?:-plus)?-08-2024(?::free)?$/;
+const NORTH_MINI_CODE_MODEL = /(?:^|[/@._-])north-mini-code(?:-1[.]0|(?:-|:)free)?$/;
+const GROK_420_43_MODEL = /(?:^|[/@._-])grok-(?:4[.]20(?:-(?:(?:0309-)?(?:non-)?reasoning|multi-agent(?:-0309)?))?|4[.]3|build-0[.]1)(?::free)?$/;
+const GROK_45_MODEL = /(?:^|[/@._-])grok-4[.]5(?::free)?$/;
 
 function familyAtLeast(modelId: string, family: string, major: number, minor: number): boolean {
   const versionPattern = `${family}[-.]?(\\d{1,2})(?:[-.](\\d{1,2}))?(?=$|[-.:@])`;
@@ -91,18 +98,66 @@ const CLAUDE_GENERIC: TokenizerProfile = {
   textDenominator: 3.5,
   sessionDenominator: 3.5,
 };
+const KIMI_RAW: TokenizerProfile = {
+  label: "Kimi tokenizer",
+  textDenominator: 4.1,
+  sessionDenominator: 3.8,
+};
+const GLM_45: TokenizerProfile = {
+  label: "GLM 4.5 tokenizer",
+  textDenominator: 4,
+  sessionDenominator: 3.9,
+};
+const GLM_5: TokenizerProfile = {
+  label: "GLM 5 tokenizer",
+  textDenominator: 4,
+  sessionDenominator: 3.9,
+};
+const COMMAND_R: TokenizerProfile = {
+  label: "Command R tokenizer",
+  textDenominator: 4,
+  sessionDenominator: 3.4,
+};
+const NORTH_MINI_CODE: TokenizerProfile = {
+  label: "North Mini Code tokenizer",
+  textDenominator: 4.2,
+  sessionDenominator: 3.9,
+};
+const GROK_420_43: TokenizerProfile = {
+  label: "Grok 4.20/4.3 tokenizer",
+  textDenominator: 4.2,
+  sessionDenominator: 3.9,
+};
+const GROK_45: TokenizerProfile = {
+  label: "Grok 4.5 tokenizer",
+  textDenominator: 4.1,
+  sessionDenominator: 3.6,
+};
 
 function isClaudeModel(model: ModelSummary): boolean {
   return model.provider.toLowerCase().includes("anthropic") || model.id.toLowerCase().includes("claude");
 }
 
+function isKimiModel(model: ModelSummary, id: string): boolean {
+  if (KIMI_MODEL.test(id)) return true;
+  if (model.provider.toLowerCase() !== "kimi-coding") return false;
+  return /^(?:k3(?:-256k)?|kimi-for-coding(?:-highspeed)?)$/.test(id);
+}
+
 function tokenizerProfile(model: ModelSummary): TokenizerProfile | undefined {
+  const id = model.id.toLowerCase();
   if (isClaudeModel(model)) {
-    const id = model.id.toLowerCase();
     if (CLAUDE_47_PLUS_MODEL.test(id)) return CLAUDE_47_PLUS;
     if (CLAUDE_45_46_MODEL.test(id)) return CLAUDE_45_46;
     return CLAUDE_GENERIC;
   }
+  if (isKimiModel(model, id)) return KIMI_RAW;
+  if (GLM_5_MODEL.test(id)) return GLM_5;
+  if (GLM_45_MODEL.test(id)) return GLM_45;
+  if (COMMAND_R_MODEL.test(id)) return COMMAND_R;
+  if (NORTH_MINI_CODE_MODEL.test(id)) return NORTH_MINI_CODE;
+  if (GROK_420_43_MODEL.test(id)) return GROK_420_43;
+  if (GROK_45_MODEL.test(id)) return GROK_45;
   if (model.provider.toLowerCase().includes("openai-codex")) {
     return { label: "OpenAI-Codex heuristic", textDenominator: 4, sessionDenominator: 4 };
   }

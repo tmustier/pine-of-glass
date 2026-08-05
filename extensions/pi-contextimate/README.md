@@ -43,7 +43,7 @@ How to read the numbers:
 
 - every `~` number is an estimate; `Total request` drops it only when Pi's current total is fully provider-reported, and keeps it when trailing messages add a local estimate
 - the dim hint line under the header states the counting method once, for example `counts ch ÷ 2.6 (Claude 4.7+ heuristic)`; data rows carry only their raw size, like `(9.2k ch)`
-- the method follows the active model, so switching models re-estimates immediately; named Claude 4.7+ models keep their tokenizer profile through supported Radius and OpenRouter relays
+- the method follows the active model, so switching models re-estimates immediately; concrete Claude, Kimi, GLM, Cohere and Grok model IDs keep their measured raw-text profile through supported relays, while dynamic aliases stay unknown until routing selects a model
 - until the first post-switch response, `Total request` names its old currency (`pre-switch usage · <model> tokens`) and withholds only that total's context bar and window share
 - the first row says `Runtime system prompt` because Pi assembles that prompt at runtime from its base prompt plus tool and extension contributions; expanded view attributes the part it can verify
 - `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand
