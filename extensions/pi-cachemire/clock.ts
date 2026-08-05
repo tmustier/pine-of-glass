@@ -11,7 +11,8 @@ export const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
 const EXACT_WARNING_MAX_MS = 5 * 60 * 1000;
 
 export function withinWarmHorizon(window: CacheWindow | undefined, sinceMs: number): boolean {
-  return window?.kind === "contract" && sinceMs < window.ttlMs;
+  if (window?.kind === "contract") return sinceMs < window.ttlMs;
+  return window?.kind === "minimum" && sinceMs < window.minMs;
 }
 
 function warningLeadMs(window: Extract<CacheWindow, { kind: "contract" }>): number {
@@ -59,7 +60,8 @@ export function cacheClock(input: ClockInput): ClockState {
       const prior = forecast.prior;
       const priorAge = input.now - prior.requestAt;
       if (!prior.window || prior.window.kind === "unknown" ||
-          (prior.window.kind === "maximum" && priorAge < prior.window.maxMs)) {
+          (prior.window.kind === "maximum" && priorAge < prior.window.maxMs) ||
+          (prior.window.kind === "minimum" && priorAge >= prior.window.minMs)) {
         return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
       }
       if (withinWarmHorizon(prior.window, priorAge)) {
@@ -98,6 +100,13 @@ export function cacheClock(input: ClockInput): ClockState {
     const suffix = rewriteSuffix("may re-write", input.cachedTokens, input.rewriteUsd);
     return { phase: "closing", text: `cache expires in ${formatDuration(display)}${suffix}` };
   }
+  if (window.kind === "minimum" && since >= window.minMs) {
+    const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd, " uncached");
+    return {
+      phase: "warm-unknown",
+      text: `cache state unknown \u00b7 ${formatDuration(window.minMs)} retention minimum reached${suffix}`,
+    };
+  }
   if (window.kind === "maximum" && since >= window.maxMs) {
     const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd, " uncached");
     return { phase: "cold", text: `cache stale \u00b7 ${formatDuration(window.maxMs)} retention maximum reached${suffix}` };
@@ -112,13 +121,19 @@ export function nextClockUpdateMs(input: ClockInput): number | undefined {
     const prior = input.switchForecast?.prior;
     const priorWindow = prior?.window;
     if (!prior || !priorWindow || priorWindow.kind === "unknown") return undefined;
-    const horizon = priorWindow.kind === "contract" ? priorWindow.ttlMs : priorWindow.maxMs;
+    const horizon = priorWindow.kind === "contract"
+      ? priorWindow.ttlMs
+      : priorWindow.kind === "minimum" ? priorWindow.minMs : priorWindow.maxMs;
     const remaining = horizon - (input.now - prior.requestAt);
     return remaining > 0 ? remaining : undefined;
   }
   const since = input.now - input.lastRequestAt;
   const window = input.window ?? UNKNOWN_WINDOW;
   if (window.kind === "unknown" || (input.thinkingChanged && window.kind === "contract")) return undefined;
+  if (window.kind === "minimum") {
+    const remaining = window.minMs - since;
+    return remaining > 0 ? remaining : undefined;
+  }
   if (window.kind === "maximum") {
     const remaining = window.maxMs - since;
     return remaining > 0 ? remaining : undefined;

@@ -23,12 +23,15 @@ For Anthropic, Cachemire reads the 5-minute or 1-hour TTL from the outgoing
 during its final 5 minutes. A restored Anthropic session may infer this value from
 `PI_CACHE_RETENTION` until the next live payload arrives.
 
+GPT-5.6 and later GPT-5 models have a documented 30-minute minimum on OpenAI and
+OpenAI Codex. Cachemire stays silent during that minimum. When it ends, Cachemire says
+the cache state is unknown because OpenAI may retain the prefix longer.
+
 A direct official OpenAI GPT-5 request below GPT-5.6 gets a 24-hour maximum only when
-its actual outgoing payload contains `prompt_cache_retention: "24h"`. Cachemire stays silent
-before that maximum and marks the cache stale when it is reached. GPT-5.6 and later,
-OpenAI Codex OAuth, direct OpenAI requests without that field, and other routes have
-unknown retention. Cachemire makes no idle-time or warmth claim for them. It does not
-support `in_memory` or a 5-minute to 1-hour OpenAI window.
+its outgoing payload contains `prompt_cache_retention: "24h"`. Cachemire stays silent
+before that maximum and marks the cache stale when it is reached. Direct OpenAI requests
+without that field and other routes have unknown retention. Cachemire does not support
+`in_memory` or a 5-minute to 1-hour OpenAI window.
 
 The `~` re-write count starts from the prior billed prompt-side usage. It is not the
 whole next prompt, which adds your new message and other suffix content. After a model
@@ -39,6 +42,7 @@ change them.
 
 ```
 ◍ cache expires in 58s · next send may re-write ~138.2k (~$2.59)
+◍ cache state unknown · 30m retention minimum reached · next send may re-send ~109.8k uncached (~$1.37)
 ◍ cache stale · 24h retention maximum reached · next send may re-send ~109.8k uncached (~$1.37)
 ◍ cache stale · TTL expired · next send may re-write ~142.3k (~$2.67)
 ◍ cache stale after compaction · next send may re-write changed history
@@ -153,26 +157,27 @@ Cachemire follows these rules:
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
 - Everything Cachemire draws is UI-only. It does not enter LLM context, session
   entries or exports.
-- Freshness wording reflects observed evidence. An Anthropic TTL gets a countdown. An
-  observed 24-hour OpenAI maximum gets a stale state once reached. Unknown retention
-  stays silent. Under subscription auth, Cachemire marks savings as notional.
+- Freshness wording reflects supported evidence. An Anthropic TTL gets a countdown.
+  GPT-5.6 and later GPT-5 models get a 30-minute minimum. An observed 24-hour OpenAI
+  maximum gets a stale state once reached. Other unknown retention stays silent. Under
+  subscription auth, Cachemire marks savings as notional.
 - Sessions restored with `--continue` rebuild the active ledger and all-branch cache
   baselines from session usage. Cachemire marks restored rows and excludes them from
-  savings because their pricing context is unknown. Payload fingerprints and observed
-  OpenAI retention fields are not persisted. Restored OpenAI retention is unknown.
-  Restored Anthropic sessions may infer a TTL from `PI_CACHE_RETENTION` until the next
-  live request.
+  savings because their pricing context is unknown. The GPT-5.6 model default and the
+  Anthropic `PI_CACHE_RETENTION` inference survive restore. Payload fingerprints and
+  observed legacy OpenAI retention fields do not.
 
 ## Understand the model behind the wording
 
 Cachemire uses 4 rules:
 
-- **Evidence** distinguishes an observed TTL, an observed maximum and unknown retention.
+- **Evidence** distinguishes a TTL, a minimum, a maximum and unknown retention.
 - **Scope** ties a cache entry to the provider, model, wire API and byte-exact prefix.
-  Switch-back warmth needs exact identity and a known active Anthropic TTL. Unknown
+  Switch-back warmth needs exact identity and an active TTL or minimum. Unknown
   retention waits for billed usage.
-- **Retention** shows an Anthropic countdown or a reached observed 24-hour OpenAI
-  maximum. It makes no elapsed-time claim for unknown routes.
+- **Retention** shows an Anthropic countdown, the end of the GPT-5.6 30-minute minimum,
+  or a reached observed 24-hour OpenAI maximum. It makes no elapsed-time claim for
+  unknown routes.
 - **Currency** keeps exact tokens and cost in the tokenizer and price card that billed
   them. Cross-model sizes are labelled estimates in the target currency. A prior billed
   prompt count is a baseline, not the whole next prompt.

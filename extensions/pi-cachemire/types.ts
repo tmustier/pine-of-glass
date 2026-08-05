@@ -79,6 +79,7 @@ export interface CachemireConfig {
 
 export type CacheWindow =
   | { kind: "contract"; ttlMs: number; source: "observed" | "inferred" }
+  | { kind: "minimum"; minMs: number }
   | { kind: "maximum"; maxMs: number }
   | { kind: "unknown" };
 

@@ -10,7 +10,8 @@ const {
   compactCount, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
-  OPENAI_EXTENDED_WINDOW, thinkingLevelsDiffer, wireThinkingEffort, nextClockUpdateMs,
+  OPENAI_EXTENDED_WINDOW, OPENAI_MINIMUM_WINDOW,
+  thinkingLevelsDiffer, wireThinkingEffort, nextClockUpdateMs,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -85,6 +86,20 @@ test("cache clock stays silent until attention is useful", () => {
   const thinking = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, thinkingChanged: true });
   assert.equal(thinking.phase, "stale");
   assert.equal(thinking.text, "cache stale \u00b7 thinking level changed \u00b7 next send may re-write the prompt");
+  const minimum = { lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
+  assert.deepEqual(
+    cacheClock({ ...minimum, now: 15 * MIN }),
+    { phase: "idle", text: "" },
+    "GPT-5.6 stays protected from stale claims during its documented minimum",
+  );
+  assert.deepEqual(
+    cacheClock({ ...minimum, now: 30 * MIN }),
+    {
+      phase: "warm-unknown",
+      text: "cache state unknown \u00b7 30m retention minimum reached \u00b7 next send may re-send ~109.8k uncached (~$1.37)",
+    },
+  );
+
   // A maximum is not a minimum lifetime, so it stays silent before the boundary.
   const maximum = { lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
   assert.deepEqual(
@@ -109,6 +124,8 @@ test("cache clock schedules only useful state changes", () => {
   assert.equal(nextClockUpdateMs({ now: 55 * MIN + 14_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
   assert.equal(nextClockUpdateMs({ now: 58 * MIN + 29_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
   assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: CONTRACT_5M, thinkingChanged: true }), undefined);
+  assert.equal(nextClockUpdateMs({ now: 15 * MIN, lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW }), 15 * MIN);
+  assert.equal(nextClockUpdateMs({ now: 30 * MIN, lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW }), undefined);
   assert.equal(
     nextClockUpdateMs({ now: 23 * 60 * MIN, lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW }),
     60 * MIN,

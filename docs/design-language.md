@@ -172,8 +172,10 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
 - cache materiality (cachemire): notices only above $0.05 or 20k re-written
   tokens; silence when healthy. An Anthropic TTL warning appears only during its final
   `min(5m, 20%)`. It remains visible after expiry until the next provider call resolves
-  the state. An observed 24-hour OpenAI maximum appears once reached. It earns no warm
-  state or pre-maximum warning. Unknown retention stays silent
+  the state. A GPT-5.6 30-minute minimum stays hidden until its boundary, then shows an
+  unknown cache state. An exact switch-back within that minimum may say the cache could
+  still be warm. An observed 24-hour OpenAI maximum appears once reached. It earns no
+  warm state or pre-maximum warning. Routes with unknown retention stay silent
 - severity colour is reserved for exceeded thresholds and real states. Nothing is
   tinted for visual interest
 
@@ -209,8 +211,8 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   gateway routes remain rough because the gateway can still rewrite them upstream.
   The target estimate is never rescaled from a source-model bill: token density is not
   transferable across tokenizers, and the source bill may describe an earlier request.
-  Switch-back warmth anchors require exact provider, API and model identity plus a
-  known active Anthropic TTL. Unknown retention makes no warmth claim. The
+  Switch-back warmth anchors require exact provider, API and model identity plus an
+  active TTL or minimum. Unknown retention makes no warmth claim. The
   send-time notice keeps the grammar in progressive tense: `cache breaking · sending
   ~32.4k uncached to anthropic (est · ~$0.41) · cause: model switched
   openai-codex/gpt-5.6-sol → anthropic/claude-fable-5`; gateway routes use `(rough est ·
@@ -223,9 +225,10 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   28.2k (100% of prompt) · the new model already had the prefix cached`, never
   `read 28.2k of 20.6k expected`, which composes two currencies into an impossible
   137% claim
-- certainty ladder: an observed Anthropic TTL supports definite expiry wording. An
-  observed 24-hour OpenAI maximum supports definite wording only after it is reached.
-  Unknown retention stays silent. Never infer idle-time warmth, eviction, routing,
+- certainty ladder: an observed Anthropic TTL supports definite expiry wording. The
+  documented GPT-5.6 30-minute minimum blocks stale wording until it ends, then changes
+  to an unknown state. An observed 24-hour OpenAI maximum supports definite wording only
+  after it is reached. Unknown retention stays silent. Never infer eviction, routing,
   replica identity or cache entry identity from provider usage
 - status one-liners are lowercase; Title Case only for panel headers and row labels
 - state causes from observed evidence (payload diffs, usage), never inference,

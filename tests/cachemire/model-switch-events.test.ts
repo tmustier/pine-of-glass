@@ -95,6 +95,36 @@ test("event flow: a healthy first send and an abort both stay silent", async () 
   }
 });
 
+test("event flow: GPT-5.6 Codex waits for its 30m retention minimum", async (t) => {
+  const startedAt = Date.UTC(2026, 7, 4, 12);
+  let now = startedAt + 15 * 60_000;
+  t.mock.method(Date, "now", () => now);
+  const model = {
+    id: "gpt-5.6-sol", provider: "openai-codex", api: "openai-codex-responses",
+    reasoning: true, contextWindow: 200_000,
+    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
+  };
+  const entries: unknown[] = [
+    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: startedAt } },
+    { type: "message", id: "a1", parentId: "u1", message: {
+      role: "assistant", content: [], provider: model.provider, api: model.api, model: model.id,
+      stopReason: "stop", timestamp: startedAt + 1_000, usage: usage(0, 100_000, 0),
+    } },
+  ];
+  const notifications: string[] = [];
+  const widgets: string[] = [];
+  const ctx = probeContext(entries, model.api, notifications, widgets);
+  ctx.model = model;
+  const probe = extensionProbe();
+  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
+  await fire(probe, "session_start", {}, ctx);
+  assert.equal(widgets.at(-1), "", "15m idle is inside the documented minimum");
+  now = startedAt + 30 * 60_000;
+  await fire(probe, "model_select", { model }, ctx);
+  assert.match(widgets.at(-1)!, /cache state unknown .* 30m retention minimum reached/);
+  assert.doesNotMatch(widgets.at(-1)!, /5m.*1h|typical eviction/);
+});
+
 test("event flow: an Anthropic-shaped gateway payload keeps retention unknown", async (t) => {
   let now = Date.UTC(2026, 7, 4, 12);
   t.mock.method(Date, "now", () => now);

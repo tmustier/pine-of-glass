@@ -14,28 +14,26 @@ A provider name alone is not enough.
 |---|---|---|
 | Anthropic, live request | `cache_control` contains a 5-minute or 1-hour TTL | use the observed TTL |
 | Anthropic, restored session | Pi resolves ordinary calls from `PI_CACHE_RETENTION` | infer 5 minutes, or 1 hour when set to `long`, until a live payload replaces it |
+| OpenAI or OpenAI Codex, GPT-5.6 and later GPT-5 models | documented `prompt_cache_options.ttl` default | use a 30-minute minimum; after it ends, show that the cache state is unknown |
 | Direct official OpenAI API, GPT-5 below GPT-5.6 | outgoing payload contains `prompt_cache_retention: "24h"` | record a 24-hour maximum, with no warmth claim before it |
 | Direct official OpenAI API, GPT-5 below GPT-5.6 without that field | no supported observed policy | unknown |
-| Direct official OpenAI API for GPT-5.6 and later | no usable retention maximum | unknown |
-| OpenAI Codex OAuth | separate ChatGPT backend shape with no public retention-policy field | unknown |
-| Other and gateway routes | no route-specific observed policy | unknown |
+| Other and gateway routes | no route-specific supported evidence | unknown |
 
 Cachemire does not support `in_memory` as retention evidence. It does not model a
-5-minute to 1-hour OpenAI band. Unknown retention produces no idle-time or warmth claim.
+5-minute to 1-hour OpenAI band. Unknown routes produce no idle-time or warmth claim.
 The dated evidence and source links are in
 [`cache-retention-audit-2026-08-04.md`](./cache-retention-audit-2026-08-04.md).
 
 ## Four rules shape the UI
 
-1. Evidence: Cachemire distinguishes an observed TTL, an observed maximum and unknown
-   retention. It does not turn a minimum lifetime into a maximum.
+1. Evidence: Cachemire distinguishes a TTL, a minimum, a maximum and unknown retention.
+   It does not turn a minimum lifetime into a maximum.
 2. Scope: a cache entry belongs to a provider, model, wire API and byte-exact prefix.
-   Model-switch checks require all 3 identity fields. Returning to an Anthropic model
-   may show a switch-back hint only while its own known TTL remains active. Unknown
-   retention stays unknown until the next send reports usage.
-3. Retention: an Anthropic TTL supports a countdown and expiry claim. An observed
-   24-hour OpenAI maximum supports a stale claim once reached, but no warmth claim
-   before then. Healthy and unknown states stay hidden.
+   Model-switch checks require all 3 identity fields. A switch-back hint needs an active
+   TTL or minimum. Unknown retention stays unknown until the next send reports usage.
+3. Retention: an Anthropic TTL supports a countdown and expiry claim. The GPT-5.6
+   minimum blocks stale claims for 30 minutes, then changes to unknown. An observed
+   24-hour OpenAI maximum supports a stale claim once reached. Healthy states stay hidden.
 4. Currency: exact token and cost numbers stay in the tokenizer and price card that
    billed them. A model-switch forecast is a labelled estimate in the target model's
    tokenizer. Exact values return with the first billed call on the new model.
@@ -59,12 +57,18 @@ A restored Anthropic session has no persisted `cache_control`. Cachemire mirrors
 ordinary-call default: `PI_CACHE_RETENTION=long` means 1 hour, otherwise 5 minutes. The
 first live payload replaces that inference.
 
+For GPT-5.6 and later GPT-5 models, OpenAI documents a 30-minute minimum. This default
+applies on OpenAI and OpenAI Codex. Cachemire stays silent during the minimum. At the
+boundary it reports an unknown cache state because OpenAI may retain the prefix longer.
+Reaching the minimum does not classify a later miss as eviction.
+
 For an observed 24-hour OpenAI maximum, Cachemire stays silent before the maximum and
-marks the cache stale once the maximum is reached. All unknown routes remain silent at
-every elapsed time.
+marks the cache stale once the maximum is reached. Unknown routes remain silent at every
+elapsed time.
 
 ```text
 ◍ cache expires in 30s · next send may re-write ~109.8k (~$1.37)
+◍ cache state unknown · 30m retention minimum reached · next send may re-send ~109.8k uncached (~$1.37)
 ◍ cache stale · 24h retention maximum reached · next send may re-send ~109.8k uncached (~$1.37)
 ```
 
@@ -127,10 +131,10 @@ The stored prompt-side total is exact for the prior billed request. It remains o
 baseline for the next request, which adds a new suffix. Cachemire withholds a divergent
 suffix estimate until provider usage makes the new request exact.
 
-Restored snapshots retain provider usage, model identity and timestamps. They do not
-retain request payloads or an observed OpenAI policy. Restored OpenAI routes therefore
-have unknown retention. Restored Anthropic routes may use the `PI_CACHE_RETENTION`
-inference described above.
+Restored snapshots retain provider usage, model identity and timestamps. GPT-5.6 and
+later GPT-5 models keep their documented 30-minute minimum. Restored Anthropic routes
+may use the `PI_CACHE_RETENTION` inference described above. Legacy OpenAI routes lose
+request-only policy evidence, so their retention becomes unknown.
 
 ## Causes follow observed evidence
 
@@ -144,6 +148,9 @@ Causes resolve in this order:
 2. a named payload mutation, such as model, system, tools, history or thinking
 3. a reached observed Anthropic TTL or observed 24-hour OpenAI maximum
 4. unknown
+
+The end of a 30-minute minimum is a state boundary, not a miss cause. Cachemire keeps
+an unexplained miss unknown after that boundary.
 
 The notice appears when a supported cause is known at send time. Provider usage updates
 it in place with exact actuals. Progressive wording and `~` identify an in-flight

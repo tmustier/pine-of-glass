@@ -5,9 +5,11 @@
 - **Cachemire: show cache status only when evidence supports action.** Observed
   Anthropic 5-minute and 1-hour TTLs warn shortly before expiry. Restored Anthropic
   sessions may infer the TTL from `PI_CACHE_RETENTION`. A direct official OpenAI GPT-5
-  request below GPT-5.6 gets a 24-hour maximum only when its outgoing payload contains
-  `prompt_cache_retention: "24h"`; all other routes make no idle-time or warmth claim.
-  This removes the OpenAI 5-minute to 1-hour band, `in_memory` support, replica identity
+  GPT-5.6 and later GPT-5 models use OpenAI's documented 30-minute minimum on both
+  OpenAI and OpenAI Codex. A direct official OpenAI GPT-5 request below GPT-5.6 gets a
+  24-hour maximum only when its outgoing payload contains `prompt_cache_retention:
+  "24h"`; other routes make no idle-time or warmth claim. This removes the OpenAI
+  5-minute to 1-hour band, `in_memory` support, replica identity
   and 512-token entry matching. Re-write forecasts use the prior billed prompt as a
   baseline, not the whole next prompt. Stale and invalidated states retain warning
   emphasis, compaction says only that changed history may be re-written, and the widget

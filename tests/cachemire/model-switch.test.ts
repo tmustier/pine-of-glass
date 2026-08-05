@@ -8,7 +8,10 @@ import { internals } from "../../extensions/pi-cachemire/index.ts";
 import { computeSwitchForecast, type SwitchTarget } from "../../extensions/pi-cachemire/forecast.ts";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
-const { cacheClock, nextClockUpdateMs, predictBreak, renderBreakingLine, restoreLineageSnapshots, withinWarmHorizon } = internals;
+const {
+  cacheClock, nextClockUpdateMs, OPENAI_MINIMUM_WINDOW, predictBreak, renderBreakingLine,
+  restoreLineageSnapshots, windowForModel, withinWarmHorizon,
+} = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
 const UNKNOWN = { kind: "unknown" } as const;
@@ -48,9 +51,18 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
   const backCold = cacheClock({ now: 5 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
   assert.equal(backCold.phase, "cold", "the exact contract boundary is no longer warm");
 
-  // openai-codex has no retention contract, so its earlier entry stays unknown.
   const unknown = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: UNKNOWN } } });
   assert.equal(unknown.text, "cache state unknown \u00b7 model switched \u00b7 next send confirms");
+
+  const minimumForecast = { ...FORECAST, prior: { requestAt: 0, window: OPENAI_MINIMUM_WINDOW } };
+  assert.equal(
+    cacheClock({ now: 29 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: minimumForecast }).text,
+    "cache may still be warm \u00b7 switched back to gpt-5.6-sol \u00b7 next send confirms",
+  );
+  assert.equal(
+    cacheClock({ now: 30 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: minimumForecast }).text,
+    "cache state unknown \u00b7 model switched \u00b7 next send confirms",
+  );
 
   const maximum = { kind: "maximum", maxMs: 24 * 60 * MIN } as const;
   const extendedForecast = { ...FORECAST, prior: { requestAt: 0, window: maximum } };
@@ -73,9 +85,11 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
   assert.equal(compacted.text, "cache stale after compaction \u00b7 next send may re-write changed history");
 });
 
-test("warm horizon requires a contract TTL", () => {
+test("warm horizon requires a contract or minimum", () => {
   assert.equal(withinWarmHorizon(CONTRACT_5M, 4 * MIN), true);
   assert.equal(withinWarmHorizon(CONTRACT_5M, 5 * MIN), false, "the exact TTL boundary is expired");
+  assert.equal(withinWarmHorizon(OPENAI_MINIMUM_WINDOW, 29 * MIN), true);
+  assert.equal(withinWarmHorizon(OPENAI_MINIMUM_WINDOW, 30 * MIN), false, "the minimum has ended");
   assert.equal(
     withinWarmHorizon({ kind: "maximum", maxMs: 24 * 60 * MIN }, 4 * MIN),
     false,
@@ -234,11 +248,12 @@ test("computeSwitchForecast: a switch-back prior needs an exact api and an uncom
     requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
     promptTokens: 80_000,
     provider: "openai-codex", model: "gpt-5.6-sol", api: "openai-codex-responses",
+    window: OPENAI_MINIMUM_WINDOW,
   };
   const base = { target: sol, entries: entriesFixture(), activeLeafId: "a1", systemPromptChars: 0, tools: [] };
   assert.deepEqual(
     computeSwitchForecast({ ...base, snapshots: [snapshot] }).prior,
-    { requestAt: 1_000, window: undefined },
+    { requestAt: 1_000, window: OPENAI_MINIMUM_WINDOW },
   );
   // Same id via a different (or unrecorded) wire API is a different cache: no warmth hint.
   assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: "openai-responses" }] }).prior, undefined);
@@ -269,14 +284,14 @@ test("computeSwitchForecast: gateway targets are labelled, not refused a number"
 
 test("computeSwitchForecast: finds the target's own prior call on the active path only", () => {
   const entries = entriesFixture();
-  const snapshots = restoreLineageSnapshots(entries, () => undefined);
+  const snapshots = restoreLineageSnapshots(entries, windowForModel);
   // Switching back to sol itself: its billed call at a1 is on the path.
   const backToSol = computeSwitchForecast({
     target: { provider: "openai-codex", id: "gpt-5.6-sol", api: "openai-codex-responses" },
     entries, activeLeafId: "a1", systemPromptChars: 0, tools: [], snapshots,
   });
   assert.ok(backToSol.prior, "the target's own billed call must be found");
-  assert.equal(backToSol.prior!.window, undefined, "openai-codex retention stays unknown");
+  assert.equal(backToSol.prior!.window, OPENAI_MINIMUM_WINDOW);
   // Switching to a model that never billed on this path: no prior.
   const toOpus = computeSwitchForecast({
     target: OPUS, entries, activeLeafId: "a1", systemPromptChars: 0, tools: [], snapshots,
