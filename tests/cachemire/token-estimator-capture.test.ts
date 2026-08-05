@@ -54,6 +54,27 @@ const context = {
   getSystemPrompt: () => "fixture",
 };
 
+test("aborted and failed calls remain skip records", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "token-estimator-capture-"));
+  const outputPath = join(directory, "capture.jsonl");
+  const probe = extensionProbe(outputPath);
+
+  for (const stopReason of ["aborted", "error"]) {
+    await fire(probe, "before_provider_request", { payload }, context);
+    await fire(probe, "message_end", { message: {
+      role: "assistant",
+      provider: "anthropic",
+      api: "anthropic-messages",
+      model: "claude-fable-5",
+      stopReason,
+      usage: { input: 10, cacheRead: 0, cacheWrite: 0 },
+    } });
+  }
+
+  const records = readFileSync(outputPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(records.map((record) => record.type), ["request", "aborted", "request", "error"]);
+});
+
 test("capture resumes normal requests after a cancelled or failed compaction", async () => {
   const directory = mkdtempSync(join(tmpdir(), "token-estimator-capture-"));
   const outputPath = join(directory, "capture.jsonl");

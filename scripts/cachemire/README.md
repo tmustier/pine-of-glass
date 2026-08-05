@@ -82,17 +82,8 @@ node scripts/cachemire/analyze-token-estimator-study.mjs \
   --markdown /tmp/token-study-summary.md
 ```
 
-The privacy-safe committed dataset is also a deterministic analyzer input:
-
-```bash
-node scripts/cachemire/analyze-token-estimator-study.mjs \
-  --input-dataset scripts/cachemire/token-estimator-study-data.json \
-  --candidates scripts/cachemire/token-estimator-candidates.json \
-  --clusters scripts/cachemire/token-estimator-session-clusters.json \
-  --dataset /tmp/token-study-data.json \
-  --json /tmp/token-study-analysis.json \
-  --markdown /tmp/token-study-summary.md
-```
+To reproduce the committed study, replace the `--input` line with
+`--input-dataset scripts/cachemire/token-estimator-study-data.json`.
 
 Keep full provider payload captures and structured live results under `/tmp`. Never
 commit them.

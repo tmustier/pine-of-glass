@@ -54,7 +54,6 @@ export interface ProviderEntry {
   api?: string;
   exactSource?: string;
   cost: string;
-  env: string;
   resolveCredential(): { apiKey?: string; oauthToken?: string } | undefined;
   credentialHint: string;
   execute(body: CountRequest["body"], options: ExecuteOptions): Promise<number | undefined>;

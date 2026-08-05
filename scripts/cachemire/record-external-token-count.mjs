@@ -7,12 +7,8 @@ function usage(message) {
   process.exit(message ? 1 : 0);
 }
 
-function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
-}
-
 function parseExactResult(path) {
-  const value = readJson(path);
+  const value = JSON.parse(readFileSync(path, "utf8"));
   const stringFields = ["provider", "api", "source", "model", "capturedPayloadSha256", "countRequestSha256"];
   const digest = /^[0-9a-f]{64}$/;
   if (!value || typeof value !== "object" || stringFields.some((key) => typeof value[key] !== "string") ||
@@ -63,11 +59,6 @@ if (!acceptedSource) throw new Error("result source is not a supported exact-cou
 const record = {
   schemaVersion: 1,
   type: "resolved",
-  runId: request.runId,
-  caseId: request.caseId,
-  split: request.split,
-  route: request.route,
-  strata: request.strata,
   requestId: request.requestId,
   target: request.target,
   actualPromptTokens: exact.exactTokens,

@@ -49,7 +49,9 @@ node scripts/contextimate/check-provider-tokens.mjs \
   --payload "$payload" --exact --live --json
 ```
 
-Default mode builds minimal counting requests for the baseline, system, all tools and each tool. It passes each measured section through byte-identical. It replaces the conversation with one minimal message so each marginal isolates one static component. Use `--exact` to preserve the complete captured prompt, including accepted `thinking`, `output_config` and `cache_control` controls. Anthropic supports this through `count_tokens`; OpenAI has no non-generating equivalent in this script. Structured exact JSON output includes provider/API/model identity plus SHA-256 digests of the captured payload and count request, so aggregate study tooling can bind the result without retaining prompt content. Use `--tools name1,name2` to focus on specific tools, `--model` to count another model and `--json` for machine output.
+Default mode isolates the system and tools by replacing the conversation with one minimal message. It passes each measured section through unchanged. Use `--tools name1,name2` to focus on specific tools or `--model` to count another model.
+
+`--exact` preserves the complete Anthropic prompt, including accepted `thinking`, `output_config` and `cache_control` controls. Its JSON output includes provider, API and model identity plus payload and count-request SHA-256 digests. OpenAI has no non-generating exact-count endpoint in this script.
 
 - **Anthropic**: uses the free `count_tokens` endpoint. Credentials: `ANTHROPIC_API_KEY`, or automatically pi's own OAuth token from `~/.pi/agent/auth.json` (used locally against the official API only, never printed).
 - **OpenAI**: uses tiny real `/v1/responses` probes (`max_output_tokens: 16`, `store: false`) and reads exact `usage.input_tokens`. **Not free**: costs a fraction of a cent per probe. Requires `OPENAI_API_KEY` (pi's `openai-codex` OAuth token cannot call `api.openai.com`).

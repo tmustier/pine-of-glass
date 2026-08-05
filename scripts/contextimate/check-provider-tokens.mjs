@@ -198,7 +198,6 @@ export const PROVIDERS = {
     api: "anthropic-messages",
     exactSource: "anthropic-count-tokens",
     cost: "free (count_tokens endpoint)",
-    env: "ANTHROPIC_API_KEY",
     // Credential resolution: ANTHROPIC_API_KEY → x-api-key; otherwise pi's own OAuth
     // token from ~/.pi/agent/auth.json → Bearer (most pi users have no env key).
     resolveCredential() {
@@ -230,7 +229,6 @@ export const PROVIDERS = {
     detect: (kind) => kind === "openai-responses",
     build: buildOpenAIResponsesProbes,
     cost: "NOT free — each probe is a real (tiny) request; usage.input_tokens is exact",
-    env: "OPENAI_API_KEY",
     // pi's openai-codex OAuth tokens target the ChatGPT backend, not api.openai.com,
     // so a platform API key is the only supported credential here.
     resolveCredential() {

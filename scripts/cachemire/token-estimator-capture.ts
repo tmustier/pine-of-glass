@@ -1,15 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TargetModel } from "../../extensions/_lib/forecast.ts";
 import { forecastProviderPrompt } from "../../extensions/_lib/provider-prompt.ts";
-import {
-  measureCanonicalPrompt,
-  measureProviderPrompt,
-  type CanonicalPromptMeasurement,
-  type ProviderPromptMeasurement,
-} from "./token-estimator-measure.ts";
+import { measureCanonicalPrompt, measureProviderPrompt } from "./token-estimator-measure.ts";
 
 const SCHEMA_VERSION = 1;
 
@@ -37,14 +32,6 @@ type ModelLike = {
   api: string;
   id: string;
   input?: ("text" | "image")[];
-};
-
-type AssistantLike = {
-  role: "assistant";
-  provider: string;
-  api: string;
-  model: string;
-  usage: { input: number; cacheRead: number; cacheWrite: number };
 };
 
 function targetFromModel(model: ModelLike): TargetModel {
@@ -90,79 +77,6 @@ function metadata(): StudyMetadata {
   return { runId, caseId, split, route, strata, configuredTurn };
 }
 
-function assistantMessage(value: unknown): AssistantLike | undefined {
-  if (!value || typeof value !== "object" || !("role" in value) || value.role !== "assistant") return undefined;
-  // SAFETY: message_end is a Pi-owned event boundary. The role refinement above is
-  // the contract discriminator; the remaining fields are fixed by Pi's assistant message contract.
-  return value as AssistantLike;
-}
-
-function selectionRecord(
-  meta: StudyMetadata,
-  selectionId: string,
-  source: string,
-  target: TargetModel,
-  canonical: CanonicalPromptMeasurement,
-): object {
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    type: "selection",
-    capturedAt: new Date().toISOString(),
-    ...meta,
-    selectionId,
-    source,
-    target: { provider: target.provider, api: target.api, model: target.id },
-    canonical,
-  };
-}
-
-function requestRecord(
-  meta: StudyMetadata,
-  requestId: string,
-  selectionId: string | undefined,
-  target: TargetModel,
-  canonical: CanonicalPromptMeasurement,
-  provider: ProviderPromptMeasurement | undefined,
-  currentProviderTokens: number | undefined,
-  providerPayloadHash: string | undefined,
-  compaction: boolean,
-  requestOrdinal: number,
-): object {
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    type: "request",
-    capturedAt: new Date().toISOString(),
-    ...meta,
-    requestId,
-    requestOrdinal,
-    compaction,
-    ...(selectionId === undefined ? {} : { selectionId }),
-    target: { provider: target.provider, api: target.api, model: target.id },
-    canonical,
-    provider,
-    currentProviderTokens,
-    ...(providerPayloadHash === undefined ? {} : { providerPayloadSha256: providerPayloadHash }),
-  };
-}
-
-function resolvedRecord(meta: StudyMetadata, pending: PendingRequest, message: AssistantLike): object {
-  const actualPromptTokens = message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    type: "resolved",
-    capturedAt: new Date().toISOString(),
-    ...meta,
-    requestId: pending.requestId,
-    target: { provider: pending.target.provider, api: pending.target.api, model: pending.target.id },
-    actualPromptTokens,
-    usage: {
-      input: message.usage.input,
-      cacheRead: message.usage.cacheRead,
-      cacheWrite: message.usage.cacheWrite,
-    },
-  };
-}
-
 export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
   const outputPath = process.env.PI_TOKEN_ESTIMATOR_CAPTURE;
   if (outputPath === undefined || outputPath.trim() === "") return;
@@ -201,10 +115,17 @@ export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
   pi.on("model_select", (event, ctx) => {
     const target = targetFromModel(event.model);
     const selectionId = randomUUID();
-    const canonical = measureCanonicalPrompt(pi, ctx, target);
-    const source = typeof event.source === "string" ? event.source : "unknown";
     pendingSelection = { selectionId, target };
-    append(selectionRecord(meta, selectionId, source, target, canonical));
+    append({
+      schemaVersion: SCHEMA_VERSION,
+      type: "selection",
+      capturedAt: new Date().toISOString(),
+      ...meta,
+      selectionId,
+      source: event.source,
+      target: { provider: target.provider, api: target.api, model: target.id },
+      canonical: measureCanonicalPrompt(pi, ctx, target),
+    });
   });
 
   pi.on("session_before_compact", () => {
@@ -241,28 +162,33 @@ export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
     if (pendingRequest !== undefined) {
       append({ schemaVersion: SCHEMA_VERSION, type: "superseded", ...meta, requestId: pendingRequest.requestId });
     }
-    const canonical = measureCanonicalPrompt(pi, ctx, target);
-    const provider = measureProviderPrompt(event.payload, target);
-    const providerForecast = forecastProviderPrompt(event.payload, target);
     pendingRequest = { requestId, target };
-    append(requestRecord(
-      meta,
+    const providerPayloadHash = providerPayloadSha256(event.payload);
+    append({
+      schemaVersion: SCHEMA_VERSION,
+      type: "request",
+      capturedAt: new Date().toISOString(),
+      ...meta,
       requestId,
-      selectionId,
-      target,
-      canonical,
-      provider,
-      providerForecast?.tokens,
-      providerPayloadSha256(event.payload),
-      compacted,
-      ++requestOrdinal,
-    ));
+      requestOrdinal: ++requestOrdinal,
+      compaction: compacted,
+      ...(selectionId === undefined ? {} : { selectionId }),
+      target: { provider: target.provider, api: target.api, model: target.id },
+      canonical: measureCanonicalPrompt(pi, ctx, target),
+      provider: measureProviderPrompt(event.payload, target),
+      currentProviderTokens: forecastProviderPrompt(event.payload, target)?.tokens,
+      ...(providerPayloadHash === undefined ? {} : { providerPayloadSha256: providerPayloadHash }),
+    });
   });
 
-  pi.on("message_end", (event, _ctx: ExtensionContext) => {
-    if (inCompaction || pendingRequest === undefined) return;
-    const message = assistantMessage(event.message);
-    if (message === undefined) return;
+  pi.on("message_end", (event) => {
+    if (inCompaction || pendingRequest === undefined || event.message.role !== "assistant") return;
+    const message = event.message;
+    if (message.stopReason === "aborted" || message.stopReason === "error") {
+      append({ schemaVersion: SCHEMA_VERSION, type: message.stopReason, ...meta, requestId: pendingRequest.requestId });
+      pendingRequest = undefined;
+      return;
+    }
     const responseTarget: TargetModel = {
       provider: message.provider,
       api: message.api,
@@ -279,9 +205,24 @@ export default function tokenEstimatorCapture(pi: ExtensionAPI): void {
       pendingRequest = undefined;
       return;
     }
-    const total = message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
-    if (total > 0) append(resolvedRecord(meta, pendingRequest, message));
-    else append({ schemaVersion: SCHEMA_VERSION, type: "unbilled", ...meta, requestId: pendingRequest.requestId });
+    const actualPromptTokens = message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
+    if (actualPromptTokens > 0) {
+      append({
+        schemaVersion: SCHEMA_VERSION,
+        type: "resolved",
+        capturedAt: new Date().toISOString(),
+        requestId: pendingRequest.requestId,
+        target: { provider: pendingRequest.target.provider, api: pendingRequest.target.api, model: pendingRequest.target.id },
+        actualPromptTokens,
+        usage: {
+          input: message.usage.input,
+          cacheRead: message.usage.cacheRead,
+          cacheWrite: message.usage.cacheWrite,
+        },
+      });
+    } else {
+      append({ schemaVersion: SCHEMA_VERSION, type: "unbilled", ...meta, requestId: pendingRequest.requestId });
+    }
     pendingRequest = undefined;
   });
 

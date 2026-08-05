@@ -214,7 +214,7 @@ Produce a committed aggregate JSON dataset and a Markdown report that:
 1. traces every prior and fresh evidence source
 2. verifies development/holdout separation and privacy
 3. shows every frozen metric and populated stratum
-4. names the simplest winning formula and constants for each supported direct provider
+4. names the simplest winner, or records why no method qualified, for each supported direct provider
 5. says whether send-time replacement should remain, use normalized components or be
    removed
 6. lists limitations and unsupported routes without inventing coverage

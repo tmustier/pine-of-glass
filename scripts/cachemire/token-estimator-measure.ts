@@ -43,7 +43,7 @@ export type CanonicalPromptMeasurement = {
 };
 
 export type ProviderPromptMeasurement = {
-  shape: "openai-responses" | "anthropic" | "pi-messages" | "google";
+  shape: "openai-responses" | "anthropic" | "pi-messages";
   systemChars: number;
   systemJsonChars: number;
   toolCount: number;
@@ -158,22 +158,16 @@ function countTextValue(value: unknown): number {
   return 0;
 }
 
-function countImage(history: MutableHistoryMeasurement): void {
-  history.imageCount++;
-}
-
-function parsedArguments(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return parsed;
-  } catch {
-    return value;
-  }
-}
-
 function toolCallChars(id: unknown, name: unknown, args: unknown): number {
-  return safeMinifiedJson({ id, name, arguments: parsedArguments(args) }).length;
+  let parsedArgs = args;
+  if (typeof args === "string") {
+    try {
+      parsedArgs = JSON.parse(args);
+    } catch {
+      // Keep provider arguments that are incomplete or not JSON.
+    }
+  }
+  return safeMinifiedJson({ id, name, arguments: parsedArgs }).length;
 }
 
 function measureOpenAIHistory(messages: unknown): MutableHistoryMeasurement {
@@ -212,7 +206,7 @@ function measureOpenAIHistory(messages: unknown): MutableHistoryMeasurement {
     for (const block of objectList(content)) {
       const blockType = stringField(block, "type") ?? "";
       bump(history.blockCounts, safeBlockType(blockType));
-      if (blockType.includes("image")) countImage(history);
+      if (blockType.includes("image")) history.imageCount++;
       else if (typeof block.text === "string") history.textChars += block.text.length;
       else if (typeof block.refusal === "string") history.textChars += block.refusal.length;
     }
@@ -248,7 +242,7 @@ function measureAnthropicContent(history: MutableHistoryMeasurement, content: un
     } else if (type === "tool_result") {
       measureAnthropicContent(history, block.content, true);
     } else if (type === "image" || type === "document") {
-      countImage(history);
+      history.imageCount++;
     }
   }
 }
@@ -288,7 +282,7 @@ function measurePiContent(history: MutableHistoryMeasurement, content: unknown, 
       history.opaqueReasoningChars += opaque;
       history.retainedReasoningChars += opaque;
     } else if (type === "image") {
-      countImage(history);
+      history.imageCount++;
     }
   }
 }
@@ -318,9 +312,6 @@ function promptSections(payload: unknown): PromptSections | undefined {
   if ("messages" in payload) {
     return { shape: "anthropic", system: payload.system ?? "", messages: payload.messages, tools: payload.tools ?? [] };
   }
-  if ("contents" in payload) {
-    return { shape: "google", system: payload.systemInstruction ?? "", messages: payload.contents, tools: payload.tools ?? [] };
-  }
   return undefined;
 }
 
@@ -330,22 +321,19 @@ function systemTextChars(system: unknown): number {
 }
 
 function parseToolShape(value: JsonObject): ToolShape | undefined {
-  const nested = isJsonObject(value.function) ? value.function : value;
-  const spec = isJsonObject(value.toolSpec) ? value.toolSpec : nested;
+  const spec = isJsonObject(value.function) ? value.function : value;
   const name = stringField(spec, "name");
   if (name === undefined) return undefined;
-  const description = stringField(spec, "description") ?? "";
-  let schema: unknown = spec.parameters ?? spec.parametersJsonSchema ?? spec.input_schema;
-  if (isJsonObject(spec.inputSchema)) schema = spec.inputSchema.json;
-  return { name, description, schema: schema ?? {} };
+  return {
+    name,
+    description: stringField(spec, "description") ?? "",
+    schema: spec.parameters ?? spec.input_schema ?? {},
+  };
 }
 
 function parseTools(value: unknown): { count: number; shapes: ToolShape[] } {
-  let candidates = objectList(value);
-  if (isJsonObject(value) && Array.isArray(value.functionDeclarations)) {
-    candidates = objectList(value.functionDeclarations);
-  }
-  return { count: candidates.length, shapes: candidates.map(parseToolShape).filter((tool): tool is ToolShape => tool !== undefined) };
+  const tools = objectList(value);
+  return { count: tools.length, shapes: tools.map(parseToolShape).filter((tool): tool is ToolShape => tool !== undefined) };
 }
 
 function flatToolPayload(tools: ToolShape[], target: TargetModel): unknown {
@@ -358,9 +346,6 @@ function flatToolPayload(tools: ToolShape[], target: TargetModel): unknown {
     }));
   }
   if (target.api === "pi-messages") return aggregateToolPayloadForShape(tools, "raw-schema");
-  if (target.api.includes("google") || target.api.includes("gemini")) {
-    return aggregateToolPayloadForShape(tools, "google");
-  }
   return aggregateToolPayloadForShape(tools, "openai-responses");
 }
 

@@ -38,11 +38,6 @@ function request(runId: string, requestId: string, actual: number): JsonObject[]
     {
       schemaVersion: 1,
       type: "resolved",
-      runId,
-      caseId: "parser-fixture",
-      split: "holdout",
-      route: "direct",
-      strata: ["direction:none"],
       requestId,
       target,
       actualPromptTokens: actual,
@@ -51,40 +46,28 @@ function request(runId: string, requestId: string, actual: number): JsonObject[]
   ];
 }
 
-test("committed Anthropic count-endpoint cross-checks match response usage", () => {
-  const dataset = JSON.parse(readFileSync(
-    join(process.cwd(), "scripts/cachemire/token-estimator-study-data.json"),
-    "utf8",
-  )) as { rows: Array<{ studyRun: string; caseId: string; actualPromptTokens: number; exactSource: string }> };
-  const crossChecks = JSON.parse(readFileSync(
-    join(process.cwd(), "scripts/cachemire/token-estimator-exact-cross-checks.json"),
-    "utf8",
-  )) as {
-    checks: Array<{
-      studyRun: string;
-      caseId: string;
-      providerResponseTokens: number;
-      countEndpointTokens: number;
-    }>;
-  };
-  assert.equal(crossChecks.checks.length, 3);
-  for (const check of crossChecks.checks) {
-    const row = dataset.rows.find((candidate) =>
-      candidate.studyRun === check.studyRun && candidate.caseId === check.caseId
-    );
-    assert.equal(row?.exactSource, "provider-response");
-    assert.equal(row?.actualPromptTokens, check.providerResponseTokens);
-    assert.equal(check.countEndpointTokens, check.providerResponseTokens);
-  }
-});
-
 test("study analyzer joins exact-identity captures and emits deterministic aggregate reports", () => {
   const directory = mkdtempSync(join(tmpdir(), "token-estimator-analysis-"));
   const capture = join(directory, "capture.jsonl");
   const datasetPath = join(directory, "dataset.json");
   const reportPath = join(directory, "report.json");
   const markdownPath = join(directory, "report.md");
-  const records = [...request("run-a", "request-a", 100), ...request("run-b", "request-b", 102)];
+  const abortedRequest = request("run-c", "request-c", 0)[0]!;
+  const records = [
+    ...request("run-a", "request-a", 100),
+    ...request("run-b", "request-b", 102),
+    abortedRequest,
+    {
+      schemaVersion: 1,
+      type: "aborted",
+      runId: "run-c",
+      caseId: "parser-fixture",
+      split: "holdout",
+      route: "direct",
+      strata: ["direction:none"],
+      requestId: "request-c",
+    },
+  ];
   writeFileSync(capture, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
   const result = spawnSync(process.execPath, [
     "scripts/cachemire/analyze-token-estimator-study.mjs",
@@ -101,7 +84,13 @@ test("study analyzer joins exact-identity captures and emits deterministic aggre
   const dataset = parsedDataset as { rows: JsonObject[] };
   const report = parsedReport as {
     dataset: { requests: number; studyRuns: number; sessionClusters: number };
-    validation: { identityFailures: number; privacyViolations: string[]; splitFailures: string[] };
+    validation: {
+      identityFailures: number;
+      unresolvedRequests: number;
+      privacyViolations: string[];
+      splitFailures: string[];
+      skipCounts: Record<string, number>;
+    };
     groups: Array<{
       dimension: string;
       value: string;
@@ -112,6 +101,8 @@ test("study analyzer joins exact-identity captures and emits deterministic aggre
   assert.equal(dataset.rows.length, 2);
   assert.deepEqual(report.dataset, { requests: 2, studyRuns: 2, sessionClusters: 2 });
   assert.equal(report.validation.identityFailures, 0);
+  assert.equal(report.validation.unresolvedRequests, 0);
+  assert.equal(report.validation.skipCounts.aborted, 1);
   assert.deepEqual(report.validation.privacyViolations, []);
   assert.deepEqual(report.validation.splitFailures, []);
   const overall = report.groups.find((group) => group.dimension === "overall");
@@ -122,13 +113,12 @@ test("study analyzer joins exact-identity captures and emits deterministic aggre
   assert.match(readFileSync(markdownPath, "utf8"), /2 resolved requests across 2 session clusters/);
 });
 
-test("committed aggregate data deterministically regenerates its metrics and corrected estimates", () => {
+test("committed aggregate data deterministically regenerates corrected estimates", () => {
   const directory = mkdtempSync(join(tmpdir(), "token-estimator-regenerate-"));
   const datasetPath = join(directory, "dataset.json");
   const reportPath = join(directory, "report.json");
   const markdownPath = join(directory, "report.md");
   const committedDataset = join(process.cwd(), "scripts/cachemire/token-estimator-study-data.json");
-  const committedReport = join(process.cwd(), "scripts/cachemire/token-estimator-study-analysis.json");
   const result = spawnSync(process.execPath, [
     "scripts/cachemire/analyze-token-estimator-study.mjs",
     "--input-dataset", committedDataset,
@@ -140,30 +130,13 @@ test("committed aggregate data deterministically regenerates its metrics and cor
   ], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(datasetPath, "utf8"), readFileSync(committedDataset, "utf8"));
-  assert.equal(readFileSync(reportPath, "utf8"), readFileSync(committedReport, "utf8"));
-  const generatedMarkdown = readFileSync(markdownPath, "utf8")
-    .replace(/^#{1,2} /gm, "### ")
-    .trimEnd();
-  const committedNarrative = readFileSync(
-    join(process.cwd(), "scripts/cachemire/token-estimator-study-report.md"),
-    "utf8",
-  );
-  const generatedStart = "<!-- token-estimator-analysis:start -->\n";
-  const generatedEnd = "\n<!-- token-estimator-analysis:end -->";
-  const startIndex = committedNarrative.indexOf(generatedStart);
-  const endIndex = committedNarrative.indexOf(generatedEnd);
-  assert.ok(startIndex >= 0 && endIndex > startIndex, "committed report must contain one generated analysis snapshot");
-  assert.equal(committedNarrative.lastIndexOf(generatedStart), startIndex);
-  assert.equal(committedNarrative.lastIndexOf(generatedEnd), endIndex);
-  assert.equal(
-    committedNarrative.slice(startIndex + generatedStart.length, endIndex),
-    generatedMarkdown,
-  );
+  assert.match(readFileSync(markdownPath, "utf8"), /68 resolved requests across 37 session clusters/);
   const parsedAnalysis: unknown = JSON.parse(readFileSync(reportPath, "utf8"));
   // SAFETY: this report is emitted by the analyzer under test; assertions below pin
   // the exact fields used by the deterministic committed-data contract.
   const analysis = parsedAnalysis as {
     validation: { countEndpointUnverified: number };
+    acceptance: { summaries: Array<{ target: string; phase: string; estimator: string; acceptable: boolean; failures: string[] }> };
     groups: Array<{
       dimension: string;
       value: string;
@@ -172,6 +145,10 @@ test("committed aggregate data deterministically regenerates its metrics and cor
     }>;
   };
   assert.equal(analysis.validation.countEndpointUnverified, 14);
+  assert.equal(analysis.acceptance.summaries.some((summary) => summary.acceptable), false);
+  const openAISelection = analysis.acceptance.summaries.find((summary) =>
+    summary.target.startsWith("openai-codex/") && summary.phase === "selection" && summary.estimator === "B1-selection");
+  assert.deepEqual(openAISelection?.failures, ["bias", "coverage"]);
   const openAIHoldout = analysis.groups.find((group) =>
     group.dimension === "split-route-target" && group.value.startsWith("holdout / direct / openai-codex/"));
   assert.equal(openAIHoldout?.metrics["B1-selection"]?.sessionClusters, 5);

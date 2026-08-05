@@ -1,6 +1,6 @@
 # Token estimator study report
 
-Status: analysis complete, formal acceptance incomplete, no production behaviour changed.
+Status: study complete, no estimator formally accepted, no production behaviour changed.
 
 Date: 4 August 2026.
 
@@ -137,6 +137,19 @@ OpenAI estimates crossed a 10k band incorrectly in 15.4% of B1 selection cases, 
 of B1-send cases and 14.3% of C1 cases. Anthropic crossed no 10k band incorrectly.
 P0 created visible churn without improving accuracy.
 
+## Evidence sources
+
+The fresh evidence is the 68-request aggregate dataset described below. Earlier evidence
+was not used to tune the frozen estimator ladder:
+
+- a 23-tool OpenAI prompt exposed the failure of raw JSON divided by 4, while controlled
+  schema work favoured the recursive cookbook formula
+- Anthropic `count_tokens` measurements found the Claude 4.7 tokenizer-family boundary
+- historical replay covered 92 switches across 72 sessions but lacked original static
+  prompts; Issue 64 also showed that source-model calibration caused large failures
+- 11 earlier complete Radius and OpenAI switches put canonical mean absolute error near
+  4.1% and whole-payload sizing near 11.6%, with no direct Anthropic target
+
 ## Controlled component evidence
 
 ### Static text and tools
@@ -268,9 +281,9 @@ show raw absolute token errors.
 | Anthropic | tool-history-labelled requests | 2 | 198, 196 tokens |
 
 No direction with at least 3 requests exceeded the 15% limit. Cross-family directions
-have one request each, so the report gives raw errors only. The committed analysis JSON
-contains the same full metric set for every development and held-out size, turn,
-compaction, reasoning, image and declared stratum.
+have one request each, so the report gives raw errors only. Regenerating the analysis
+produces the full metric set for every development and held-out size, turn, compaction,
+reasoning, image and declared stratum.
 
 ## Gateway diagnostic
 
@@ -300,23 +313,16 @@ Counts came from 54 provider responses and 14 Anthropic `count_tokens` calls. Pr
 response metadata verifies identity for the 54 response rows. The 14 historical endpoint
 rows retain only a manually entered model check: they lack provider/API evidence and a
 payload digest binding the count to the captured request. The analyzer therefore marks
-all 14 as `count-endpoint-unverified`. Three development requests used both Anthropic
-routes; their response usage and endpoint results matched in all 3 cases, but those
-aggregate cross-checks do not bind the 14 held-out payloads.
+all 14 as `count-endpoint-unverified`.
 
 Anthropic's held-out generation attempts failed after quota exhaustion. Their number was
 not retained, so an empty `skipCounts` object does not satisfy the frozen skip-accounting
 rule. The 14 endpoint values remain useful descriptive measurements, not formal
 acceptance evidence.
 
-Validation found:
-
-- 54 response-verified rows and 14 unverified count-endpoint rows
-- 0 development and holdout split failures after source-session clustering
-- 0 forbidden privacy keys, UUIDs or local paths in committed artifacts
-- 0 unresolved prompt targets and 0 duplicate recorded resolutions
-- an unknown number of unrecorded failed Anthropic generation attempts
-- 0 compaction requests in the committed study
+Validation found no split, privacy, unresolved-request or duplicate-resolution failures.
+The failed Anthropic generation count remains unknown, and the study contains no
+post-compaction request.
 
 The committed files contain no prompt text, response text, tool names, schemas, provider
 payloads, Pi session ids or working directories. Full payloads stayed under `/tmp` and
@@ -329,185 +335,23 @@ The descriptive `studyRun` field remains an experiment-run label. The separate
 `token-estimator-session-clusters.json`. Bootstrap resampling, split checks and coverage
 use `sessionCluster`, not `studyRun`.
 
-## Prior evidence and reruns
-
-The study treated earlier results as evidence, not tuning data:
-
-- historical replay had 92 comparable switches across 72 sessions
-- source-model calibration increased mean absolute error and produced large outliers
-- 11 earlier complete Radius and OpenAI switches put canonical error near 4.1% and
-  whole-payload sizing near 11.6%
-- historical session files lacked original system prompts and tool schemas, so they
-  could not validate absolute static estimates
-
-Fresh direct-provider cases replaced the doubtful static reconstruction. They captured
-actual current system text, tool payloads, final provider requests and measured usage.
-Direct and gateway routes stayed separate. No source token count or usage rescaled a
-target estimate.
-
 ## Residual risks
 
-The recommendation has these limits:
+The holdout set does not cover dense content, prompts above 10k on OpenAI, prompts below
+10k on Anthropic, or a post-compaction request. Image measurements also show that one
+fixed token constant cannot cover both small and ordinary images. Provider tokenization
+and injected prompts may change without a code change.
 
-- OpenAI B1 misses the frozen signed-bias limit by 1.78 percentage points
-- all OpenAI holdout prompts were under 10k and all Anthropic prompts were about 14k to
-  16k; no dense-content case was held out
-- development text cases changed the sign of error by content type, so OpenAI's bias is
-  not a safe correction constant
-- small and ordinary images need size-aware provider accounting, outside the frozen
-  one-constant ladder
-- there is only one reasoning-bearing held-out request per direct provider
-- cross-family directions have one held-out request each
-- no final request followed compaction
-- Anthropic held-out generation quota was exhausted; 14 held-out targets used the
-  official count endpoint, but the deleted captures prevent payload binding and the
-  failed-attempt count is unknown
-- OpenAI has only 5 independent held-out session clusters after the natural-history forks
-  are collapsed to their shared source ancestor
-- forked histories count as the first target request even when they contain earlier
-  source messages
-- Radius has only 4 diagnostic requests
-- provider tokenization and injected prompts can change without a code change
+These gaps do not justify source calibration, a fitted regression or an opaque model.
 
-These risks do not justify source calibration, a fitted regression or an opaque model.
+## Reproduce
 
-## Generated analysis snapshot
-
-The block below is generated from the committed aggregate dataset by
-`analyze-token-estimator-study.mjs`. The test suite requires it to match regenerated
-output, so the primary metrics, paired comparisons, acceptance results and coverage
-cannot drift independently from the machine-readable analysis.
-
-<!-- token-estimator-analysis:start -->
-### Token estimator study analysis
-
-Dataset: 68 resolved requests across 37 session clusters.
-Identity failures: 0; unresolved requests: 0; duplicate resolutions: 0; privacy violations: 0; split failures: 0.
-Identity evidence: 54 provider responses; 0 payload-bound count-endpoint rows; 14 unverified count-endpoint rows.
-
-### Primary metrics
-
-| Split / route / target | Estimator | n | Bias | MAPE | Median APE | p95 APE | Within 10% | Wrong 10k band |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| development / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B0-send | 19 | 39.5% | 41.6% | 14.7% | 518.1% | 36.8% | 0.0% |
-| development / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B1-send | 19 | 35.3% | 39.3% | 9.2% | 517.7% | 52.6% | 0.0% |
-| development / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | P0-current-send | 19 | 52.4% | 53.9% | 21.7% | 530.4% | 26.3% | 0.0% |
-| development / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | C1-normalized-send | 19 | 34.7% | 38.8% | 10.2% | 517.7% | 47.4% | 0.0% |
-| development / direct / anthropic/anthropic-messages/claude-fable-5 | B0-send | 17 | -14.4% | 45.7% | 31.4% | 263.4% | 5.9% | 5.9% |
-| development / direct / anthropic/anthropic-messages/claude-fable-5 | B1-send | 17 | 27.6% | 39.9% | 7.1% | 453.6% | 52.9% | 0.0% |
-| development / direct / anthropic/anthropic-messages/claude-fable-5 | P0-current-send | 17 | 53.0% | 57.6% | 33.6% | 488.2% | 23.5% | 0.0% |
-| development / direct / anthropic/anthropic-messages/claude-fable-5 | C1-normalized-send | 17 | 31.1% | 42.1% | 10.3% | 459.0% | 35.3% | 0.0% |
-| development / direct / anthropic/anthropic-messages/claude-fable-5 | C2-anthropic-tool-block | 17 | 36.8% | 38.6% | 7.8% | 459.0% | 58.8% | 0.0% |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B0-selection | 13 | 10.2% | 10.2% | 10.4% | 16.7% | 23.1% | 15.4% |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B1-selection | 13 | 6.8% | 6.8% | 6.9% | 13.4% | 92.3% | 15.4% |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B0-send | 14 | 10.7% | 11.2% | 11.0% | 17.4% | 21.4% | 14.3% |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B1-send | 14 | 7.8% | 7.8% | 7.1% | 13.7% | 85.7% | 21.4% |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | P0-current-send | 14 | 10.2% | 10.2% | 8.9% | 16.1% | 78.6% | 21.4% |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | C1-normalized-send | 14 | 6.9% | 7.9% | 7.1% | 13.7% | 85.7% | 14.3% |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B0-selection | 14 | -33.9% | 33.9% | 34.2% | 37.2% | 0.0% | 85.7% |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B1-selection | 14 | 1.8% | 2.3% | 1.3% | 9.4% | 100.0% | 0.0% |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B0-send | 14 | -32.8% | 32.8% | 33.7% | 33.8% | 0.0% | 78.6% |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B1-send | 14 | 2.9% | 2.9% | 1.4% | 9.5% | 100.0% | 0.0% |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | P0-current-send | 14 | 5.5% | 5.5% | 3.9% | 12.1% | 85.7% | 0.0% |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | C1-normalized-send | 14 | 3.0% | 3.0% | 1.6% | 9.7% | 100.0% | 0.0% |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | C2-anthropic-tool-block | 14 | 5.1% | 5.1% | 3.7% | 11.7% | 85.7% | 0.0% |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B0-selection | 4 | 10.4% | 10.4% | 10.3% | 10.5% | 0.0% | 0.0% |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B1-selection | 4 | 10.9% | 10.9% | 10.8% | 11.0% | 0.0% | 0.0% |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B0-send | 4 | 10.7% | 10.7% | 10.7% | 10.8% | 0.0% | 0.0% |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B1-send | 4 | 11.0% | 11.0% | 10.9% | 11.1% | 0.0% | 0.0% |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | P0-current-send | 4 | 12.0% | 12.0% | 11.1% | 12.9% | 0.0% | 0.0% |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | C1-normalized-send | 4 | 11.0% | 11.0% | 10.9% | 11.1% | 0.0% | 0.0% |
-
-### Paired holdout comparisons
-
-Positive mean improvement means the second estimator has lower absolute percentage error.
-
-| Split / route / target | Comparison | n | Session clusters | Mean improvement | 95% bootstrap interval |
-|---|---|---:|---:|---:|---:|
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B0-selection -> B1-selection | 13 | 5 | 3.40 points | 3.17 to 3.50 |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B0-send -> B1-send | 14 | 5 | 3.42 points | 1.78 to 3.88 |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B1-send -> C1-normalized-send | 14 | 5 | -0.07 points | -0.61 to 0.15 |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B1-send -> P0-current-send | 14 | 5 | -2.39 points | -2.71 to -2.21 |
-| holdout / direct / openai-codex/openai-codex-responses/gpt-5.6-sol | B1-selection -> P0-current-send | 13 | 5 | -3.52 points | -6.60 to -2.40 |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B0-selection -> B1-selection | 14 | 6 | 31.55 points | 28.51 to 32.97 |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B0-send -> B1-send | 14 | 6 | 29.92 points | 24.39 to 32.34 |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B1-send -> C1-normalized-send | 14 | 6 | -0.16 points | -0.16 to -0.15 |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B1-send -> P0-current-send | 14 | 6 | -2.61 points | -3.04 to -2.46 |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | B1-selection -> P0-current-send | 14 | 6 | -3.16 points | -4.38 to -2.61 |
-| holdout / direct / anthropic/anthropic-messages/claude-fable-5 | C1-normalized-send -> C2-anthropic-tool-block | 14 | 6 | -2.05 points | -2.08 to -1.97 |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B0-selection -> B1-selection | 4 | 2 | -0.43 points | -0.43 to -0.43 |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B0-send -> B1-send | 4 | 2 | -0.22 points | -0.22 to -0.22 |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B1-send -> C1-normalized-send | 4 | 2 | 0.00 points | 0.00 to 0.00 |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B1-send -> P0-current-send | 4 | 2 | -1.02 points | -1.02 to -1.02 |
-| holdout / gateway / radius/pi-messages/gpt-5.6-sol | B1-selection -> P0-current-send | 4 | 2 | -1.12 points | -1.12 to -1.12 |
-
-### Formal acceptance
-
-| Target | Phase | Estimator | n | Session clusters | Acceptable | Failures |
-|---|---|---|---:|---:|---|---|
-| openai-codex/openai-codex-responses/gpt-5.6-sol | selection | B0-selection | 13 | 5 | no | bias, median, coverage |
-| openai-codex/openai-codex-responses/gpt-5.6-sol | selection | B1-selection | 13 | 5 | no | bias, coverage |
-| openai-codex/openai-codex-responses/gpt-5.6-sol | send | B0-send | 14 | 5 | no | bias, median, coverage |
-| openai-codex/openai-codex-responses/gpt-5.6-sol | send | B1-send | 14 | 5 | no | bias, coverage |
-| openai-codex/openai-codex-responses/gpt-5.6-sol | send | P0-current-send | 14 | 5 | no | bias, coverage |
-| openai-codex/openai-codex-responses/gpt-5.6-sol | send | C1-normalized-send | 14 | 5 | no | bias, coverage |
-| anthropic/anthropic-messages/claude-fable-5 | selection | B0-selection | 14 | 6 | no | bias, median, p95, direction, provenance, skip-accounting |
-| anthropic/anthropic-messages/claude-fable-5 | selection | B1-selection | 14 | 6 | no | provenance, skip-accounting |
-| anthropic/anthropic-messages/claude-fable-5 | send | B0-send | 14 | 6 | no | bias, median, p95, direction, provenance, skip-accounting |
-| anthropic/anthropic-messages/claude-fable-5 | send | B1-send | 14 | 6 | no | provenance, skip-accounting |
-| anthropic/anthropic-messages/claude-fable-5 | send | P0-current-send | 14 | 6 | no | bias, provenance, skip-accounting |
-| anthropic/anthropic-messages/claude-fable-5 | send | C1-normalized-send | 14 | 6 | no | provenance, skip-accounting |
-| anthropic/anthropic-messages/claude-fable-5 | send | C2-anthropic-tool-block | 14 | 6 | no | bias, provenance, skip-accounting |
-
-### Coverage
-
-- direct development: 36
-- direct holdout: 28
-- gateway diagnostic: 4
-- reasoning-bearing: 4
-- image-bearing: 9
-
-### Capture exclusions and gaps
-
-- No skip records.
-- Unrecorded skip accounting: anthropic/anthropic-messages/claude-fable-5
-
-Full split, route, size, turn, reasoning, image and declared-stratum metrics are in the JSON report.
-<!-- token-estimator-analysis:end -->
-
-## Completion audit
-
-The audit confirms:
-
-1. The frozen protocol is committed separately from the data tooling.
-2. Controlled direct-provider cases cover text shape and size, tools, message growth,
-   tool calls and results, reasoning carriers, and 2 image sizes.
-3. Privacy-safe source-session clusters stay wholly within one split.
-4. The analyzer reports signed and absolute errors, percentiles, display effects,
-   populated strata and 4,000 session-cluster bootstrap samples with seed 20260804.
-5. Percentages are suppressed from each estimator with fewer than 3 comparable requests.
-6. The send-time replacement, normalized C1 and frozen C2 candidate were tested without
-   changing production code.
-7. The committed aggregate dataset deterministically regenerates corrected estimates and
-   the full machine-readable analysis.
-8. Privacy checks pass for all committed artifacts.
-
-The frozen formal-acceptance audit does not pass:
-
-- OpenAI has 13 selection requests across only 5 independent session clusters, and B1
-  also misses the signed-bias limit.
-- Anthropic has 14 endpoint measurements across 6 clusters, but all 14 lack payload-bound
-  provider/API provenance and the failed-generation skip count was not retained.
-
-The study therefore names no formal direct-provider winner. Future captures record a
-SHA-256 digest of the provider payload; the external counter preserves accepted prompt
-controls including `output_config` and `cache_control`; the recorder validates provider,
-API, model and payload digest before admitting a result.
-
-Machine-readable evidence lives in:
+The committed dataset, frozen candidate and session-cluster map are the source evidence:
 
 - `scripts/cachemire/token-estimator-study-data.json`
-- `scripts/cachemire/token-estimator-study-analysis.json`
-- `scripts/cachemire/token-estimator-exact-cross-checks.json`
 - `scripts/cachemire/token-estimator-candidates.json`
 - `scripts/cachemire/token-estimator-session-clusters.json`
+
+Run the analyzer command in `scripts/cachemire/README.md` to regenerate the metrics. The
+unit test confirms that this reproduces the corrected dataset and the key acceptance
+results.

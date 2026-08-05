@@ -118,13 +118,6 @@ function sessionClusterDefinitions(path) {
   return parsed.clusters;
 }
 
-function flatSelectionEstimate(selection) {
-  if (!selection) return undefined;
-  const chars = selection.systemChars + (selection.toolChars ?? 0) + selection.historyTextChars +
-    selection.historyReasoningChars + selection.historyImageChars;
-  return Math.ceil(chars / 4);
-}
-
 function candidateEstimate(candidate, request) {
   if (!candidate.providers.includes(request.target.provider) || !request.provider) return undefined;
   const provider = request.provider;
@@ -148,8 +141,13 @@ function candidateEstimate(candidate, request) {
 }
 
 function estimatesFor(request, candidates) {
+  const selection = request.selection;
+  const flatSelection = selection === undefined ? undefined : Math.ceil((
+    selection.systemChars + (selection.toolChars ?? 0) + selection.historyTextChars +
+    selection.historyReasoningChars + selection.historyImageChars
+  ) / 4);
   return {
-    "B0-selection": flatSelectionEstimate(request.selection),
+    "B0-selection": flatSelection,
     "B1-selection": request.selection?.totalTokens,
     "B0-send": request.provider?.flatTokens ?? request.canonical?.flatTokens,
     "B1-send": request.canonical?.totalTokens,
@@ -163,14 +161,28 @@ function targetKey(target) {
   return `${target.provider}/${target.api}/${target.model}`;
 }
 
+const SHA256 = /^[0-9a-f]{64}$/;
+
+function countEndpointBound(target, providerPayloadSha256, source, evidence) {
+  return source === "anthropic-count-tokens" &&
+    evidence?.provider === "anthropic" &&
+    evidence.provider === target?.provider &&
+    evidence.api === target.api &&
+    evidence.model === target.model &&
+    SHA256.test(providerPayloadSha256) &&
+    evidence.capturedPayloadSha256 === providerPayloadSha256 &&
+    SHA256.test(evidence.countRequestSha256);
+}
+
 function joinRecords(records, candidates, clusters) {
   const requests = new Map();
   const selections = new Map();
   const resolutions = new Map();
   let duplicateResolutions = 0;
   const skipRecords = [];
+  const skippedRequestIds = new Set();
   const skipCounts = {};
-  const identityFailures = [];
+  let identityFailures = 0;
   const externalCountProvenanceFailures = [];
   for (const record of records) {
     if (record.type === "request") requests.set(record.requestId, record);
@@ -182,6 +194,8 @@ function joinRecords(records, candidates, clusters) {
   }
   for (const record of skipRecords) {
     if (record.requestId && resolutions.has(record.requestId)) continue;
+    if (record.type === "identity_mismatch") identityFailures++;
+    if (record.requestId) skippedRequestIds.add(record.requestId);
     skipCounts[record.type ?? "unknown"] = (skipCounts[record.type ?? "unknown"] ?? 0) + 1;
   }
   const rows = [];
@@ -189,26 +203,27 @@ function joinRecords(records, candidates, clusters) {
     const resolved = resolutions.get(requestId);
     if (!resolved) continue;
     if (!sameTarget(request.target, resolved.target)) {
-      identityFailures.push(requestId);
+      identityFailures++;
       continue;
     }
     const externalCount = resolved.exactSource !== undefined;
-    const digest = /^[0-9a-f]{64}$/;
-    const externalCountBound = !externalCount || (
-      resolved.exactSource === "anthropic-count-tokens" &&
-      resolved.countedProvider === "anthropic" &&
-      resolved.countedProvider === request.target.provider &&
-      resolved.countedApi === request.target.api &&
-      resolved.countedModel === request.target.model &&
-      typeof request.providerPayloadSha256 === "string" &&
-      digest.test(request.providerPayloadSha256) &&
-      resolved.capturedPayloadSha256 === request.providerPayloadSha256 &&
-      typeof resolved.countRequestSha256 === "string" &&
-      digest.test(resolved.countRequestSha256)
+    const countEvidence = externalCount ? {
+      provider: resolved.countedProvider,
+      api: resolved.countedApi,
+      model: resolved.countedModel,
+      capturedPayloadSha256: resolved.capturedPayloadSha256,
+      countRequestSha256: resolved.countRequestSha256,
+    } : undefined;
+    const externalCountBound = !externalCount || countEndpointBound(
+      request.target,
+      request.providerPayloadSha256,
+      resolved.exactSource,
+      countEvidence,
     );
     if (!externalCountBound) externalCountProvenanceFailures.push({ requestId, target: targetKey(request.target) });
-    const selection = request.selectionId ? selections.get(request.selectionId) : undefined;
-    if (selection && !sameTarget(selection.target, request.target)) identityFailures.push(requestId);
+    const linkedSelection = request.selectionId ? selections.get(request.selectionId) : undefined;
+    const selection = linkedSelection && sameTarget(linkedSelection.target, request.target) ? linkedSelection : undefined;
+    if (linkedSelection && !selection) identityFailures++;
     const userTurn = request.configuredTurn ?? request.requestOrdinal;
     const requestOrdinal = request.requestOrdinal ?? 1;
     const row = {
@@ -234,19 +249,12 @@ function joinRecords(records, candidates, clusters) {
       selection: selection?.canonical,
       currentProviderTokens: request.currentProviderTokens,
       ...(request.providerPayloadSha256 === undefined ? {} : { providerPayloadSha256: request.providerPayloadSha256 }),
-      ...(externalCount ? {
-        countEvidence: {
-          provider: resolved.countedProvider,
-          api: resolved.countedApi,
-          model: resolved.countedModel,
-          capturedPayloadSha256: resolved.capturedPayloadSha256,
-          countRequestSha256: resolved.countRequestSha256,
-        },
-      } : {}),
+      ...(externalCount ? { countEvidence } : {}),
     };
     rows.push({ ...row, estimates: estimatesFor(row, candidates) });
   }
-  const unresolvedRequests = [...requests.keys()].filter((requestId) => !resolutions.has(requestId)).length;
+  const unresolvedRequests = [...requests.keys()]
+    .filter((requestId) => !resolutions.has(requestId) && !skippedRequestIds.has(requestId)).length;
   return {
     rows,
     skipCounts,
@@ -266,19 +274,11 @@ function aggregateDataset(path, candidates, clusters) {
   }
   const rows = parsed.rows.map((source) => {
     const externalCount = source.exactSource !== "provider-response";
-    const digest = /^[0-9a-f]{64}$/;
-    const evidence = source.countEvidence;
-    const externalCountBound = !externalCount || (
-      source.exactSource === "anthropic-count-tokens" &&
-      source.target?.provider === "anthropic" &&
-      evidence?.provider === source.target.provider &&
-      evidence?.api === source.target.api &&
-      evidence?.model === source.target.model &&
-      typeof source.providerPayloadSha256 === "string" &&
-      digest.test(source.providerPayloadSha256) &&
-      evidence?.capturedPayloadSha256 === source.providerPayloadSha256 &&
-      typeof evidence?.countRequestSha256 === "string" &&
-      digest.test(evidence.countRequestSha256)
+    const externalCountBound = !externalCount || countEndpointBound(
+      source.target,
+      source.providerPayloadSha256,
+      source.exactSource,
+      source.countEvidence,
     );
     const identityVerification = externalCount
       ? (externalCountBound ? "count-endpoint-bound" : "count-endpoint-unverified")
@@ -299,7 +299,7 @@ function aggregateDataset(path, candidates, clusters) {
   return {
     rows,
     skipCounts: audit.skipCounts && typeof audit.skipCounts === "object" ? audit.skipCounts : {},
-    identityFailures: Array.from({ length: count(audit.identityFailures) }),
+    identityFailures: count(audit.identityFailures),
     unresolvedRequests: count(audit.unresolvedRequests),
     duplicateResolutions: count(audit.duplicateResolutions),
     externalCountProvenanceFailures,
@@ -402,9 +402,9 @@ function bootstrapImprovement(rows, simple, complex) {
 
 function groupDefinitions(rows) {
   const groups = [];
-  const addGroups = (dimension, valueFor, detailed = false) => {
+  const addGroups = (dimension, valueFor) => {
     const byValue = Map.groupBy(rows, valueFor);
-    for (const [value, members] of byValue) groups.push({ dimension, value, rows: members, detailed });
+    for (const [value, members] of byValue) groups.push({ dimension, value, rows: members });
   };
   const context = (row) => `${row.split} / ${row.route} / ${row.target.provider}/${row.target.api}/${row.target.model}`;
   addGroups("overall", () => "all");
@@ -416,24 +416,24 @@ function groupDefinitions(rows) {
   addGroups("turn", (row) => row.firstRequest ? "first" : "later");
   addGroups("reasoning", (row) => row.provider?.retainedReasoningChars > 0 ? "present" : "absent");
   addGroups("image", (row) => row.provider?.imageCount > 0 ? "present" : "absent");
-  addGroups("detailed-size", (row) => `${context(row)} / ${sizeBand(row.actualPromptTokens)}`, true);
-  addGroups("detailed-turn", (row) => `${context(row)} / ${row.firstRequest ? "first" : "later"}`, true);
-  addGroups("detailed-compaction", (row) => `${context(row)} / ${row.compaction ? "compacted" : "not-compacted"}`, true);
-  addGroups("detailed-reasoning", (row) => `${context(row)} / ${row.provider?.retainedReasoningChars > 0 ? "present" : "absent"}`, true);
-  addGroups("detailed-image", (row) => `${context(row)} / ${row.provider?.imageCount > 0 ? "present" : "absent"}`, true);
+  addGroups("detailed-size", (row) => `${context(row)} / ${sizeBand(row.actualPromptTokens)}`);
+  addGroups("detailed-turn", (row) => `${context(row)} / ${row.firstRequest ? "first" : "later"}`);
+  addGroups("detailed-compaction", (row) => `${context(row)} / ${row.compaction ? "compacted" : "not-compacted"}`);
+  addGroups("detailed-reasoning", (row) => `${context(row)} / ${row.provider?.retainedReasoningChars > 0 ? "present" : "absent"}`);
+  addGroups("detailed-image", (row) => `${context(row)} / ${row.provider?.imageCount > 0 ? "present" : "absent"}`);
   const tags = new Set(rows.flatMap((row) => row.strata));
   for (const tag of tags) {
     const members = rows.filter((row) => row.strata.includes(tag));
-    groups.push({ dimension: "declared-stratum", value: tag, rows: members, detailed: false });
+    groups.push({ dimension: "declared-stratum", value: tag, rows: members });
     const contextual = Map.groupBy(members, context);
     for (const [value, contextualRows] of contextual) {
-      groups.push({ dimension: "detailed-declared-stratum", value: `${value} / ${tag}`, rows: contextualRows, detailed: true });
+      groups.push({ dimension: "detailed-declared-stratum", value: `${value} / ${tag}`, rows: contextualRows });
     }
   }
   return groups;
 }
 
-function summarize(rows, estimatorNames) {
+function summarize(rows, estimatorNames, candidateNames) {
   return groupDefinitions(rows).map((group) => {
     const metrics = Object.fromEntries(estimatorNames.map((name) => [
       name,
@@ -447,21 +447,15 @@ function summarize(rows, estimatorNames) {
       ["B1-send", "P0-current-send"],
       ["B1-selection", "P0-current-send"],
     ];
-    for (const name of estimatorNames.filter((name) => ![
-      "B0-selection", "B1-selection", "B0-send", "B1-send", "P0-current-send", "C1-normalized-send",
-    ].includes(name))) {
-      pairs.push(["C1-normalized-send", name]);
-    }
+    for (const name of candidateNames) pairs.push(["C1-normalized-send", name]);
     for (const [simple, complex] of pairs) {
-      comparisons[`${simple} -> ${complex}`] = group.rows.length < 3
-        ? undefined
-        : bootstrapImprovement(group.rows, simple, complex);
+      comparisons[`${simple} -> ${complex}`] = bootstrapImprovement(group.rows, simple, complex);
     }
     return { dimension: group.dimension, value: group.value, requests: group.rows.length, metrics, comparisons };
   });
 }
 
-function acceptanceSummary(groups, validation) {
+function acceptanceSummary(groups, validation, candidateNames) {
   const limits = { absoluteBiasPercent: 5, medianAbsolutePercent: 10, p95AbsolutePercent: 25, directionMapePercent: 15 };
   const summaries = [];
   for (const group of groups.filter((item) => item.dimension === "split-route-target" && item.value.startsWith("holdout / direct / "))) {
@@ -470,7 +464,7 @@ function acceptanceSummary(groups, validation) {
       item.value.startsWith(prefix) && item.value.includes("direction:") && item.requests >= 3);
     for (const [phase, estimators] of Object.entries({
       selection: ["B0-selection", "B1-selection"],
-      send: ["B0-send", "B1-send", "P0-current-send", "C1-normalized-send", "C2-anthropic-tool-block"],
+      send: ["B0-send", "B1-send", "P0-current-send", "C1-normalized-send", ...candidateNames],
     })) {
       for (const estimator of estimators) {
         const metrics = group.metrics[estimator];
@@ -488,7 +482,8 @@ function acceptanceSummary(groups, validation) {
         if ((validation.externalCountProvenanceFailuresByTarget[target] ?? 0) > 0) failures.push("provenance");
         if (validation.unrecordedSkipTargets.includes(target)) failures.push("skip-accounting");
         if (validation.identityFailures > 0 || validation.unresolvedRequests > 0 ||
-            validation.duplicateResolutions > 0 || validation.privacyViolations.length > 0) failures.push("validation");
+            validation.duplicateResolutions > 0 || validation.privacyViolations.length > 0 ||
+            validation.splitFailures.length > 0) failures.push("validation");
         summaries.push({
           target,
           phase,
@@ -521,8 +516,7 @@ function markdownReport(report) {
     "| Split / route / target | Estimator | n | Bias | MAPE | Median APE | p95 APE | Within 10% | Wrong 10k band |",
     "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
   ];
-  const primaryDimensions = new Set(["split-route-target"]);
-  for (const group of report.groups.filter((item) => primaryDimensions.has(item.dimension))) {
+  for (const group of report.groups.filter((item) => item.dimension === "split-route-target")) {
     for (const [name, metrics] of Object.entries(group.metrics)) {
       if (!metrics) continue;
       lines.push(`| ${group.value} | ${name} | ${metrics.requests} | ${fixed(metrics.signedMeanPercent)}% | ${fixed(metrics.meanAbsolutePercent)}% | ${fixed(metrics.medianAbsolutePercent)}% | ${fixed(metrics.p95AbsolutePercent)}% | ${fixed(metrics.within10Percent)}% | ${fixed(metrics.wrong10kBand)}% |`);
@@ -580,6 +574,7 @@ const sessionClusters = Map.groupBy(joined.rows, (row) => row.sessionCluster);
 const splitFailures = [...sessionClusters.entries()]
   .filter(([, rows]) => new Set(rows.map((row) => row.split)).size > 1)
   .map(([cluster]) => cluster);
+const candidateNames = candidates.map((item) => item.name);
 const estimatorNames = [
   "B0-selection",
   "B1-selection",
@@ -587,14 +582,14 @@ const estimatorNames = [
   "B1-send",
   "P0-current-send",
   "C1-normalized-send",
-  ...candidates.map((item) => item.name),
+  ...candidateNames,
 ];
 const dataset = {
   schemaVersion: 2,
   bootstrap: { samples: BOOTSTRAP_SAMPLES, seed: BOOTSTRAP_SEED },
   candidates,
   captureAudit: {
-    identityFailures: joined.identityFailures.length,
+    identityFailures: joined.identityFailures,
     unresolvedRequests: joined.unresolvedRequests,
     duplicateResolutions: joined.duplicateResolutions,
     skipCounts: joined.skipCounts,
@@ -602,13 +597,13 @@ const dataset = {
   },
   rows: joined.rows,
 };
-const groups = summarize(joined.rows, estimatorNames);
+const groups = summarize(joined.rows, estimatorNames, candidateNames);
 const externalCountProvenanceFailuresByTarget = Object.fromEntries(
   [...Map.groupBy(joined.externalCountProvenanceFailures, (failure) => failure.target)]
     .map(([target, failures]) => [target, failures.length]),
 );
 const validation = {
-  identityFailures: joined.identityFailures.length,
+  identityFailures: joined.identityFailures,
   responseIdentityVerified: joined.rows.filter((row) => row.identityVerification === "provider-response").length,
   countEndpointBoundVerified: joined.rows.filter((row) => row.identityVerification === "count-endpoint-bound").length,
   countEndpointUnverified: joined.rows.filter((row) => row.identityVerification === "count-endpoint-unverified").length,
@@ -633,7 +628,7 @@ const report = {
     "image-bearing": joined.rows.filter((row) => row.provider?.imageCount > 0).length,
   },
   groups,
-  acceptance: acceptanceSummary(groups, validation),
+  acceptance: acceptanceSummary(groups, validation, candidateNames),
 };
 writeFileSync(options.dataset, `${JSON.stringify(dataset, null, 2)}\n`);
 writeFileSync(options.json, `${JSON.stringify(report, null, 2)}\n`);

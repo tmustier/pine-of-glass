@@ -61,7 +61,10 @@ test("Anthropic provider measurement counts injected system text and signed reas
       },
       {
         role: "user",
-        content: [{ type: "tool_result", tool_use_id: call.id, content: "result" }, { type: "image", source: { data: "large-base64" } }],
+        content: [
+          { type: "tool_result", tool_use_id: call.id, content: "result" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "x".repeat(20_000) } },
+        ],
       },
     ],
     tools: [],
