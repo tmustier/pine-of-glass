@@ -75,6 +75,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | A real Pi-built system prompt (constructed via Pi's own prompt assembly against a fixture project dir with an AGENTS.md and one skill) matches `PROJECT_INSTRUCTIONS_RE`, `AVAILABLE_SKILLS_RE`, `SKILL_RE`, and `getPromptRemainder` strips both blocks | contextimate section parsing; it silently renders wrong buckets if the prompt format drifts |
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
+| Pi's extension-visible stable TUI reference resolves `requestRender` through a writable shared prototype across regular/fullscreen renderer replacement | traceline delayed row patching and Ctrl+T status suppression |
 | A successful silent built-in bash call returns exactly `(no output)` | traceline's terminal `gh pr merge` evidence rule |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |

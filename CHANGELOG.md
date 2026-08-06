@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.10.1 (2026-08-06)
+
+- Traceline works with Pi 0.84's stable TUI reference. Its delayed render hook now
+  wraps the shared renderer prototype instead of assigning through Pi's proxy, avoiding
+  a recursive `requestRender` call that crashed Pi at startup. The hook follows runtime
+  switches between regular and fullscreen mode.
 - Contextimate adds measured visible-text profiles for Gemini, Kimi, GLM, Cohere,
   Grok, DeepSeek and Qwen. Explicit, verified model IDs use the new profiles; dynamic
   and unverified variants keep the generic estimate or fallback.

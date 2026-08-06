@@ -92,8 +92,6 @@ export interface AssistantRowPrototypeLike extends Partial<AssistantRowLike> {
 
 export interface TracelineTuiLike {
   requestRender: (force?: boolean) => unknown;
-  __tracelineRRWrapVersion?: number;
-  __tracelineOriginalRequestRender?: (force?: boolean) => unknown;
 }
 
 /** Total text chars across a result's text blocks; undefined before a result exists. */

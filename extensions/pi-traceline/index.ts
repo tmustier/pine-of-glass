@@ -55,6 +55,7 @@ import {
   type DiffStats,
 } from "./write-diff.ts";
 import { dedupeThinkingLabels } from "./thinking-preview.ts";
+import { patchRequestRender } from "./request-render.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 
 /**
@@ -160,7 +161,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 // gutter, so the suffix column never touches the terminal edge.
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const TRACELINE_PATCH_VERSION = 28;
+const TRACELINE_PATCH_VERSION = 29;
 const TRACELINE_ASSISTANT_PATCH_VERSION = 4;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
@@ -1714,9 +1715,10 @@ export default function piTraceline(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    // Capture the real TUI (passed synchronously to the widget factory), then patch only
-    // extension-visible seams: requestRender for delayed tool-row patching, and raw
-    // terminal input for Ctrl+T expansion coordination plus release/repeat handling.
+    // Capture Pi's extension-visible TUI handle (passed synchronously to the widget
+    // factory), then patch only extension-visible seams: requestRender for delayed
+    // tool-row patching, and raw terminal input for Ctrl+T expansion coordination plus
+    // release/repeat handling.
     g.__tracelineGetTheme = () => {
       try {
         return (ctx.ui as ExtensionUiWithTheme).theme;
@@ -1728,20 +1730,14 @@ export default function piTraceline(pi: ExtensionAPI) {
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
       const t = tui as TracelineTuiLike;
       g.__tracelineTui = t;
-      if (t.__tracelineRRWrapVersion !== TRACELINE_PATCH_VERSION) {
-        const orig = t.__tracelineOriginalRequestRender ?? t.requestRender.bind(t);
-        t.__tracelineOriginalRequestRender = orig;
-        t.requestRender = (force?: boolean) => {
-          tryPatch();
-          try {
-            suppressThinkingToggleStatus();
-          } catch {
-            /* never let pi-traceline break a render */
-          }
-          return orig(force);
-        };
-        t.__tracelineRRWrapVersion = TRACELINE_PATCH_VERSION;
-      }
+      patchRequestRender(t, TRACELINE_PATCH_VERSION, () => {
+        tryPatch();
+        try {
+          suppressThinkingToggleStatus();
+        } catch {
+          /* never let pi-traceline break a render */
+        }
+      });
       tryPatch();
     });
 
