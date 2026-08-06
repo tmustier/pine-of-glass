@@ -77,11 +77,6 @@ export interface AssistantRowLike extends AssistantRowDataLike {
 }
 
 export interface ToolRowPrototypeLike extends Partial<ToolRowLike> {
-  __tracelineWriteSnapshotPatchVersion?: number;
-  __tracelineOriginalSetArgsComplete?: (...args: unknown[]) => unknown;
-  setArgsComplete?: (...args: unknown[]) => unknown;
-  __tracelineOriginalMarkExecutionStarted?: (...args: unknown[]) => unknown;
-  markExecutionStarted?: (...args: unknown[]) => unknown;
   __tracelineOriginalRender?: (width: number) => unknown;
 }
 

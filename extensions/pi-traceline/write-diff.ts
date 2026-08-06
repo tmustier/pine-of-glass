@@ -15,6 +15,8 @@ const LCS_CELL_LIMIT = 200_000;
 type WriteInput = { path: string; content: string; cwd: string };
 type WriteSnapshot = WriteInput & { stats: DiffStats | undefined };
 
+const pendingWriteSnapshots = new Map<string, WriteSnapshot>();
+
 // Expects pre-normalized line endings (diffStatsFromContents normalizes once).
 function splitDiffLines(text: string): string[] {
   if (!text) return [];
@@ -71,13 +73,16 @@ export function diffStatsFromContents(oldContent: string, newContent: string): D
   return stats.added > 0 || stats.removed > 0 ? stats : undefined;
 }
 
+function writeInputFromArgs(args: ToolRowDataLike["args"], cwd: string): WriteInput | undefined {
+  const path = args?.path ?? args?.file_path;
+  const content = args?.content;
+  return typeof path === "string" && typeof content === "string" ? { path, content, cwd } : undefined;
+}
+
 function writeInput(comp: ToolRowDataLike | undefined): WriteInput | undefined {
   if (comp?.toolName !== "write") return undefined;
-  const path = comp?.args?.path ?? comp?.args?.file_path;
-  const content = comp?.args?.content;
-  if (typeof path !== "string" || typeof content !== "string") return undefined;
-  const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : process.cwd();
-  return { path, content, cwd };
+  const cwd = typeof comp.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : process.cwd();
+  return writeInputFromArgs(comp.args, cwd);
 }
 
 function readWriteOldContent(input: WriteInput): string {
@@ -88,22 +93,40 @@ function readWriteOldContent(input: WriteInput): string {
   }
 }
 
-// Only captureWriteSnapshot ever writes the field, always a full WriteSnapshot.
 function writeSnapshot(comp: ToolRowDataLike | undefined): WriteSnapshot | undefined {
-  return comp?.__tracelineWriteSnapshot as WriteSnapshot | undefined;
+  if (!comp) return undefined;
+  let snapshot = comp.__tracelineWriteSnapshot as WriteSnapshot | undefined;
+  if (!snapshot && typeof comp.toolCallId === "string") {
+    snapshot = pendingWriteSnapshots.get(comp.toolCallId);
+    if (snapshot) {
+      comp.__tracelineWriteSnapshot = snapshot;
+      pendingWriteSnapshots.delete(comp.toolCallId);
+    }
+  }
+  return snapshot;
 }
 
 function sameWriteInput(a: WriteInput | undefined, b: WriteInput | undefined): boolean {
   return !!a && !!b && a.path === b.path && a.cwd === b.cwd && a.content === b.content;
 }
 
-export function captureWriteSnapshot(comp: ToolRowDataLike): void {
-  const input = writeInput(comp);
+export function captureWriteCallSnapshot(
+  toolCallId: string,
+  args: ToolRowDataLike["args"],
+  cwd: string,
+): void {
+  pendingWriteSnapshots.delete(toolCallId);
+  const input = writeInputFromArgs(args, cwd);
   if (!input) return;
-  const previous = writeSnapshot(comp);
-  if (sameWriteInput(previous, input)) return;
   const oldContent = readWriteOldContent(input);
-  comp.__tracelineWriteSnapshot = { ...input, stats: diffStatsFromContents(oldContent, input.content) } satisfies WriteSnapshot;
+  pendingWriteSnapshots.set(toolCallId, {
+    ...input,
+    stats: diffStatsFromContents(oldContent, input.content),
+  });
+}
+
+export function clearWriteCallSnapshots(): void {
+  pendingWriteSnapshots.clear();
 }
 
 export function writeDiffStats(comp: ToolRowDataLike | undefined): DiffStats | undefined {

@@ -21,11 +21,19 @@ function toolsUi(expanded: boolean) {
   };
 }
 
-test("Ctrl+T collapses Ctrl+O expansion and continues to Pi's native toggle", () => {
+test("Ctrl+T collapses Ctrl+O expansion and continues to Pi's native toggle", async () => {
   const { ui, writes } = toolsUi(true);
+  let cleanups = 0;
 
-  assert.equal(handleThinkingToggleTerminalInput("\x14", ui), undefined, "press must continue to Pi");
+  assert.equal(
+    handleThinkingToggleTerminalInput("\x14", ui, () => { cleanups += 1; }),
+    undefined,
+    "press must continue to Pi",
+  );
   assert.deepEqual(writes, [false], "expanded z1 rows must collapse before Pi toggles reasoning");
+  assert.equal(cleanups, 0, "cleanup must wait for Pi's native toggle");
+  await Promise.resolve();
+  assert.equal(cleanups, 1);
 });
 
 test("Ctrl+T leaves an already-collapsed tool view alone", () => {

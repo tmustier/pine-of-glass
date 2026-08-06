@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Traceline no longer replaces the TUI's `requestRender` method. It discovers new rows
+  after Pi lifecycle events, captures write pre-images through `tool_call`, and uses
+  Pi's stable TUI reference only to request redraws.
+
 ## 0.10.1 (2026-08-06)
 
 - Traceline works with Pi 0.84's stable TUI reference. Its delayed render hook now

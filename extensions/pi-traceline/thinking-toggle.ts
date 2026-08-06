@@ -10,9 +10,11 @@ import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 export function handleThinkingToggleTerminalInput(
   data: string,
   ui: Pick<ExtensionUIContext, "getToolsExpanded" | "setToolsExpanded">,
+  afterToggle?: () => void,
 ): { consume: true } | undefined {
   if (!matchesKey(data, "ctrl+t")) return undefined;
   if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
   if (ui.getToolsExpanded()) ui.setToolsExpanded(false);
+  queueMicrotask(() => afterToggle?.());
   return undefined;
 }

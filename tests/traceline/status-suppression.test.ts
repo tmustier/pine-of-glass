@@ -46,7 +46,7 @@ test("drops the trailing Spacer + Text pair pi's toggle appends", () => {
   const keep = prose();
   const children = [keep, spacer(), statusText("Thinking blocks: hidden")];
   setTracelineChat({ children });
-  suppressThinkingToggleStatus();
+  assert.equal(suppressThinkingToggleStatus(), true);
   assert.deepEqual(children, [keep], "status pair must be removed from the chat tail");
 });
 
@@ -54,7 +54,7 @@ test("removes only its own Spacer: a non-spacer neighbour survives", () => {
   const keep = prose();
   const children = [keep, statusText("Thinking blocks: visible")];
   setTracelineChat({ children });
-  suppressThinkingToggleStatus();
+  assert.equal(suppressThinkingToggleStatus(), true);
   assert.deepEqual(children, [keep], "status text removed; the prose before it must not be eaten as a spacer");
 });
 
@@ -62,13 +62,13 @@ test("leaves other statuses and non-tail matches alone", () => {
   const other = [prose(), spacer(), statusText("Forked to new session")];
   const otherChildren = [...other];
   setTracelineChat({ children: otherChildren });
-  suppressThinkingToggleStatus();
+  assert.equal(suppressThinkingToggleStatus(), false);
   assert.equal(otherChildren.length, 3, "other statuses pass through");
 
   // A stale match not at the tail is history, not the fresh announcement.
   const buriedChildren = [spacer(), statusText("Thinking blocks: hidden"), prose()];
   setTracelineChat({ children: buriedChildren });
-  suppressThinkingToggleStatus();
+  assert.equal(suppressThinkingToggleStatus(), false);
   assert.equal(buriedChildren.length, 3, "non-tail matches untouched");
 
   setTracelineChat({ children: [] });
