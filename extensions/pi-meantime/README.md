@@ -8,12 +8,9 @@ Explains where the wall-clock went. pi's footer *counts* elapsed time; meantime
 *decomposes* it: is the model thinking or stuck, why was that call slow, and where did
 the session actually go?
 
-**A tempo line above the input box** names the current phase of the wait and how long
-it has held, so a long silence reads as information instead of anxiety. Live writing
-rate is estimated from streamed writing chars and wears `~`. Thinking shows no rate:
-its streamed text may be verbatim, summarized or elided depending on the provider, so
-it is not portable token evidence. The line turns warning ink once the wait passes the
-session's own slow-start bar, and hides when the loop is idle:
+**A tempo line above the input box** names the current phase and its duration. Live
+`~tok/s` appears only while writing. The line turns warning ink once the wait passes
+this session's slow-start bar, and hides when the loop is idle:
 
 ```
 ◍ waiting · 3s                                       (no first token yet)
@@ -39,18 +36,7 @@ rates. Healthy calls print nothing:
 write, tools, total, output tokens, exact tok/s), notes where a row earned one, a
 totals row, and one session line with an active-against-idle share bar. A ledger
 that spans model switches states the model count and marks each transition. Idle is
-a first-class bucket, not noise; it is often the session's punchline:
-
-```
-[Meantime]
-  /pace · event-boundary wall clock · usage-based tok/s · process-local
-  call    ttft   think   write   tools   total     out  tok/s
-     1    1.9s     42s    8.0s     31s   1m22s    2.1k     48
-     2    1.7s    3.0s     12s    4.2s     17s    0.8k     41
-     3     14s    6.1s    5.0s     22s     26s    0.7k     35  slow start (median 1.9s)
-  totals: 3 calls · waiting 18s · thinking 51s · writing 25s · tools 57s · harness 4.6s
-  timed 1h42m   ██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  active 10m (10%) · idle 1h32m
-```
+a first-class bucket, not noise.
 
 ![Meantime pace ledger](../../docs/img/pi-meantime-ledger.png)
 
@@ -114,15 +100,11 @@ Honesty rules:
 - Time to first token is one number on purpose: it bundles network, queue, and
   prefill, and that split is not observable, so no split is claimed. Prefill is still
   nameable as a *cause* from usage evidence (uncached prompt tokens).
-- Resolved tok/s is exact: provider output tokens over the observed whole-call stream
-  span. Live writing tok/s is an estimate from visible text and tool-argument chars and
-  always wears `~`. Thinking shows no live rate because its streamed text has a
-  provider-dependent relationship to the reasoning-token stream. The writing
-  chars-per-token ratio self-calibrates from resolved calls after subtracting
-  provider-reported reasoning tokens; a call with streamed thinking but no positive
-  reasoning-token breakdown cannot calibrate it. Silent-reasoning calls show no
-  resolved rate because their hidden generation has no
-  observable start boundary.
+- Resolved tok/s is exact provider output over the observed stream span. Live writing
+  tok/s is estimated from visible text and tool arguments and wears `~`; thinking has no
+  rate. Calibration excludes provider-reported reasoning tokens and skips calls without
+  a usable split. Silent reasoning has no resolved rate because its start is not
+  observable.
 - A silent pre-text gap is `waiting`, never `thinking`. When usage later reports
   reasoning tokens for a call whose stream carried no thinking blocks, the row is
   noted `wait incl. silent reasoning` rather than inventing a thinking span.

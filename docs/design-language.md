@@ -719,17 +719,12 @@ surface users feel most and can verify least.
   typed content event) and bundles network, queue, and prefill. It is one number on
   purpose: the split is not observable, so no split is claimed. Prefill work is
   still nameable as a cause from usage evidence (uncached prompt tokens)
-- rates wear the §4 grammar: a live writing rate is estimated from streamed writing
-  chars through a chars-per-token ratio and wears `~` in progressive tense; thinking
-  shows no live rate because its streamed text may be verbatim, summarized or elided
-  depending on the provider, so it is not portable token evidence. A resolved rate is
-  provider output tokens over the observed whole-call stream span, exact, past tense.
-  The live writing ratio self-calibrates
-  from resolved writing chars over non-reasoning output tokens. A call with streamed
-  thinking but no positive provider reasoning-token breakdown cannot calibrate that
-  ratio; some compatible routes normalize a missing breakdown to zero.
-  Calls with silent reasoning show no resolved rate: their hidden generation has no
-  observable start boundary
+- rates wear the §4 grammar: live writing rate is estimated from streamed chars and
+  wears `~`; thinking has no live rate because its text is not reliable token evidence
+  across providers. Resolved rate is exact provider output over the observed stream
+  span. Writing calibration excludes provider-reported reasoning tokens and skips calls
+  without a usable split. Silent reasoning has no resolved rate because its generation
+  start is not observable
 - a silent pre-text gap is `waiting`, never `thinking`, until usage confirms
   reasoning tokens (§7: no definite words on soft evidence). A resolved call whose
   usage reports reasoning tokens but whose stream carried no thinking blocks marks

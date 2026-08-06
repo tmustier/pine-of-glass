@@ -1,7 +1,4 @@
-// pi-meantime timing model (design language §10): pure state machines and arithmetic,
-// no pi imports. Every number here is an event-boundary observation measured in this
-// process; nothing is provider-reported timing (none exists) and nothing is
-// reconstructed from session history.
+// Pure timing state machines and arithmetic; no pi imports.
 
 import type { MeantimeConfig } from "./config.ts";
 export { DEFAULT_CONFIG, parseMeantimeConfig } from "./config.ts";
@@ -24,14 +21,12 @@ export interface LiveCall {
   lastKind?: SegmentKind;
   thinkMs: number;
   writeMs: number;
-  /** Visible text and tool-argument chars; thinking text is not portable token evidence. */
   writeChars: number;
-  /** The stream carried visible thinking blocks (vs silent server-side reasoning). */
-  sawThinkingStream: boolean;
+  thinkingStreamed: boolean;
 }
 
 export function newLiveCall(index: number, requestAt: number): LiveCall {
-  return { index, requestAt, thinkMs: 0, writeMs: 0, writeChars: 0, sawThinkingStream: false };
+  return { index, requestAt, thinkMs: 0, writeMs: 0, writeChars: 0, thinkingStreamed: false };
 }
 
 // pi-ai's AssistantMessageEvent types, mapped to segments. The bare "start" event is
@@ -61,15 +56,13 @@ export function applyStreamEvent(live: LiveCall, type: string, deltaLength: numb
   const kind = SEGMENT_OF[type];
   if (kind !== undefined) {
     if (live.firstTokenAt === undefined) live.firstTokenAt = now;
-    if (kind === "thinking") live.sawThinkingStream = true;
+    if (kind === "thinking") live.thinkingStreamed = true;
+    else live.writeChars += deltaLength;
     if (live.segment?.kind !== kind) {
       closeSegment(live, now);
       live.segment = { kind, startedAt: now };
       live.lastKind = kind;
     }
-    // Thinking text may be verbatim, summarized or elided depending on the provider.
-    // Only writing chars can support a portable live token-rate estimate (§10.1).
-    if (kind === "writing" && deltaLength > 0) live.writeChars += deltaLength;
     return;
   }
   if (SEGMENT_END.has(type)) closeSegment(live, now);
@@ -88,21 +81,17 @@ export interface UsageLike {
 
 export interface CallTiming {
   index: number;
-  requestAt: number;
   /** Request sent to first typed content event; undefined when no content ever streamed. */
   ttftMs?: number;
   thinkMs: number;
   writeMs: number;
-  /** Visible text and tool-argument chars used to calibrate live writing rate. */
   writeChars: number;
-  /** Whether the stream exposed provider-dependent thinking text. */
-  thinkingStreamed: boolean;
+  /** Output tokens attributable to writing; absent when usage cannot split streamed thinking. */
+  writingTokens?: number;
   /** Request sent to stream end. Columns do not claim to sum to this (§10.2). */
   totalMs: number;
   outputTokens: number;
-  reasoningTokens?: number;
-  /** usage.reasoning > 0 with no thinking blocks on the stream: the wait includes
-   * silent reasoning, and streamed chars undercount output tokens. */
+  /** Provider-reported reasoning with no thinking blocks on the stream. */
   silentReasoning: boolean;
   /** input + cacheWrite: the prompt tokens the provider had to prefill uncached.
    * The evidence behind a named slow-start cause (§10.1). */
@@ -124,18 +113,19 @@ export function resolveCall(live: LiveCall, usage: UsageLike, now: number, model
   closeSegment(live, now);
   const ttftMs = live.firstTokenAt !== undefined ? Math.max(0, live.firstTokenAt - live.requestAt) : undefined;
   const streamMs = live.firstTokenAt !== undefined ? Math.max(0, now - live.firstTokenAt) : 0;
-  const silentReasoning = (usage.reasoning ?? 0) > 0 && !live.sawThinkingStream;
+  const reasoningTokens = usage.reasoning ?? 0;
+  const silentReasoning = reasoningTokens > 0 && !live.thinkingStreamed;
+  const canCountWritingTokens = !live.thinkingStreamed || reasoningTokens > 0;
+  const writingTokens = canCountWritingTokens ? usage.output - reasoningTokens : undefined;
   return {
     index: live.index,
-    requestAt: live.requestAt,
     ttftMs,
     thinkMs: live.thinkMs,
     writeMs: live.writeMs,
     writeChars: live.writeChars,
-    thinkingStreamed: live.sawThinkingStream,
+    writingTokens,
     totalMs: Math.max(0, now - live.requestAt),
     outputTokens: usage.output,
-    reasoningTokens: usage.reasoning,
     silentReasoning,
     uncachedPromptTokens: usage.input + usage.cacheWrite,
     // Silent reasoning happened before the first observable content event, so its
@@ -250,28 +240,16 @@ export function detectSlowStream(call: CallTiming, prior: CallTiming[], config: 
 
 // --- live-rate calibration (design language §10.1) ---------------------------------------
 
-/** Starting writing ratio before resolved evidence exists; the estimate wears `~`. */
 export const DEFAULT_WRITING_CHARS_PER_TOKEN = 3;
 const CALIBRATION_MIN_TOKENS = 50;
-
-/** Visible writing chars over non-reasoning output tokens from the most recent resolved
- * call with enough signal. Streamed thinking without a positive provider reasoning
- * breakdown cannot identify how many output tokens belonged to writing (§10.1). */
-function writingTokensForCalibration(call: CallTiming): number | undefined {
-  // Some OpenAI-compatible routes normalize a missing reasoning breakdown to zero.
-  // A visible thinking stream makes that zero contradictory, so fail closed.
-  if (call.thinkingStreamed && (call.reasoningTokens ?? 0) === 0) return undefined;
-  return Math.max(0, call.outputTokens - (call.reasoningTokens ?? 0));
-}
 
 export function calibratedWritingCharsPerToken(calls: CallTiming[], model?: string): number {
   for (let i = calls.length - 1; i >= 0; i--) {
     const call = calls[i]!;
     if (model !== undefined && call.model !== undefined && call.model !== model) continue;
-    if (call.writeChars <= 0) continue;
-    const writingTokens = writingTokensForCalibration(call);
-    if (writingTokens === undefined || writingTokens < CALIBRATION_MIN_TOKENS) continue;
-    return call.writeChars / writingTokens;
+    if (call.writeChars <= 0 || call.writingTokens === undefined) continue;
+    if (call.writingTokens < CALIBRATION_MIN_TOKENS) continue;
+    return call.writeChars / call.writingTokens;
   }
   return DEFAULT_WRITING_CHARS_PER_TOKEN;
 }

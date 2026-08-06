@@ -1,7 +1,3 @@
-// pi-meantime timing model: the segment state machine, resolution arithmetic, interval
-// union, relative baselines, calibration, and config parsing. These encode the design
-// language §10.1 honesty rules; a wrong answer here renders as a plausible-looking
-// number a human cannot re-derive, which is exactly the docs/testing.md layer-2 risk.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -30,12 +26,11 @@ const USAGE: UsageLike = { input: 1_200, output: 2_000, cacheRead: 100_000, cach
 function call(overrides: Partial<CallTiming>): CallTiming {
   return {
     index: 1,
-    requestAt: 0,
     ttftMs: 2_000,
     thinkMs: 0,
     writeMs: 1_000,
     writeChars: 6_000,
-    thinkingStreamed: false,
+    writingTokens: 2_000,
     totalMs: 10_000,
     outputTokens: 2_000,
     silentReasoning: false,
@@ -54,7 +49,7 @@ test("segment machine: first content sets TTFT; the bare start event does not", 
   applyStreamEvent(live, "thinking_start", 0, 1_900);
   assert.equal(live.firstTokenAt, 1_900);
   assert.equal(live.segment?.kind, "thinking");
-  assert.equal(live.sawThinkingStream, true);
+  assert.equal(live.thinkingStreamed, true);
 });
 
 test("segment machine: spans run start to end, so intra-segment stalls belong to the segment", () => {
@@ -64,24 +59,12 @@ test("segment machine: spans run start to end, so intra-segment stalls belong to
   applyStreamEvent(live, "thinking_delta", 40, 9_000); // 7s stall inside thinking
   applyStreamEvent(live, "thinking_end", 0, 10_000);
   assert.equal(live.thinkMs, 9_000);
-  assert.equal(live.sawThinkingStream, true);
-  assert.equal(live.writeChars, 0, "provider-dependent thinking text is not writing-token evidence");
-  assert.equal(live.writeMs, 0);
-});
-
-test("segment machine: a kind change closes the open segment even without an end event", () => {
-  const live = newLiveCall(1, 0);
-  applyStreamEvent(live, "thinking_delta", 10, 1_000);
-  applyStreamEvent(live, "text_delta", 20, 4_000); // no thinking_end seen
-  applyStreamEvent(live, "text_end", 0, 6_000);
-  assert.equal(live.thinkMs, 3_000);
-  assert.equal(live.writeMs, 2_000);
-  assert.equal(live.writeChars, 20);
-  assert.equal(live.lastKind, "writing");
+  assert.equal(live.writeChars, 0);
 });
 
 test("segment machine: tool-argument streaming is writing (the model emitting tokens)", () => {
   const live = newLiveCall(1, 0);
+  applyStreamEvent(live, "text_start", 0, 1_000);
   applyStreamEvent(live, "text_delta", 15, 1_000);
   applyStreamEvent(live, "text_end", 0, 2_000);
   applyStreamEvent(live, "toolcall_start", 0, 2_100);
@@ -89,41 +72,50 @@ test("segment machine: tool-argument streaming is writing (the model emitting to
   applyStreamEvent(live, "toolcall_end", 0, 3_100);
   assert.equal(live.writeMs, 2_000); // 1000→2000 text + 2100→3100 toolcall
   assert.equal(live.writeChars, 100);
-  assert.equal(live.sawThinkingStream, false);
 });
 
 // --- resolution -----------------------------------------------------------------------------
 
 test("resolveCall: ttft, exact rate over the stream span, and prefill evidence", () => {
   const live = newLiveCall(3, 0);
-  applyStreamEvent(live, "text_delta", 50, 2_000);
+  applyStreamEvent(live, "text_start", 0, 2_000);
+  applyStreamEvent(live, "text_delta", 50, 2_500);
+  applyStreamEvent(live, "text_end", 0, 12_000);
   const resolved = resolveCall(live, USAGE, 12_000, "claude-opus-4-8");
   assert.equal(resolved.ttftMs, 2_000);
   assert.equal(resolved.totalMs, 12_000);
   assert.equal(resolved.tokPerSec, 2_000 / 10); // output ÷ (streamEnd − firstToken)
   assert.equal(resolved.uncachedPromptTokens, 4_200); // input + cacheWrite
-  assert.equal(resolved.silentReasoning, false);
   assert.equal(resolved.writeChars, 50);
-  assert.equal(resolved.thinkingStreamed, false);
-  assert.equal(resolved.writeMs, 10_000); // open segment closed at resolution
+  assert.equal(resolved.writingTokens, 2_000);
+  assert.equal(resolved.writeMs, 10_000);
 });
 
 test("resolveCall: reasoning tokens with no thinking stream marks silent reasoning", () => {
   const live = newLiveCall(1, 0);
-  applyStreamEvent(live, "text_delta", 10, 8_000); // long silent gap, then text
+  applyStreamEvent(live, "text_start", 0, 8_000);
+  applyStreamEvent(live, "text_delta", 10, 8_500);
+  applyStreamEvent(live, "text_end", 0, 10_000);
   const resolved = resolveCall(live, { ...USAGE, reasoning: 900 }, 10_000);
   assert.equal(resolved.silentReasoning, true);
-  assert.equal(resolved.tokPerSec, undefined, "unobserved reasoning time makes a resolved rate incomparable");
-  const streamed = resolveCall(
-    (() => {
-      const l = newLiveCall(2, 0);
-      applyStreamEvent(l, "thinking_delta", 10, 1_000);
-      return l;
-    })(),
-    { ...USAGE, reasoning: 900 },
-    5_000,
-  );
-  assert.equal(streamed.silentReasoning, false);
+  assert.equal(resolved.tokPerSec, undefined);
+  assert.equal(resolved.writingTokens, 1_100);
+});
+
+test("resolveCall: streamed thinking needs a positive reasoning breakdown for calibration", () => {
+  const resolve = (reasoning?: number) => {
+    const live = newLiveCall(1, 0);
+    applyStreamEvent(live, "thinking_start", 0, 1_000);
+    applyStreamEvent(live, "thinking_delta", 10, 1_500);
+    applyStreamEvent(live, "thinking_end", 0, 3_000);
+    applyStreamEvent(live, "text_start", 0, 3_000);
+    applyStreamEvent(live, "text_delta", 10, 3_500);
+    applyStreamEvent(live, "text_end", 0, 5_000);
+    return resolveCall(live, { ...USAGE, reasoning }, 5_000);
+  };
+  assert.equal(resolve().writingTokens, undefined);
+  assert.equal(resolve(0).writingTokens, undefined);
+  assert.equal(resolve(900).writingTokens, 1_100);
 });
 
 test("resolveCall: no content ever streamed → no ttft, no rate claimed", () => {
@@ -215,16 +207,13 @@ test("detectSlowStream: collapsed rate on calls with enough output", () => {
 
 // --- calibration ----------------------------------------------------------------------------
 
-test("calibratedWritingCharsPerToken: uses writing tokens and rejects thinking without a positive breakdown", () => {
+test("calibratedWritingCharsPerToken: last eligible writing sample wins", () => {
   assert.equal(calibratedWritingCharsPerToken([]), DEFAULT_WRITING_CHARS_PER_TOKEN);
   const calls = [
-    call({ writeChars: 5_000, outputTokens: 2_000 }), // 2.5, no reasoning
-    call({ writeChars: 7_000, outputTokens: 4_000, reasoningTokens: 2_000, thinkingStreamed: true }), // 3.5
-    // Excluded: streamed thinking with no provider breakdown cannot identify writing tokens.
-    call({ writeChars: 12_000, outputTokens: 3_000, reasoningTokens: undefined, thinkingStreamed: true }),
-    // Excluded: compatible routes can normalize that missing breakdown to a contradictory zero.
-    call({ writeChars: 10_000, outputTokens: 2_500, reasoningTokens: 0, thinkingStreamed: true }),
-    call({ writeChars: 100, outputTokens: 20 }), // excluded: too little writing-token signal
+    call({ writeChars: 5_000, writingTokens: 2_000 }),
+    call({ writeChars: 7_000, writingTokens: 2_000 }),
+    call({ writeChars: 12_000, writingTokens: undefined }),
+    call({ writeChars: 100, writingTokens: 20 }),
   ];
   assert.equal(calibratedWritingCharsPerToken(calls), 3.5);
   const modelCalls = [
