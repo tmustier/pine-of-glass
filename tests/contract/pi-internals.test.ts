@@ -253,9 +253,7 @@ test("chat-rebuild surface family line persistence depends on", () => {
   const container = new piTui.Container();
   assert.equal(typeof container.clear, "function", "Container.clear gone — clear hook cannot install");
 
-  // Pre-rows chat detection: Pi 0.84 nests loadedResourcesContainer immediately before
-  // chatContainer under the mounted documentContainer. _lib/findChatContainer walks
-  // recursively, then uses that sibling ordering as the fresh-session fallback anchor.
+  // Fresh-session chat detection relies on these siblings inside the mounted transcript tree.
   assert.ok(source.includes("this.documentContainer.addChild(this.loadedResourcesContainer);"), "loadedResourcesContainer no longer in transcript tree");
   assert.ok(source.includes("this.documentContainer.addChild(this.chatContainer);"), "chatContainer no longer in transcript tree");
   assert.ok(source.includes("this.documentContainer,"), "documentContainer no longer mounted in the TUI");

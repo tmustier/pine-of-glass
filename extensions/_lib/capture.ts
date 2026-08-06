@@ -1,14 +1,10 @@
-// Shared one-shot TUI capture: pi passes the live TUI synchronously to a widget
-// factory; grab it, then remove the throwaway widget so nothing is rendered.
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { TUI } from "@earendil-works/pi-tui";
 
-interface WidgetHost {
-  setWidget(key: string, factory: unknown): void;
-}
-
-export function captureTui(ui: WidgetHost, key: string, onCapture: (tui: unknown) => void): void {
-  ui.setWidget(key, (tui: unknown) => {
+export function captureTui(ui: ExtensionUIContext, key: string, onCapture: (tui: TUI) => void): void {
+  ui.setWidget(key, (tui) => {
     onCapture(tui);
-    return { render: () => [] as string[], invalidate: () => {} };
+    return { render: () => [], invalidate() {} };
   });
   ui.setWidget(key, undefined);
 }
