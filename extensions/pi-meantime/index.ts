@@ -217,7 +217,7 @@ export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void
     s.ui = ctx.ui;
     s.theme = ctx.ui.theme;
     captureTui(ctx.ui, "__pi_meantime_capture", (tui) => {
-      s.tui = tui as MeantimeState["tui"];
+      s.tui = tui;
     });
     if (g.__piMeantimeTimer) clearInterval(g.__piMeantimeTimer);
     g.__piMeantimeTimer = s.config.widget ? setInterval(() => updateWidget(), 1000) : undefined;

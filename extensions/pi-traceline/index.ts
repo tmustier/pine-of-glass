@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type KeyId, type TUI } from "@earendil-works/pi-tui";
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { booleanValue, positiveNumberValue, isJsonObject, stringValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
@@ -16,7 +16,6 @@ import {
   type ToolRowDataLike,
   type ToolRowLike,
   type ToolRowPrototypeLike,
-  type TracelineTuiLike,
 } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
@@ -129,21 +128,19 @@ import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
  * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
  * between consecutive tools.
  *
- * Nothing in pi's node_modules is modified, so this survives `pi update`.
  */
 
 type ToolDisplayMode = "native" | "oneLine";
 
 type TracelineGlobal = typeof globalThis & {
   __tracelinePatchVersion?: number;
-  __tracelineTui?: TracelineTuiLike;
+  __tracelineTui?: TUI;
   __tracelineChat?: ContainerLike;
   __tracelineInputUnsubscribe?: () => void;
   __tracelineGetTheme?: () => Theme | undefined;
   __tracelineAssistantPatchVersion?: number;
 };
 const g = globalThis as TracelineGlobal;
-type ExtensionUiWithTheme = { theme?: Theme };
 function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
 function getTracelineChat(): ContainerLike | undefined { return g.__tracelineChat; }
 function setTracelineThemeGetter(getTheme: (() => Theme | undefined) | undefined): void { g.__tracelineGetTheme = getTheme; }
@@ -161,13 +158,11 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 // gutter, so the suffix column never touches the terminal edge.
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const TRACELINE_PATCH_VERSION = 29;
-const TRACELINE_ASSISTANT_PATCH_VERSION = 4;
+const TOOL_ROW_PATCH_VERSION = 28;
+const ASSISTANT_ROW_PATCH_VERSION = 4;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
-// The live Theme handle is captured at session_start; before that (and in unit tests
-// without one) ink() falls back to basic raw ANSI. The registered getter guards its
-// own property access, so the hottest call in the file stays bare.
+// Before session_start (and in unit tests without a UI), ink falls back to basic ANSI.
 
 function currentTheme(): Theme | undefined {
   return g.__tracelineGetTheme?.();
@@ -1490,7 +1485,7 @@ function renderTraceRow(comp: ToolRowLike, width: number): string[] {
 
 function patchAssistantRowPrototype(proto: AssistantRowPrototypeLike): void {
   if (!proto || typeof proto.render !== "function") return;
-  if (proto.__tracelineAssistantPatchVersion === TRACELINE_ASSISTANT_PATCH_VERSION) return;
+  if (proto.__tracelineAssistantPatchVersion === ASSISTANT_ROW_PATCH_VERSION) return;
   const original = proto.__tracelineOriginalAssistantRender ?? proto.render;
   proto.__tracelineOriginalAssistantRender = original;
   proto.render = function (this: AssistantRowDataLike, width: number) {
@@ -1504,14 +1499,14 @@ function patchAssistantRowPrototype(proto: AssistantRowPrototypeLike): void {
     }
     return lines;
   };
-  proto.__tracelineAssistantPatchVersion = TRACELINE_ASSISTANT_PATCH_VERSION;
-  g.__tracelineAssistantPatchVersion = TRACELINE_ASSISTANT_PATCH_VERSION;
+  proto.__tracelineAssistantPatchVersion = ASSISTANT_ROW_PATCH_VERSION;
+  g.__tracelineAssistantPatchVersion = ASSISTANT_ROW_PATCH_VERSION;
 }
 
 // --- prototype patch (shared by every current + future tool row, applied once) --------
 
 function currentPatchInstalled(): boolean {
-  return g.__tracelinePatchVersion === TRACELINE_PATCH_VERSION;
+  return g.__tracelinePatchVersion === TOOL_ROW_PATCH_VERSION;
 }
 
 // The write pre-image is captured at three seams, deduped by sameWriteInput: on
@@ -1521,7 +1516,7 @@ function currentPatchInstalled(): boolean {
 // session's first write is what installs the prototype patch, from its own
 // requestRender tick.
 function patchWriteSnapshotHooks(proto: ToolRowPrototypeLike): void {
-  if (!proto || proto.__tracelineWriteSnapshotPatchVersion === TRACELINE_PATCH_VERSION) return;
+  if (!proto || proto.__tracelineWriteSnapshotPatchVersion === TOOL_ROW_PATCH_VERSION) return;
 
   const originalSetArgsComplete = proto.__tracelineOriginalSetArgsComplete ?? proto.setArgsComplete;
   if (typeof originalSetArgsComplete === "function") {
@@ -1549,7 +1544,7 @@ function patchWriteSnapshotHooks(proto: ToolRowPrototypeLike): void {
     };
   }
 
-  proto.__tracelineWriteSnapshotPatchVersion = TRACELINE_PATCH_VERSION;
+  proto.__tracelineWriteSnapshotPatchVersion = TOOL_ROW_PATCH_VERSION;
 }
 
 function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
@@ -1572,11 +1567,11 @@ function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
       return original.call(this, width);
     }
   };
-  g.__tracelinePatchVersion = TRACELINE_PATCH_VERSION;
+  g.__tracelinePatchVersion = TOOL_ROW_PATCH_VERSION;
 }
 
 function assistantPatchInstalled(): boolean {
-  return g.__tracelineAssistantPatchVersion === TRACELINE_ASSISTANT_PATCH_VERSION;
+  return g.__tracelineAssistantPatchVersion === ASSISTANT_ROW_PATCH_VERSION;
 }
 
 function tryPatch(): void {
@@ -1675,13 +1670,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     ui,
     theme: currentTheme,
     chatChildren,
-    requestRender: () => {
-      try {
-        g.__tracelineTui?.requestRender();
-      } catch {
-        /* never let drill mode break a render */
-      }
-    },
+    requestRender: () => g.__tracelineTui?.requestRender(),
     traceLines: (comp, width) => {
       const read = readRun(comp);
       if (read?.index === 0) return foldedReadLines(read.rows, width);
@@ -1714,29 +1703,14 @@ export default function piTraceline(pi: ExtensionAPI) {
     handler: async (_args, ctx) => startDrill(ctx),
   });
 
-  pi.on("session_start", async (_event, ctx) => {
-    // Capture Pi's extension-visible TUI handle (passed synchronously to the widget
-    // factory), then patch only extension-visible seams: requestRender for delayed
-    // tool-row patching, and raw terminal input for Ctrl+T expansion coordination plus
-    // release/repeat handling.
-    g.__tracelineGetTheme = () => {
-      try {
-        return (ctx.ui as ExtensionUiWithTheme).theme;
-      } catch {
-        return undefined;
-      }
-    };
+  pi.on("session_start", (_event, ctx) => {
+    g.__tracelineGetTheme = () => ctx.ui.theme;
     configureSizeThresholds(config);
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
-      const t = tui as TracelineTuiLike;
-      g.__tracelineTui = t;
-      patchRequestRender(t, TRACELINE_PATCH_VERSION, () => {
+      g.__tracelineTui = tui;
+      patchRequestRender(tui, () => {
         tryPatch();
-        try {
-          suppressThinkingToggleStatus();
-        } catch {
-          /* never let pi-traceline break a render */
-        }
+        suppressThinkingToggleStatus();
       });
       tryPatch();
     });
@@ -1753,7 +1727,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     });
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", () => {
     exitDrillMode(); // restores the editor and turns mouse reporting off
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;

@@ -90,10 +90,6 @@ export interface AssistantRowPrototypeLike extends Partial<AssistantRowLike> {
   __tracelineOriginalAssistantRender?: (width: number) => unknown;
 }
 
-export interface TracelineTuiLike {
-  requestRender: (force?: boolean) => unknown;
-}
-
 /** Total text chars across a result's text blocks; undefined before a result exists. */
 export function resultTextCharCount(comp: ToolRowDataLike | undefined): number | undefined {
   const content = comp?.result?.content;

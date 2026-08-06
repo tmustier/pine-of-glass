@@ -511,7 +511,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.ui = ctx.ui;
     s.theme = ctx.ui.theme;
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
-      s.tui = tui as CachemireState["tui"];
+      s.tui = tui;
     });
     cacheWidget.lastText = undefined;
     updateWidget();
