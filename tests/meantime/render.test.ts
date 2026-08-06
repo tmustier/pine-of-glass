@@ -8,12 +8,10 @@ function call(index: number, model: string): CallTiming {
   return {
     index,
     model,
-    requestAt: 0,
     ttftMs: 1_000,
     thinkMs: 0,
     writeMs: 1_000,
     writeChars: 300,
-    thinkingStreamed: false,
     totalMs: 2_000,
     outputTokens: 100,
     silentReasoning: false,

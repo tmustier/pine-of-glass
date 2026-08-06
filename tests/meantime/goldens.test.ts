@@ -25,11 +25,9 @@ import { expectGolden, plainTheme } from "../helpers.ts";
 function call(index: number, overrides: Partial<CallTiming>): CallTiming {
   return {
     index,
-    requestAt: 0,
     thinkMs: 0,
     writeMs: 0,
     writeChars: 0,
-    thinkingStreamed: false,
     totalMs: 0,
     outputTokens: 0,
     silentReasoning: false,
@@ -42,28 +40,28 @@ function call(index: number, overrides: Partial<CallTiming>): CallTiming {
 // overlapped tools and a harness stall, then a collapsed stream rate.
 const CALLS: CallTiming[] = [
   call(1, {
-    ttftMs: 1_900, thinkMs: 42_000, writeMs: 8_000, writeChars: 6_100, thinkingStreamed: true, totalMs: 82_000,
+    ttftMs: 1_900, thinkMs: 42_000, writeMs: 8_000, totalMs: 82_000,
     outputTokens: 2_100, tokPerSec: 48, uncachedPromptTokens: 138_200,
     toolsMs: 31_000, toolsCount: 2, toolsOverlapMs: 0, harnessMs: 300,
   }),
   call(2, {
-    ttftMs: 1_700, writeMs: 12_000, writeChars: 2_400, totalMs: 15_000,
+    ttftMs: 1_700, writeMs: 12_000, totalMs: 15_000,
     outputTokens: 800, tokPerSec: 41, uncachedPromptTokens: 1_100,
     toolsMs: 4_200, toolsCount: 1, toolsOverlapMs: 0, harnessMs: 200,
   }),
   call(3, {
-    ttftMs: 2_100, thinkMs: 6_000, writeMs: 9_000, writeChars: 3_900, thinkingStreamed: true, totalMs: 18_000,
+    ttftMs: 2_100, thinkMs: 6_000, writeMs: 9_000, totalMs: 18_000,
     outputTokens: 1_200, tokPerSec: 52, uncachedPromptTokens: 900,
     toolsMs: 0, toolsCount: 0, toolsOverlapMs: 0, harnessMs: 150,
   }),
   call(4, {
-    ttftMs: 14_200, writeMs: 5_000, writeChars: 1_800, totalMs: 20_000,
-    outputTokens: 700, reasoningTokens: 450, silentReasoning: true,
+    ttftMs: 14_200, writeMs: 5_000, totalMs: 20_000,
+    outputTokens: 700, silentReasoning: true,
     uncachedPromptTokens: 145_300,
     toolsMs: 22_000, toolsCount: 3, toolsOverlapMs: 12_000, harnessMs: 4_100,
   }),
   call(5, {
-    ttftMs: 2_000, writeMs: 180_000, writeChars: 6_800, totalMs: 192_000,
+    ttftMs: 2_000, writeMs: 180_000, totalMs: 192_000,
     outputTokens: 2_100, tokPerSec: 11, uncachedPromptTokens: 1_000,
   }),
 ];
@@ -73,7 +71,7 @@ function liveThinking(): LiveCall {
   live.firstTokenAt = 1_900;
   live.segment = { kind: "thinking", startedAt: 1_900 };
   live.lastKind = "thinking";
-  live.sawThinkingStream = true;
+  live.thinkingStreamed = true;
   return live;
 }
 

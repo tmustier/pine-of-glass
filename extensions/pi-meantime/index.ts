@@ -24,26 +24,7 @@ import {
   type MeantimeConfig,
 } from "./timing.ts";
 
-/**
- * pi-meantime — where did the time go, and why? ("what happened in the meantime?")
- *
- * pi's footer already *counts* elapsed time; meantime *explains* it:
- *   1. "Is it thinking, or stuck?"  → a live tempo line above the editor decomposing the
- *      current wait: waiting (no first token yet) / thinking / writing (with a
- *      visible-output ~tok/s estimate) / tools, hidden when the loop is idle.
- *   2. "Why was that one slow?"     → anomaly notices against the session's own rolling
- *      per-model median: slow starts (with prefill named as cause when usage proves it)
- *      and collapsed stream rates. Silence when healthy.
- *   3. "Where did the session go?"  → /pace: a per-call ledger (ttft / think / write /
- *      tools / total / out / exact tok/s) with totals and an active-vs-idle share bar.
- *
- * All durations are event-boundary observations from this process (design language
- * §10.1); resolved tok/s is exact provider usage over the observed stream span; live
- * writing rate is estimated and wears `~`, while provider-dependent thinking text
- * supports no portable rate. Display is UI-only: nothing meantime renders enters
- * LLM context, session entries, or exports, and nothing is reconstructed from restored
- * session history (message timestamps cannot yield TTFT or segment splits).
- */
+/** Live phase, anomaly notices and the `/pace` timing ledger. UI-only (§10). */
 
 // --- live state ---------------------------------------------------------------------------
 
@@ -252,7 +233,6 @@ export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void
     updateWidget(now);
   });
 
-  // Hot path: one O(1) state-machine step per streamed token; the 1s timer re-renders.
   pi.on("message_update", async (event) => {
     if (!s.live) return;
     const streamEvent = event.assistantMessageEvent;
