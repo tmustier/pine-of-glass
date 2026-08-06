@@ -253,15 +253,15 @@ test("chat-rebuild surface family line persistence depends on", () => {
   const container = new piTui.Container();
   assert.equal(typeof container.clear, "function", "Container.clear gone — clear hook cannot install");
 
-  // Pre-rows chat detection: pi now renders the startup resource listing into a
-  // loadedResourcesContainer sibling immediately before chatContainer. _lib/findChatContainer
-  // uses that sibling ordering as the fresh-session fallback anchor; the section headers
-  // must keep their names for resource-container detection.
-  assert.ok(source.includes("this.ui.addChild(this.loadedResourcesContainer);"), "loadedResourcesContainer no longer in root layout");
-  assert.ok(source.includes("this.ui.addChild(this.chatContainer);"), "chatContainer no longer in root layout");
+  // Pre-rows chat detection: Pi 0.84 nests loadedResourcesContainer immediately before
+  // chatContainer under the mounted documentContainer. _lib/findChatContainer walks
+  // recursively, then uses that sibling ordering as the fresh-session fallback anchor.
+  assert.ok(source.includes("this.documentContainer.addChild(this.loadedResourcesContainer);"), "loadedResourcesContainer no longer in transcript tree");
+  assert.ok(source.includes("this.documentContainer.addChild(this.chatContainer);"), "chatContainer no longer in transcript tree");
+  assert.ok(source.includes("this.documentContainer,"), "documentContainer no longer mounted in the TUI");
   assert.ok(
-    source.indexOf("this.ui.addChild(this.loadedResourcesContainer);") <
-      source.indexOf("this.ui.addChild(this.chatContainer);"),
+    source.indexOf("this.documentContainer.addChild(this.loadedResourcesContainer);") <
+      source.indexOf("this.documentContainer.addChild(this.chatContainer);"),
     "loadedResourcesContainer no longer sits before chatContainer — fresh-session detection needs rework",
   );
   assert.ok(
