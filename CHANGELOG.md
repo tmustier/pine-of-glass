@@ -5,6 +5,9 @@
 - Traceline no longer replaces the TUI's `requestRender` method. It discovers new rows
   after Pi lifecycle events, captures write pre-images through `tool_call`, and uses
   Pi's stable TUI reference only to request redraws.
+- Traceline no longer enables or parses terminal mouse reporting in drill mode.
+  Drill remains keyboard-only, while Pi and the terminal retain control of
+  scrolling, selection, links and fullscreen mouse handling.
 
 ## 0.10.1 (2026-08-06)
 

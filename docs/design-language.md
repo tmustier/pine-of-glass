@@ -686,23 +686,19 @@ The peek pager:
   a partially scrolled image shows its dim fact line in place (`scroll to
   view`), never a clipped or overdrawn image. Images are sized to fit the
   viewport so full visibility is always reachable
-- kitty image ids allocated by the pager are deleted when it closes, the same
-  bounded lifecycle as drill-mode mouse reporting: the mode cleans up every
-  terminal-state side effect it created, on exit and on shutdown
+- kitty image ids allocated by the pager are deleted when it closes. The pager
+  cleans up every terminal-state side effect it created, on exit and on shutdown
 - `j`/`k`, the arrows, page keys and `g`/`G` scroll; `h`/`l` and left/right
   move to the neighbouring numbered target without closing; `p` toggles
   expansion; digits jump; esc, enter or `q` closes back to drill mode
 
 Mouse:
 
-- the live transcript never owns mouse reporting: enabling it breaks terminal
-  text selection for the whole session, so z0 stays keyboard-and-scrollback
-  native. This is a hard rule, not a phasing decision
-- drill mode is a bounded exception: SGR mouse reporting is enabled on entry
-  and disabled on exit, on session shutdown and on process exit. The wheel
-  moves the selection (wheel up walks older rows); inside the pager it
-  scrolls. Every other mouse event is swallowed, never leaked to the editor.
-  `"drillMouse": false` in the family config opts out
+- Traceline never enables, disables, parses or consumes terminal mouse
+  reporting. Pi and the terminal own scrolling, selection and links in every
+  mode
+- drill mode stays keyboard-only. Future row clicking must use a public Pi
+  component-click API, never a render-wide hit map or raw terminal mouse input
 
 ## 10. Tempo facts
 

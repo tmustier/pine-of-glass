@@ -56,9 +56,8 @@ function pagerFor(rows: ToolRowLike[], terminalRows = 16): DrillPager {
     runRows: () => undefined,
     hiddenByFold: () => false,
     statusTone: () => "success",
-    mouse: false,
   };
-  const st: DrillState = { host, rows, numbers: new Map(), selected: 0, digits: "", mouseOn: false };
+  const st: DrillState = { host, rows, numbers: new Map(), selected: 0, digits: "" };
   const pager = new DrillPager(st);
   pager.attach({ terminal: { rows: terminalRows } } as unknown as TUI);
   return pager;

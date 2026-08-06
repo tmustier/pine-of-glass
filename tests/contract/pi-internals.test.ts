@@ -341,7 +341,7 @@ test("showExtensionCustom seam: editor swap/restore + overlay close drill mode r
 
   const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
   assert.ok(declarations.includes("registerShortcut(shortcut: KeyId"), "registerShortcut signature drifted — the alt+t entry point dies");
-  assert.ok(declarations.includes("onTerminalInput(handler: TerminalInputHandler)"), "onTerminalInput gone — drill's mouse routing dies");
+  assert.ok(declarations.includes("onTerminalInput(handler: TerminalInputHandler)"), "onTerminalInput gone — drill's foreign-chord exit dies");
   assert.ok(declarations.includes("custom<T>(factory: (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void)"), "custom factory signature drifted — hint bar and pager factories break");
 });
 

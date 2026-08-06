@@ -18,7 +18,7 @@ import {
   stepDigits,
   type DrillHost,
 } from "../../extensions/pi-traceline/drill.ts";
-import { handleDrillTerminalInput, isForeignChord, wheelDelta } from "../../extensions/pi-traceline/drill-input.ts";
+import { handleDrillTerminalInput, isForeignChord } from "../../extensions/pi-traceline/drill-input.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
 const { foldedReadLines, isExpandedToolRow, leadingBlank, oneLine, readRun, renderTraceRow, setTracelineChat, statusTone, stripAnsi } = internals;
@@ -76,7 +76,6 @@ function makeHost(children: unknown[], calls: CustomCall[] = [], notifications: 
     },
     hiddenByFold: (comp) => (readRun(comp)?.index ?? 0) > 0,
     statusTone: (comp) => statusTone(comp),
-    mouse: false,
   };
 }
 
@@ -279,24 +278,29 @@ test("a folded read run is one numbered target", () => {
   assert.ok([page1, page2, sibling].every((row) => row.expanded === true), "pin expands every member of a folded target");
 });
 
-// --- mouse -------------------------------------------------------------------------------
+// --- terminal ownership -----------------------------------------------------------------
 
-test("wheelDelta reads SGR wheel presses and ignores releases and buttons", () => {
-  assert.equal(wheelDelta("\x1b[<64;10;5M"), -1); // wheel up
-  assert.equal(wheelDelta("\x1b[<65;10;5M\x1b[<65;10;5M"), 2); // two wheel downs
-  assert.equal(wheelDelta("\x1b[<0;10;5M\x1b[<0;10;5m"), 0); // click press+release
-  assert.equal(wheelDelta("\x1b[<68;10;5M"), -1); // shift+wheel up still scrolls
+test("drill entry and exit write no terminal control sequences", () => {
+  const writes: string[] = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    enterDrillMode(makeHost([toolComp()]));
+    exitDrillMode();
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  assert.deepEqual(writes, [], "Traceline must never take ownership of terminal mouse mode");
 });
 
-test("terminal-input hook consumes all mouse reports while active, none outside", () => {
-  assert.equal(handleDrillTerminalInput("\x1b[<64;1;1M"), undefined, "inactive: nothing consumed");
+test("terminal-input hook ignores mouse reports while drill is active", () => {
   const rows = [toolComp({ args: { path: "/tmp/aaa/a.ts" } }), toolComp({ args: { path: "/tmp/bbb/b.ts" } })];
   enterDrillMode(makeHost(rows));
-  assert.equal(drillState()!.selected, 0);
-  assert.deepEqual(handleDrillTerminalInput("\x1b[<64;1;1M"), { consume: true });
-  assert.equal(drillState()!.selected, 1, "wheel up walks to the older row");
-  assert.deepEqual(handleDrillTerminalInput("\x1b[<0;3;3M"), { consume: true }, "clicks are swallowed, not leaked");
-  assert.equal(handleDrillTerminalInput("plain keys"), undefined, "keyboard input passes through");
+  assert.equal(handleDrillTerminalInput("\x1b[<64;1;1M"), undefined);
+  assert.equal(drillState()!.selected, 0, "mouse input cannot move the drill selection");
 });
 
 // --- foreign chords (§9.13: the mode never silently eats an app-level keystroke) --------

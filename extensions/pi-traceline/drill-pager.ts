@@ -50,7 +50,7 @@ type PagerBody = { lines: string[]; images: PagerImage[] };
 type CachedImage = { data: string; comp: Image };
 
 // A crash mid-peek must not leave transmitted kitty images behind in the terminal:
-// the same bounded lifecycle as drill-mode mouse reporting (§9.13).
+// pager-owned terminal state has the same bounded lifecycle as the pager (§9.13).
 const livePagers = new Set<DrillPager>();
 let exitGuardInstalled = false;
 
