@@ -9,13 +9,15 @@ Explains where the wall-clock went. pi's footer *counts* elapsed time; meantime
 the session actually go?
 
 **A tempo line above the input box** names the current phase of the wait and how long
-it has held, so a long silence reads as information instead of anxiety. Live rates are
-estimated from streamed chars and wear `~`; the line turns warning ink once the wait
-passes the session's own slow-start bar, and hides when the loop is idle:
+it has held, so a long silence reads as information instead of anxiety. Live writing
+rate is estimated from streamed writing chars and wears `~`. Thinking shows no rate:
+its streamed text may be verbatim, summarized or elided depending on the provider, so
+it is not portable token evidence. The line turns warning ink once the wait passes the
+session's own slow-start bar, and hides when the loop is idle:
 
 ```
 ◍ waiting · 3s                                       (no first token yet)
-◍ thinking · 42s · ~50 tok/s
+◍ thinking · 42s
 ◍ writing · 8s · ~48 tok/s
 ◍ tools · 31s · 3 running                            (wall-clock, not a sum)
 ◍ waiting · 14s · slow start (median 1.9s)           (warning ink)
@@ -112,11 +114,15 @@ Honesty rules:
 - Time to first token is one number on purpose: it bundles network, queue, and
   prefill, and that split is not observable, so no split is claimed. Prefill is still
   nameable as a *cause* from usage evidence (uncached prompt tokens).
-- Resolved tok/s is exact: provider output tokens over the observed stream span. Live
-  tok/s is an estimate from streamed chars and always wears `~`; its chars-per-token
-  ratio self-calibrates from resolved calls. Silent-reasoning calls show no resolved
-  rate and do not calibrate live rates, because their hidden generation has no
-  observable start boundary and their streamed chars undercount output.
+- Resolved tok/s is exact: provider output tokens over the observed whole-call stream
+  span. Live writing tok/s is an estimate from visible text and tool-argument chars and
+  always wears `~`. Thinking shows no live rate because its streamed text has a
+  provider-dependent relationship to the reasoning-token stream. The writing
+  chars-per-token ratio self-calibrates from resolved calls after subtracting
+  provider-reported reasoning tokens; a call with streamed thinking but no positive
+  reasoning-token breakdown cannot calibrate it. Silent-reasoning calls show no
+  resolved rate because their hidden generation has no
+  observable start boundary.
 - A silent pre-text gap is `waiting`, never `thinking`. When usage later reports
   reasoning tokens for a call whose stream carried no thinking blocks, the row is
   noted `wait incl. silent reasoning` rather than inventing a thinking span.

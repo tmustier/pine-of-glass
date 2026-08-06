@@ -9,7 +9,7 @@ import {
   applyStreamEvent,
   attachPhase,
   baselineFor,
-  calibratedCharsPerToken,
+  calibratedWritingCharsPerToken,
   detectSlowStart,
   detectSlowStream,
   liveToolWallClock,
@@ -19,7 +19,7 @@ import {
   resolveCall,
   sessionTotals,
   unionIntervals,
-  DEFAULT_CHARS_PER_TOKEN,
+  DEFAULT_WRITING_CHARS_PER_TOKEN,
   DEFAULT_CONFIG,
   type CallTiming,
   type UsageLike,
@@ -34,7 +34,8 @@ function call(overrides: Partial<CallTiming>): CallTiming {
     ttftMs: 2_000,
     thinkMs: 0,
     writeMs: 1_000,
-    streamChars: 6_000,
+    writeChars: 6_000,
+    thinkingStreamed: false,
     totalMs: 10_000,
     outputTokens: 2_000,
     silentReasoning: false,
@@ -63,7 +64,8 @@ test("segment machine: spans run start to end, so intra-segment stalls belong to
   applyStreamEvent(live, "thinking_delta", 40, 9_000); // 7s stall inside thinking
   applyStreamEvent(live, "thinking_end", 0, 10_000);
   assert.equal(live.thinkMs, 9_000);
-  assert.equal(live.thinkChars, 80);
+  assert.equal(live.sawThinkingStream, true);
+  assert.equal(live.writeChars, 0, "provider-dependent thinking text is not writing-token evidence");
   assert.equal(live.writeMs, 0);
 });
 
@@ -101,6 +103,8 @@ test("resolveCall: ttft, exact rate over the stream span, and prefill evidence",
   assert.equal(resolved.tokPerSec, 2_000 / 10); // output ÷ (streamEnd − firstToken)
   assert.equal(resolved.uncachedPromptTokens, 4_200); // input + cacheWrite
   assert.equal(resolved.silentReasoning, false);
+  assert.equal(resolved.writeChars, 50);
+  assert.equal(resolved.thinkingStreamed, false);
   assert.equal(resolved.writeMs, 10_000); // open segment closed at resolution
 });
 
@@ -211,17 +215,23 @@ test("detectSlowStream: collapsed rate on calls with enough output", () => {
 
 // --- calibration ----------------------------------------------------------------------------
 
-test("calibratedCharsPerToken: last eligible call wins; silent reasoning is excluded", () => {
-  assert.equal(calibratedCharsPerToken([]), DEFAULT_CHARS_PER_TOKEN);
+test("calibratedWritingCharsPerToken: uses writing tokens and rejects thinking without a positive breakdown", () => {
+  assert.equal(calibratedWritingCharsPerToken([]), DEFAULT_WRITING_CHARS_PER_TOKEN);
   const calls = [
-    call({ streamChars: 5_000, outputTokens: 2_000 }), // 2.5
-    call({ streamChars: 9_000, outputTokens: 3_000 }), // 3.0
-    call({ streamChars: 400, outputTokens: 4_000, silentReasoning: true }), // excluded: undercounts
-    call({ streamChars: 100, outputTokens: 20 }), // excluded: too little signal
+    call({ writeChars: 5_000, outputTokens: 2_000 }), // 2.5, no reasoning
+    call({ writeChars: 7_000, outputTokens: 4_000, reasoningTokens: 2_000, thinkingStreamed: true }), // 3.5
+    // Excluded: streamed thinking with no provider breakdown cannot identify writing tokens.
+    call({ writeChars: 12_000, outputTokens: 3_000, reasoningTokens: undefined, thinkingStreamed: true }),
+    // Excluded: compatible routes can normalize that missing breakdown to a contradictory zero.
+    call({ writeChars: 10_000, outputTokens: 2_500, reasoningTokens: 0, thinkingStreamed: true }),
+    call({ writeChars: 100, outputTokens: 20 }), // excluded: too little writing-token signal
   ];
-  assert.equal(calibratedCharsPerToken(calls), 3.0);
-  const modelCalls = [call({ streamChars: 5_200, outputTokens: 2_000, model: "a" }), call({ streamChars: 9_000, outputTokens: 3_000, model: "b" })];
-  assert.equal(calibratedCharsPerToken(modelCalls, "a"), 2.6);
+  assert.equal(calibratedWritingCharsPerToken(calls), 3.5);
+  const modelCalls = [
+    call({ writeChars: 5_200, outputTokens: 2_000, model: "a" }),
+    call({ writeChars: 9_000, outputTokens: 3_000, model: "b" }),
+  ];
+  assert.equal(calibratedWritingCharsPerToken(modelCalls, "a"), 2.6);
 });
 
 // --- session totals ---------------------------------------------------------------------------

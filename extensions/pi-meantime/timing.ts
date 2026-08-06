@@ -24,14 +24,14 @@ export interface LiveCall {
   lastKind?: SegmentKind;
   thinkMs: number;
   writeMs: number;
-  thinkChars: number;
+  /** Visible text and tool-argument chars; thinking text is not portable token evidence. */
   writeChars: number;
   /** The stream carried visible thinking blocks (vs silent server-side reasoning). */
   sawThinkingStream: boolean;
 }
 
 export function newLiveCall(index: number, requestAt: number): LiveCall {
-  return { index, requestAt, thinkMs: 0, writeMs: 0, thinkChars: 0, writeChars: 0, sawThinkingStream: false };
+  return { index, requestAt, thinkMs: 0, writeMs: 0, writeChars: 0, sawThinkingStream: false };
 }
 
 // pi-ai's AssistantMessageEvent types, mapped to segments. The bare "start" event is
@@ -67,10 +67,9 @@ export function applyStreamEvent(live: LiveCall, type: string, deltaLength: numb
       live.segment = { kind, startedAt: now };
       live.lastKind = kind;
     }
-    if (deltaLength > 0) {
-      if (kind === "thinking") live.thinkChars += deltaLength;
-      else live.writeChars += deltaLength;
-    }
+    // Thinking text may be verbatim, summarized or elided depending on the provider.
+    // Only writing chars can support a portable live token-rate estimate (§10.1).
+    if (kind === "writing" && deltaLength > 0) live.writeChars += deltaLength;
     return;
   }
   if (SEGMENT_END.has(type)) closeSegment(live, now);
@@ -94,7 +93,10 @@ export interface CallTiming {
   ttftMs?: number;
   thinkMs: number;
   writeMs: number;
-  streamChars: number;
+  /** Visible text and tool-argument chars used to calibrate live writing rate. */
+  writeChars: number;
+  /** Whether the stream exposed provider-dependent thinking text. */
+  thinkingStreamed: boolean;
   /** Request sent to stream end. Columns do not claim to sum to this (§10.2). */
   totalMs: number;
   outputTokens: number;
@@ -129,7 +131,8 @@ export function resolveCall(live: LiveCall, usage: UsageLike, now: number, model
     ttftMs,
     thinkMs: live.thinkMs,
     writeMs: live.writeMs,
-    streamChars: live.thinkChars + live.writeChars,
+    writeChars: live.writeChars,
+    thinkingStreamed: live.sawThinkingStream,
     totalMs: Math.max(0, now - live.requestAt),
     outputTokens: usage.output,
     reasoningTokens: usage.reasoning,
@@ -247,21 +250,30 @@ export function detectSlowStream(call: CallTiming, prior: CallTiming[], config: 
 
 // --- live-rate calibration (design language §10.1) ---------------------------------------
 
-/** Starting ratio before any resolved evidence exists; the estimate wears `~` either way. */
-export const DEFAULT_CHARS_PER_TOKEN = 3;
+/** Starting writing ratio before resolved evidence exists; the estimate wears `~`. */
+export const DEFAULT_WRITING_CHARS_PER_TOKEN = 3;
 const CALIBRATION_MIN_TOKENS = 50;
 
-/** Streamed chars over output tokens from the most recent resolved call with enough
- * signal. Silent-reasoning calls are excluded: their streamed chars undercount their
- * output tokens, which would inflate every live rate after them. */
-export function calibratedCharsPerToken(calls: CallTiming[], model?: string): number {
+/** Visible writing chars over non-reasoning output tokens from the most recent resolved
+ * call with enough signal. Streamed thinking without a positive provider reasoning
+ * breakdown cannot identify how many output tokens belonged to writing (§10.1). */
+function writingTokensForCalibration(call: CallTiming): number | undefined {
+  // Some OpenAI-compatible routes normalize a missing reasoning breakdown to zero.
+  // A visible thinking stream makes that zero contradictory, so fail closed.
+  if (call.thinkingStreamed && (call.reasoningTokens ?? 0) === 0) return undefined;
+  return Math.max(0, call.outputTokens - (call.reasoningTokens ?? 0));
+}
+
+export function calibratedWritingCharsPerToken(calls: CallTiming[], model?: string): number {
   for (let i = calls.length - 1; i >= 0; i--) {
     const call = calls[i]!;
     if (model !== undefined && call.model !== undefined && call.model !== model) continue;
-    if (call.silentReasoning || call.outputTokens < CALIBRATION_MIN_TOKENS || call.streamChars <= 0) continue;
-    return call.streamChars / call.outputTokens;
+    if (call.writeChars <= 0) continue;
+    const writingTokens = writingTokensForCalibration(call);
+    if (writingTokens === undefined || writingTokens < CALIBRATION_MIN_TOKENS) continue;
+    return call.writeChars / writingTokens;
   }
-  return DEFAULT_CHARS_PER_TOKEN;
+  return DEFAULT_WRITING_CHARS_PER_TOKEN;
 }
 
 // --- session totals (design language §10.2) ----------------------------------------------

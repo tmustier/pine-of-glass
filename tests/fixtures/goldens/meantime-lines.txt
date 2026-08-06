@@ -1,7 +1,7 @@
 === widget states ===
 [waiting] (running) ◍ waiting · 3s
 [waiting-slow] (warning) ◍ waiting · 14s · slow start (median 1.9s)
-[thinking] (running) ◍ thinking · 42s · ~50 tok/s
+[thinking] (running) ◍ thinking · 42s
 [writing] (running) ◍ writing · 8s · ~50 tok/s
 [tools] (running) ◍ tools · 31s
 [tools-parallel] (running) ◍ tools · 31s · 3 running

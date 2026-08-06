@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Meantime no longer estimates live tok/s from streamed thinking text, whose
+  relationship to reasoning tokens varies by provider. Live rate appears only while
+  writing, calibrated from visible writing chars and non-reasoning output tokens.
 - Traceline no longer replaces the TUI's `requestRender` method. It discovers new rows
   after Pi lifecycle events, captures write pre-images through `tool_call`, and uses
   Pi's stable TUI reference only to request redraws.

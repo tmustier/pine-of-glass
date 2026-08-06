@@ -26,8 +26,8 @@ export interface WidgetSnapshot {
   openTools: number;
   /** Union of completed and open tool intervals in the current phase. */
   toolElapsedMs: number;
-  /** Live-rate calibration ratio; the estimate wears `~` regardless (§10.1). */
-  charsPerToken: number;
+  /** Live writing-rate calibration ratio; the estimate wears `~` (§10.1). */
+  writingCharsPerToken: number;
   /** Session baseline for flagging an anomalous wait mid-stream, when one exists. */
   slowStartBar?: { medianMs: number; thresholdMs: number };
 }
@@ -39,7 +39,7 @@ export interface WidgetLine {
 
 const LIVE_RATE_MIN_MS = 2_000;
 
-function liveRatePart(chars: number, ms: number, charsPerToken: number): string {
+function liveWritingRatePart(chars: number, ms: number, charsPerToken: number): string {
   if (ms < LIVE_RATE_MIN_MS || chars <= 0 || charsPerToken <= 0) return "";
   return `${SEP}${formatRate(chars / charsPerToken / (ms / 1000))}`;
 }
@@ -63,10 +63,12 @@ export function tempoWidget(snap: WidgetSnapshot): WidgetLine | undefined {
     const kind = live.segment?.kind ?? live.lastKind ?? "writing";
     const openMs = live.segment ? Math.max(0, snap.now - live.segment.startedAt) : 0;
     const ms = (kind === "thinking" ? live.thinkMs : live.writeMs) + openMs;
-    const chars = kind === "thinking" ? live.thinkChars : live.writeChars;
+    const rate = kind === "writing"
+      ? liveWritingRatePart(live.writeChars, ms, snap.writingCharsPerToken)
+      : "";
     return {
       tone: "running",
-      text: `${kind}${SEP}${formatDuration(ms)}${liveRatePart(chars, ms, snap.charsPerToken)}`,
+      text: `${kind}${SEP}${formatDuration(ms)}${rate}`,
     };
   }
   if (snap.openTools > 0) {

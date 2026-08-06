@@ -9,7 +9,7 @@ import {
   applyStreamEvent,
   attachPhase,
   baselineFor,
-  calibratedCharsPerToken,
+  calibratedWritingCharsPerToken,
   detectSlowStart,
   detectSlowStream,
   liveToolWallClock,
@@ -29,8 +29,8 @@ import {
  *
  * pi's footer already *counts* elapsed time; meantime *explains* it:
  *   1. "Is it thinking, or stuck?"  → a live tempo line above the editor decomposing the
- *      current wait: waiting (no first token yet) / thinking / writing (with a ~tok/s
- *      estimate) / tools, hidden when the loop is idle.
+ *      current wait: waiting (no first token yet) / thinking / writing (with a
+ *      visible-output ~tok/s estimate) / tools, hidden when the loop is idle.
  *   2. "Why was that one slow?"     → anomaly notices against the session's own rolling
  *      per-model median: slow starts (with prefill named as cause when usage proves it)
  *      and collapsed stream rates. Silence when healthy.
@@ -39,7 +39,8 @@ import {
  *
  * All durations are event-boundary observations from this process (design language
  * §10.1); resolved tok/s is exact provider usage over the observed stream span; live
- * rates are estimates and wear `~`. Display is UI-only: nothing meantime renders enters
+ * writing rate is estimated and wears `~`, while provider-dependent thinking text
+ * supports no portable rate. Display is UI-only: nothing meantime renders enters
  * LLM context, session entries, or exports, and nothing is reconstructed from restored
  * session history (message timestamps cannot yield TTFT or segment splits).
  */
@@ -190,7 +191,7 @@ function updateWidget(now = Date.now()): void {
     live: s.live,
     openTools: s.openTools.size,
     toolElapsedMs: liveToolWallClock(s.toolIntervals, s.openTools.values(), now),
-    charsPerToken: calibratedCharsPerToken(s.calls, s.currentModel),
+    writingCharsPerToken: calibratedWritingCharsPerToken(s.calls, s.currentModel),
     slowStartBar,
   });
   const text = line ? tempoLine(line.tone, line.text) : "";
