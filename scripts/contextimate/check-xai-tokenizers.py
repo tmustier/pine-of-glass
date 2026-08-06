@@ -17,8 +17,6 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Protocol
 
-sys.dont_write_bytecode = True
-
 from tokenizer_corpus import CORPUS_REVISION, pinned_corpus
 
 DEFAULT_MODELS = [

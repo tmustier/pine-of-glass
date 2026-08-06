@@ -56,6 +56,8 @@ Live calls always require `--provider`, because wire compatibility does not iden
 
 With at least 2 tools, the checker removes the shared tool-block overhead before suggesting Contextimate denominators. Tests cover request construction and this calculation. Network execution remains manual.
 
+The calibration checks below are manual. They add no runtime dependencies or startup network calls, and make no generation requests.
+
 ## Open tokenizer calibration
 
 Reproduce the Kimi, GLM, Cohere, DeepSeek and Qwen raw-text profiles from a source checkout:
@@ -65,7 +67,7 @@ uv run --with 'huggingface-hub==1.26.0' --with 'tokenizers==0.22.2' \
   --with 'tiktoken==0.13.0' scripts/contextimate/study-open-tokenizers.py --json
 ```
 
-The script pins every model revision and tokenizer hash. It reads a public corpus from git revision `556dd115a77839773e143afc0d982afa59eb7479`. Later code changes cannot move the baseline silently. The script downloads tokenizer artifacts and makes no generation calls. It reads Kimi's pinned rank file and configuration directly. For DeepSeek and Qwen, it also checks the ordinary-text BPE content and exact corpus token stream for every grouped artifact. It executes no repository code.
+The script pins each revision and tokenizer hash. It reads the public corpus at git revision `556dd115a77839773e143afc0d982afa59eb7479`, so later changes cannot move the baseline. It verifies Kimi's rank file and configuration directly. For DeepSeek and Qwen, it checks the BPE content and corpus token stream of every artifact. It does not execute downloaded code.
 
 ## Gemini count fingerprints
 
@@ -75,20 +77,18 @@ Gemini exposes counts through the official `countTokens` endpoint. Reproduce the
 GEMINI_API_KEY=... scripts/contextimate/check-gemini-tokenizers.py --json
 ```
 
-The checker sends each public corpus fixture as one user text part. Its 17 default IDs are the countable Gemini 2.x and 3.x models represented in Pi's current catalog. It groups models only when all returned counts match. Use repeated `--model` options to check another exact model ID. The script makes no generation calls and never prints the key or source text.
-
-This is a live, date-stamped check. Google can retire preview model IDs, so the checked-in evidence remains the record for the measured revisions.
+The checker sends each fixture as one user text part. It groups its 17 default model IDs only when all counts match. Repeat `--model` to check another exact ID. It never prints the key or source text. Google can retire preview IDs, so the checked-in evidence preserves the measured result.
 
 ## Relay alias verification
 
-OpenRouter and Vercel publish the concrete model behind each relay ID. Verify the profiled DeepSeek and Qwen routes against those public catalogs:
+Verify profiled DeepSeek and Qwen routes against OpenRouter and Vercel's public catalogs:
 
 ```bash
 npm run link-pi
 scripts/contextimate/check-relay-tokenizer-routes.py
 ```
 
-The checker reads model IDs from the installed Pi AI catalog and the checked-in route evidence. It compares OpenRouter's canonical and Hugging Face IDs and Vercel's full model names. It needs no API key, makes no generation calls and runs only when invoked.
+The checker compares installed Pi routes with OpenRouter's Hugging Face IDs and Vercel's full model names. It needs no API key.
 
 ## xAI tokenizer fingerprints
 
@@ -102,5 +102,3 @@ uv run --with 'xai-sdk==1.17.0' \
 It reads `XAI_API_KEY`, or a fresh xAI OAuth login from Pi. The fixed public corpus covers prose, code, multilingual text, whitespace, control-like strings and deterministic random text. Models join one group only when every token record matches.
 
 Add `--contextimate-corpus` to calculate divisors from the pinned open-tokenizer corpus. Add `--file <path>` for another local corpus, but never send sensitive files. Use repeated `--model` options to inspect aliases. The script reports the resolved model. It never prints credentials or source text.
-
-This is an explicit live diagnostic. It makes no generation calls, and Contextimate never calls it at startup.

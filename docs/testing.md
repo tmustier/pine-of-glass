@@ -124,14 +124,9 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   earlier. `parseContextimateConfig` drops non-positive JSON denominators before
   resolution; `cleanDenominator` remains the defensive pure boundary for direct patches.
   This is user-configurable surface; precedence bugs misprice every row.
-- **Built-in rule matching**: boundary table: `claude-opus-4-8`, Fable 5 and Opus 5
-  → Claude 4.7+ rule; explicit Radius/OpenRouter relays keep
-  that tokenizer while Bedrock keeps its payload shape; `claude-sonnet-4-5` → 4.5/4.6
-  rule; other Anthropic → generic; counted Gemini and pinned Kimi, GLM, Cohere, Grok,
-  DeepSeek and Qwen IDs → their measured raw-text profiles through each supported
-  route; dynamic and unverified aliases → fallback; `openai-codex` vs `openai` vs
-  `mistral` vs `gemini`
-  vs `bedrock` routing by provider/API.
+- **Built-in rule matching**: boundary tables map explicit model IDs to measured
+  families and leave dynamic or unverified aliases on the fallback. Separate cases pin
+  Claude family boundaries and tool payload routing by provider and API.
 - **Tool payload shaping**: for one frozen `ToolSummary` fixture, the exact JSON emitted
   per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`),
   the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to

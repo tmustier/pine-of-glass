@@ -14,9 +14,7 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from importlib.util import find_spec
 
-sys.dont_write_bytecode = True
-
-from tokenizer_corpus import CORPUS_FILES, CORPUS_REVISION, pinned_corpus
+from tokenizer_corpus import CORPUS_FILES, CORPUS_REVISION, count_summary, pinned_corpus
 
 
 @dataclass(frozen=True)
@@ -524,7 +522,6 @@ def check_artifact(
             raise RuntimeError(
                 f"{spec.repository} tokenizer BPE hash changed: {bpe_hash}"
             )
-        result["bpeSha256"] = bpe_hash
     if spec.pattern_sha256 is not None:
         source = hf_hub_download(
             spec.repository, "tokenization_kimi.py", revision=spec.revision
@@ -597,19 +594,6 @@ def token_stream_sha256(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def aggregate(
-    samples: dict[str, dict[str, float | int]], names: list[str]
-) -> dict[str, float | int]:
-    chars = sum(int(samples[name]["chars"]) for name in names)
-    tokens = sum(int(samples[name]["tokens"]) for name in names)
-    return {
-        "chars": chars,
-        "tokens": tokens,
-        "charsPerToken": round(chars / tokens, 4),
-        "recommendedDenominator": round(chars / tokens, 1),
-    }
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Count the repository's public calibration corpus with pinned open tokenizers.",
@@ -673,11 +657,15 @@ def main() -> None:
             "profile": spec.label,
             "familyArtifacts": artifacts,
             "samples": samples,
-            "text": aggregate(samples, ["instructions-core", "instructions-design"]),
-            "session": aggregate(samples, ["session-code", "session-tests"]),
+            "text": count_summary(
+                samples, ["instructions-core", "instructions-design"]
+            ),
+            "session": count_summary(samples, ["session-code", "session-tests"]),
         }
         if spec.representative.filename == "tiktoken.model":
             row["configurationSha256"] = KIMI_CONFIG_HASH
+        if spec.representative.bpe_sha256 is not None:
+            row["bpeSha256"] = spec.representative.bpe_sha256
         if spec.token_stream_sha256 is not None:
             row["tokenStreamSha256"] = spec.token_stream_sha256
         rows.append(row)

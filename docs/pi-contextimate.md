@@ -51,7 +51,7 @@ A second study on 5 August 2026 covered Gemini, Kimi, GLM, Cohere, Grok, DeepSee
 | Qwen 2.5 and 3 | 4.0 | 3.8 |
 | Qwen 3.5 | 3.9 | 3.5 |
 
-These profiles cover visible text only. Dynamic aliases and unverified Gemini, GLM Turbo, DeepSeek and Qwen variants use the existing generic estimate or fallback until routing identifies a counted model. The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) contains the count fingerprints, tokenizer hashes, token-stream fingerprints, xAI fingerprints and family boundaries.
+These profiles cover visible text only. Dynamic aliases and unverified variants keep the generic estimate or fallback. The [tokenizer coverage audit](./contextimate-tokenizer-coverage-audit-2026-08-05.md) records the evidence and family boundaries.
 
 ## Tool schemas
 

@@ -367,68 +367,57 @@
           {
             "repository": "deepseek-ai/DeepSeek-V3",
             "revision": "e815299b0bcbac849fa540c768ef21845365c9eb",
-            "sha256": "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V3-0324",
             "revision": "e9b33add76883f293d6bf61f6bd89b497e80e335",
-            "sha256": "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "621ac2e32d0dba658404412318818aaa8ce8cda492e59830109d8da6b517fb41"
           },
           {
             "repository": "deepseek-ai/DeepSeek-R1",
             "revision": "56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad",
-            "sha256": "ecb6f9fc369894346f0511f4074ca75cee5cd5f3b06d02f1ba35fcd39f8e121d",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "ecb6f9fc369894346f0511f4074ca75cee5cd5f3b06d02f1ba35fcd39f8e121d"
           },
           {
             "repository": "deepseek-ai/DeepSeek-R1-0528",
             "revision": "4236a6af538feda4548eca9ab308586007567f52",
-            "sha256": "ecb6f9fc369894346f0511f4074ca75cee5cd5f3b06d02f1ba35fcd39f8e121d",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "ecb6f9fc369894346f0511f4074ca75cee5cd5f3b06d02f1ba35fcd39f8e121d"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V3.1",
             "revision": "c0781d039fb7a1ba2abc4add0bdc293e92d2b8db",
-            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V3.1-Terminus",
             "revision": "19510d6dc61f79dbd925bd51ee8a9081c509a4b6",
-            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V3.2-Exp",
             "revision": "194c67e12b1b0d6df0ef373ddcf215bc84027409",
-            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "32b34a41212e92f62e859cbbea121ae705a1fabbf157d9acf22d134ecd8dcf70"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V3.2",
             "revision": "a7e62ac04ecb2c0a54d736dc46601c5606cf10a6",
-            "sha256": "cd050be35cae877f8f0aa847f45aa87e23835a56ca32b29b28545597852784e5",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "cd050be35cae877f8f0aa847f45aa87e23835a56ca32b29b28545597852784e5"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V4-Flash",
             "revision": "60d8d70770c6776ff598c94bb586a859a38244f1",
-            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V4-Flash-0731",
             "revision": "7872f01b1d1fe23eabc4c98b48bffcef5a386062",
-            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf"
           },
           {
             "repository": "deepseek-ai/DeepSeek-V4-Pro",
             "revision": "b5968e9190ef611bbf34a7229255be88a0e937c1",
-            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
-            "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
+            "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf"
           }
         ],
         "samples": {
@@ -470,7 +459,8 @@
           "charsPerToken": 3.6208,
           "recommendedDenominator": 3.6
         },
-        "tokenStreamSha256": "fc92ce91342c67f51ff9f576b966759714efe91fe088124cd386c17eb51b2abd"
+        "tokenStreamSha256": "fc92ce91342c67f51ff9f576b966759714efe91fe088124cd386c17eb51b2abd",
+        "bpeSha256": "22acf98589f19423735aafc33361a4d1d0273a05fd8b9b8be74023afb6b8c882"
       },
       {
         "profile": "Qwen 2.5/3",
@@ -478,152 +468,127 @@
           {
             "repository": "Qwen/Qwen2.5-7B-Instruct",
             "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
-            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
           },
           {
             "repository": "Qwen/Qwen2.5-72B-Instruct",
             "revision": "495f39366efef23836d0cfae4fbe635880d2be31",
-            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
           },
           {
             "repository": "Qwen/Qwen2.5-Coder-7B-Instruct",
             "revision": "c03e6d358207e414f1eca0bb1891e29f1db0e242",
-            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
           },
           {
             "repository": "Qwen/Qwen2.5-VL-7B-Instruct",
             "revision": "cc594898137f460bfe9f0759e9844b3ce807cfb5",
-            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
           },
           {
             "repository": "Qwen/Qwen3-8B",
             "revision": "b968826d9c46dd6066d109eabc6255188de91218",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-14B",
             "revision": "40c069824f4251a91eefaf281ebe4c544efd3e18",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-30B-A3B",
             "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-32B",
             "revision": "9216db5781bf21249d130ec9da846c4624c16137",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-235B-A22B",
             "revision": "8efa61729e24bd65b1d152b5ab5409052aa80e65",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-30B-A3B-Instruct-2507",
             "revision": "0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-235B-A22B-Instruct-2507",
             "revision": "ac9c66cc9b46af7306746a9250f23d47083d689e",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-Next-80B-A3B-Instruct",
             "revision": "9c7f2fbe84465e40164a94cc16cd30b6999b0cc7",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-Next-80B-A3B-Thinking",
             "revision": "e502dd4100cc68c0de57643fd4317ec93a128670",
-            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
           },
           {
             "repository": "Qwen/Qwen3-30B-A3B-Thinking-2507",
             "revision": "144afc2f379b542fdd4e85a1fcd5e1f79112d95d",
-            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d"
           },
           {
             "repository": "Qwen/Qwen3-235B-A22B-Thinking-2507",
             "revision": "6cbffae6d8e28b986a6b17bd36f42f9fa0f1f0a5",
-            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d"
           },
           {
             "repository": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
             "revision": "b2cff646eb4bb1d68355c01b18ae02e7cf42d120",
-            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d"
           },
           {
             "repository": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
             "revision": "9d90cf8fca1bf7b7acca42d3fc9ae694a2194069",
-            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d"
           },
           {
             "repository": "Qwen/Qwen3-Coder-Next",
             "revision": "a7fbcb5c0e12d62a448eaa0e260346bf5dcc0feb",
-            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "19564a48c4f71a2a1b937cce34c737a1e662b171c5f5d7edf641a15cd896f07d"
           },
           {
             "repository": "Qwen/Qwen3-VL-8B-Instruct",
             "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",
-            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
           },
           {
             "repository": "Qwen/Qwen3-VL-8B-Thinking",
             "revision": "92f3c4b4feadd3a016ef468d103bb5f58b2a2c6b",
-            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
           },
           {
             "repository": "Qwen/Qwen3-VL-30B-A3B-Instruct",
             "revision": "9c4b90e1e4ba969fd3b5378b57d966d725f1b86c",
-            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
           },
           {
             "repository": "Qwen/Qwen3-VL-30B-A3B-Thinking",
             "revision": "d0ed0380729be07a546fdefafbb4fe411f341e92",
-            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
           },
           {
             "repository": "Qwen/Qwen3-VL-32B-Instruct",
             "revision": "0cfaf48183f594c314753d30a4c4974bc75f3ccb",
-            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
           },
           {
             "repository": "Qwen/Qwen3-VL-235B-A22B-Instruct",
             "revision": "710c13861be6c466e66de3f484069440b8f31389",
-            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
           },
           {
             "repository": "Qwen/Qwen3-VL-235B-A22B-Thinking",
             "revision": "6664affde68449468deb7527186455c7450c13c0",
-            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
-            "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
+            "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
           }
         ],
         "samples": {
@@ -665,7 +630,8 @@
           "charsPerToken": 3.8214,
           "recommendedDenominator": 3.8
         },
-        "tokenStreamSha256": "0cbd8118040023d731f5ccc639adb182bc553575a5d13c86e1c49929a59fb0ea"
+        "tokenStreamSha256": "0cbd8118040023d731f5ccc639adb182bc553575a5d13c86e1c49929a59fb0ea",
+        "bpeSha256": "6e2c42439170bc898d8412d52f3c47361ec4bd134c1cc008fbdd86ac99259a8b"
       },
       {
         "profile": "Qwen 3.5",
@@ -673,32 +639,27 @@
           {
             "repository": "Qwen/Qwen3.5-9B",
             "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
-            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
-            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
           },
           {
             "repository": "Qwen/Qwen3.5-27B",
             "revision": "fc05daec18b0a78c049392ed2e771dde82bdf654",
-            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
-            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
           },
           {
             "repository": "Qwen/Qwen3.5-35B-A3B",
             "revision": "59d61f3ce65a6d9863b86d2e96597125219dc754",
-            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
-            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
           },
           {
             "repository": "Qwen/Qwen3.5-122B-A10B",
             "revision": "dc4d348443bc740c68e2d77492492c11606384d5",
-            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
-            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
           },
           {
             "repository": "Qwen/Qwen3.5-397B-A17B",
             "revision": "8472618112abcbd45acbcdc58436aff4233c23f7",
-            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
-            "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
+            "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
           }
         ],
         "samples": {
@@ -740,7 +701,8 @@
           "charsPerToken": 3.5317,
           "recommendedDenominator": 3.5
         },
-        "tokenStreamSha256": "1b9ddcbd8e88d46091ec9398b4dc9e71e52369581c9701c17f527ad80ee943a1"
+        "tokenStreamSha256": "1b9ddcbd8e88d46091ec9398b4dc9e71e52369581c9701c17f527ad80ee943a1",
+        "bpeSha256": "e23b06565b8e5ec64f5ab300b6c2a2c3ed3f5f8acb16b02f5f03bd811bbb8317"
       }
     ]
   },
@@ -1042,45 +1004,31 @@
       {
         "family": "MiniMax",
         "catalogEntries": 41,
-        "providerCatalogs": 13,
-        "modelChanges30Days": 0,
-        "modelChanges90Days": 0,
-        "decision": "exclude"
+        "providerCatalogs": 13
       },
       {
         "family": "Mistral",
         "catalogEntries": 73,
-        "providerCatalogs": 6,
-        "modelChanges30Days": 0,
-        "modelChanges90Days": 0,
-        "decision": "exclude"
+        "providerCatalogs": 6
       },
       {
         "family": "Llama",
         "catalogEntries": 36,
-        "providerCatalogs": 8,
-        "modelChanges30Days": 0,
-        "modelChanges90Days": 0,
-        "decision": "exclude"
+        "providerCatalogs": 8
       },
       {
         "family": "Gemma",
         "catalogEntries": 19,
-        "providerCatalogs": 9,
-        "modelChanges30Days": 0,
-        "modelChanges90Days": 0,
-        "decision": "exclude"
+        "providerCatalogs": 9
       },
       {
         "family": "MiMo",
         "catalogEntries": 25,
-        "providerCatalogs": 9,
-        "modelChanges30Days": 0,
-        "modelChanges90Days": 0,
-        "decision": "exclude"
+        "providerCatalogs": 9
       }
     ],
-    "conclusion": "Catalog availability alone did not justify new profiles without any recent local use."
+    "matchingModelChanges": 0,
+    "decision": "Keep these families on the fallback until use justifies calibration."
   },
   "geminiCountTokens": {
     "corpusVersion": "2026-08-05.1",
@@ -1108,76 +1056,6 @@
     },
     "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/{model}:countTokens",
     "requestCoverage": "one user text part per corpus fixture",
-    "models": [
-      {
-        "model": "gemini-2.0-flash",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-2.0-flash-lite",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-2.5-flash",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-2.5-flash-lite",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-2.5-pro",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-2.5-computer-use-preview-10-2025",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3-flash-preview",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3-pro-preview",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3-pro-image",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.1-flash-lite",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.1-flash-lite-preview",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.1-flash-lite-image",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.1-pro-preview",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.1-pro-preview-customtools",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.5-flash",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.5-flash-lite",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      },
-      {
-        "model": "gemini-3.6-flash",
-        "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e"
-      }
-    ],
     "groups": [
       {
         "countFingerprint": "e739e7b896931133d016a86325761fbfc61dbff2dce557f406e3d0a41151253e",
@@ -1244,32 +1122,14 @@
   },
   "geminiUnsupportedCountAttempts": {
     "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/{model}:countTokens",
-    "models": [
-      {
-        "model": "gemini-2.5-pro-preview",
-        "status": 404,
-        "reason": "not listed or not supported for countTokens by the official Developer API"
-      },
-      {
-        "model": "gemini-2.5-pro-preview-05-06",
-        "status": 404,
-        "reason": "not listed or not supported for countTokens by the official Developer API"
-      },
-      {
-        "model": "gemini-3-flash",
-        "status": 404,
-        "reason": "not listed or not supported for countTokens by the official Developer API"
-      },
-      {
-        "model": "gemini-3.1-pro",
-        "status": 404,
-        "reason": "not listed or not supported for countTokens by the official Developer API"
-      },
-      {
-        "model": "gemini-3.1-flash-live-preview",
-        "status": 404,
-        "reason": "not listed or not supported for countTokens by the official Developer API"
-      }
+    "status": 404,
+    "reason": "not listed or not supported for countTokens by the official Developer API",
+    "modelIds": [
+      "gemini-2.5-pro-preview",
+      "gemini-2.5-pro-preview-05-06",
+      "gemini-3-flash",
+      "gemini-3.1-pro",
+      "gemini-3.1-flash-live-preview"
     ]
   },
   "geminiPiRoutes": {
@@ -1865,27 +1725,22 @@
         "routes": [
           {
             "id": "deepseek/deepseek-chat-v3-0324",
-            "canonicalSlug": "deepseek/deepseek-chat-v3-0324",
             "huggingFaceId": "deepseek-ai/DeepSeek-V3-0324"
           },
           {
             "id": "deepseek/deepseek-chat-v3.1",
-            "canonicalSlug": "deepseek/deepseek-chat-v3.1",
             "huggingFaceId": "deepseek-ai/DeepSeek-V3.1"
           },
           {
             "id": "deepseek/deepseek-r1",
-            "canonicalSlug": "deepseek/deepseek-r1",
             "huggingFaceId": "deepseek-ai/DeepSeek-R1"
           },
           {
             "id": "deepseek/deepseek-r1-0528",
-            "canonicalSlug": "deepseek/deepseek-r1-0528",
             "huggingFaceId": "deepseek-ai/DeepSeek-R1-0528"
           },
           {
             "id": "deepseek/deepseek-v3.1-terminus",
-            "canonicalSlug": "deepseek/deepseek-v3.1-terminus",
             "huggingFaceId": "deepseek-ai/DeepSeek-V3.1-Terminus"
           },
           {
@@ -1895,7 +1750,6 @@
           },
           {
             "id": "deepseek/deepseek-v3.2-exp",
-            "canonicalSlug": "deepseek/deepseek-v3.2-exp",
             "huggingFaceId": "deepseek-ai/DeepSeek-V3.2-Exp"
           },
           {
@@ -1910,12 +1764,10 @@
           },
           {
             "id": "qwen/qwen-2.5-72b-instruct",
-            "canonicalSlug": "qwen/qwen-2.5-72b-instruct",
             "huggingFaceId": "Qwen/Qwen2.5-72B-Instruct"
           },
           {
             "id": "qwen/qwen-2.5-7b-instruct",
-            "canonicalSlug": "qwen/qwen-2.5-7b-instruct",
             "huggingFaceId": "Qwen/Qwen2.5-7B-Instruct"
           },
           {
@@ -1935,7 +1787,6 @@
           },
           {
             "id": "qwen/qwen3-235b-a22b-thinking-2507",
-            "canonicalSlug": "qwen/qwen3-235b-a22b-thinking-2507",
             "huggingFaceId": "Qwen/Qwen3-235B-A22B-Thinking-2507"
           },
           {
@@ -1945,12 +1796,10 @@
           },
           {
             "id": "qwen/qwen3-30b-a3b-instruct-2507",
-            "canonicalSlug": "qwen/qwen3-30b-a3b-instruct-2507",
             "huggingFaceId": "Qwen/Qwen3-30B-A3B-Instruct-2507"
           },
           {
             "id": "qwen/qwen3-30b-a3b-thinking-2507",
-            "canonicalSlug": "qwen/qwen3-30b-a3b-thinking-2507",
             "huggingFaceId": "Qwen/Qwen3-30B-A3B-Thinking-2507"
           },
           {
@@ -1965,7 +1814,6 @@
           },
           {
             "id": "qwen/qwen3-coder-30b-a3b-instruct",
-            "canonicalSlug": "qwen/qwen3-coder-30b-a3b-instruct",
             "huggingFaceId": "Qwen/Qwen3-Coder-30B-A3B-Instruct"
           },
           {
@@ -1985,37 +1833,30 @@
           },
           {
             "id": "qwen/qwen3-vl-235b-a22b-instruct",
-            "canonicalSlug": "qwen/qwen3-vl-235b-a22b-instruct",
             "huggingFaceId": "Qwen/Qwen3-VL-235B-A22B-Instruct"
           },
           {
             "id": "qwen/qwen3-vl-235b-a22b-thinking",
-            "canonicalSlug": "qwen/qwen3-vl-235b-a22b-thinking",
             "huggingFaceId": "Qwen/Qwen3-VL-235B-A22B-Thinking"
           },
           {
             "id": "qwen/qwen3-vl-30b-a3b-instruct",
-            "canonicalSlug": "qwen/qwen3-vl-30b-a3b-instruct",
             "huggingFaceId": "Qwen/Qwen3-VL-30B-A3B-Instruct"
           },
           {
             "id": "qwen/qwen3-vl-30b-a3b-thinking",
-            "canonicalSlug": "qwen/qwen3-vl-30b-a3b-thinking",
             "huggingFaceId": "Qwen/Qwen3-VL-30B-A3B-Thinking"
           },
           {
             "id": "qwen/qwen3-vl-32b-instruct",
-            "canonicalSlug": "qwen/qwen3-vl-32b-instruct",
             "huggingFaceId": "Qwen/Qwen3-VL-32B-Instruct"
           },
           {
             "id": "qwen/qwen3-vl-8b-instruct",
-            "canonicalSlug": "qwen/qwen3-vl-8b-instruct",
             "huggingFaceId": "Qwen/Qwen3-VL-8B-Instruct"
           },
           {
             "id": "qwen/qwen3-vl-8b-thinking",
-            "canonicalSlug": "qwen/qwen3-vl-8b-thinking",
             "huggingFaceId": "Qwen/Qwen3-VL-8B-Thinking"
           },
           {
