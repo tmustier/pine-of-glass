@@ -719,13 +719,17 @@ surface users feel most and can verify least.
   typed content event) and bundles network, queue, and prefill. It is one number on
   purpose: the split is not observable, so no split is claimed. Prefill work is
   still nameable as a cause from usage evidence (uncached prompt tokens)
-- rates wear the §4 grammar: a live rate is estimated from streamed chars through a
-  chars-per-token ratio and wears `~` in progressive tense; a resolved rate is
-  provider output tokens over the observed stream span, exact, past tense. The live
-  ratio self-calibrates: each resolved call's streamed chars over output tokens
-  replaces the default for that model. Calls with silent reasoning are excluded from
-  calibration and show no resolved rate: their streamed chars undercount output and
-  their hidden generation has no observable start boundary
+- rates wear the §4 grammar: a live writing rate is estimated from streamed writing
+  chars through a chars-per-token ratio and wears `~` in progressive tense; thinking
+  shows no live rate because its streamed text may be verbatim, summarized or elided
+  depending on the provider, so it is not portable token evidence. A resolved rate is
+  provider output tokens over the observed whole-call stream span, exact, past tense.
+  The live writing ratio self-calibrates
+  from resolved writing chars over non-reasoning output tokens. A call with streamed
+  thinking but no positive provider reasoning-token breakdown cannot calibrate that
+  ratio; some compatible routes normalize a missing breakdown to zero.
+  Calls with silent reasoning show no resolved rate: their hidden generation has no
+  observable start boundary
 - a silent pre-text gap is `waiting`, never `thinking`, until usage confirms
   reasoning tokens (§7: no definite words on soft evidence). A resolved call whose
   usage reports reasoning tokens but whose stream carried no thinking blocks marks
@@ -751,8 +755,8 @@ bucket, not noise; it is often the session's punchline.
 ### 10.3 Surfaces
 
 - the live widget is one `◍` line above the editor showing the current phase and its
-  elapsed time: `waiting · 12s`, `thinking · 42s · ~55 tok/s`,
-  `writing · 8s · ~48 tok/s`, `tools · 31s · 2 running`. It renders in running ink,
+  elapsed time: `waiting · 12s`, `thinking · 42s`, `writing · 8s · ~48 tok/s`,
+  `tools · 31s · 2 running`. It renders in running ink,
   turning warning once the wait passes the slow-start bar, and hides when the loop
   is idle (principle 6: pi's footer already counts elapsed time; the widget exists
   to decompose an active wait, not to be a clock)

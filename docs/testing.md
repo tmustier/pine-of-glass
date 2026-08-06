@@ -190,8 +190,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   live or resolved tool time, and harness duration is only attached when a next request
   supplies an end boundary.
 - **Per-model baselines and calibration**: medians filter on provider-qualified model
-  identity, need the configured sample floor, and exclude silent-reasoning calls from
-  live-rate calibration.
+  identity and need the configured sample floor. Live thinking shows no rate;
+  writing-rate calibration uses visible writing chars over non-reasoning output tokens
+  and rejects streamed-thinking calls without a positive provider reasoning-token
+  breakdown, including compatible routes that normalize a missing breakdown to zero.
 - **Session totals and config parsing**: open idle time contributes to idle, active is
   the watched span minus idle, and malformed boundary values are ignored.
 - **Feature-flag registration**: the default config registers no hooks or command;
