@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { captureWriteSnapshot } = internals;
+const { captureWriteCallSnapshot } = internals;
 
 type AssistantContentBlock = { type: string; [key: string]: unknown };
 
@@ -80,7 +80,8 @@ export function completedWriteRow(cwd: string, path: string, content: string): T
     callRendererComponent: { render: () => [`write ${path}`] },
   } as ToolRowLike;
 
-  captureWriteSnapshot(row);
+  const toolCall = toolCallFor(row);
+  captureWriteCallSnapshot(toolCall.id, toolCall.arguments, cwd);
   const absolutePath = resolve(cwd, path);
   mkdirSync(dirname(absolutePath), { recursive: true });
   writeFileSync(absolutePath, content, "utf8");

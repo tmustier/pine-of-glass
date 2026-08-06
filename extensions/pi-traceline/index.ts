@@ -46,7 +46,8 @@ import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, read
 import { recordFacts, type RecordTone } from "./records.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
 import {
-  captureWriteSnapshot,
+  captureWriteCallSnapshot,
+  clearWriteCallSnapshots,
   diffStatsFromContents,
   diffStatsFromText,
   mutationDiffStats,
@@ -54,7 +55,6 @@ import {
   type DiffStats,
 } from "./write-diff.ts";
 import { dedupeThinkingLabels } from "./thinking-preview.ts";
-import { patchRequestRender } from "./request-render.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 
 /**
@@ -230,11 +230,12 @@ function isSpacerRow(comp: unknown): boolean {
   return typeof row.setLines === "function" && typeof row.lines === "number" && !("text" in comp);
 }
 
-function suppressThinkingToggleStatus(): void {
+function suppressThinkingToggleStatus(): boolean {
   const sibs = chatChildren();
-  if (!sibs || sibs.length === 0 || !isThinkingToggleStatusRow(sibs[sibs.length - 1])) return;
+  if (!sibs || sibs.length === 0 || !isThinkingToggleStatusRow(sibs[sibs.length - 1])) return false;
   sibs.pop();
   if (sibs.length > 0 && isSpacerRow(sibs[sibs.length - 1])) sibs.pop();
+  return true;
 }
 
 // --- one-line rendering ---------------------------------------------------------------
@@ -1107,13 +1108,6 @@ function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string
 }
 
 function oneLine(comp: ToolRowLike, width: number): string {
-  if (toolLabel(comp?.toolName) === "write" && !comp?.result) {
-    try {
-      captureWriteSnapshot(comp);
-    } catch {
-      /* keep one-line rendering best-effort */
-    }
-  }
   const rows = blockToolRows(comp);
   const facts = blockFacts(rows);
   const available = traceRowAvailable(width);
@@ -1509,47 +1503,8 @@ function currentPatchInstalled(): boolean {
   return g.__tracelinePatchVersion === TOOL_ROW_PATCH_VERSION;
 }
 
-// The write pre-image is captured at three seams, deduped by sameWriteInput: on
-// setArgsComplete (streamed args settle — the earliest safe point), on
-// markExecutionStarted (the last hook before the tool replaces the file), and at
-// render time in oneLine for a row that streamed in before this patch landed — the
-// session's first write is what installs the prototype patch, from its own
-// requestRender tick.
-function patchWriteSnapshotHooks(proto: ToolRowPrototypeLike): void {
-  if (!proto || proto.__tracelineWriteSnapshotPatchVersion === TOOL_ROW_PATCH_VERSION) return;
-
-  const originalSetArgsComplete = proto.__tracelineOriginalSetArgsComplete ?? proto.setArgsComplete;
-  if (typeof originalSetArgsComplete === "function") {
-    proto.__tracelineOriginalSetArgsComplete = originalSetArgsComplete;
-    proto.setArgsComplete = function (this: ToolRowDataLike, ...args: unknown[]) {
-      try {
-        captureWriteSnapshot(this);
-      } catch {
-        /* never let write diff snapshots break tool execution */
-      }
-      return originalSetArgsComplete.apply(this, args);
-    };
-  }
-
-  const originalMarkExecutionStarted = proto.__tracelineOriginalMarkExecutionStarted ?? proto.markExecutionStarted;
-  if (typeof originalMarkExecutionStarted === "function") {
-    proto.__tracelineOriginalMarkExecutionStarted = originalMarkExecutionStarted;
-    proto.markExecutionStarted = function (this: ToolRowDataLike, ...args: unknown[]) {
-      try {
-        captureWriteSnapshot(this);
-      } catch {
-        /* never let write diff snapshots break tool execution */
-      }
-      return originalMarkExecutionStarted.apply(this, args);
-    };
-  }
-
-  proto.__tracelineWriteSnapshotPatchVersion = TOOL_ROW_PATCH_VERSION;
-}
-
 function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
   if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
-  patchWriteSnapshotHooks(proto);
   const original = proto.__tracelineOriginalRender ?? proto.render;
   proto.__tracelineOriginalRender = original;
   proto.render = function (this: ToolRowLike, width: number) {
@@ -1574,22 +1529,26 @@ function assistantPatchInstalled(): boolean {
   return g.__tracelineAssistantPatchVersion === ASSISTANT_ROW_PATCH_VERSION;
 }
 
-function tryPatch(): void {
-  if ((currentPatchInstalled() && assistantPatchInstalled()) || !g.__tracelineTui) return;
+function tryPatch(): boolean {
+  if ((currentPatchInstalled() && assistantPatchInstalled()) || !g.__tracelineTui) return false;
+  const toolWasPatched = currentPatchInstalled();
+  const assistantWasPatched = assistantPatchInstalled();
   try {
     const sibs = chatChildren();
-    if (!Array.isArray(sibs)) return;
-    if (!currentPatchInstalled()) {
+    if (!Array.isArray(sibs)) return false;
+    if (!toolWasPatched) {
       const row = sibs.find(isToolRow);
       if (row) patchToolRowPrototype(Object.getPrototypeOf(row));
     }
-    if (!assistantPatchInstalled()) {
+    if (!assistantWasPatched) {
       const assistant = sibs.find(isAssistantRow);
       if (assistant) patchAssistantRowPrototype(Object.getPrototypeOf(assistant));
     }
   } catch {
-    /* never let pi-traceline break a render */
+    return false;
   }
+  return (!toolWasPatched && currentPatchInstalled()) ||
+    (!assistantWasPatched && assistantPatchInstalled());
 }
 
 // Test-only surface. Pi loads extensions via `jiti.import(path, { default: true })`,
@@ -1620,7 +1579,7 @@ export const internals = {
   charSuffix,
   diffStatsFromText,
   diffStatsFromContents,
-  captureWriteSnapshot,
+  captureWriteCallSnapshot,
   writeDiffStats,
   mutationDiffStats,
   toolFactSuffix,
@@ -1662,6 +1621,25 @@ export default function piTraceline(pi: ExtensionAPI) {
       (path) => readJsonConfig(path, parseTracelineConfig) ?? {},
     ),
   );
+  let patchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const applyPatches = () => {
+    patchTimer = undefined;
+    if (tryPatch()) g.__tracelineTui?.requestRender();
+  };
+  const schedulePatches = () => {
+    if (!g.__tracelineTui || patchTimer) return;
+    patchTimer = setTimeout(applyPatches, 0);
+  };
+  const clearPatchTimer = () => {
+    if (patchTimer) clearTimeout(patchTimer);
+    patchTimer = undefined;
+  };
+  const afterThinkingToggle = () => {
+    const patched = tryPatch();
+    const suppressed = suppressThinkingToggleStatus();
+    if (patched || suppressed) g.__tracelineTui?.requestRender();
+  };
 
   // Drill mode (§9.13) lives in drill.ts / drill-pager.ts; this host hands it just the
   // render internals it needs. Entry points: a shortcut (alt+t by default, `drillKey`
@@ -1702,17 +1680,33 @@ export default function piTraceline(pi: ExtensionAPI) {
     description: "traceline: number the visible tool rows; type one to peek",
     handler: async (_args, ctx) => startDrill(ctx),
   });
-
+  pi.on("message_start", (event, ctx) => {
+    if (ctx.mode === "tui" && event.message.role === "assistant") schedulePatches();
+  });
+  pi.on("message_update", (_event, ctx) => { if (ctx.mode === "tui") schedulePatches(); });
+  pi.on("tool_execution_start", (_event, ctx) => { if (ctx.mode === "tui") schedulePatches(); });
+  pi.on("session_tree", (_event, ctx) => { if (ctx.mode === "tui") schedulePatches(); });
+  pi.on("tool_call", (event, ctx) => {
+    if (ctx.mode !== "tui" || event.toolName !== "write") return;
+    try {
+      captureWriteCallSnapshot(event.toolCallId, event.input, ctx.cwd);
+    } catch {
+      /* Traceline display work must never block write execution. */
+    }
+  });
   pi.on("session_start", (_event, ctx) => {
-    g.__tracelineGetTheme = () => ctx.ui.theme;
+    clearPatchTimer();
+    clearWriteCallSnapshots();
+    setTracelineChat(undefined);
+    g.__tracelineTui = undefined;
     configureSizeThresholds(config);
+    if (ctx.mode !== "tui") return;
+
+    g.__tracelineGetTheme = () => ctx.ui.theme;
     captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
       g.__tracelineTui = tui;
-      patchRequestRender(tui, () => {
-        tryPatch();
-        suppressThinkingToggleStatus();
-      });
-      tryPatch();
+      if (tryPatch()) tui.requestRender();
+      else schedulePatches();
     });
 
     // Make reload/session-start idempotent: do not stack raw-input listeners.
@@ -1723,13 +1717,18 @@ export default function piTraceline(pi: ExtensionAPI) {
       // Drill mode owns mouse reports; a foreign chord exits it un-consumed (§9.13).
       const drill = handleDrillTerminalInput(data);
       if (drill) return drill;
-      return handleThinkingToggleTerminalInput(data, ctx.ui);
+      return handleThinkingToggleTerminalInput(data, ctx.ui, afterThinkingToggle);
     });
   });
 
   pi.on("session_shutdown", () => {
+    clearPatchTimer();
+    clearWriteCallSnapshots();
     exitDrillMode(); // restores the editor and turns mouse reporting off
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;
+    g.__tracelineTui = undefined;
+    setTracelineChat(undefined);
+    setTracelineThemeGetter(undefined);
   });
 }
