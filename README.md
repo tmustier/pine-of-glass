@@ -3,10 +3,10 @@
 Small observability and context management tools for [Pi](https://github.com/earendil-works/pi) in the terminal.
 1. [`contextimate`](./extensions/pi-contextimate) breaks down what is filling your context window: sysprompt, AGENTS.md, Skill frontmatter, Tool schemas, and session material. Toggle with ctrl+o on start and /reload.
 2. [`traceline`](./extensions/pi-traceline) collapses tool calls to one trace line each, so you can see the full arc of what Pi did (path taken, context read, bloated tool results). Toggle with ctrl+t (expands/collapses both thinking blocks and tools).
-3. [`cachemire`](./extensions/pi-cachemire) (**experimental**) explains cache behaviour and agent-loop economics: warnings when the cache needs attention, predicted-then-resolved cache-break notices, a per-turn ledger, and `/cache` forensics. Included in the package as of `0.4.0`; wording, thresholds, and states may still evolve.
-4. [`meantime`](./extensions/pi-meantime) (**experimental, opt-in**) explains where the wall-clock went: a live tempo line above the editor (waiting / thinking / writing / tools, with `~tok/s`), slow-start and slow-stream notices judged against the session's own medians, and a `/pace` ledger with an active-vs-idle share bar. New in `0.7.0`, and feature-flagged off by default.
+3. [`cachemire`](./extensions/pi-cachemire) shows you what's happening to your cache and warns you about events 
+4. [`meantime`](./extensions/pi-meantime) (**work-in-progress, feature flagged**) understand latency from inference speed (TTFT, TPS) and potentially diagnose other things slowing down your agent like orcehstration or CI
 
-See each extension's own `README.md` for details, `docs/` for deeper reference, and [`AGENTS.md`](./AGENTS.md) for development workflows and conventions.
+See each extension's own `README.md` for details and `docs/` for deeper reference.
 
 ## Installation
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
