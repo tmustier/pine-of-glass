@@ -22,6 +22,19 @@ CORPUS_FILES = {
 }
 
 
+def count_summary(
+    samples: dict[str, dict[str, float | int]], names: list[str]
+) -> dict[str, float | int]:
+    chars = sum(int(samples[name]["chars"]) for name in names)
+    tokens = sum(int(samples[name]["tokens"]) for name in names)
+    return {
+        "chars": chars,
+        "tokens": tokens,
+        "charsPerToken": round(chars / tokens, 4),
+        "recommendedDenominator": round(chars / tokens, 1),
+    }
+
+
 def pinned_corpus() -> dict[str, str]:
     def read(path: str) -> str:
         return subprocess.run(

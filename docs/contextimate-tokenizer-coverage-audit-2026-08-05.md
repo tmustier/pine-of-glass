@@ -184,7 +184,7 @@ The [machine-readable evidence](./contextimate-family-calibration-evidence-2026-
 | North Mini Code | 4.2 | 3.9 | separate tokenizer hash `14bd1c49d7d1…` |
 | Grok 4.20/4.3 | 4.2 | 3.9 | Grok 4.20 reasoning, non-reasoning and multi-agent, 4.3 and Build 0.1 returned identical token IDs, strings and bytes |
 | Grok 4.5 | 4.1 | 3.6 | a distinct xAI token stream; `grok-build-latest` currently resolves here |
-| Gemini 2.x and 3.x | 3.9 | 3.4 | 17 exact Developer API model IDs returned count fingerprint `e739e7b89693…` |
+| 17 counted Gemini model IDs | 3.9 | 3.4 | exact Developer API IDs returned count fingerprint `e739e7b89693…` |
 | DeepSeek V3, R1 and V4 | 4.0 | 3.6 | 11 pinned artifacts share BPE hash `22acf98589f1…` and corpus token-stream hash `fc92ce91342c…` |
 | Qwen 2.5 and 3 | 4.0 | 3.8 | 25 pinned artifacts share BPE hash `6e2c42439170…` and corpus token-stream hash `0cbd81180400…` |
 | Qwen 3.5 | 3.9 | 3.5 | 5 pinned artifacts share BPE hash `e23b06565b8e…` and corpus token-stream hash `1b9ddcbd8e88…` |
@@ -193,15 +193,15 @@ The xAI fingerprint used six fixtures covering prose, code, multilingual text, w
 
 At measurement time, `grok-4.20` resolved to `grok-4.20-0309-reasoning`. `grok-latest` resolved to `grok-4.3`, while `grok-build-latest` resolved to `grok-4.5`. Contextimate leaves `latest` aliases unknown before routing because their targets can change.
 
-The Gemini Developer API counted each corpus fixture as one user text part. All 17 exact model IDs returned the same five counts. They cover 62 of the 68 Gemini 2.x and 3.x route entries in Pi AI 0.83.0, including batch, computer-use and image variants. Six routes keep the generic estimate: 2 retired 2.5 Pro previews, 2 `gemini-3-flash` aliases, `gemini-3.1-pro` and Gemini 3.1 Live. The official endpoint returned no count for those IDs. Tool conversion and route overhead stay separate.
+The Gemini Developer API counted each fixture as one user text part. All 17 model IDs returned the same five counts. They cover 62 of 68 matching Pi routes. The route IDs include batch, computer-use and image-capable models, but the evidence covers text only. Two retired 2.5 Pro previews, 2 `gemini-3-flash` aliases, `gemini-3.1-pro` and Gemini 3.1 Live keep the generic estimate because the endpoint did not count them.
 
 The DeepSeek and Qwen study checked every pinned artifact before counting. Full tokenizer JSON hashes vary where models add special tokens or chat configuration. The ordinary-text BPE content and every token ID across the pinned corpus matched within each shipped group. Qwen 3.5 remained separate from Qwen 2.5 and 3.
 
 The resulting rules cover 42 of the 43 DeepSeek route entries in Pi AI 0.83.0. Only the moving `deepseek-chat` alias keeps the fallback. They also cover 49 Qwen 2.5/3 entries and 11 Qwen 3.5 entries. The other 55 Qwen entries are unpinned proprietary aliases or later model generations, so they keep the fallback.
 
-The public relay catalogs resolved the abbreviated serving IDs. OpenRouter linked all 36 profiled routes to an exact pinned Hugging Face artifact. Vercel's full names resolved all 17 profiled routes unambiguously to pinned artifacts, including architecture and instruction suffixes omitted from serving IDs. `DeepSeek V3.2 Thinking` resolves to the pinned V3.2 artifact; thinking is a serving mode here, not a tokenizer claim. The checked route remains separate from its wire API.
+OpenRouter linked all 36 profiled relay routes to pinned Hugging Face artifacts. Vercel's full names linked all 17 profiled routes to pinned artifacts. `DeepSeek V3.2 Thinking` names the V3.2 artifact and a serving mode. These checks verify tokenizer family, not request serialization.
 
-GLM 5 Turbo, GLM 5V Turbo, GLM 4.7 FlashX, beta Grok aliases, `deepseek-chat` and proprietary Qwen aliases remain unknown. Retired Gemini previews, `gemini-3-flash`, `gemini-3.1-pro` and Gemini Live also keep the existing generic estimate because the official endpoint did not count them. The same rule applies to `auto`, `free`, fusion and picker routes.
+GLM 5 Turbo, GLM 5V Turbo, GLM 4.7 FlashX, beta Grok aliases, `deepseek-chat`, proprietary Qwen aliases and dynamic selectors remain unknown.
 
 The hosted sweep made 78 tiny requests across 26 routes and cost about $0.1215. One GLM request produced 38,918 hidden reasoning tokens despite `max_tokens: 1`. Future studies should prefer count or tokenizer endpoints because some models require generation reasoning.
 
@@ -215,45 +215,21 @@ Resolve these facts independently:
 - wire API shape, for system and tool serialization
 - tokenizer family and revision, for token density
 
-Measured profiles now cover:
-
-- Claude 4.5 and 4.6
-- Claude 4.7 and later
-- OpenAI Codex and Responses
-- Gemini 2.x and 3.x visible text for 17 exact countable model IDs
-- Kimi K2 through K3 raw text
-- GLM 4.5-generation and GLM 5-generation raw text
-- Cohere Command R/R+ 08-2024 and North Mini Code raw text
-- Grok 4.20/4.3/Build 0.1 and Grok 4.5 raw text
-- DeepSeek V3, R1 and V4 raw text
-- Qwen 2.5, 3 and 3.5 raw text for pinned, explicit model IDs
-
-Bedrock and unidentified families remain estimates at characters divided by 4 until calibration data supports a better profile. API compatibility alone does not change that denominator.
+The family calibration table defines the measured raw-text profiles. Contextimate also has measured Claude and OpenAI profiles documented in [How pi-contextimate counts context](./pi-contextimate.md). Bedrock and unidentified families remain at characters divided by 4. API compatibility alone does not select a tokenizer profile.
 
 Use `scripts/contextimate/check-provider-tokens.ts` to measure captured Pi payloads. Add profiles only after checking several Pi-shaped text and schema fixtures, plus returned provider usage where available.
 
-## Usage did not justify 5 more families
+## Five families remain unmeasured
 
-We checked local `model_change` metadata for the previous 30 and 90 days. This inspected model IDs and providers only. It did not inspect prompts or messages.
+MiniMax, Mistral, Llama, Gemma and MiMo did not appear in local `model_change` metadata over 30 or 90 days. The check covered 3,206 and 7,444 model changes respectively, without reading prompts or messages. Contextimate keeps the fallback until use justifies calibration.
 
-Pi's catalog had 41 MiniMax entries, 73 Mistral-family entries, 36 Llama entries, 19 Gemma entries and 25 MiMo entries. None appeared in 3,206 model changes over 30 days or 7,444 over 90 days. Contextimate keeps the fallback for those families until local use or another practical need justifies calibration.
-
-## Remaining work
-
-Prioritise measured profiles in this order:
-
-1. newly used model families with pinned or provider evidence
-2. existing profiles after tokenizer or alias changes
-
-Still requiring a capability check:
+## Remaining checks
 
 - Kimi Coding membership keys against the public Moonshot endpoint
 - Z.AI Coding Plan keys against the tokenizer endpoint
 - GLM model IDs newer than the published tokenizer enum, including 5 Turbo and 5V Turbo
 - whether DashScope still documents a Qwen tokenization service and which plans can use it
 - Azure support for OpenAI's Responses input-token endpoint
-
-The family follow-up used about $0.1215 of paid OpenRouter generation. Direct xAI checks used `TokenizeText`, not generation.
 
 ## Sources
 
@@ -278,7 +254,6 @@ The family follow-up used about $0.1215 of paid OpenRouter generation. Direct xA
 - [Qwen 3.5 tokenizer artifacts](https://huggingface.co/Qwen/Qwen3.5-9B/tree/c202236235762e1c871ad0ccb60c8ee5ba337b9a)
 - [OpenRouter model catalog](https://openrouter.ai/api/v1/models)
 - [Vercel AI Gateway model catalog](https://ai-gateway.vercel.sh/v1/models)
-- [Gemini `countTokens`](https://ai.google.dev/api/tokens#method:-models.counttokens)
 - [Google local tokenizer](https://github.com/googleapis/python-genai/blob/main/google/genai/local_tokenizer.py)
 - [Mistral common](https://github.com/mistralai/mistral-common)
 - [OpenAI Harmony](https://github.com/openai/harmony)

@@ -13,9 +13,7 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 
-sys.dont_write_bytecode = True
-
-from tokenizer_corpus import CORPUS_FILES, CORPUS_REVISION, pinned_corpus
+from tokenizer_corpus import CORPUS_FILES, CORPUS_REVISION, count_summary, pinned_corpus
 
 DEFAULT_MODELS = (
     "gemini-2.0-flash",
@@ -81,26 +79,6 @@ def count_tokens(model: str, text: str, api_key: str) -> int:
     return total
 
 
-def aggregate(
-    samples: dict[str, dict[str, float | int]], names: list[str]
-) -> dict[str, float | int]:
-    chars = sum(int(samples[name]["chars"]) for name in names)
-    tokens = sum(int(samples[name]["tokens"]) for name in names)
-    return {
-        "chars": chars,
-        "tokens": tokens,
-        "charsPerToken": round(chars / tokens, 4),
-        "recommendedDenominator": round(chars / tokens, 1),
-    }
-
-
-def count_fingerprint(samples: dict[str, dict[str, float | int]]) -> str:
-    counts = [[name, samples[name]["tokens"]] for name in sorted(samples)]
-    return hashlib.sha256(
-        json.dumps(counts, separators=(",", ":")).encode()
-    ).hexdigest()
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Count the repository's public calibration corpus with Gemini countTokens.",
@@ -142,15 +120,18 @@ def main() -> None:
                 "tokens": tokens,
                 "charsPerToken": round(len(text) / tokens, 4),
             }
+        counts = [[name, samples[name]["tokens"]] for name in sorted(samples)]
         rows.append(
             {
                 "model": model,
-                "countFingerprint": count_fingerprint(samples),
+                "countFingerprint": hashlib.sha256(
+                    json.dumps(counts, separators=(",", ":")).encode()
+                ).hexdigest(),
                 "samples": samples,
-                "text": aggregate(
+                "text": count_summary(
                     samples, ["instructions-core", "instructions-design"]
                 ),
-                "session": aggregate(samples, ["session-code", "session-tests"]),
+                "session": count_summary(samples, ["session-code", "session-tests"]),
             }
         )
 
@@ -163,13 +144,6 @@ def main() -> None:
         "corpusFiles": CORPUS_FILES,
         "endpoint": f"{ENDPOINT}/{{model}}:countTokens",
         "requestCoverage": "one user text part per corpus fixture",
-        "models": [
-            {
-                "model": row["model"],
-                "countFingerprint": row["countFingerprint"],
-            }
-            for row in rows
-        ],
         "groups": [
             {
                 "countFingerprint": fingerprint,

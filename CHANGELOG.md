@@ -3,10 +3,8 @@
 ## Unreleased
 
 - Contextimate adds measured visible-text profiles for Gemini, Kimi, GLM, Cohere,
-  Grok, DeepSeek and Qwen. Official counts, pinned tokenizer artifacts, exact corpus
-  token streams or xAI token streams define conservative groups across concrete relay
-  IDs. Dynamic and unverified variants keep the generic estimate or fallback. Manual
-  count and tokenizer scripts add no runtime dependencies or startup network calls.
+  Grok, DeepSeek and Qwen. Explicit, verified model IDs use the new profiles; dynamic
+  and unverified variants keep the generic estimate or fallback.
 
 ## 0.10.0 (2026-08-05)
 

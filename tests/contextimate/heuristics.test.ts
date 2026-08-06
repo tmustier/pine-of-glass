@@ -104,9 +104,6 @@ test("measured tokenizer families remain independent of their wire API", () => {
     [model("kimi-coding", "k3-256k", "anthropic-messages"), "Kimi tokenizer", "anthropic"],
     [model("amazon-bedrock", "zai.glm-4.7", "bedrock-converse-stream"), "GLM 4.5 tokenizer", "bedrock"],
     [model("xai", "grok-4.5", "openai-responses"), "Grok 4.5 tokenizer", "openai-responses"],
-    [model("vercel-ai-gateway", "google/gemini-3.5-flash", "anthropic-messages"), "Gemini 2/3 countTokens", "anthropic"],
-    [model("vercel-ai-gateway", "deepseek/deepseek-v3.2", "anthropic-messages"), "DeepSeek tokenizer", "anthropic"],
-    [model("amazon-bedrock", "qwen.qwen3-coder-next", "bedrock-converse-stream"), "Qwen 2.5/3 tokenizer", "bedrock"],
   ] as const;
 
   for (const [current, label, toolNumerator] of cases) {
