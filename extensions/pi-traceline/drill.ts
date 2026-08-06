@@ -5,11 +5,9 @@
 // opens the peek pager (drill-pager.ts); `p` toggles the selected row's native
 // expansion (§9.12 z1) in place; esc restores the editor and its draft. A modifier
 // chord the mode does not own (option+up, ctrl+c, …) exits the same way without being
-// consumed, so the keystroke lands in the restored editor. SGR mouse
-// reporting, never enabled for the plain transcript, turns on only inside the mode and
-// off at exit/shutdown/process-exit, with every mouse event consumed. State lives on
-// globalThis so that after /reload the previously patched tool-row renderer and the
-// freshly loaded controller share it, exactly like traceline's other seam globals.
+// consumed, so the keystroke lands in the restored editor. State lives on globalThis
+// so that after /reload the previously patched tool-row renderer and the freshly loaded
+// controller share it, exactly like traceline's other seam globals.
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, type Component, type KeyId } from "@earendil-works/pi-tui";
@@ -35,7 +33,6 @@ export type DrillHost = {
   /** True when the row renders nothing because an earlier row carries its fold. */
   hiddenByFold(comp: ToolRowLike): boolean;
   statusTone(comp: ToolRowLike): Tone;
-  mouse: boolean;
 };
 
 export type DrillState = {
@@ -48,12 +45,10 @@ export type DrillState = {
   pager?: DrillPager;
   closeHint?: () => void;
   closePager?: () => void;
-  mouseOn: boolean;
 };
 
 type DrillGlobal = typeof globalThis & {
   __tracelineDrill?: DrillState;
-  __tracelineDrillMouseGuard?: boolean;
 };
 const g = globalThis as DrillGlobal;
 
@@ -118,10 +113,8 @@ export function enterDrillMode(host: DrillHost): void {
     numbers: new Map(rows.map((row, i) => [row as unknown, i + 1])),
     selected: 0,
     digits: "",
-    mouseOn: false,
   };
   g.__tracelineDrill = st;
-  if (host.mouse) enableMouse(st);
   void host.ui
     .custom<undefined>((_tui, _theme, _kb, done) => {
       st.closeHint = () => done(undefined);
@@ -137,12 +130,11 @@ export function exitDrillMode(): void {
   const st = g.__tracelineDrill;
   if (!st) return;
   g.__tracelineDrill = undefined;
-  disableMouse(st);
   try {
     st.closePager?.();
     st.closeHint?.();
   } catch {
-    // Pi seam: a dispose-time close may throw during shutdown; state and mouse are already restored.
+    // Pi seam: a dispose-time close may throw during shutdown; state is already cleared.
   }
   st.host.requestRender();
 }
@@ -282,41 +274,5 @@ class DrillHintBar implements Component {
   invalidate(): void {}
 }
 
-// --- mouse (bounded to the mode; never active in the plain transcript) -----------------
-
-const MOUSE_ENABLE = "\x1b[?1000h\x1b[?1006h";
-const MOUSE_DISABLE = "\x1b[?1006l\x1b[?1000l";
-
-function enableMouse(st: DrillState): void {
-  if (st.mouseOn) return;
-  try {
-    process.stdout.write(MOUSE_ENABLE);
-  } catch {
-    return; // no mouse rather than a broken mode
-  }
-  st.mouseOn = true;
-  if (!g.__tracelineDrillMouseGuard) {
-    g.__tracelineDrillMouseGuard = true;
-    process.on("exit", () => {
-      // A crash mid-mode must not leave the terminal reporting mouse events.
-      if (g.__tracelineDrill?.mouseOn) writeIgnoringErrors(MOUSE_DISABLE);
-    });
-  }
-}
-
-function disableMouse(st: DrillState): void {
-  if (!st.mouseOn) return;
-  st.mouseOn = false;
-  writeIgnoringErrors(MOUSE_DISABLE);
-}
-
-function writeIgnoringErrors(sequence: string): void {
-  try {
-    process.stdout.write(sequence);
-  } catch {
-    // terminal already gone; nothing to restore
-  }
-}
-
-// The raw terminal-input hook (mouse consumption + foreign-chord exit) lives in
-// drill-input.ts; index.ts feeds it traceline's onTerminalInput listener.
+// The raw terminal-input hook for foreign-chord exit lives in drill-input.ts;
+// index.ts feeds it traceline's onTerminalInput listener.

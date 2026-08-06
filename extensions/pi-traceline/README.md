@@ -56,7 +56,7 @@ Traceline follows Pi's reasoning visibility setting. The full view reuses Pi's o
 
 The tool view reads its state from the live assistant row. It cannot get out of sync with the reasoning view. Traceline hides Pi's `Thinking blocks: hidden/visible` caption because the changing tool rows already show the state.
 
-Outside drill mode, Traceline does not enable mouse reporting or change terminal scrolling.
+Traceline never enables, disables or reads terminal mouse reporting. Pi and the terminal keep full control of scrolling, selection and links.
 
 ## Drill into one row
 
@@ -81,15 +81,13 @@ Scroll with `j`/`k`, the arrow keys, the page keys or `g`/`G`. Press `h`/`l` to 
 
 The most common case takes two keys: `Alt+T`, then `1` for the latest call.
 
-Inside drill mode the mouse wheel works: it moves the selection, or scrolls the pager. Traceline turns mouse reporting on only while drill mode is open and turns it off again on exit, so normal terminal text selection is never affected.
-
-Configure drill mode in the same config file as the size thresholds:
+Configure the drill shortcut in the same config file as the size thresholds:
 
 ```json
-{ "drillKey": "alt+d", "drillMouse": false }
+{ "drillKey": "alt+d" }
 ```
 
-`drillKey` changes the shortcut. `drillMouse: false` keeps mouse reporting off even inside drill mode.
+`drillKey` changes the shortcut. Drill mode stays keyboard-only.
 
 On macOS, an Alt-letter shortcut works only when the terminal sends Option as Alt. In Ghostty, set `macos-option-as-alt = left` in the active config. cmux users can set the same value in Terminal settings or in `~/Library/Application Support/com.cmuxterm.app/config.ghostty`, then run `cmux reload-config`. This leaves right Option available for character composition. The `/drill` command works without Option-as-Alt.
 

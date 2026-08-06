@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type KeyId, type TUI } from "@earendil-works/pi-tui";
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
-import { booleanValue, positiveNumberValue, isJsonObject, stringValue } from "../_lib/boundary.ts";
+import { positiveNumberValue, isJsonObject, stringValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
 import {
   findChatContainer,
@@ -306,7 +306,6 @@ type TracelineConfig = {
   sizeWarningChars?: number;
   sizeErrorChars?: number;
   drillKey?: string;
-  drillMouse?: boolean;
 };
 
 function parseTracelineConfig(value: unknown): TracelineConfig {
@@ -314,12 +313,10 @@ function parseTracelineConfig(value: unknown): TracelineConfig {
   const sizeWarningChars = positiveNumberValue(value.sizeWarningChars);
   const sizeErrorChars = positiveNumberValue(value.sizeErrorChars);
   const drillKey = stringValue(value.drillKey);
-  const drillMouse = booleanValue(value.drillMouse);
   return {
     ...(sizeWarningChars !== undefined ? { sizeWarningChars: Math.floor(sizeWarningChars) } : {}),
     ...(sizeErrorChars !== undefined ? { sizeErrorChars: Math.floor(sizeErrorChars) } : {}),
     ...(drillKey !== undefined && drillKey.length > 0 ? { drillKey } : {}),
-    ...(drillMouse !== undefined ? { drillMouse } : {}),
   };
 }
 
@@ -1665,7 +1662,6 @@ export default function piTraceline(pi: ExtensionAPI) {
     hiddenByFold: (comp) =>
       displayMode() === "oneLine" && ((readRun(comp)?.index ?? 0) > 0 || (repetitionRun(comp)?.index ?? 0) > 0),
     statusTone,
-    mouse: config.drillMouse !== false,
   });
   const startDrill = (ctx: { ui: ExtensionUIContext; hasUI: boolean }) => {
     if (!ctx.hasUI) return;
@@ -1714,9 +1710,8 @@ export default function piTraceline(pi: ExtensionAPI) {
     // Ctrl+O expansion first, then lets the same keypress continue to Pi (§9.12).
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
-      // Drill mode owns mouse reports; a foreign chord exits it un-consumed (§9.13).
-      const drill = handleDrillTerminalInput(data);
-      if (drill) return drill;
+      // A foreign chord exits drill mode before the same input reaches Pi (§9.13).
+      handleDrillTerminalInput(data);
       return handleThinkingToggleTerminalInput(data, ctx.ui, afterThinkingToggle);
     });
   });
@@ -1724,7 +1719,7 @@ export default function piTraceline(pi: ExtensionAPI) {
   pi.on("session_shutdown", () => {
     clearPatchTimer();
     clearWriteCallSnapshots();
-    exitDrillMode(); // restores the editor and turns mouse reporting off
+    exitDrillMode(); // restores the editor when shutdown interrupts drill mode
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;
     g.__tracelineTui = undefined;
