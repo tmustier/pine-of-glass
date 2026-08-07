@@ -18,8 +18,7 @@ Entries pin the pi version inspected; internals drift, so re-verify before filin
 [pine-of-glass#14](https://github.com/tmustier/pine-of-glass/issues/14)
 
 **Resolved:** Pi 0.80.8 and 0.80.9 emit one collapsed label per adjacent thinking
-run. Traceline's installed-Pi contract pins that cardinality and still accepts the
-older label-per-block shape.
+run. Traceline's installed-Pi contract pins that cardinality.
 
 In Pi 0.79.1, with reasoning hidden (Ctrl+T), `AssistantMessageComponent` rendered
 the collapsed `Thinking...` label **once per thinking block, not per message**
@@ -36,7 +35,7 @@ reasoning segments per response), not message boundaries.
 Two native collapsed labels carried no more information than one; the duplication
 was purely an artifact of per-block rendering. Pi adopted the possible upstream
 direction and now coalesces an adjacent run into one collapsed label. Traceline
-replaces that label with one `Thinking: <fragment> · <fragment>` preview line.
+replaces that label with one `<fragment> · <fragment>` preview line.
 
 ## 2. Anthropic tool search (`defer_loading`) not wired through pi-ai
 

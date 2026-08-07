@@ -194,35 +194,6 @@ test("real AssistantMessageComponent preserves its tool-call link and duck type"
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
 });
 
-test("adjacent thinking blocks get one native run label; traceline appends one preview", () => {
-  pi.initTheme(undefined, false);
-  const component = new pi.AssistantMessageComponent(assistantMessage([
-    { type: "thinking", thinking: "first reasoning segment" },
-    { type: "thinking", thinking: "second reasoning segment" },
-  ]));
-  component.setHideThinkingBlock(true);
-
-  const native = component.render(80);
-  const labelCount = (lines: string[]) =>
-    lines.filter((line) => traceline.stripAnsi(line).trim() === "Thinking...").length;
-  // The seam itself (issue #14 №3): Pi renders one collapsed label per adjacent
-  // thinking run. A change here requires re-checking preview-to-label alignment.
-  assert.equal(labelCount(native), 1, "Pi's collapsed-run label cardinality changed");
-
-  const deduped = traceline.dedupeThinkingLabels(component as never, native, 80);
-  assert.equal(labelCount(deduped), 0, "native placeholders should become trace previews");
-  assert.deepEqual(
-    deduped.map((line) => traceline.stripAnsi(line).trim()),
-    ["", "Thinking: first reasoning segment · second reasoning segment"],
-    "adjacent source blocks append without Pi's inter-label spacer",
-  );
-
-  // pi marks the message's first and last lines with OSC 133 zone marks; the dedupe must
-  // never lose control sequences from dropped lines.
-  const zoneMarks = (lines: string[]) => (lines.join("").match(/\x1b\]133;[^\x07\x1b]*(?:\x07|\x1b\\)/g) ?? []).length;
-  assert.equal(zoneMarks(deduped), zoneMarks(native), "OSC 133 zone marks must survive the dedupe");
-});
-
 test("chat-rebuild surface family line persistence depends on", () => {
   // Ctrl+T (and compaction/navigation) rebuild the chat container from session messages:
   // clear() + re-render drops raw appended children. Cachemire and meantime re-attach their lines

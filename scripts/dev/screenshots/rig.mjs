@@ -167,13 +167,10 @@ function tracelineShot() {
   try {
     waitFor("transcript", (t) => t.includes("PR #120 is merged"), 90000);
     sleep(2500);
-    // Restored sessions open with thinking visible; traceline's one-line mode applies
-    // while reasoning is hidden (its live default). One Ctrl+T restores that state.
-    // §9.11 suppresses the "Thinking blocks: hidden" caption, so wait for the visible
-    // effect instead: only hidden mode renders traceline's labelled "Thinking: …"
-    // preview line (visible mode prints the raw reasoning text, unlabelled).
+    // Restored sessions open with thinking visible. Ctrl+T hides it and renders
+    // Traceline's one-line tool rows.
     send("C-t");
-    waitFor("one-line mode", (t) => /^\s*Thinking: /m.test(t), 15000);
+    waitFor("one-line mode", (t) => /^\s*▏\s+›/m.test(t), 15000);
     sleep(1500);
     shoot("pi-traceline-collapsed", { trimTo: "The pricing section on /product" });
   } finally {

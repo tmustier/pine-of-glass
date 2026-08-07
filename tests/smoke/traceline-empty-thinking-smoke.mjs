@@ -14,7 +14,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const extensionPath = join(repoRoot, "extensions", "pi-traceline", "index.ts");
 const tmuxSession = `pog-empty-thinking-${process.pid}`;
 const sentinel = "GROUPED_THINKING_RESUME_SENTINEL";
-const firstPreviewFragment = "Thinking: first adjacent reasoning step";
+const firstPreviewFragment = "first adjacent reasoning step";
 const latestPreviewFragment = "fourth adjacent reasoning step";
 const hardDeadline = Date.now() + 45_000;
 let launchedPid;
@@ -54,7 +54,9 @@ function capturePane() {
 }
 
 function previewRows(pane) {
-  return pane.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("Thinking: "));
+  return pane.split("\n").map((line) => line.trim()).filter((line) =>
+    line.includes(firstPreviewFragment) || line.includes(latestPreviewFragment)
+  );
 }
 
 function sleep(ms) {

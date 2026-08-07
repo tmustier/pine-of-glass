@@ -141,7 +141,7 @@ Traceline folds rows when repetition would hide the useful difference:
   then the basenames follow with their ranges. A long list wraps at file boundaries
   instead of truncating, and a file whose combined result grows past the warning
   threshold keeps its own row so the size column stays honest
-- adjacent collapsed thinking blocks become one `Thinking: …` line. Their non-empty fragments append with ` · ` separators; source newlines never add display rows, and middle truncation keeps the newest thought visible
+- adjacent collapsed thinking blocks become one summary line without a redundant label. Their non-empty fragments append with ` · ` separators; source newlines never add display rows, and middle truncation keeps the newest thought visible
 
 Text, tool calls and other content separate thinking previews. Visible prose between tool calls stops a row fold. Pi's full view always keeps the original rows.
 

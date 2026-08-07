@@ -20,7 +20,7 @@ const {
   renderTraceRow,
   stripAnsi,
   isToolRow,
-  dedupeThinkingLabels,
+  replaceThinkingLabels,
   setTracelineChat,
   setTracelineThemeGetter,
 } = internals;
@@ -72,10 +72,7 @@ function prose(text: string, rows: ToolRowLike[]) {
 }
 
 function thinking(blocks: string[], rows: ToolRowLike[]) {
-  return {
-    ...assistantBefore(rows, blocks.map((text) => ({ type: "thinking", thinking: text })), true),
-    __thinkingBlocks: blocks.length,
-  };
+  return assistantBefore(rows, blocks.map((text) => ({ type: "thinking", thinking: text })), true);
 }
 
 beforeEach(() => {
@@ -155,15 +152,12 @@ test("one-line trace goldens at 80 and 120 columns", () => {
           for (const line of renderTraceRow(child, width)) lines.push(stripAnsi(line));
           continue;
         }
-        const meta = child as { __prose?: string; __thinkingBlocks?: number };
-        if (meta.__prose !== undefined) {
-          lines.push("", meta.__prose);
+        const prose = (child as { __prose?: string }).__prose;
+        if (prose !== undefined) {
+          lines.push("", prose);
           continue;
         }
-        const nativeLabels = Array.from({ length: meta.__thinkingBlocks ?? 1 }, (_, index) =>
-          index === 0 ? ["Thinking..."] : ["", "Thinking..."]
-        ).flat();
-        const previews = dedupeThinkingLabels(child, nativeLabels, width).map(stripAnsi);
+        const previews = replaceThinkingLabels(child, ["Thinking..."], width).map(stripAnsi);
         lines.push("", ...(previews.length > 0 ? previews : ["Thinking..."]));
       }
       return `${lines.join("\n")}\n`;

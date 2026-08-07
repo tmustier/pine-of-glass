@@ -3,7 +3,7 @@ Let me look at the failing suite.
 
   ▏ › $ cd ~/projects/pine-of-glass && npm test 2>/dev/null | tail -5  1.4k ch
 
-Thinking: Checking the typecheck bef…s noisy. · Reading the paginated file next.
+Checking the typecheck before the ne…s noisy. · Reading the paginated file next.
   ▏ › $ ⋯ npm run typecheck                                           14.2k ch
   ▏ › read ~/projects/pine-of…dex.ts:1-200,201-400,401-600  3 calls · 51.1k ch
   ▏ › read ~/projects/pine-of…ass/extensions/pi-cachemire/   2 calls · 5.2k ch
