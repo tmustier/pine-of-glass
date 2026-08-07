@@ -39,7 +39,7 @@ test("empty thinking blocks are skipped natively and do not shift Traceline prev
   const deduped = traceline.dedupeThinkingLabels(component as never, native, 80);
   const visibleDeduped = deduped.map((line) => traceline.stripAnsi(line).trim()).filter(Boolean);
   assert.ok(
-    visibleDeduped.includes("Thinking: informative reasoning survives"),
+    visibleDeduped.includes("informative reasoning survives"),
     `empty blocks consumed the informative preview: ${JSON.stringify(visibleDeduped)}`,
   );
 });
@@ -60,7 +60,7 @@ test("one native run label becomes one appended preview across adjacent empty fr
   );
   assert.deepEqual(preview, [
     "",
-    "Thinking: first adjacent step · second adjacent step · third adjacent step",
+    "first adjacent step · second adjacent step · third adjacent step",
   ]);
 });
 
@@ -75,12 +75,12 @@ test("tool calls and text keep native boundaries between thinking runs", () => {
 
   assert.deepEqual(preview, [
     "",
-    "Thinking: before tool",
+    "before tool",
     "",
-    "Thinking: after tool",
+    "after tool",
     "",
     "visible bridge",
-    "Thinking: after text",
+    "after text",
   ]);
 });
 
@@ -90,7 +90,7 @@ test("a single collapsed block flattens source lines and prose paragraphs", () =
   ]);
   assert.deepEqual(preview, [
     "",
-    "Thinking: single first line · single second line",
+    "single first line · single second line",
   ]);
 });
 
@@ -102,6 +102,6 @@ test("standalone summary paragraphs append into one native-backed row", () => {
   assert.equal(native.filter((line) => line === "Thinking...").length, 1);
   assert.deepEqual(preview, [
     "",
-    "Thinking: Planning the change · Imp…Verifying the result · Preparing the report",
+    "Planning the change · Implementing …Verifying the result · Preparing the report",
   ]);
 });

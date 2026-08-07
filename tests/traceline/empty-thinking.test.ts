@@ -16,7 +16,7 @@ test("empty thinking payloads neither hang nor consume the next native label", (
   };
   assert.deepEqual(
     dedupeThinkingLabels(emptyBeforeReal, [LABEL]),
-    ["\x1b[3mThinking: real reasoning\x1b[23m"],
+    ["\x1b[3mreal reasoning\x1b[23m"],
     "empty blocks Pi does not render must not consume the next native label",
   );
 

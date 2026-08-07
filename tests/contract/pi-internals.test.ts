@@ -213,7 +213,7 @@ test("adjacent thinking blocks get one native run label; traceline appends one p
   assert.equal(labelCount(deduped), 0, "native placeholders should become trace previews");
   assert.deepEqual(
     deduped.map((line) => traceline.stripAnsi(line).trim()),
-    ["", "Thinking: first reasoning segment · second reasoning segment"],
+    ["", "first reasoning segment · second reasoning segment"],
     "adjacent source blocks append without Pi's inter-label spacer",
   );
 

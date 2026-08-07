@@ -51,7 +51,7 @@ test("tiny widths fall back without exceeding budget", () => {
 
 test("wide characters respect column budgets without splitting graphemes", () => {
   const fixtures = [
-    `Thinking: 提交内容 ${"a".repeat(220)}`,
+    `提交内容 ${"a".repeat(220)}`,
     `head ${"👩‍💻".repeat(40)} tail ${"x".repeat(120)}`,
   ];
   const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });

@@ -9,7 +9,7 @@ import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { dedupeThinkingLabels } from "../../extensions/pi-traceline/thinking-preview.ts";
 
 const LABEL = "\x1b[3mThinking...\x1b[23m";
-const preview = (text: string) => `\x1b[3mThinking: ${text}\x1b[23m`;
+const preview = (text: string) => `\x1b[3m${text}\x1b[23m`;
 
 function thinkingComp(content: Array<Record<string, unknown>>) {
   return { hiddenThinkingLabel: "Thinking...", lastMessage: { content } };
@@ -46,7 +46,7 @@ test("a single block appends every non-empty line into one width-bounded preview
     thinkingComp([{ type: "thinking", thinking: "2 * 3 = 6" }]),
     [LABEL],
   )[0]!;
-  assert.equal(stripAnsi(literalStar).trim(), "Thinking: 2 * 3 = 6", "markdown rendering preserves genuine stars");
+  assert.equal(stripAnsi(literalStar).trim(), "2 * 3 = 6", "markdown rendering preserves genuine stars");
 
   const long = dedupeThinkingLabels(
     thinkingComp([{
@@ -58,7 +58,7 @@ test("a single block appends every non-empty line into one width-bounded preview
   )[0]!;
   const visibleLong = stripAnsi(long);
   assert.ok(visibleWidth(long) <= 52, `preview must respect row width: ${visibleLong}`);
-  assert.ok(visibleLong.startsWith("Thinking: first"), visibleLong);
+  assert.ok(visibleLong.startsWith("first"), visibleLong);
   assert.ok(visibleLong.includes("…"), visibleLong);
   assert.ok(visibleLong.endsWith("newest appended thought"), visibleLong);
 

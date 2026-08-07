@@ -8,7 +8,7 @@ const PREVIEW_RENDER_WIDTH = 10_000;
 
 // Pi renders one collapsed label per adjacent thinking run; older versions rendered one
 // per non-empty block. Traceline accepts both shapes and replaces the whole run with one
-// `Thinking: …` line. Every non-empty source line appends with a middle-dot separator;
+// summary line. Every non-empty source line appends with a middle-dot separator;
 // source newlines never become display rows. Any non-thinking content entry ends the run,
 // even when Pi does not render that entry here (a tool call, for example). Empty thinking
 // fragments neither render nor break adjacency. Runs that cannot yield a safe preview
@@ -180,7 +180,7 @@ export function dedupeThinkingLabels(comp: AssistantRowDataLike, lines: string[]
         out.push(
           plan.row === FALLBACK_LABEL
             ? line
-            : replaceVisibleThinkingLabel(line, `Thinking: ${plan.row}`, width),
+            : replaceVisibleThinkingLabel(line, plan.row, width),
         );
         activePreviewLineAt = out.length - 1;
         continue;

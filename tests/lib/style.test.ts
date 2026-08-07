@@ -89,7 +89,7 @@ test("middleTruncate never overflows the budget when wide graphemes sit at a cut
 test("middleTruncate fits the exact crashing thinking preview (159 cols in a 158 terminal)", () => {
   // The pi-traceline Thinking preview that crashed: 158 chars but 159 columns because
   // the tail carried an emoji.
-  const preview = `Thinking: The TTL docs issue - the CLI help says 30 days but the docs say 7. Let me just compile my findings now. The key items: Confirmed fixed in 0.1.7: 1. \u2705 API`;
+  const preview = `The TTL docs issue - the CLI help says 30 days but the docs say 7. Let me just compile my findings now. The key items: Confirmed fixed in 0.1.7: 1. \u2705 API`;
   const out = middleTruncate(` ${preview}`, 158);
   assert.ok(visibleWidth(out) <= 158, `overflowed: ${visibleWidth(out)} > 158`);
 });

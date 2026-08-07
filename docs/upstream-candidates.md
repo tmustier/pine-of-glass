@@ -36,7 +36,7 @@ reasoning segments per response), not message boundaries.
 Two native collapsed labels carried no more information than one; the duplication
 was purely an artifact of per-block rendering. Pi adopted the possible upstream
 direction and now coalesces an adjacent run into one collapsed label. Traceline
-replaces that label with one `Thinking: <fragment> · <fragment>` preview line.
+replaces that label with one `<fragment> · <fragment>` preview line.
 
 ## 2. Anthropic tool search (`defer_loading`) not wired through pi-ai
 

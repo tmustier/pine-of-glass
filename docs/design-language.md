@@ -549,7 +549,7 @@ punctuate the wall; ambient green stays purged.
 
 A collapsed thinking run is exactly one display line. Every non-empty source
 line from every adjacent thinking block is converted to plain inline text and
-appended after `Thinking:`, separated by ` · `. Source newlines and Markdown
+appended directly, separated by ` · `. Source newlines and Markdown
 paragraph boundaries never become display rows. Empty or whitespace-only
 thinking fragments do not render and do not break the run.
 
