@@ -8,8 +8,8 @@
       "extensions/pi-cachemire/index.ts": 859,
       "extensions/pi-contextimate/index.ts": 1568,
       "extensions/pi-traceline/index.ts": 1730,
-      "tests/contract/pi-internals.test.ts": 430,
-      "tests/traceline/one-line.test.ts": 775
+      "tests/contract/pi-internals.test.ts": 401,
+      "tests/traceline/one-line.test.ts": 774
     }
   }
 }

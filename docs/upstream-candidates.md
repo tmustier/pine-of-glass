@@ -18,8 +18,7 @@ Entries pin the pi version inspected; internals drift, so re-verify before filin
 [pine-of-glass#14](https://github.com/tmustier/pine-of-glass/issues/14)
 
 **Resolved:** Pi 0.80.8 and 0.80.9 emit one collapsed label per adjacent thinking
-run. Traceline's installed-Pi contract pins that cardinality and still accepts the
-older label-per-block shape.
+run. Traceline's installed-Pi contract pins that cardinality.
 
 In Pi 0.79.1, with reasoning hidden (Ctrl+T), `AssistantMessageComponent` rendered
 the collapsed `Thinking...` label **once per thinking block, not per message**

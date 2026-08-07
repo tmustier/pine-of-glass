@@ -41,7 +41,6 @@ const {
   flattenInvocationLines,
   renderTraceRow,
   readRun,
-  dedupeThinkingLabels,
   setTracelineChat,
   setTracelineThemeGetter,
 } = internals;

@@ -555,12 +555,9 @@ thinking fragments do not render and do not break the run.
 
 The line middle-truncates at the terminal width, preserving both its opening
 context and the newest appended thought. Pi's native run label becomes that one
-preview; extra labels and spacers from older label-per-block Pi versions also
-disappear. Any non-thinking content entry, including text, a tool call or
-another semantic block, ends the run and keeps the native boundary before the
-next one-line preview. A non-empty run that cannot yield sanitized text keeps
-one native label. Native `Thinking...` labels with no matching content metadata
-retain the safe duplicate-label fallback.
+preview. Any non-thinking content entry, including text or a tool call, ends
+the run and keeps the native boundary before the next one-line preview. A run
+that cannot yield sanitized text keeps its native label.
 
 With traceline loaded, Ctrl+T's effect is self-evident: every tool row collapses
 to a trace line or expands back. So traceline suppresses pi's
