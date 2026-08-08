@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Contextimate now reconciles its startup block across the live TUI tree, preventing
+  duplicate blocks when another extension rehosts Pi's startup resources or after
+  repeated reloads. It no longer resets headers owned by other extensions.
 - Meantime no longer estimates live tok/s from streamed thinking text, whose
   relationship to reasoning tokens varies by provider. Live rate appears only while
   writing, calibrated from visible writing chars and non-reasoning output tokens.

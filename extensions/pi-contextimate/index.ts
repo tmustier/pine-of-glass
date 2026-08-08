@@ -5,7 +5,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { isJsonObject, positiveNumberValue, stringValue } from "../_lib/boundary.ts";
-import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
+import { RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import {
@@ -40,6 +40,14 @@ import {
   type SessionEstimate,
   type SessionSource,
 } from "./session-accounting.ts";
+import {
+  collectContainers,
+  findContextBlockTarget,
+  prefixBlockLocations,
+  reconcileContextBlockTree,
+  removeExistingPrefixBlocks,
+  type ContextimateTui,
+} from "./startup-block.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -154,11 +162,6 @@ type PrefixSnapshot = {
    * (issue #58): the count is old-currency, the window is new-currency, and the two
    * must not be composed. Cleared by the first post-switch usage. */
   preSwitchUsage?: { billedModel: string };
-};
-
-type ContextimateTui = {
-  children?: unknown[];
-  requestRender?: (force?: boolean) => void;
 };
 
 type ContextimateGlobal = typeof globalThis & {
@@ -1333,67 +1336,21 @@ class StartupContextComponent implements Component {
   }
 }
 
-function renderPlain(component: Component, width = 120): string {
-  try {
-    return stripAnsi(component.render(width).join("\n"));
-  } catch {
-    return "";
-  }
-}
-
-function isPrefixBlock(component: unknown): component is StartupContextComponent {
-  return !!component && typeof component === "object" && (component as { __piContextimateBlock?: boolean }).__piContextimateBlock === true;
-}
-
-// _lib/chat.ts isResourceRow, minus the panel itself: the [Contextimate] block renders
-// arbitrary text the fuzzy [Section] regex must never re-anchor on.
-function isResourceComponent(component: unknown): boolean {
-  return !isPrefixBlock(component) && isResourceRow(component);
-}
-
-function isBlankComponent(component: Component): boolean {
-  const text = renderPlain(component, 80);
-  return text.trim().length === 0;
-}
-
-function findResourceChatContainer(node: unknown): ContainerLike | undefined {
-  return findContainerBy(node, (children) => children.some((child) => isResourceComponent(child)));
-}
-
-function removeExistingPrefixBlocks(chat: ContainerLike): void {
-  if (!Array.isArray(chat.children)) return;
-  chat.children = chat.children.filter((child) => !isPrefixBlock(child));
-}
-
-function insertionIndexAfterResourceList(chat: ContainerLike): number {
-  if (!Array.isArray(chat.children)) return -1;
-  let index = -1;
-  for (let i = 0; i < chat.children.length; i++) {
-    if (!isResourceComponent(chat.children[i])) continue;
-    index = i;
-    if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;
-  }
-  return index;
-}
-
 function isContextBlockInstalled(block: StartupContextComponent): boolean {
-  const chat = g.__piContextimateChat;
-  return Array.isArray(chat?.children) && chat.children.includes(block);
+  const tui = g.__piContextimateTui;
+  const target = findContextBlockTarget(tui, g.__piContextimateChat);
+  if (!tui || !target) return false;
+  const locations = prefixBlockLocations(tui);
+  return locations.length === 1 && locations[0]?.container === target && locations[0].block === block;
 }
 
 function installContextBlock(block: StartupContextComponent): boolean {
   const tui = g.__piContextimateTui;
-  const chat = findResourceChatContainer(tui) ?? g.__piContextimateChat;
-  if (!chat || !Array.isArray(chat.children)) return false;
+  const chat = findContextBlockTarget(tui, g.__piContextimateChat);
+  if (!tui || !chat || !Array.isArray(chat.children)) return false;
 
   g.__piContextimateChat = chat;
-  if (chat.children.includes(block)) return true;
-
-  removeExistingPrefixBlocks(chat);
-  const insertAfter = insertionIndexAfterResourceList(chat);
-  const insertAt = insertAfter >= 0 ? insertAfter + 1 : 0;
-  chat.children.splice(insertAt, 0, block);
-  tui?.requestRender?.(true);
+  if (reconcileContextBlockTree(tui, chat, block)) tui.requestRender?.(true);
   return true;
 }
 
@@ -1461,6 +1418,11 @@ export const internals = {
   renderCompact,
   renderExpanded,
   stripAnsi,
+  // startup block lifecycle
+  collectContainers,
+  prefixBlockLocations,
+  removeExistingPrefixBlocks,
+  reconcileContextBlockTree,
 };
 
 export type {
@@ -1491,8 +1453,8 @@ export default function piContextimate(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
-    // Restore Pi's normal header; this extension now renders below Pi's loaded-resource list.
-    ctx.ui.setHeader(undefined);
+    if (g.__piContextimateInstallTimer) clearTimeout(g.__piContextimateInstallTimer);
+    g.__piContextimateInstallTimer = undefined;
 
     const currentMode = g.__piContextimateMode ?? DEFAULT_MODE;
     const config = loadContextimateConfig(ctx.cwd);
@@ -1548,7 +1510,11 @@ export default function piContextimate(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     if (g.__piContextimateInstallTimer) clearTimeout(g.__piContextimateInstallTimer);
+    removeExistingPrefixBlocks(g.__piContextimateTui);
     g.__piContextimateInstallTimer = undefined;
+    g.__piContextimateBlock = undefined;
+    g.__piContextimateChat = undefined;
+    g.__piContextimateTui = undefined;
   });
 
   pi.registerCommand("contextimate", {

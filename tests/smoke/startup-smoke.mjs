@@ -168,8 +168,15 @@ try {
   waitFor("post-reload render", (text) => text.includes("[Contextimate]"), 60000);
   sleep(2000); // settle: reload re-renders the startup listing
   pane = capture({ visibleOnly: true });
-  const blocks = (pane.match(/\[Contextimate\]/g) ?? []).length;
+  let blocks = (pane.match(/\[Contextimate\]/g) ?? []).length;
   check("exactly one estimator block after /reload", blocks === 1, `found ${blocks}`);
+
+  run(["tmux", "send-keys", "-t", session, "/reload", "Enter"]);
+  waitFor("second post-reload render", (text) => text.includes("[Contextimate]"), 60000);
+  sleep(2000);
+  pane = capture({ visibleOnly: true });
+  blocks = (pane.match(/\[Contextimate\]/g) ?? []).length;
+  check("exactly one estimator block after repeated /reload", blocks === 1, `found ${blocks}`);
 
   // 4. The Ctrl+T chat rebuild (pi clears + rebuilds the chat container from session
   // messages, dropping raw appended children): cachemire's /cache ledger line must
@@ -200,6 +207,8 @@ try {
     !/Thinking blocks: (hidden|visible)/.test(pane),
     "status line still rendered",
   );
+  blocks = (pane.match(/\[Contextimate\]/g) ?? []).length;
+  check("exactly one estimator block after the Ctrl+T chat rebuild", blocks === 1, `found ${blocks}`);
   check("cachemire ledger survives the Ctrl+T chat rebuild", pane.includes("cache & loop ledger"));
   check("meantime pace panel survives the Ctrl+T chat rebuild", pane.includes("no timed model calls yet"));
 } finally {
