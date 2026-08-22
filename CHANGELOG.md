@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.2 (2026-08-22)
+
 - Cachemire keeps live request fingerprints across Pi hot reloads, allowing the first
   post-reload miss to identify changed tool schemas and other prompt-prefix mutations.
 - Meantime no longer estimates live tok/s from streamed thinking text, whose
