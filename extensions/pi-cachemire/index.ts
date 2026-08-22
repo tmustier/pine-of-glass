@@ -476,7 +476,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   const ownsState = () => g.__piCachemireOwner === ownerToken;
   bindProviderUsageOverlays(pi);
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     if (!ctx.hasUI) return;
     if (g.__piCachemireOwner !== undefined && !ownsState()) return;
     g.__piCachemireOwner = ownerToken;
@@ -484,7 +484,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const entries = ctx.sessionManager.getEntries();
     const { messages } = buildSessionContext(entries, ctx.sessionManager.getLeafId());
     s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);
-    s.lineages = restoreLineageSnapshots(entries);
+    s.lineages = restoreLineageSnapshots(entries, event.reason === "reload" ? s.lineages : undefined);
     const baseline = findBranchBaseline(entries, ctx.sessionManager.getLeafId(), s.lineages);
     const model = ctx.model;
     if (model) {

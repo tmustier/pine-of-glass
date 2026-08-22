@@ -163,10 +163,12 @@ Cachemire follows these rules:
   follows Pi's normal session persistence; Cachemire adds no custom session entries.
 - Freshness wording follows the generated policy table above. Unknown retention stays
   silent. Under subscription auth, Cachemire marks savings as notional.
-- Sessions restored with `--continue` rebuild the active ledger and all-branch cache
-  baselines from session usage. Cachemire marks restored rows and excludes them from
-  savings because their pricing context is unknown. Model-level policies resolve through
-  the same registry; request-only payload evidence does not survive restore.
+- Hot reloads reattach process-live payload fingerprints to the same persisted calls,
+  so tool-schema and other prefix changes remain diagnosable. Sessions restored with
+  `--continue` rebuild the active ledger and all-branch cache baselines from session
+  usage. Cachemire marks restored rows and excludes them from savings because their
+  pricing context is unknown. Model-level policies resolve through the same registry;
+  request-only payload evidence does not survive a process restart or session resume.
 
 ## Understand the model behind the wording
 

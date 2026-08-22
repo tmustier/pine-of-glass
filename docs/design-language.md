@@ -198,9 +198,11 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   abandoned leaf. Use the last provider-billed prompt on the selected path as a
   comparison baseline. It is not the whole next prompt, which includes new suffix
   content. A later request refreshes that baseline only when session ancestry and its
-  provider, model, cache evidence and payload fingerprint prove compatibility. The
-  intentional suffix divergence is ordinary prefix growth; withhold its estimate until
-  provider usage makes the new request exact
+  provider, model, cache evidence and payload fingerprint prove compatibility. A hot
+  reload carries live fingerprints onto the same persisted provider calls, so a tool or
+  system-prefix change made by the reload remains observable. The intentional suffix
+  divergence is ordinary prefix growth; withhold its estimate until provider usage makes
+  the new request exact
 - a model switch re-prices the conversation; the wording leads with the consequence
   (the whole prompt goes uncached to the new provider): `cache cold expected · model
   switched · next send ~32.4k uncached to anthropic (est)`. The headline is the
