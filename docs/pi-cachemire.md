@@ -175,9 +175,12 @@ Working state and rendered output live in the extension process. Cachemire adds 
 session entries or exports. Corrected Moonshot and Together counts become ordinary Pi
 assistant usage and follow Pi's normal session lifecycle.
 
-On restore, Cachemire rebuilds its ledger and branch baselines from billed usage in
-assistant messages. Payload fingerprints, request-start observations and live retention
-fields are not persisted. Diagnoses that need those fields remain unknown.
+On hot reload, Cachemire reattaches the process-live payload fingerprints to their
+persisted provider calls. Tool-schema and other prefix changes introduced by the reload
+therefore remain diagnosable. On process restart or session resume, Cachemire rebuilds
+its ledger and branch baselines from billed usage in assistant messages. Payload
+fingerprints, request-start observations and live retention fields are not persisted;
+diagnoses that need those fields remain unknown.
 
 Only the interactive Pi extension instance owns the process-global state. Nested
 headless sessions cannot overwrite its ledger, clock or model metadata. The interactive

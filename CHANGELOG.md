@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Cachemire keeps live request fingerprints across Pi hot reloads, allowing the first
+  post-reload miss to identify changed tool schemas and other prompt-prefix mutations.
 - Meantime no longer estimates live tok/s from streamed thinking text, whose
   relationship to reasoning tokens varies by provider. Live rate appears only while
   writing, calibrated from visible writing chars and non-reasoning output tokens.

@@ -70,11 +70,26 @@ function persistedEntryTimes(entries: readonly unknown[]): Map<string, number> {
 }
 
 /** Restore every normal provider call in the session tree, not only the active branch. */
-export function restoreLineageSnapshots(entries: readonly unknown[]): CacheLineageSnapshot[] {
+export function restoreLineageSnapshots(
+  entries: readonly unknown[],
+  previousSnapshots?: CacheLineageSnapshot[],
+): CacheLineageSnapshot[] {
   const entryTimes = persistedEntryTimes(entries);
-  return entries
+  const restored = entries
     .map((entry) => billedSnapshotFromEntry(entry, entryTimes))
     .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined);
+  if (!previousSnapshots) return restored;
+
+  const fingerprints = new Map<string, RequestFingerprint>();
+  for (const snapshot of previousSnapshots) {
+    if (snapshot.responseEntryId && snapshot.fingerprint) {
+      fingerprints.set(snapshot.responseEntryId, snapshot.fingerprint);
+    }
+  }
+  for (const snapshot of restored) {
+    if (snapshot.responseEntryId) snapshot.fingerprint = fingerprints.get(snapshot.responseEntryId);
+  }
+  return restored;
 }
 
 function responseLinkKey(snapshot: CacheLineageSnapshot): string {
