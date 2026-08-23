@@ -35,6 +35,29 @@ function markdownToPlainInline(rawLine: string): string {
   return first ? stripAnsi(first).replace(/\s+/g, " ").trim() : markdown;
 }
 
+// The assistant-row prototype patch routes every row render (one per streaming-delta
+// frame) through replaceThinkingLabels(), so preview derivation must not rescan the
+// whole message each frame: on long conversations that cost scales with total thinking
+// volume and dominates render time. Cache one derived preview per thinking block
+// object; the length key means a streaming block that grows in place re-derives only
+// itself while historical blocks hit the cache. WeakMap keys die with their message.
+const blockPreviewCache = new WeakMap<object, { sourceLength: number; preview: string }>();
+
+function previewForBlock(block: { type?: unknown; thinking?: unknown }): string | undefined {
+  if (block?.type !== "thinking" || typeof block.thinking !== "string" || !block.thinking.trim()) return undefined;
+  const cached = blockPreviewCache.get(block);
+  if (cached && cached.sourceLength === block.thinking.length) return cached.preview;
+
+  const fragments: string[] = [];
+  for (const line of block.thinking.split(/\r\n|\r|\n/)) {
+    const fragment = markdownToPlainInline(line);
+    if (fragment) fragments.push(fragment);
+  }
+  const preview = fragments.join(" · ");
+  blockPreviewCache.set(block, { sourceLength: block.thinking.length, preview });
+  return preview;
+}
+
 function replaceVisibleLabel(line: string, preview: string, width?: number): string {
   const visible = stripAnsi(line);
   const leading = visible.match(/^\s*/)?.[0].length ?? 0;
@@ -52,22 +75,19 @@ export function replaceThinkingLabels(comp: AssistantRowDataLike, lines: string[
   if (typeof label !== "string" || label.length === 0 || !Array.isArray(content)) return lines;
 
   const previews: string[] = [];
-  let fragments: string[] | undefined;
+  let group: string[] | undefined;
   for (const block of content) {
-    if (block?.type === "thinking") {
-      if (typeof block.thinking === "string" && block.thinking.trim()) {
-        fragments ??= [];
-        for (const line of block.thinking.split(/\r\n|\r|\n/)) {
-          const fragment = markdownToPlainInline(line);
-          if (fragment) fragments.push(fragment);
-        }
-      }
+    if (block && typeof block === "object" && (block as { type?: unknown }).type === "thinking") {
+      // Non-empty thinking blocks extend the current group; empty ones leave it open,
+      // matching the previous accumulation semantics.
+      const preview = previewForBlock(block as { type?: unknown; thinking?: unknown });
+      if (preview !== undefined) (group ??= []).push(preview);
       continue;
     }
-    if (fragments) previews.push(fragments.join(" · "));
-    fragments = undefined;
+    if (group) previews.push(group.join(" · "));
+    group = undefined;
   }
-  if (fragments) previews.push(fragments.join(" · "));
+  if (group) previews.push(group.join(" · "));
 
   if (lines.filter((line) => stripAnsi(line).trim() === label).length !== previews.length) return lines;
 
