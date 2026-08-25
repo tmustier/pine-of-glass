@@ -79,6 +79,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
+| The same two-runner setup keeps a headless child's `session_start` and `session_shutdown` from dropping the interactive Traceline TUI handle or Ctrl+T listener | traceline process-global TUI ownership |
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
 | OpenAI Completions ignores top-level `usage.cached_tokens`; provider registration and custom fetch remain public extension seams | cachemire Moonshot and Together usage overlay |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |

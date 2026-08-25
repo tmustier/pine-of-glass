@@ -55,8 +55,8 @@ import {
   type DiffStats,
 } from "./write-diff.ts";
 import { replaceThinkingLabels } from "./thinking-preview.ts";
-import { bindInteractiveTuiOwnership } from "./interactive-tui-ownership.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
+import { createTracelineTuiOwner } from "./tui-owner.ts";
 
 /**
  * pi-traceline — collapse each tool call to one scannable trace line so the full arc of
@@ -1619,7 +1619,8 @@ export default function piTraceline(pi: ExtensionAPI) {
     ),
   );
   let patchTimer: ReturnType<typeof setTimeout> | undefined;
-
+  const tuiOwner = createTracelineTuiOwner();
+  let inputUnsubscribe: (() => void) | undefined;
   const applyPatches = () => {
     patchTimer = undefined;
     if (tryPatch()) g.__tracelineTui?.requestRender();
@@ -1677,50 +1678,49 @@ export default function piTraceline(pi: ExtensionAPI) {
     handler: async (_args, ctx) => startDrill(ctx),
   });
   pi.on("message_start", (event, ctx) => {
-    if (ctx.mode === "tui" && event.message.role === "assistant") schedulePatches();
+    if (tuiOwner.owns() && ctx.mode === "tui" && event.message.role === "assistant") schedulePatches();
   });
-  pi.on("message_update", (_event, ctx) => { if (ctx.mode === "tui") schedulePatches(); });
-  pi.on("tool_execution_start", (_event, ctx) => { if (ctx.mode === "tui") schedulePatches(); });
-  pi.on("session_tree", (_event, ctx) => { if (ctx.mode === "tui") schedulePatches(); });
+  pi.on("message_update", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
+  pi.on("tool_execution_start", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
+  pi.on("session_tree", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
   pi.on("tool_call", (event, ctx) => {
-    if (ctx.mode !== "tui" || event.toolName !== "write") return;
+    if (!tuiOwner.owns() || ctx.mode !== "tui" || event.toolName !== "write") return;
     try {
       captureWriteCallSnapshot(event.toolCallId, event.input, ctx.cwd);
     } catch {
       /* Traceline display work must never block write execution. */
     }
   });
-  bindInteractiveTuiOwnership(pi, {
-    arm: (ctx) => {
-      clearPatchTimer();
-      clearWriteCallSnapshots();
-      setTracelineChat(undefined);
-      g.__tracelineTui = undefined;
-      configureSizeThresholds(config);
+  pi.on("session_start", (_event, ctx) => {
+    if (!tuiOwner.claim(ctx)) return;
+    clearPatchTimer();
+    clearWriteCallSnapshots();
+    setTracelineChat(undefined);
+    g.__tracelineTui = undefined;
+    configureSizeThresholds(config);
+    g.__tracelineGetTheme = () => ctx.ui.theme;
+    captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
+      g.__tracelineTui = tui;
+      if (tryPatch()) tui.requestRender();
+      else schedulePatches();
+    });
+    inputUnsubscribe?.();
+    inputUnsubscribe = ctx.ui.onTerminalInput((data) => {
+      // A foreign chord exits drill mode before the same input reaches Pi (§9.13).
+      handleDrillTerminalInput(data);
+      return handleThinkingToggleTerminalInput(data, ctx.ui, afterThinkingToggle);
+    });
+  });
 
-      g.__tracelineGetTheme = () => ctx.ui.theme;
-      captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
-        g.__tracelineTui = tui;
-        if (tryPatch()) tui.requestRender();
-        else schedulePatches();
-      });
-
-      // Make reload/session-start idempotent: do not stack raw-input listeners.
-      // Pi still owns Ctrl+T's reasoning toggle. Traceline only clears a conflicting
-      // Ctrl+O expansion first, then lets the same keypress continue to Pi (§9.12).
-      return ctx.ui.onTerminalInput((data) => {
-        // A foreign chord exits drill mode before the same input reaches Pi (§9.13).
-        handleDrillTerminalInput(data);
-        return handleThinkingToggleTerminalInput(data, ctx.ui, afterThinkingToggle);
-      });
-    },
-    disarm: () => {
-      clearPatchTimer();
-      clearWriteCallSnapshots();
-      exitDrillMode(); // restores the editor when shutdown interrupts drill mode
-      g.__tracelineTui = undefined;
-      setTracelineChat(undefined);
-      setTracelineThemeGetter(undefined);
-    },
+  pi.on("session_shutdown", () => {
+    if (!tuiOwner.release()) return;
+    inputUnsubscribe?.();
+    inputUnsubscribe = undefined;
+    clearPatchTimer();
+    clearWriteCallSnapshots();
+    exitDrillMode();
+    g.__tracelineTui = undefined;
+    setTracelineChat(undefined);
+    setTracelineThemeGetter(undefined);
   });
 }

@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Traceline no longer lets a headless child session (a pi-subagents
-  general-purpose run in the same process) drop the parent pane's Ctrl+T
-  listener or TUI handle. Rails stay togglable after the child exits.
+- Traceline keeps the parent pane's Ctrl+T listener and TUI handle when a
+  subagent child starts and ends in the same process. Rails still toggle after
+  the child exits.
 
 ## 0.10.2 (2026-08-22)
 
