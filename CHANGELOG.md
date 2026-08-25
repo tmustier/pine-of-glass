@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Traceline no longer lets a headless child session (a pi-subagents
+  general-purpose run in the same process) drop the parent pane's Ctrl+T
+  listener or TUI handle. Rails stay togglable after the child exits.
+
 ## 0.10.2 (2026-08-22)
 
 - Cachemire keeps live request fingerprints across Pi hot reloads, allowing the first

@@ -55,6 +55,7 @@ import {
   type DiffStats,
 } from "./write-diff.ts";
 import { replaceThinkingLabels } from "./thinking-preview.ts";
+import { bindInteractiveTuiOwnership } from "./interactive-tui-ownership.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 
 /**
@@ -136,7 +137,6 @@ type TracelineGlobal = typeof globalThis & {
   __tracelinePatchVersion?: number;
   __tracelineTui?: TUI;
   __tracelineChat?: ContainerLike;
-  __tracelineInputUnsubscribe?: () => void;
   __tracelineGetTheme?: () => Theme | undefined;
   __tracelineAssistantPatchVersion?: number;
 };
@@ -1690,40 +1690,37 @@ export default function piTraceline(pi: ExtensionAPI) {
       /* Traceline display work must never block write execution. */
     }
   });
-  pi.on("session_start", (_event, ctx) => {
-    clearPatchTimer();
-    clearWriteCallSnapshots();
-    setTracelineChat(undefined);
-    g.__tracelineTui = undefined;
-    configureSizeThresholds(config);
-    if (ctx.mode !== "tui") return;
+  bindInteractiveTuiOwnership(pi, {
+    arm: (ctx) => {
+      clearPatchTimer();
+      clearWriteCallSnapshots();
+      setTracelineChat(undefined);
+      g.__tracelineTui = undefined;
+      configureSizeThresholds(config);
 
-    g.__tracelineGetTheme = () => ctx.ui.theme;
-    captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
-      g.__tracelineTui = tui;
-      if (tryPatch()) tui.requestRender();
-      else schedulePatches();
-    });
+      g.__tracelineGetTheme = () => ctx.ui.theme;
+      captureTui(ctx.ui, "__pi_traceline_capture", (tui) => {
+        g.__tracelineTui = tui;
+        if (tryPatch()) tui.requestRender();
+        else schedulePatches();
+      });
 
-    // Make reload/session-start idempotent: do not stack raw-input listeners.
-    // Pi still owns Ctrl+T's reasoning toggle. Traceline only clears a conflicting
-    // Ctrl+O expansion first, then lets the same keypress continue to Pi (§9.12).
-    g.__tracelineInputUnsubscribe?.();
-    g.__tracelineInputUnsubscribe = ctx.ui.onTerminalInput((data) => {
-      // A foreign chord exits drill mode before the same input reaches Pi (§9.13).
-      handleDrillTerminalInput(data);
-      return handleThinkingToggleTerminalInput(data, ctx.ui, afterThinkingToggle);
-    });
-  });
-
-  pi.on("session_shutdown", () => {
-    clearPatchTimer();
-    clearWriteCallSnapshots();
-    exitDrillMode(); // restores the editor when shutdown interrupts drill mode
-    g.__tracelineInputUnsubscribe?.();
-    g.__tracelineInputUnsubscribe = undefined;
-    g.__tracelineTui = undefined;
-    setTracelineChat(undefined);
-    setTracelineThemeGetter(undefined);
+      // Make reload/session-start idempotent: do not stack raw-input listeners.
+      // Pi still owns Ctrl+T's reasoning toggle. Traceline only clears a conflicting
+      // Ctrl+O expansion first, then lets the same keypress continue to Pi (§9.12).
+      return ctx.ui.onTerminalInput((data) => {
+        // A foreign chord exits drill mode before the same input reaches Pi (§9.13).
+        handleDrillTerminalInput(data);
+        return handleThinkingToggleTerminalInput(data, ctx.ui, afterThinkingToggle);
+      });
+    },
+    disarm: () => {
+      clearPatchTimer();
+      clearWriteCallSnapshots();
+      exitDrillMode(); // restores the editor when shutdown interrupts drill mode
+      g.__tracelineTui = undefined;
+      setTracelineChat(undefined);
+      setTracelineThemeGetter(undefined);
+    },
   });
 }
