@@ -139,6 +139,7 @@ type TracelineGlobal = typeof globalThis & {
   __tracelineInputUnsubscribe?: () => void;
   __tracelineGetTheme?: () => Theme | undefined;
   __tracelineAssistantPatchVersion?: number;
+  __tracelineStructEpoch?: number;
 };
 const g = globalThis as TracelineGlobal;
 function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
@@ -1500,6 +1501,16 @@ function currentPatchInstalled(): boolean {
   return g.__tracelinePatchVersion === TOOL_ROW_PATCH_VERSION;
 }
 
+// Render memo for finished rows. A row's trace lines depend on its own (immutable once
+// finished) data plus block-scoped context that only changes on structural events:
+// sibling appends and expansion toggles. Instead of re-deriving that context per row
+// per repaint (O(rows²) with the naive expandedCount scan), we keep a monotonically
+// increasing epoch: bumped when any row expands (patched setExpanded) and when the
+// chat tail grows (patched container addChild). Cache is per row (WeakMap) keyed by
+// width; a hit also requires the row's status to be unchanged. Running rows bypass
+// the cache — their status and duration are live.
+const rowRenderCache = new WeakMap<object, Map<number, { epoch: number; status: Tone; lines: string[] }>>();
+
 function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
   if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
   const original = proto.__tracelineOriginalRender ?? proto.render;
@@ -1514,11 +1525,32 @@ function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
         const bullet = ink(currentTheme(), statusTone(this), TOOL_BULLET);
         return drillDecorateNativeRow(currentTheme(), this, original.call(this, width), bullet);
       }
-      return renderTraceRow(this, width);
+      const status = statusTone(this);
+      if (status === "running") return renderTraceRow(this, width);
+      const epoch = g.__tracelineStructEpoch ?? 0;
+      const hit = rowRenderCache.get(this)?.get(width);
+      if (hit && hit.epoch === epoch && hit.status === status) return hit.lines;
+      const lines = renderTraceRow(this, width);
+      let perWidth = rowRenderCache.get(this);
+      if (!perWidth) {
+        perWidth = new Map();
+        rowRenderCache.set(this, perWidth);
+      }
+      if (perWidth.size > 8) perWidth.clear(); // width flips are rare (resize only)
+      perWidth.set(width, { epoch, status, lines });
+      return lines;
     } catch {
       return original.call(this, width);
     }
   };
+  const originalSetExpanded = proto.setExpanded;
+  if (typeof originalSetExpanded === "function") {
+    proto.setExpanded = function (this: ToolRowLike, ...args: unknown[]) {
+      const result = originalSetExpanded.apply(this, args);
+      g.__tracelineStructEpoch = (g.__tracelineStructEpoch ?? 0) + 1;
+      return result;
+    };
+  }
   g.__tracelinePatchVersion = TOOL_ROW_PATCH_VERSION;
 }
 
@@ -1540,6 +1572,18 @@ function tryPatch(): boolean {
     if (!assistantWasPatched) {
       const assistant = sibs.find(isAssistantRow);
       if (assistant) patchAssistantRowPrototype(Object.getPrototypeOf(assistant));
+    }
+    // Any appended child (tool rows, assistant messages, spacers) changes block context
+    // for neighbouring rows — invalidate the per-row render memo generation once.
+    const chat = g.__tracelineChat;
+    if (chat && typeof chat.addChild === "function" && !chat.__tracelineEpochPatched) {
+      const addChild = chat.addChild.bind(chat);
+      chat.addChild = (child: unknown) => {
+        const result = addChild(child);
+        g.__tracelineStructEpoch = (g.__tracelineStructEpoch ?? 0) + 1;
+        return result;
+      };
+      chat.__tracelineEpochPatched = true;
     }
   } catch {
     return false;
