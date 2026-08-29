@@ -114,6 +114,8 @@ export function isAssistantRow(component: unknown): component is AssistantRowLik
 export interface ContainerLike {
   children: unknown[];
   addChild?: (child: unknown) => void;
+  /** traceline-internal: addChild epoch patch installed */
+  __tracelineEpochPatched?: boolean;
 }
 
 /** Depth-first search for the container whose direct children satisfy `predicate`. */
