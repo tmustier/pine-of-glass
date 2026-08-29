@@ -1500,6 +1500,12 @@ function currentPatchInstalled(): boolean {
   return g.__tracelinePatchVersion === TOOL_ROW_PATCH_VERSION;
 }
 
+// Render memo keyed by (sibling array identity, width, row position). Finished rows are
+// immutable once their tool call completes, so each block renders once instead of on
+// every repaint. Running rows bypass the cache (live status/duration). Structural
+// changes invalidate via sibs.length / row index / expandedCount in the key.
+const rowRenderCache = new WeakMap<object, Map<string, string[]>>();
+
 function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
   if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
   const original = proto.__tracelineOriginalRender ?? proto.render;
@@ -1514,7 +1520,23 @@ function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
         const bullet = ink(currentTheme(), statusTone(this), TOOL_BULLET);
         return drillDecorateNativeRow(currentTheme(), this, original.call(this, width), bullet);
       }
-      return renderTraceRow(this, width);
+      if (statusTone(this) === "running") return renderTraceRow(this, width);
+      const found = componentLocation(this);
+      if (!found) return renderTraceRow(this, width);
+      let expandedCount = 0;
+      for (const c of found.sibs) if (isToolRow(c) && c.expanded === true) expandedCount++;
+      const key = `${width}|${this.expanded === true}|${found.sibs.length}|${found.index}|${expandedCount}`;
+      let perSibs = rowRenderCache.get(found.sibs);
+      if (!perSibs) {
+        perSibs = new Map();
+        rowRenderCache.set(found.sibs, perSibs);
+      }
+      const hit = perSibs.get(key);
+      if (hit) return hit;
+      const lines = renderTraceRow(this, width);
+      if (perSibs.size > 1024) perSibs.clear();
+      perSibs.set(key, lines);
+      return lines;
     } catch {
       return original.call(this, width);
     }
