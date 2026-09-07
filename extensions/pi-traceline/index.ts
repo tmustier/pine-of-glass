@@ -42,6 +42,7 @@ import {
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact } from "./image-fact.ts";
+import { installTraceMouse, isRevealed, resetRevealedFolds, revealedBullet } from "./click.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
@@ -158,7 +159,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 // gutter, so the suffix column never touches the terminal edge.
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const TOOL_ROW_PATCH_VERSION = 28;
+const TOOL_ROW_PATCH_VERSION = 29;
 const ASSISTANT_ROW_PATCH_VERSION = 5;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
@@ -285,8 +286,8 @@ function discriminatorInk(comp: ToolRowDataLike | undefined, text: string): stri
 // rows fuse into one visible block, and the blank spacer before a group ends the rail.
 // While drill mode is active (§9.13), a numbered row swaps the rail cell for its
 // right-aligned number at identical width, so numbering never reflows the transcript.
-function toolPrefix(tone: Tone, comp?: ToolRowDataLike): string {
-  const bullet = ink(currentTheme(), tone, TOOL_BULLET);
+function toolPrefix(tone: Tone, comp?: ToolRowDataLike, disclosure?: string): string {
+  const bullet = ink(currentTheme(), tone, disclosure ?? revealedBullet(comp) ?? TOOL_BULLET);
   return (
     drillTracePrefix(currentTheme(), comp, bullet) ??
     `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`
@@ -1099,9 +1100,9 @@ function traceRowAvailable(width: number): number {
 
 // The one row form shared by single rows and folded read runs: body left, the block's
 // reserved fact-suffix column right (§9.8/§9.1), behind the railed status prefix.
-function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string, suffix: string, reserve: number, width: number): string {
+function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string, suffix: string, reserve: number, width: number, disclosure?: string): string {
   const fitted = rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve);
-  return truncateToWidth(`${toolPrefix(tone, comp)}${fitted}`, Math.max(1, width), ELLIPSIS);
+  return truncateToWidth(`${toolPrefix(tone, comp, disclosure)}${fitted}`, Math.max(1, width), ELLIPSIS);
 }
 
 function oneLine(comp: ToolRowLike, width: number): string {
@@ -1210,7 +1211,7 @@ function readPath(comp: ToolRowDataLike): string | undefined {
 function foldableReadPath(comp: ToolRowDataLike): string | undefined {
   const path = readPath(comp);
   if (path === undefined) return undefined;
-  if (comp.expanded === true) return undefined; // an expanded row (§9.12) never folds
+  if (comp.expanded === true || isRevealed(comp)) return undefined; // explicit view choices never fold
   return toolStatus(comp) === "error" ? undefined : path;
 }
 
@@ -1254,7 +1255,7 @@ function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | un
 
 // Reads, mutations, records and images carry facts a generic count cannot preserve.
 function repetitionKey(comp: ToolRowLike): string | undefined {
-  if (comp.expanded === true || toolLabel(comp.toolName) === "read") return undefined;
+  if (comp.expanded === true || isRevealed(comp) || toolLabel(comp.toolName) === "read") return undefined;
   if (inlineMutationRow(comp) || recordRow(comp) || resultImageFact(comp)) return undefined;
   return stripAnsi(invocationInk(comp)).trim() || undefined;
 }
@@ -1274,7 +1275,7 @@ function foldedRepetitionLine(rows: ToolRowLike[], width: number): string {
   const body = `${invocationInk(failed ?? carrier, available)}${dim(` ×${rows.length}`)}`;
   const suffix = charSuffix(combinedResultChars(rows), facts.sizeColumnLive);
   return fitTraceRow(carrier, status, body, suffix,
-    blockSuffixReserve(blockRows, facts, available), width);
+    blockSuffixReserve(blockRows, facts, available), width, "▸");
 }
 
 function foldedReadSuffix(rows: ToolRowDataLike[], facts: BlockFacts): string {
@@ -1313,7 +1314,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
       .join(",");
     const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
     // rows[0] is the carrier: in drill mode the fold is one target and rows[0] renders it.
-    return [fitTraceRow(rows[0], tone, body, suffix, reserve, width)];
+    return [fitTraceRow(rows[0], tone, body, suffix, reserve, width, "▸")];
   }
 
   // Sibling files fold into one dir row (§9.9): the shared directory prints once
@@ -1384,7 +1385,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   return lines.map((line) =>
     line.continuation
       ? truncateToWidth(`${contPrefix}${middleTruncate(line.ink, contBudget, theme)}`, Math.max(1, width), ELLIPSIS)
-      : fitTraceRow(rows[0], tone, line.ink, suffix, reserve, width),
+      : fitTraceRow(rows[0], tone, line.ink, suffix, reserve, width, "▸"),
   );
 }
 
@@ -1502,23 +1503,15 @@ function currentPatchInstalled(): boolean {
 
 function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
   if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
-  const original = proto.__tracelineOriginalRender ?? proto.render;
-  proto.__tracelineOriginalRender = original;
-  proto.render = function (this: ToolRowLike, width: number) {
-    // One guard, one policy: any failure on traceline's path falls back to the
-    // native render — never let pi-traceline break a render.
-    try {
-      if (displayMode() === "native" || this.expanded === true) {
-        // Native-rendered rows (z2, or an expanded z1 row) still take their drill
-        // number on the leading blank spacer line while drill mode is active (§9.13).
-        const bullet = ink(currentTheme(), statusTone(this), TOOL_BULLET);
-        return drillDecorateNativeRow(currentTheme(), this, original.call(this, width), bullet);
-      }
-      return renderTraceRow(this, width);
-    } catch {
-      return original.call(this, width);
-    }
-  };
+  installTraceMouse(proto, {
+    bulletColumn: TOOL_PREFIX_VISIBLE_WIDTH - TOOL_AFTER_BULLET.length - 1,
+    isCompact: (row) => displayMode() === "oneLine" && row.expanded !== true,
+    renderTrace: renderTraceRow,
+    decorateNative: (row, lines) => drillDecorateNativeRow(
+      currentTheme(), row, lines, ink(currentTheme(), statusTone(row), TOOL_BULLET),
+    ),
+    runRows: (row) => readRun(row)?.rows ?? repetitionRun(row)?.rows,
+  });
   g.__tracelinePatchVersion = TOOL_ROW_PATCH_VERSION;
 }
 
@@ -1591,6 +1584,7 @@ export const internals = {
   oneLine,
   leadingBlank,
   renderTraceRow,
+  patchToolRowPrototype,
   isExpandedToolRow,
   statusTone,
   foldedReadLines,
@@ -1693,6 +1687,8 @@ export default function piTraceline(pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     clearPatchTimer();
     clearWriteCallSnapshots();
+    resetRevealedFolds();
+    g.__tracelinePatchVersion = undefined; // rebind the paired render/input adapter on reload
     setTracelineChat(undefined);
     g.__tracelineTui = undefined;
     configureSizeThresholds(config);
@@ -1719,6 +1715,7 @@ export default function piTraceline(pi: ExtensionAPI) {
   pi.on("session_shutdown", () => {
     clearPatchTimer();
     clearWriteCallSnapshots();
+    resetRevealedFolds();
     exitDrillMode(); // restores the editor when shutdown interrupts drill mode
     g.__tracelineInputUnsubscribe?.();
     g.__tracelineInputUnsubscribe = undefined;

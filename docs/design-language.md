@@ -594,6 +594,29 @@ one deliberate reflow in traceline: an expanded row grows in place and the
 transcript moves to make room. The zero-reflow surfaces are z0 and drill
 mode's numbering.
 
+### 9.12.1 Pointer expansion (fullscreen)
+
+A primary click on a compact tool row opens that call inline at z1; native Pi
+click handling collapses it again. Calls expand independently, without opening
+Drill or moving keyboard focus. Pi owns links, drag selection and scrolling;
+blank group spacing and the outer margins are not click targets. A call becomes
+expandable when its first result arrives, including partial output.
+
+An aggregate wears `▸` in its existing status-bullet cell. Clicking it first
+reveals its members as individual compact rows, without expanding any output.
+The first revealed member wears `▾`: click that glyph to refold the original
+group (also collapsing any expanded members), or click its body to expand only
+that call. Other members retain the ordinary `›` bullet. A native-expanded first
+member must be collapsed before its group control is visible again.
+
+Revealed membership is a snapshot: later calls do not silently join it, and its
+members do not automatically refold after individual collapse. It is transient
+view state, retained through redraws and streaming, reset on reload/session
+replacement. Pi's per-row `expanded` remains the only output-expansion state;
+Ctrl+O still sets all rows and Ctrl+T retains the existing zoom rules. Regular
+terminal-scrollback mode never captures the mouse. Mouse expansion is inactive
+while Drill is open, preserving its frozen keyboard targets.
+
 ### 9.13 Drill mode
 
 Drill mode answers "show me that row" without leaving the transcript: the live
