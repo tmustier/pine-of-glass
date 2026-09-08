@@ -11,7 +11,7 @@ import {
   type AssistantRowLike,
   type AssistantRowPrototypeLike,
   type ContainerLike,
-  resultTextCharCount,
+  resultTextCharCount as rawResultTextCharCount,
   type ToolArgsLike,
   type ToolRowDataLike,
   type ToolRowLike,
@@ -34,23 +34,37 @@ import {
 import { LINE_BREAK_MARK, PREAMBLE_MARK, bashPreambleRun, type BashPreambleRun } from "./bash-preamble.ts";
 import {
   drillDecorateNativeRow,
+  drillRenderKey,
   drillTracePrefix,
   enterDrillMode,
   exitDrillMode,
   type DrillHost,
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
-import { resultImageFact } from "./image-fact.ts";
-import { installTraceMouse, isRevealed, resetRevealedFolds, revealedBullet, type TraceMousePrototype } from "./click.ts";
+import { resultImageFact as rawResultImageFact } from "./image-fact.ts";
+import { isRevealed, resetRevealedFolds, revealRenderKey, revealedBullet, type TraceMousePrototype } from "./click.ts";
+import {
+  cachedIntrinsic,
+  cachedBlockPaths,
+  cachedTraceLayout,
+  installAssistantCacheHook,
+  installCachedTraceMouse,
+  installContainerCacheHooks,
+  objectCacheKey,
+} from "./cache-hooks.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
+import { TraceRenderCache } from "./render-cache.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
+import { TraceTopology, uncachedBlockRows } from "./topology.ts";
+import { isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./connectors.ts";
+import { readPlan, repetitionPlan } from "./fold-plans.ts";
 import {
   captureWriteCallSnapshot,
   clearWriteCallSnapshots,
   diffStatsFromContents,
   diffStatsFromText,
-  mutationDiffStats,
+  mutationDiffStats as rawMutationDiffStats,
   writeDiffStats,
   type DiffStats,
 } from "./write-diff.ts";
@@ -59,75 +73,30 @@ import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 import { createTracelineTuiOwner } from "./tui-owner.ts";
 
 /**
- * pi-traceline — collapse each tool call to one scannable trace line so the full arc of
- * a turn (which path pi took, what context it pulled, which outputs ballooned) reads at
- * a glance. Tool rows follow pi's reasoning-visibility toggle (Ctrl+T).
+ * Collapse tool calls to scannable trace lines that follow Pi's reasoning toggle.
+ * Rendering and spacing follow the family grammar in docs/design-language.md §9;
+ * detailed behaviour and examples live in the user-facing Traceline documentation.
  *
- * pi's built-in Ctrl+T hides/shows model reasoning (collapsing each thinking block to
- * a dim "Thinking..." line). This extension makes tool rows track that same state, so
- * Ctrl+T toggles between two states:
- *   native   = reasoning shown  + pi's native tool rows, unchanged by this extension
- *   one-line = reasoning hidden + each tool row collapsed to one invocation trace line
+ * Native mode leaves Pi's rows intact. One-line mode keeps status in the bullet,
+ * preserves informative invocation tails, and aligns output facts by visual block.
+ * It uses Pi's own call renderer where possible so custom tools retain their grammar.
+ * Bash is flattened and re-inked to keep command-heavy turns visually quiet.
  *
- * pi announces that toggle with a dim "Thinking blocks: hidden/visible" status line at
- * the chat tail. Under traceline the flip is self-evident (every tool row visibly
- * collapses or expands), so that status pair is suppressed before it renders (§9.11);
- * every other showStatus message passes through untouched.
+ * Fold boundaries are semantic rather than merely adjacent. Read paging groups by
+ * path and repetition folds stay within the assistant step linked by toolCallId.
+ * Collapsed thinking and visible prose break the visual rail. Empty tool-call-only
+ * connectors do not. Expansion restores native output and also breaks the rail.
  *
- * One-line rendering reuses pi's native tool call renderer for most tools, so visual
- * defaults (accent paths/backticks, warning line ranges, custom renderers) drift with pi;
- * bash rows re-ink their body from the rendered *text* instead, so the wall of commands
- * stays quiet. Rows are intentionally unbanded (the edit-tool look): status stays in
- * the bullet and severity suffixes. Multiline bash commands are flattened
- * into the one trace line with a dim ↵ marking each original break, so heredocs and
- * inline scripts keep their operative tail instead of collapsing to `$ python3 -c "`.
- * The ink follows the family hierarchy (docs/design-language.md §9): every
- * trace row opens with a dim `▏` rail so a run of tool rows fuses into one visible
- * block against assistant prose; verbs are neutral bold with status in the › bullet
- * (failed rows tint the discriminators — verb, bash head, basename — error, §9.2);
- * bash bodies sit at the one L3-dim supporting grey with the informative command
- * heads L0-bold (§9.4: sequencers — space-delimited or attached `;`,
- * quote-aware — and flattened `↵` breaks start new commands; pipes and redirects
- * continue one; heredoc bodies are inert; `cd`/`set` preambles and echo/true-style
- * plumbing only wear a crown when no real command does), and native rows for other
- * tools demote unstyled spans to dim (§9.6); the boilerplate
- * `(timeout Ns)` suffix is dropped — the full invocation is one Ctrl+T away.
- * Home-dir prefixes are tildified, and over-long invocations are *middle*-truncated with
- * a dimmed `…` so the tail survives — the basename plus its inline qualifier
- * (`:line-range` for a read, `+N -M` for an edit/write) for a path, or the
- * operative end of a command — because that is where the discriminating information lives;
- * the cut snaps to a nearby `/` or space. Plain file reads, edits, and writes additionally
- * dim the directory so the basename stands out. Once a result exists, a right-aligned `1.2k ch` result-size
- * suffix is reserved at the end — dim while healthy, warning-/error-tinted when an output
- * balloons past the size thresholds, so "what flooded the context" pops out of the column.
- * Rows render into a 2-column right inset mirroring the left gutter (§9.1), with a
- * ≥2-space gap between body and suffix, so the block nests on both sides and truncated
- * tails stop crowding the facts.
- * Results under 100 ch render no char suffix (§9.7) unless a neighbouring row in the
- * same block clears the floor — the column is block-scoped (§9.7), so a live column
- * shows every cell and stays vertically aligned, while an all-tiny block stays clean. File-mutation rows carry `+N -M` inline
- * on the basename instead (§9.5), the way a read carries its `:line-range`: the near-noise size cell
- * (a confirmation's length, not the file's) is dropped, so a mutation's suffix stays empty and the
- * magnitude rides the file it changed (zero sides dropped: `+2 -0` → `+2`).
- * Bash rows whose output proves they landed shared state graduate to verb-led outcome
- * rows (§9.10): the record leads and the command trails behind its `$` —
- * `pushed main $ git push` — and the size cell is suppressed below warning severity,
- * because the record is the row's story and a confirmation's length is not.
- * All ink is theme-derived (style.ts ink()), with raw-ANSI fallbacks before a theme exists.
+ * Width only affects final layout. Parsed row facts and shared fold computations are
+ * cached independently, while rendered output records the rows and assistant step it
+ * inspected. Pi's updateDisplay seam and container membership hooks invalidate those
+ * dependencies without flushing unrelated history. Theme and Drill state remain part
+ * of the rendered-output key because both can change pixels without mutating a row.
  *
- * Repetition the model emits is folded rather than re-printed (issue #14): a bash row
- * whose `cd <dir> && ` preamble repeats the previous bash row's renders it as a dim `⋯`,
- * giving the width back to the part of the command that differs; consecutive reads paging
- * through one file collapse into a single `read path:1-200,201-400 · 2 calls` row;
- * consecutive reads of sibling files fold into a dir row that prints the shared
- * directory once and lists the basenames, wrapping at file boundaries when long
- * (§9.9) while a file whose combined result reaches warning severity keeps its own
- * row; and adjacent collapsed thinking blocks append into one informative preview line.
- * Source newlines never add display rows; text, tool calls and other semantic content
- * keep separate thinking runs separate.
- *
- * Spacing: one blank line before a tool group (restoring the spacer pi drops), none
- * between consecutive tools.
+ * Mouse geometry and fold membership are captured from the same cached render. Clicks
+ * therefore act on the group that was painted rather than recomputing against newer
+ * results. Missing mutation hooks deliberately force uncached rendering at that Pi
+ * boundary. Direct internal helpers stay uncached unless a cache test opts in.
  *
  */
 
@@ -139,8 +108,12 @@ type TracelineGlobal = typeof globalThis & {
   __tracelineChat?: ContainerLike;
   __tracelineGetTheme?: () => Theme | undefined;
   __tracelineAssistantPatchVersion?: number;
+  __tracelineRenderCache?: TraceRenderCache;
 };
 const g = globalThis as TracelineGlobal;
+const renderCache = g.__tracelineRenderCache ??= new TraceRenderCache();
+const topology = new TraceTopology(renderCache, isEmptyConnector);
+function topologyChanged(): void { if (g.__tracelineChat) topology.changed(g.__tracelineChat); }
 function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
 function getTracelineChat(): ContainerLike | undefined { return g.__tracelineChat; }
 function setTracelineThemeGetter(getTheme: (() => Theme | undefined) | undefined): void { g.__tracelineGetTheme = getTheme; }
@@ -158,8 +131,8 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 // gutter, so the suffix column never touches the terminal edge.
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
-const TOOL_ROW_PATCH_VERSION = 29;
-const ASSISTANT_ROW_PATCH_VERSION = 7;
+const TOOL_ROW_PATCH_VERSION = 30;
+const ASSISTANT_ROW_PATCH_VERSION = 8;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
 // Before session_start (and in unit tests without a UI), ink falls back to basic ANSI.
@@ -171,6 +144,11 @@ function currentTheme(): Theme | undefined {
 function dim(text: string): string {
   return ink(currentTheme(), "dim", text);
 }
+
+// Immutable row facts survive width changes and unrelated transcript work.
+const resultTextCharCount = cachedIntrinsic(renderCache, "result-chars", rawResultTextCharCount);
+const resultImageFact = cachedIntrinsic(renderCache, "image-fact", rawResultImageFact);
+const mutationDiffStats = cachedIntrinsic(renderCache, "mutation-diff", rawMutationDiffStats);
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
 // Structural detection (isToolRow / isAssistantRow / findChatContainer) lives in _lib
 // and is shared across the extension family.
@@ -191,14 +169,9 @@ function chatChildren(): unknown[] | undefined {
 // turn that issued it, so a sibling assistant row exists whenever this runs; the
 // theoretical no-row case defaults to native rather than guessing from disk.
 function thinkingHidden(): boolean {
-  const sibs = chatChildren();
-  if (sibs) {
-    for (let i = sibs.length - 1; i >= 0; i--) {
-      const row = sibs[i];
-      if (isAssistantRow(row)) return row.hideThinkingBlock;
-    }
-  }
-  return false;
+  chatChildren();
+  const chat = g.__tracelineChat;
+  return chat ? topology.prepare(chat).lastAssistant?.hideThinkingBlock ?? false : false;
 }
 
 function displayMode(): ToolDisplayMode {
@@ -321,6 +294,7 @@ function parseTracelineConfig(value: unknown): TracelineConfig {
 }
 
 function configureSizeThresholds(config: TracelineConfig | undefined): void {
+  renderCache.reset();
   const warning = config?.sizeWarningChars ?? SIZE_THRESHOLDS.warning;
   const error = config?.sizeErrorChars ?? SIZE_THRESHOLDS.error;
   sizeThresholds = { warning, error: Math.max(error, warning) };
@@ -369,21 +343,10 @@ function inlineMutationRow(comp: ToolRowDataLike | undefined): boolean {
 // (block-scoped columns), §9.5 (boring-prefix path emphasis) and §9.8 (shared
 // cut columns) all scope their facts to this run.
 function blockToolRows(comp: ToolRowLike): ToolRowLike[] {
+  if (renderCache.active && g.__tracelineChat) return topology.block(g.__tracelineChat, comp);
   const found = componentLocation(comp);
   if (!found) return [comp];
-  // An expanded row (§9.12 z1) renders native and breaks the trace block like prose.
-  const breaksBlock = (c: unknown) => (!isToolRow(c) && !isEmptyConnector(c)) || isExpandedToolRow(c);
-  let start = found.index;
-  for (let j = found.index - 1; j >= 0; j--) {
-    if (breaksBlock(found.sibs[j])) break;
-    start = j;
-  }
-  const rows: ToolRowLike[] = [];
-  for (let j = start; j < found.sibs.length; j++) {
-    const c = found.sibs[j];
-    if (breaksBlock(c)) break;
-    if (isToolRow(c)) rows.push(c);
-  }
+  const rows = uncachedBlockRows(found.sibs, found.index);
   return rows.length ? rows : [comp];
 }
 
@@ -395,6 +358,13 @@ function blockToolRows(comp: ToolRowLike): ToolRowLike[] {
 type BlockFacts = { sizeColumnLive: boolean; diffColumns: DiffColumns };
 
 function blockFacts(rows: ToolRowLike[]): BlockFacts {
+  return renderCache.memo(rows, `facts:${objectCacheKey(currentTheme())}`, () => {
+    for (const row of rows) renderCache.depend(row);
+    return computeBlockFacts(rows);
+  });
+}
+
+function computeBlockFacts(rows: ToolRowLike[]): BlockFacts {
   // Columns are block-scoped (design language §9.7): the size column lights up for
   // a whole contiguous trace block when any of its completed rows clears the fact
   // floor. An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
@@ -438,10 +408,19 @@ function blockSizeColumnLive(comp: ToolRowLike): boolean {
 // cell — plus the two-space gap (§9.1), so every truncated row in the block cuts at
 // the same columns and its tail ends flush where the suffix column begins.
 function blockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: number): number {
+  return renderCache.memo(rows, `reserve:${available}:${objectCacheKey(currentTheme())}`, () =>
+    computeBlockSuffixReserve(rows, renderCache.active ? blockFacts(rows) : facts, available));
+}
+
+function computeBlockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: number): number {
   let widest = 0;
+  const seen = new Set<ToolRowLike[]>();
   for (const row of rows) {
     const read = readRun(row);
     const repeated = read ? undefined : repetitionRun(row);
+    const group = read?.rows ?? repeated?.rows;
+    if (group && seen.has(group)) continue;
+    if (group) seen.add(group);
     const suffix = read
       ? foldedReadSuffix(read.rows, facts)
       : repeated
@@ -498,6 +477,9 @@ function mutationInlineDiffInk(comp: ToolRowDataLike): string {
 type RecordCellData = { verb: string; data: string[]; tone: RecordTone; opaque: boolean };
 
 function recordCellData(comp: ToolRowDataLike): RecordCellData[] {
+  return renderCache.intrinsic(comp, "records", () => computeRecordCells(comp));
+}
+function computeRecordCells(comp: ToolRowDataLike): RecordCellData[] {
   const merged: RecordCellData[] = [];
   for (const fact of recordFacts(comp)) {
     const last = merged[merged.length - 1];
@@ -754,7 +736,7 @@ function stripTimeoutSuffix(text: string): string {
 // The rendered bash invocation as plain text: every visible line flattened into one,
 // leading bullet and timeout boilerplate dropped. All later transforms (tildify, cd
 // elision) stay in plain text; inkBashRow applies the family ink last.
-function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
+function computeBashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
   const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
@@ -762,6 +744,10 @@ function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefin
   const flattened = flattenInvocationLines(lines.map((line: unknown) => stripAnsi(String(line))));
   if (!flattened) return undefined;
   return stripTimeoutSuffix(flattened.replace(/^•\s*/, ""));
+}
+
+function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
+  return comp ? renderCache.intrinsic(comp, "bash-invocation", () => computeBashInvocationText(comp)) : undefined;
 }
 
 // Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
@@ -966,7 +952,7 @@ function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): s
 // the native visual grammar (paths/backticks, warning line ranges, custom-tool
 // renderers) and only suppresses result/output lines by taking the first visible call
 // line. The verb is re-inked neutral bold (error rows error) per the family hierarchy.
-function nativeInvocationLine(comp: ToolRowDataLike | undefined): string | undefined {
+function computeNativeInvocationLine(comp: ToolRowDataLike | undefined): string | undefined {
   const call = comp?.callRendererComponent;
   if (!call || typeof call.render !== "function") return undefined;
   const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
@@ -978,6 +964,10 @@ function nativeInvocationLine(comp: ToolRowDataLike | undefined): string | undef
   return line
     ? dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))))
     : undefined;
+}
+
+function nativeInvocationLine(comp: ToolRowDataLike | undefined): string | undefined {
+  return comp ? renderCache.intrinsic(comp, `native-invocation:${objectCacheKey(currentTheme())}`, () => computeNativeInvocationLine(comp)) : undefined;
 }
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
@@ -1028,9 +1018,7 @@ function toolPathArg(c: ToolRowDataLike): string | undefined {
 function boringPrefix(comp: ToolRowLike, tildePath: string): string {
   const dir = tildePath.slice(0, tildePath.lastIndexOf("/") + 1);
   const candidates: string[] = [];
-  const blockPaths = blockToolRows(comp)
-    .map(toolPathArg)
-    .filter((p): p is string => p !== undefined);
+  const blockPaths = cachedBlockPaths(renderCache, blockToolRows(comp), toolPathArg);
   const common = commonDirSegments(blockPaths.length ? blockPaths : [tildePath]);
   // `./` counts like `~` (§9.5): alone it is a trivial root marker, but `./src/`
   // is a meaningful shared prefix. Either way it is always boring on its own.
@@ -1079,6 +1067,9 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
 // rows get the dim-directory emphasis, everything else keeps pi's native line with a
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
 function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY): string {
+  return renderCache.intrinsic(comp, `invocation:${available}:${objectCacheKey(currentTheme())}`, () => computeInvocationInk(comp, available));
+}
+function computeInvocationInk(comp: ToolRowLike, available: number): string {
   if (toolLabel(comp?.toolName) === "bash") {
     const plain = bashInvocationText(comp);
     if (plain === undefined) return inkedFallbackLine(comp);
@@ -1100,8 +1091,9 @@ function traceRowAvailable(width: number): number {
 // The one row form shared by single rows and folded read runs: body left, the block's
 // reserved fact-suffix column right (§9.8/§9.1), behind the railed status prefix.
 function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string, suffix: string, reserve: number, width: number, disclosure?: string): string {
-  const fitted = rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve);
-  return truncateToWidth(`${toolPrefix(tone, comp, disclosure)}${fitted}`, Math.max(1, width), ELLIPSIS);
+  const key = JSON.stringify(["fit", width, reserve, tone, body, suffix, disclosure, drillRenderKey(comp), objectCacheKey(currentTheme())]);
+  const fit = () => truncateToWidth(`${toolPrefix(tone, comp, disclosure)}${rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve)}`, Math.max(1, width), ELLIPSIS);
+  return comp ? renderCache.intrinsic(comp, key, fit) : fit();
 }
 
 function oneLine(comp: ToolRowLike, width: number): string {
@@ -1138,6 +1130,7 @@ function previousBashRow(comp: ToolRowDataLike): ToolRowLike | undefined {
   if (!found) return undefined;
   for (let j = found.index - 1; j >= 0; j--) {
     const prev = found.sibs[j];
+    renderCache.depend(prev);
     if (isToolRow(prev)) {
       if (toolLabel(prev?.toolName) === "bash") return prev;
       continue;
@@ -1233,6 +1226,7 @@ function sameDirReadRows(comp: ToolRowLike): { rows: ToolRowLike[]; index: numbe
   let selfIndex = 0;
   for (let j = index - 1; j >= 0; j--) {
     const prev = sibs[j];
+    renderCache.depend(prev);
     if (isEmptyConnector(prev)) continue;
     if (!inRun(prev)) break;
     rows.unshift(prev);
@@ -1240,6 +1234,7 @@ function sameDirReadRows(comp: ToolRowLike): { rows: ToolRowLike[]; index: numbe
   }
   for (let j = index + 1; j < sibs.length; j++) {
     const next = sibs[j];
+    renderCache.depend(next);
     if (isEmptyConnector(next)) continue;
     if (!inRun(next)) break;
     rows.push(next);
@@ -1248,6 +1243,13 @@ function sameDirReadRows(comp: ToolRowLike): { rows: ToolRowLike[]; index: numbe
 }
 
 function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
+  if (renderCache.active) {
+    const block = blockToolRows(comp);
+    return renderCache.memo(block, `reads:${revealRenderKey()}`, () => {
+      for (const row of block) renderCache.depend(row);
+      return readPlan(block, sizeThresholds.warning, sameDirReadRows);
+    }).get(comp);
+  }
   const run = sameDirReadRows(comp);
   return run ? groupedReadRun(run, sizeThresholds.warning) : undefined;
 }
@@ -1261,7 +1263,16 @@ function repetitionKey(comp: ToolRowLike): string | undefined {
 
 function repetitionRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | undefined {
   const found = componentLocation(comp);
-  return found ? groupedRepetitionRun(comp, found.sibs, repetitionKey) : undefined;
+  if (!found) return undefined;
+  if (renderCache.active && g.__tracelineChat) {
+    const step = topology.step(g.__tracelineChat, comp);
+    if (!step) return undefined;
+    return renderCache.memo(step.rows, `repeated:${objectCacheKey(currentTheme())}:${revealRenderKey()}`, () => {
+      for (const row of step.rows) renderCache.depend(row);
+      return repetitionPlan(step.rows, repetitionKey);
+    }).get(comp);
+  }
+  return groupedRepetitionRun(comp, found.sibs, repetitionKey);
 }
 
 function foldedRepetitionLine(rows: ToolRowLike[], width: number): string {
@@ -1388,22 +1399,12 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   );
 }
 
-// An assistant turn that renders nothing (a tool-call-only turn with no visible
-// text/thinking) — these sit *between* sequential tool rows and must be skipped so a
-// run of tool calls groups tightly.
-function isEmptyConnector(c: unknown): boolean {
-  if (!isAssistantRow(c)) return false;
-  const content = c.lastMessage?.content;
-  if (!Array.isArray(content)) return true;
-  return !content.some((block: unknown) => {
-    if (!block || typeof block !== "object") return false;
-    const b = block as { type?: unknown; text?: unknown; thinking?: unknown };
-    return (b.type === "text" && typeof b.text === "string" && b.text.trim()) ||
-      (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim());
-  });
-}
-
 function componentLocation(comp: ToolRowDataLike): { sibs: unknown[]; index: number } | undefined {
+  renderCache.depend(comp);
+  if (renderCache.active && g.__tracelineChat) {
+    const index = topology.prepare(g.__tracelineChat).positions.get(comp);
+    if (index !== undefined) return { sibs: g.__tracelineChat.children, index };
+  }
   let sibs = chatChildren();
   let index = Array.isArray(sibs) ? sibs.indexOf(comp) : -1;
   if (index === -1) {
@@ -1412,27 +1413,6 @@ function componentLocation(comp: ToolRowDataLike): { sibs: unknown[]; index: num
     index = Array.isArray(sibs) ? sibs!.indexOf(comp) : -1;
   }
   return Array.isArray(sibs) && index >= 0 ? { sibs, index } : undefined;
-}
-
-// A reasoning-only turn while thinking is hidden: pi collapses it to a single dim
-// thinking-label line. The tool row that follows is that thought's action, so the two
-// should read as one thought→action couplet rather than separate paragraphs.
-function isCollapsedThinkingRow(c: unknown): boolean {
-  if (!isAssistantRow(c) || c.hideThinkingBlock !== true) return false;
-  const content = c.lastMessage?.content;
-  if (!Array.isArray(content)) return false;
-  let hasThinking = false;
-  for (const b of content) {
-    if (b?.type === "text" && b.text?.trim()) return false; // visible prose → real paragraph
-    if (b?.type === "thinking" && b.thinking?.trim()) hasThinking = true;
-  }
-  return hasThinking;
-}
-
-// An expanded row (design language §9.12 z1): pi's native render, traceline's grammar
-// opts it out of folds, blocks and shared columns.
-function isExpandedToolRow(c: unknown): boolean {
-  return isToolRow(c) && c.expanded === true;
 }
 
 // One blank line before a tool *group*, none within it: walk back past invisible
@@ -1444,6 +1424,7 @@ function leadingBlank(comp: ToolRowDataLike): boolean {
   const { sibs, index } = found;
   for (let j = index - 1; j >= 0; j--) {
     const prev = sibs[j];
+    renderCache.depend(prev);
     if (isExpandedToolRow(prev)) return true; // a native-rendered block above → new trace block
     if (isToolRow(prev)) return false; // adjacent (through connectors) to another tool
     if (isEmptyConnector(prev)) continue; // skip invisible tool-call-only turns
@@ -1476,17 +1457,9 @@ function renderTraceRow(comp: ToolRowLike, width: number): string[] {
 
 function patchAssistantRowPrototype(proto: AssistantRowPrototypeLike): void {
   if (!proto || typeof proto.render !== "function") return;
-  if (proto.__tracelineAssistantPatchVersion === ASSISTANT_ROW_PATCH_VERSION) return;
-  const original = proto.__tracelineOriginalAssistantRender ?? proto.render;
-  proto.__tracelineOriginalAssistantRender = original;
-  proto.render = function (this: AssistantRowDataLike, width: number) {
-    try {
-      installThinkingPreviews(this);
-    } catch {
-      /* never let pi-traceline break a render */
-    }
-    return original.call(this, width);
-  };
+  installAssistantCacheHook(proto, (row) => {
+    try { installThinkingPreviews(row); } catch { /* keep Pi's native render */ }
+  }, (row) => { renderCache.dirty(row); topologyChanged(); });
   proto.__tracelineAssistantPatchVersion = ASSISTANT_ROW_PATCH_VERSION;
   g.__tracelineAssistantPatchVersion = ASSISTANT_ROW_PATCH_VERSION;
 }
@@ -1499,16 +1472,27 @@ function currentPatchInstalled(): boolean {
 
 function patchToolRowPrototype(proto: TraceMousePrototype): void {
   if (currentPatchInstalled() || typeof proto.render !== "function" || typeof proto.handleMouse !== "function") return;
-  installTraceMouse(proto, {
+  installCachedTraceMouse(proto, renderCache, {
     bulletColumn: TOOL_PREFIX_VISIBLE_WIDTH - TOOL_AFTER_BULLET.length - 1,
     isCompact: (row) => displayMode() === "oneLine" && row.expanded !== true,
-    renderTrace: renderTraceRow,
+    renderTrace: cachedLayout,
     decorateNative: (row, lines) => drillDecorateNativeRow(
       currentTheme(), row, lines, ink(currentTheme(), statusTone(row), TOOL_BULLET),
     ),
-    runRows: (row) => readRun(row)?.rows ?? repetitionRun(row)?.rows,
-  });
+    viewChanged: (rows) => rows.forEach((row) => renderCache.dirty(row)),
+  }, topologyChanged);
+
   g.__tracelinePatchVersion = TOOL_ROW_PATCH_VERSION;
+}
+
+function cachedLayout(row: ToolRowLike, width: number) {
+  const chat = g.__tracelineChat;
+  if (!chat) return renderCache.withoutCache(() => cachedTraceLayout(renderCache, row, "uncached", () => renderTraceRow(row, width), () => readRun(row)?.rows ?? repetitionRun(row)?.rows));
+  installContainerCacheHooks(renderCache, chat, topologyChanged);
+  topology.prepare(chat);
+  return cachedTraceLayout(renderCache, row,
+    `${width}:${objectCacheKey(chat)}:${objectCacheKey(currentTheme())}:${drillRenderKey(row)}:${revealRenderKey()}`,
+    () => renderTraceRow(row, width), () => readRun(row)?.rows ?? repetitionRun(row)?.rows);
 }
 
 function assistantPatchInstalled(): boolean {
@@ -1516,9 +1500,10 @@ function assistantPatchInstalled(): boolean {
 }
 
 function tryPatch(): boolean {
-  if ((currentPatchInstalled() && assistantPatchInstalled()) || !g.__tracelineTui) return false;
+  if (!g.__tracelineTui) return false;
   const toolWasPatched = currentPatchInstalled();
   const assistantWasPatched = assistantPatchInstalled();
+  let containerWasPatched = false;
   try {
     const sibs = chatChildren();
     if (!Array.isArray(sibs)) return false;
@@ -1530,10 +1515,15 @@ function tryPatch(): boolean {
       const assistant = sibs.find(isAssistantRow);
       if (assistant) patchAssistantRowPrototype(Object.getPrototypeOf(assistant));
     }
+    const chat = g.__tracelineChat;
+    if (chat && !chat.__tracelineCachePatched) {
+      installContainerCacheHooks(renderCache, chat, topologyChanged);
+      containerWasPatched = true;
+    }
   } catch {
     return false;
   }
-  return (!toolWasPatched && currentPatchInstalled()) ||
+  return containerWasPatched || (!toolWasPatched && currentPatchInstalled()) ||
     (!assistantWasPatched && assistantPatchInstalled());
 }
 
@@ -1595,6 +1585,11 @@ export const internals = {
   setTracelineChat,
   getTracelineChat,
   setTracelineThemeGetter,
+  cachedRenderTraceRow: (row: ToolRowLike, width: number) => cachedLayout(row, width).lines,
+  uncachedRenderTraceRow: (row: ToolRowLike, width: number) =>
+    renderCache.withoutCache(() => renderTraceRow(row, width)),
+  renderCacheWorkCounts: (reset = false) => renderCache.workCounts(reset),
+  resetRenderCache: () => renderCache.reset(),
   // Ctrl+T status-line suppression
   isThinkingToggleStatusRow,
   isSpacerRow,
@@ -1677,6 +1672,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     if (!tuiOwner.owns() || ctx.mode !== "tui" || event.toolName !== "write") return;
     try {
       captureWriteCallSnapshot(event.toolCallId, event.input, ctx.cwd);
+      for (const row of chatChildren() ?? []) if (isToolRow(row) && row.toolCallId === event.toolCallId) renderCache.dirty(row);
     } catch {
       /* Traceline display work must never block write execution. */
     }
@@ -1686,7 +1682,8 @@ export default function piTraceline(pi: ExtensionAPI) {
     clearPatchTimer();
     clearWriteCallSnapshots();
     resetRevealedFolds();
-    g.__tracelinePatchVersion = undefined; // rebind the paired render/input adapter on reload
+    renderCache.reset();
+    g.__tracelinePatchVersion = g.__tracelineAssistantPatchVersion = undefined; // rebind both adapters on reload
     setTracelineChat(undefined);
     g.__tracelineTui = undefined;
     configureSizeThresholds(config);

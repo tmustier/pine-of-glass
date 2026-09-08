@@ -58,3 +58,27 @@ out of scope.
 Fetched main again before landing and found #109 (Astra support). Merged it without
 conflicts and reran the full check: 339 passed, the same four baseline failures.
 Added its release-note entry without changing its implementation.
+
+## 2026-09-08: scoped cache integration for PR 106
+
+Reworked Alexey Bagno's (@swit33) render memoization proposal while preserving both
+original commits in the local merge history. Added dependency-linked row facts,
+shared block/step plans, topology indexing and fitted-line reuse. Cached click
+geometry and membership travel with the exact output variant. Mutation hooks cover
+same-object updates, native renderer invalidation, semantic assistant shape changes,
+container replacement and reload. No #112 call-summary changes are included.
+
+Added 16 deterministic cache/transition tests and a real-component benchmark with
+isolated processes. On the 500-row fixture, warm rendering measured 0.202 ms median
+and an active update 0.325 ms; only the active five-row group was reconsidered, with
+one native call recapture. The single 200-row group measured 2.349 ms per active
+update after retaining unchanged fitted lines. These are synthetic component costs,
+not end-to-end TUI frame claims; detailed methodology and limits are in
+`docs/traceline-cache-design.md`.
+
+Lint/typecheck and all smoke suites passed on the initial integration base; full
+suite: 355 passed with the same four baseline failures. One early Drill smoke run
+failed its restored-row comparison; a diagnostic rerun and subsequent full smoke
+runs passed. No smoke assertions were weakened. Independent final review found no
+blocking regressions. #111 landed during final validation; clean latest main now
+passes all 340 tests, so refresh the integration before considering a merge.

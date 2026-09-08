@@ -56,6 +56,14 @@ export function drillState(): DrillState | undefined {
   return g.__tracelineDrill;
 }
 
+/** Cache discriminator for the only Drill state that changes trace-row pixels. */
+export function drillRenderKey(comp: unknown): string {
+  const st = g.__tracelineDrill;
+  if (!st) return "off";
+  const number = st.numbers.get(comp);
+  return number === undefined ? "unnumbered" : `${number}:${st.rows[st.selected] === comp ? "selected" : "plain"}`;
+}
+
 // --- numbering (rendered by index.ts's patched tool-row renderer) ----------------------
 
 // The number cell holds the rail's three columns exactly, so a numbered row stays one

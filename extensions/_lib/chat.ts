@@ -78,11 +78,15 @@ export interface AssistantRowLike extends AssistantRowDataLike {
 
 export interface ToolRowPrototypeLike extends Partial<ToolRowLike> {
   __tracelineOriginalRender?: (width: number) => unknown;
+  updateDisplay?: (...args: unknown[]) => unknown;
+  __tracelineOriginalUpdateDisplay?: (...args: unknown[]) => unknown;
 }
 
 export interface AssistantRowPrototypeLike extends Partial<AssistantRowLike> {
   __tracelineAssistantPatchVersion?: number;
   __tracelineOriginalAssistantRender?: (width: number) => unknown;
+  updateContent?: (...args: unknown[]) => unknown;
+  __tracelineOriginalUpdateContent?: (...args: unknown[]) => unknown;
 }
 
 /** Total text chars across a result's text blocks; undefined before a result exists. */
@@ -113,7 +117,11 @@ export function isAssistantRow(component: unknown): component is AssistantRowLik
 
 export interface ContainerLike {
   children: unknown[];
-  addChild?: (child: unknown) => void;
+  addChild?: (child: unknown) => unknown;
+  removeChild?: (child: unknown) => unknown;
+  clear?: () => unknown;
+  /** traceline-internal: membership hooks installed for scoped render invalidation. */
+  __tracelineCachePatched?: { changed: () => void };
 }
 
 /** Depth-first search for the container whose direct children satisfy `predicate`. */

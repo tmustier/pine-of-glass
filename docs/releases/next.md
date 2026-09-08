@@ -20,7 +20,13 @@ publication date has been assigned.
   ([@0xbentang](https://github.com/0xbentang)) for
   [#105](https://github.com/tmustier/pine-of-glass/pull/105).
 
-Both contributors' original commits are preserved through merge commits.
+- Reuse unchanged tool-row output and shared fold/column plans while keeping streaming
+  invalidation scoped to dependent groups. Based on Alexey Bagno's
+  ([@swit33](https://github.com/swit33)) contribution in
+  [#106](https://github.com/tmustier/pine-of-glass/pull/106), reworked to retain native
+  click, Drill, theme and lifecycle correctness.
+
+All three contributors' original commits are preserved through merge commits.
 
 ## Cachemire
 
@@ -30,7 +36,8 @@ Both contributors' original commits are preserved through merge commits.
 
 ## Maintainer validation
 
-Lint and typecheck pass against Pi 0.85.1. The integrated suite has 339 passing
-tests and the same four pre-existing contract failures as main. All real-Pi smoke
+Lint and typecheck pass against Pi 0.85.1. The earlier #104/#105 integration had 339 passing tests and four pre-existing
+contract failures. See the work log for the current #106 integration results. All real-Pi smoke
 suites pass, including tool/reasoning clicks, Ctrl+T, Drill, pager fidelity, resize,
-reload and startup. PR #106 is not included.
+reload and startup. The scoped #106 integration is documented separately in
+[the cache design and validation](../traceline-cache-design.md). PR #112 is not included.
