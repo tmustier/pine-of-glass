@@ -75,6 +75,11 @@ the two extra stream block types.
 [pine-of-glass#16](https://github.com/tmustier/pine-of-glass/pull/16) · status: **TBD**,
 with no decision yet on whether this is worth raising; it may be intended behaviour.
 
+Update, 8 September 2026: Pi 0.85.1 updates thinking visibility in place in both
+regular and fullscreen modes. Ctrl+T no longer causes the rebuild described below.
+Compaction, navigation, reload and some settings changes still rebuild chat, so
+anchored-line persistence remains necessary.
+
 `toggleThinkingBlockVisibility()` (Ctrl+T) and `rebuildChatFromMessages()` (also used
 by compaction and tree navigation) rebuild the chat container from session messages:
 `this.chatContainer.clear()` + re-render

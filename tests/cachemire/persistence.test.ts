@@ -1,5 +1,5 @@
 // Chat-line persistence: cachemire's scrollback lines survive pi's chat rebuilds
-// (Ctrl+T reasoning toggle, etc.) by re-attaching at durable anchors. pi rebuilds the
+// (reload, navigation, compaction) by re-attaching at durable anchors. pi rebuilds the
 // container from session messages, so raw appended children — including pi's own status
 // lines — are dropped; these tests drive the pure anchor/re-attach machinery with
 // synthetic children shaped like the real components (shape pinned by the contract suite).
@@ -41,7 +41,7 @@ test("anchorForAppend: nearest keyed predecessor, counting only unkeyed non-cach
   assert.deepEqual(anchorForAppend([spacer(), user()], []), { gap: 2 });
 });
 
-test("reattachAnchored: a Ctrl+T-style rebuild restores lines in place", () => {
+test("reattachAnchored: a session-message rebuild restores lines in place", () => {
   // Append-time chat: [assistantA, toolT, SPACER, missLine, spacer, userB, SPACER, notice]
   const missLine: AnchoredLine = { spacer: spacer(), text: { line: "miss" }, anchorKey: "tool#t1", gap: 0 };
   const notice: AnchoredLine = { spacer: spacer(), text: { line: "notice" }, anchorKey: "tool#t1", gap: 2 };
@@ -56,7 +56,7 @@ test("reattachAnchored: a Ctrl+T-style rebuild restores lines in place", () => {
   assert.equal(rebuilt.indexOf(notice.text), 7, "notice returns to after the user message it preceded the response of");
   assert.equal(rebuilt.indexOf(missLine.spacer), rebuilt.indexOf(missLine.text) - 1, "spacer travels with its line");
 
-  // Idempotent: a second pass (clear() is called twice per toggle) changes nothing.
+  // Idempotent: a second re-attachment pass changes nothing.
   const again = reattachAnchored(rebuilt, survivors);
   assert.equal(again.length, 2);
   assert.equal(rebuilt.filter((c) => c === missLine.text).length, 1, "no duplicate insertion");

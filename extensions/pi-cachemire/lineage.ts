@@ -217,6 +217,7 @@ function sameWindow(a: CacheWindow | undefined, b: CacheWindow | undefined): boo
   if (a.kind === "contract" && b.kind === "contract") return a.ttlMs === b.ttlMs;
   if (a.kind === "minimum" && b.kind === "minimum") return a.minMs === b.minMs;
   if (a.kind === "maximum" && b.kind === "maximum") return a.maxMs === b.maxMs;
+  if (a.kind === "bounded" && b.kind === "bounded") return a.minMs === b.minMs && a.maxMs === b.maxMs;
   return a.kind === "unknown" && b.kind === "unknown";
 }
 

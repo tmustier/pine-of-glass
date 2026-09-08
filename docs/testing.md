@@ -39,7 +39,8 @@ Deliberately **not** tested:
 - **Pi runtime linkage:** `scripts/dev/link-pi-runtime.sh` symlinks the globally installed
   Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) into the repo's
   gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
-  runtime, so a `pi update` followed by `npm test` is the drift detector.
+  runtime. Pi 0.85.1 is the minimum supported version, so a `pi update` followed by
+  `npm test` is the drift detector.
 - **Testability route:** pure domain logic lives in importable modules or an exported
   `internals` object consumed by tests. Pi imports only each extension's default entry
   point, so named test surfaces are runtime-inert. Split files by domain when the code
@@ -76,13 +77,14 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | A successful silent built-in bash call returns exactly `(no output)` | traceline's terminal `gh pr merge` evidence rule |
+| Native thinking toggles preserve assistant and family-line identities in regular and fullscreen renderers; native rebuilds trigger anchored-line restoration and retire missing anchors | shared chat-line persistence |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
 | Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
 | The same two-runner setup keeps a headless child's `session_start` and `session_shutdown` from dropping the interactive Traceline TUI handle or Ctrl+T listener | traceline process-global TUI ownership |
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
-| OpenAI Completions ignores top-level `usage.cached_tokens`; provider registration and custom fetch remain public extension seams | cachemire Moonshot and Together usage overlay |
+| Native OpenAI Completions accounts top-level `usage.cached_tokens` for Moonshot, Moonshot CN and Together, while preserving detailed-field precedence and cost accounting | cachemire provider usage accounting |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 
 Where instantiating real components is impractical, the contract test asserts on the
@@ -176,8 +178,8 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   docs. `retention-evidence.test.ts` pins routes and boundaries; clock tests pin visible
   wording; `pi-cache-retention-seams.test.ts` covers installed Pi routes. `npm run lint`
   rejects stale generated blocks.
-- **Provider response normalization**: tests cover native-field precedence, fragmented
-  SSE, response metadata, provider collisions and cleanup.
+- **Provider response normalization**: native Pi contracts replay SSE usage fixtures
+  and check field precedence, explicit zero counts, token totals and cost.
 - **Restored freshness**: persisted lineage uses the parent entry timestamp as its
   request anchor and response time only as fallback. Model-level registry policies can
   resolve after restore; request-only evidence stays unknown because the outgoing payload
@@ -247,7 +249,7 @@ model call required:
   `/contextimate compact` and `expanded` change the rendered mode line, and that `/reload`
   keeps exactly one block. Its project config explicitly enables Meantime, proving the
   public opt-in path; it then proves `/cache` and `/pace` render through the real TUI and
-  both survive the Ctrl+T chat rebuild.
+  both remain in place across the Ctrl+T visibility update.
 - Both exit non-zero on assertion failure so they can gate publishes. They do not run in
   CI because they need a TTY and an installed Pi. A "live turn" variant (real model, one
   bash call, assert a trace line appears and Ctrl+T restores native rows) stays a

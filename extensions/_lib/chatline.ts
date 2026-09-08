@@ -3,8 +3,8 @@
 // ctx.ui.notify force-dims and replaces consecutive status lines, so forensic family
 // lines are appended straight to pi's chat container (found structurally via chat.ts).
 //
-// Persistence: pi rebuilds that container from session messages on several events
-// (Ctrl+T's reasoning toggle, compaction, tree navigation): chatContainer.clear() plus
+// Persistence: pi rebuilds that container from session messages on compaction, tree
+// navigation, reload, and some settings changes: chatContainer.clear() plus
 // a re-render drops every raw appended child, including pi's own status lines. Status
 // lines are flotsam; family lines are forensic records, so each one is tracked with a
 // durable anchor: the nearest preceding child with rebuild-stable identity (a tool
@@ -82,8 +82,8 @@ export function reattachAnchored(children: unknown[], anchored: AnchoredLine[]):
  * object (usually inside its globalThis state), the helpers mutate it in place. */
 export interface ChatLineHost {
   tui?: { requestRender?: (force?: boolean) => void };
-  /** Cached chat container: rebuilds empty it of recognizable rows, but the instance
-   * lives for the whole interactive session, so the first find stays valid. */
+  /** Cached chat container: full rebuilds empty it of recognizable rows, but the
+   * instance lives for the whole interactive session, so the first find stays valid. */
   chat?: ContainerLike;
   /** Chat lines this extension appended, with anchors for re-attachment. */
   anchored: AnchoredLine[];

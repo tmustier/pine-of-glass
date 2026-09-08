@@ -36,8 +36,9 @@ const GROQ_WINDOW = {
   source: "observed",
 } as const satisfies CacheWindow;
 
-const CEREBRAS_WINDOW = {
-  kind: "maximum",
+export const CEREBRAS_BOUNDED_WINDOW = {
+  kind: "bounded",
+  minMs: TTL_SHORT_MS,
   maxMs: TTL_LONG_MS,
 } as const satisfies CacheWindow;
 
@@ -47,7 +48,6 @@ const GROQ_MODELS = new Set([
   "openai/gpt-oss-120b",
   "openai/gpt-oss-safeguard-20b",
 ]);
-const CEREBRAS_MODELS = new Set(["gpt-oss-120b", "zai-glm-4.7"]);
 const BEDROCK_CACHE_MODELS = new Set([
   "anthropic.claude-haiku-4-5-20251001-v1:0",
   "anthropic.claude-opus-4-5-20251101-v1:0",
@@ -95,14 +95,14 @@ export const RETENTION_EVIDENCE_SOURCES = {
   "cerebras-docs": {
     label: "Cerebras prompt caching",
     url: "https://inference-docs.cerebras.ai/capabilities/prompt-caching",
-    reviewedOn: "5 August 2026",
-    detail: "supported models and the 1-hour maximum",
+    reviewedOn: "8 September 2026",
+    detail: "all-model automatic caching, guaranteed 5-minute TTL and 1-hour maximum",
   },
   "installed-pi": {
     label: "Installed Pi request builders and model records",
     url: undefined,
     reviewedOn: "8 September 2026",
-    detail: "Pi 0.85.1 provider payloads, normalized usage and generated model catalogue",
+    detail: "Pi 0.85.1 provider payloads, native normalized usage and generated model catalogue",
   },
 } as const;
 
@@ -185,9 +185,8 @@ function groqWindow(input: RetentionIdentity): KnownCacheWindow | undefined {
 }
 
 function cerebrasWindow(input: RetentionIdentity): KnownCacheWindow | undefined {
-  return onRoute(input, "cerebras", "openai-completions") &&
-    input.model !== undefined && CEREBRAS_MODELS.has(input.model)
-    ? CEREBRAS_WINDOW
+  return onRoute(input, "cerebras", "openai-completions") && input.model !== undefined
+    ? CEREBRAS_BOUNDED_WINDOW
     : undefined;
 }
 
@@ -273,9 +272,9 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
     resolveRequest: groqWindow,
   },
   {
-    route: "Cerebras GPT-OSS 120B and GLM 4.7",
-    evidence: "automatic cache read on a documented model",
-    behavior: "after a cache read, record a 1-hour maximum with no prior warmth claim",
+    route: "Direct Cerebras, all models",
+    evidence: "automatic caching with a guaranteed 5-minute TTL and a 1-hour maximum",
+    behavior: "after a cache read, claim warmth before 5 minutes, unknown state until 1 hour, then stale",
     sourceIds: ["cerebras-docs", "installed-pi"],
     activation: "read",
     resolveModel: cerebrasWindow,
@@ -322,6 +321,8 @@ export function windowLabel(window: CacheWindow): string {
       return `${formatDuration(window.minMs)} minimum`;
     case "maximum":
       return `${formatDuration(window.maxMs)} maximum`;
+    case "bounded":
+      return `${formatDuration(window.minMs)} minimum to ${formatDuration(window.maxMs)} maximum`;
     default:
       return "retention unknown";
   }

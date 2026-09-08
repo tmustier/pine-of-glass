@@ -14,7 +14,6 @@ import * as pi from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import * as piTui from "@earendil-works/pi-tui";
 
-import { internals as cachemire } from "../../extensions/pi-cachemire/index.ts";
 import { internals as contextimate } from "../../extensions/pi-contextimate/index.ts";
 import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
 import { assistantMessage } from "../helpers.ts";
@@ -157,14 +156,17 @@ test("real ToolExecutionComponent satisfies traceline's duck type and one-line p
   assert.equal(traceline.toolStatus(errorComp as never), "error");
 });
 
-test("real ToolExecutionComponent: bash multiline render seam", () => {
+test("real ToolExecutionComponent: bash multiline render seam", async () => {
   pi.initTheme(undefined, false);
+  const renderersModule = await import(pathToFileURL(join(piRoot, "dist/core/tools/renderers/index.js")).href) as {
+    withBuiltInRenderers: (toolName: string, definition: undefined) => unknown;
+  };
   const comp = new pi.ToolExecutionComponent(
     "bash",
     "tool-2",
     { command: 'python3 -c "\nimport json\nprint(1)\n" && echo done', timeout: 70 },
     undefined,
-    undefined,
+    renderersModule.withBuiltInRenderers("bash", undefined) as never,
     {} as never,
     tmpdir(),
   );
@@ -192,54 +194,6 @@ test("real AssistantMessageComponent preserves its tool-call link and duck type"
   assert.equal(peek.hideThinkingBlock, false);
   component.setHideThinkingBlock(true);
   assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
-});
-
-test("chat-rebuild surface family line persistence depends on", () => {
-  // Ctrl+T (and compaction/navigation) rebuild the chat container from session messages:
-  // clear() + re-render drops raw appended children. Cachemire and meantime re-attach their lines
-  // after every clear(), anchored on durable component identity.
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
-  assert.ok(
-    /toggleThinkingBlockVisibility\(\)\s*\{[^}]*this\.chatContainer\.clear\(\)/s.test(source),
-    "Ctrl+T no longer clears the chat container — re-verify whether the family clear hook is still needed/sufficient",
-  );
-  assert.ok(source.includes("rebuildChatFromMessages"), "rebuildChatFromMessages gone — rebuild path renamed");
-
-  // Anchor identities: tool rows by toolCallId, assistant rows by lastMessage role#timestamp.
-  pi.initTheme(undefined, false);
-  const toolComp = new pi.ToolExecutionComponent("read", "tool-9", { path: "/tmp/x" }, undefined, undefined, {} as never, tmpdir());
-  assert.equal(cachemire.childAnchorKey(toolComp), "tool#tool-9", "toolCallId drifted — tool-row anchors break");
-
-  const ts = Date.UTC(2026, 5, 10, 22);
-  const assistantComp = new pi.AssistantMessageComponent(
-    assistantMessage([{ type: "text", text: "hi" }], { timestamp: ts }),
-  );
-  assert.equal(
-    cachemire.childAnchorKey(assistantComp),
-    `assistant#${ts}`,
-    "AssistantMessageComponent.lastMessage role/timestamp drifted — assistant anchors break",
-  );
-
-  // The container instance exposes clear() and a mutable children array to hook.
-  const container = new piTui.Container();
-  assert.equal(typeof container.clear, "function", "Container.clear gone — clear hook cannot install");
-
-  // Fresh-session chat detection relies on these siblings inside the mounted transcript tree.
-  assert.ok(source.includes("this.documentContainer.addChild(this.loadedResourcesContainer);"), "loadedResourcesContainer no longer in transcript tree");
-  assert.ok(source.includes("this.documentContainer.addChild(this.chatContainer);"), "chatContainer no longer in transcript tree");
-  assert.ok(source.includes("this.documentContainer,"), "documentContainer no longer mounted in the TUI");
-  assert.ok(
-    source.indexOf("this.documentContainer.addChild(this.loadedResourcesContainer);") <
-      source.indexOf("this.documentContainer.addChild(this.chatContainer);"),
-    "loadedResourcesContainer no longer sits before chatContainer — fresh-session detection needs rework",
-  );
-  assert.ok(
-    /addLoadedSection[\s\S]{0,400}this\.loadedResourcesContainer\.addChild\(section\)/.test(source),
-    "startup resource sections no longer added to loadedResourcesContainer — pre-rows detection dies",
-  );
-  for (const name of ["Skills", "Prompts", "Extensions", "Themes"]) {
-    assert.ok(source.includes(`"${name}"`), `startup section [${name}] renamed — RESOURCE_HEADER_RE drifts`);
-  }
 });
 
 test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", () => {
