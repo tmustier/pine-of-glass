@@ -48,9 +48,11 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   and are enforced by `scripts/dev/agent-lint.mjs` plus the vendored
   [anti-slop](https://github.com/dmmulroy/anti-slop) Oxlint rules in `.oxlintrc.json`
   (rules that are off say why inline). Boundary uncertainty belongs at Pi, JSON,
-  config, provider-payload, and catch seams only. Do not add generic `isRecord` or
-  `isObject` helpers. Parse or refine at the edge, pass typed values inward, and
-  document real escape hatches with `SAFETY:` comments. The baseline is debt that only
+  config, provider-payload, and catch seams only. Runtime `typeof` and `unknown`
+  parameters live in named type guards or the boundary modules (`_lib/boundary.ts`,
+  `_lib/config.ts`, `*/config.ts`, `_lib/chat.ts`); anywhere else they are debt. Do not
+  add generic `isRecord` or `isObject` helpers. Parse or refine at the edge, pass typed
+  values inward, and document real escape hatches with `SAFETY:` comments. The baseline is debt that only
   shrinks; a finding that is correct code gets a rule decision, not a baseline entry.
 - Tests specify behaviour through public interfaces: the extension's default export
   hosted by `tests/harness/extension-host.ts`, or the named exports of a domain module.

@@ -1,4 +1,4 @@
-import { isJsonObject } from "../_lib/boundary.ts";
+import { isJsonObject, nonNegativeNumberValue, stringValue, type JsonObject } from "../_lib/boundary.ts";
 import { confirmedWindow, retentionForModel } from "./retention.ts";
 import type {
   CacheLineageSnapshot,
@@ -8,46 +8,50 @@ import type {
   ResolvedCacheLineage,
 } from "./types.ts";
 
-function nonNegativeNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+/** A persisted session entry as Pi writes it: a JSON object carrying its own id. */
+type PersistedEntry = JsonObject & { id: string };
+
+function isPersistedEntry(entry: unknown): entry is PersistedEntry {
+  return isJsonObject(entry) && typeof entry.id === "string";
 }
 
-function persistedEntryAt(entry: unknown): number | undefined {
-  if (!isJsonObject(entry)) return undefined;
+function persistedEntryAt(entry: PersistedEntry): number | undefined {
   if (isJsonObject(entry.message)) {
-    const messageAt = nonNegativeNumber(entry.message.timestamp);
+    const messageAt = nonNegativeNumberValue(entry.message.timestamp);
     if (messageAt !== undefined) return messageAt;
   }
-  const entryAt = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+  const timestamp = stringValue(entry.timestamp);
+  const entryAt = timestamp === undefined ? Number.NaN : Date.parse(timestamp);
   return Number.isFinite(entryAt) && entryAt >= 0 ? entryAt : undefined;
 }
 
 function billedSnapshotFromEntry(
-  entry: unknown,
+  entry: PersistedEntry,
   entryTimes: ReadonlyMap<string, number>,
 ): CacheLineageSnapshot | undefined {
   if (
-    !isJsonObject(entry) || entry.type !== "message" || typeof entry.id !== "string" ||
+    entry.type !== "message" ||
     !isJsonObject(entry.message) || entry.message.role !== "assistant" || !isJsonObject(entry.message.usage)
   ) return undefined;
-  const input = nonNegativeNumber(entry.message.usage.input);
-  const output = nonNegativeNumber(entry.message.usage.output);
-  const cacheRead = nonNegativeNumber(entry.message.usage.cacheRead);
-  const cacheWrite = nonNegativeNumber(entry.message.usage.cacheWrite);
+  const input = nonNegativeNumberValue(entry.message.usage.input);
+  const output = nonNegativeNumberValue(entry.message.usage.output);
+  const cacheRead = nonNegativeNumberValue(entry.message.usage.cacheRead);
+  const cacheWrite = nonNegativeNumberValue(entry.message.usage.cacheWrite);
   if (input === undefined || output === undefined || cacheRead === undefined || cacheWrite === undefined) return undefined;
   if (input === 0 && output === 0 && cacheRead === 0 && cacheWrite === 0) return undefined;
   const responseAt = persistedEntryAt(entry) ?? 0;
-  const parentAt = typeof entry.parentId === "string" ? entryTimes.get(entry.parentId) : undefined;
+  const parentId = stringValue(entry.parentId);
+  const parentAt = parentId === undefined ? undefined : entryTimes.get(parentId);
   const requestAt = parentAt !== undefined && parentAt <= responseAt ? parentAt : responseAt;
-  const provider = typeof entry.message.provider === "string" ? entry.message.provider : undefined;
-  const model = typeof entry.message.model === "string" ? entry.message.model : undefined;
-  const api = typeof entry.message.api === "string" ? entry.message.api : undefined;
+  const provider = stringValue(entry.message.provider);
+  const model = stringValue(entry.message.model);
+  const api = stringValue(entry.message.api);
   const window = confirmedWindow(
     retentionForModel(provider, model, api),
     { cacheRead, cacheWrite },
   ) ?? { kind: "unknown" };
   return {
-    requestLeafId: typeof entry.parentId === "string" ? entry.parentId : null,
+    requestLeafId: parentId ?? null,
     responseEntryId: entry.id,
     responseAt,
     requestAt,
@@ -62,7 +66,7 @@ function billedSnapshotFromEntry(
 function persistedEntryTimes(entries: readonly unknown[]): Map<string, number> {
   const times = new Map<string, number>();
   for (const entry of entries) {
-    if (!isJsonObject(entry) || typeof entry.id !== "string") continue;
+    if (!isPersistedEntry(entry)) continue;
     const at = persistedEntryAt(entry);
     if (at !== undefined) times.set(entry.id, at);
   }
@@ -73,6 +77,7 @@ function billedSnapshots(entries: readonly unknown[]): CacheLineageSnapshot[] {
   const entryTimes = persistedEntryTimes(entries);
   const snapshots: CacheLineageSnapshot[] = [];
   for (const entry of entries) {
+    if (!isPersistedEntry(entry)) continue;
     const snapshot = billedSnapshotFromEntry(entry, entryTimes);
     if (snapshot) snapshots.push(snapshot);
   }
@@ -129,8 +134,8 @@ export function hydrateLineageResponseIds(
 function parentIndex(entries: readonly unknown[]): Map<string, string | null> {
   const parents = new Map<string, string | null>();
   for (const entry of entries) {
-    if (!isJsonObject(entry) || typeof entry.id !== "string") continue;
-    parents.set(entry.id, typeof entry.parentId === "string" ? entry.parentId : null);
+    if (!isPersistedEntry(entry)) continue;
+    parents.set(entry.id, stringValue(entry.parentId) ?? null);
   }
   return parents;
 }
@@ -169,8 +174,10 @@ export function findBranchBaseline(
 function descendantsOf(entries: readonly unknown[], rootId: string): Set<string> {
   const children = new Map<string, string[]>();
   for (const entry of entries) {
-    if (!isJsonObject(entry) || typeof entry.id !== "string" || typeof entry.parentId !== "string") continue;
-    children.set(entry.parentId, [...(children.get(entry.parentId) ?? []), entry.id]);
+    if (!isPersistedEntry(entry)) continue;
+    const parentId = stringValue(entry.parentId);
+    if (parentId === undefined) continue;
+    children.set(parentId, [...(children.get(parentId) ?? []), entry.id]);
   }
   const descendants = new Set<string>();
   const pending = [rootId];
@@ -231,9 +238,9 @@ export function pathContainsCompaction(
   leafId: string | null,
   baseline: CacheLineageSnapshot,
 ): boolean {
-  const byId = new Map<string, Record<string, unknown>>();
+  const byId = new Map<string, PersistedEntry>();
   for (const entry of entries) {
-    if (isJsonObject(entry) && typeof entry.id === "string") byId.set(entry.id, entry);
+    if (isPersistedEntry(entry)) byId.set(entry.id, entry);
   }
   const stopIds = new Set(
     [baseline.responseEntryId, baseline.requestLeafId].filter((id): id is string => id !== undefined && id !== null),
@@ -245,7 +252,7 @@ export function pathContainsCompaction(
     const entry = byId.get(current);
     if (!entry) return false;
     if (entry.type === "compaction") return true;
-    current = typeof entry.parentId === "string" ? entry.parentId : null;
+    current = stringValue(entry.parentId) ?? null;
   }
   return false;
 }

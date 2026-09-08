@@ -30,17 +30,28 @@ accumulator copies, vague `shape` names, module mocking. `npm run lint:slop` pri
 full diagnostics; `npm run lint` feeds them into the same baseline as the `POG` rules,
 keyed by rule id such as `anti-slop(no-unknown-returns)`.
 
+Runtime refinement has exactly two homes, and `no-runtime-typeof` plus
+`no-unknown-parameters` enforce that everywhere else:
+
+- A named type guard, `function isThing(value: unknown): value is Thing`. Both rules
+  exempt guards by design (`allowInTypeGuards`), so the fix for an inline `typeof` is
+  usually to give the check a name and a predicate return type. `isPersistedEntry` in
+  `pi-cachemire/lineage.ts` is the shape.
+- A boundary module: `_lib/boundary.ts` (`stringValue`, `nonNegativeNumberValue`, ...),
+  `_lib/config.ts` and each extension's `config.ts` (config files), and `_lib/chat.ts`
+  (Pi's undeclared TUI tree). These are exempt by path in `.oxlintrc.json` because they
+  are the parsers the rules tell everyone else to call. Add a helper there rather than
+  re-deriving `typeof value === "string" ? value : undefined` inline.
+
 Rules that are off are off by policy, with the reason inline in `.oxlintrc.json`, never
 baselined:
 
-- `no-runtime-typeof` and `no-unknown-parameters` assume a schema library at the
-  boundary. This package has none, so `parse(value: unknown): T` with `typeof`
-  refinement is the sanctioned boundary mechanism (see "Boundary typing"). Leaking
-  `unknown` inward is still caught by POG001 and POG004.
 - `eslint/no-control-regex`: ANSI escape parsing is the domain.
 - In `tests/**`, `require-safety-comment-for-type-assertion` and
   `no-chained-type-assertions` are off because synthetic duck-typed fixtures are the
-  documented stand-in pattern, proven against real Pi by the contract suite.
+  documented stand-in pattern, proven against real Pi by the contract suite. In
+  `tests/contract/**` the two refinement rules are off too: probing Pi's shape is what
+  those tests are for.
 
 A baseline entry is debt with an intended fix. If a finding is correct code that should
 stay, the right move is a rule-level decision in `.oxlintrc.json` with its reason, or

@@ -119,6 +119,293 @@
         "const row = (toolName: string, args: object) => ({ ...imageRow(), toolName, args }) as ToolRowLike;": 1
       }
     },
+    "anti-slop(no-runtime-typeof)": {
+      "extensions/_lib/chatline.ts": {
+        "if (typeof c?.toolCallId === \"string\") return `tool#${c.toolCallId}`;": 1,
+        "if (typeof chat.clear !== \"function\" || chat[versionKey] === CHAT_CLEAR_HOOK_VERSION) return;": 1,
+        "if (typeof message?.role === \"string\" && message.timestamp !== undefined) {": 1
+      },
+      "extensions/_lib/forecast.ts": {
+        "const signature = typeof block.thinkingSignature === \"string\" ? block.thinkingSignature : undefined;": 1,
+        "if (isSame && typeof block.thoughtSignature === \"string\") {": 1,
+        "if (typeof message.content === \"string\") {": 1
+      },
+      "extensions/_lib/heuristics.ts": {
+        "return typeof value === \"number\" && Number.isFinite(value) && value > 0 ? value : fallback;": 1
+      },
+      "extensions/_lib/tool-payloads.ts": {
+        "if (typeof property.type === \"string\") return property.type;": 1,
+        "return typeof property.description === \"string\" ? trimFinalPeriod(property.description) : \"\";": 1
+      },
+      "extensions/pi-cachemire/classify.ts": {
+        ": typeof body.modelId === \"string\" ? body.modelId : undefined,": 1,
+        "if (Array.isArray(body.input) || typeof body.instructions === \"string\") {": 1,
+        "model: typeof body.model === \"string\"": 1,
+        "model: typeof body.model === \"string\" ? body.model : undefined,": 1
+      },
+      "extensions/pi-cachemire/index.ts": {
+        "if (typeof mapped === \"string\") return mapped;": 1,
+        "responseAt: typeof message.timestamp === \"number\" ? message.timestamp : now,": 1
+      },
+      "extensions/pi-cachemire/ledger.ts": {
+        "const at = typeof message.timestamp === \"number\" ? message.timestamp : 0;": 1,
+        "return typeof message[key] === \"string\" ? message[key] as string : undefined;": 1
+      },
+      "extensions/pi-contextimate/index.ts": {
+        "const notes = typeof numerator.tokens === \"number\"": 1,
+        "const sectionDetail = typeof numerator.tokens === \"number\"": 1,
+        "const token = typeof row.tokens === \"number\"": 1,
+        "if (typeof snapshot.contextUsage?.tokens === \"number\") values.push(snapshot.contextUsage.tokens);": 1,
+        "return rows.flatMap((row) => typeof row.tokens === \"number\" ? [row.tokens] : []);": 1
+      },
+      "extensions/pi-contextimate/session-accounting.ts": {
+        "&& typeof anchor.api === \"string\"": 1,
+        "&& typeof anchor.model === \"string\"": 1,
+        "&& typeof anchor.provider === \"string\"": 1,
+        "if (!block || typeof block !== \"object\") return 0;": 1,
+        "if (!block || typeof block !== \"object\") return sum;": 1,
+        "if (!item || typeof item !== \"object\") return false;": 1,
+        "if (typeof content === \"string\") return content.length;": 1,
+        "return typeof encryptedContent === \"string\" && encryptedContent.length > 0;": 1,
+        "return typeof tokens === \"number\" && Number.isFinite(tokens) && tokens >= 0 ? tokens : undefined;": 1
+      },
+      "extensions/pi-meantime/index.ts": {
+        "const deltaLength = \"delta\" in streamEvent && typeof streamEvent.delta === \"string\"": 1
+      },
+      "extensions/pi-traceline/cache-hooks.ts": {
+        "if (typeof chat.addChild === \"function\") {": 1,
+        "if (typeof chat.clear === \"function\") {": 1,
+        "if (typeof chat.removeChild === \"function\") {": 1
+      },
+      "extensions/pi-traceline/drill-pager-content.ts": {
+        "const data = converted?.data ?? (typeof block.data === \"string\" ? block.data : undefined);": 1,
+        "const data = typeof block.data === \"string\" ? block.data : undefined;": 1,
+        "const kind = typeof typed.type === \"string\" ? typed.type : \"block\";": 1,
+        "const mimeType = converted?.mimeType ?? (typeof block.mimeType === \"string\" ? block.mimeType : undefined);": 1,
+        "const mimeType = typeof block.mimeType === \"string\" ? block.mimeType : undefined;": 1,
+        "const name = typeof call.toolName === \"string\" ? call.toolName : \"tool\";": 1,
+        "const offset = typeof args.offset === \"number\" && args.offset >= 1 ? Math.floor(args.offset) : 1;": 1,
+        "if (!args || typeof args !== \"object\" || Array.isArray(args)) return [];": 1,
+        "if (!value || typeof value !== \"object\") return undefined;": 1,
+        "if (call.toolName === \"bash\" && typeof args?.command === \"string\") {": 1,
+        "if (call.toolName === \"read\" && typeof args?.path === \"string\") {": 1,
+        "if (typeof value === \"string\") return value;": 1,
+        "return typeof typed.data === \"string\" && typeof typed.mimeType === \"string\"": 2
+      },
+      "extensions/pi-traceline/drill-pager.ts": {
+        "const height = typeof rows === \"number\" && rows > 0 ? rows : 24;": 1,
+        "if (!block || typeof block !== \"object\") continue;": 1,
+        "if (typed.type === \"text\" && typeof typed.text === \"string\") {": 1,
+        "if (typeof id === \"number\") writeIgnoringErrors(deleteKittyImage(id));": 1
+      },
+      "extensions/pi-traceline/drill.ts": {
+        "if (typeof first !== \"string\" || stripAnsi(first).trim() !== \"\") return lines;": 1
+      },
+      "extensions/pi-traceline/image-fact.ts": {
+        "const data = typeof block.data === \"string\" ? block.data : undefined;": 1,
+        "const mimeType = typeof block.mimeType === \"string\" ? block.mimeType : undefined;": 1,
+        "if (!result || typeof result !== \"object\" || !Array.isArray(result.content)) return \"\";": 1
+      },
+      "extensions/pi-traceline/index.ts": {
+        "if (!call || typeof call.render !== \"function\") return undefined;": 2,
+        "if (!comp || typeof comp !== \"object\") return false;": 2,
+        "if (!proto || typeof proto.render !== \"function\") return;": 1,
+        "if (currentPatchInstalled() || typeof proto.render !== \"function\" || typeof proto.handleMouse !== \"function\") return;": 2,
+        "if (typeof path !== \"string\" || path.length === 0) return undefined;": 1,
+        "return typeof name === \"string\" && name.length > 0 ? name : \"tool\";": 1,
+        "return typeof path === \"string\" && path.length > 0 ? cwdRelativePath(c, path) : undefined;": 1,
+        "return typeof path === \"string\" && path.length > 0 ? path : undefined;": 1,
+        "return typeof path === \"string\" && path.length > 0;": 1,
+        "return typeof row.setLines === \"function\" && typeof row.lines === \"number\" && !(\"text\" in comp);": 2,
+        "return typeof row.text === \"string\" && typeof row.setText === \"function\" && THINKING_TOGGLE_STATUS.test(stripAnsi(row.text).trim());": 2,
+        "return typeof value === \"string\" && value.length > 0 ? value : undefined;": 1
+      },
+      "extensions/pi-traceline/path-rows.ts": {
+        "const cwd = typeof comp?.cwd === \"string\" && comp.cwd.length > 0 ? comp.cwd : undefined;": 1,
+        "const limit = typeof rawLimit === \"number\" && Number.isFinite(rawLimit) ? Math.max(1, Math.floor(rawLimit)) : undefined;": 1,
+        "const offset = typeof rawOffset === \"number\" && Number.isFinite(rawOffset) ? Math.max(1, Math.floor(rawOffset)) : undefined;": 1
+      },
+      "extensions/pi-traceline/records.ts": {
+        "if (block && typeof block === \"object\" && block.type === \"text\" && typeof block.text === \"string\") out += `${block.text}\\n`;": 2,
+        "if (typeof command !== \"string\" || !comp?.result || typeof comp.result !== \"object\") return [];": 2,
+        "return typeof comp?.toolName === \"string\" && comp.toolName.length > 0 ? comp.toolName : \"tool\";": 1
+      },
+      "extensions/pi-traceline/render-cache.ts": {
+        "if (!value || typeof value !== \"object\") return;": 1,
+        "if (this.active && value && typeof value === \"object\") this.collecting!.add(value);": 1
+      },
+      "extensions/pi-traceline/repetition-fold.ts": {
+        "const call = block && typeof block === \"object\" ? block as { type?: unknown; id?: unknown } : undefined;": 1,
+        "const id = typeof comp.toolCallId === \"string\" ? comp.toolCallId : undefined;": 1,
+        "if (call?.type === \"toolCall\" && typeof call.id === \"string\") stepIds.add(call.id);": 1
+      },
+      "extensions/pi-traceline/thinking-preview.ts": {
+        "if (block && typeof block === \"object\" && (block as { type?: unknown }).type === \"thinking\") {": 1,
+        "if (block?.type !== \"thinking\" || typeof block.thinking !== \"string\" || !block.thinking.trim()) return undefined;": 1
+      },
+      "extensions/pi-traceline/topology.ts": {
+        "(b.type === \"thinking\" && typeof b.thinking === \"string\" && b.thinking.trim());": 1,
+        "if (!block || typeof block !== \"object\") return false;": 1,
+        "if (item?.type === \"toolCall\" && typeof item.id === \"string\") {": 1,
+        "if (typeof row.toolCallId === \"string\") byId.set(row.toolCallId, row);": 1,
+        "return (b.type === \"text\" && typeof b.text === \"string\" && b.text.trim()) ||": 1
+      },
+      "extensions/pi-traceline/write-diff.ts": {
+        "const cwd = typeof comp.cwd === \"string\" && comp.cwd.length > 0 ? comp.cwd : process.cwd();": 1,
+        "if (!snapshot && typeof comp.toolCallId === \"string\") {": 1,
+        "if (preview && typeof preview === \"object\" && !(\"error\" in preview) && typeof preview.diff === \"string\") {": 2,
+        "if (typeof details?.diff === \"string\") return details.diff;": 1,
+        "if (typeof details?.patch === \"string\") return details.patch;": 1,
+        "return typeof path === \"string\" && typeof content === \"string\" ? { path, content, cwd } : undefined;": 2
+      },
+      "scripts/contextimate/evaluate-transcripts.mjs": {
+        "function countToolCallContent(block) { return !block || typeof block !== 'object' ? 0 : safeJson({ id: block.id, name: block.name, arguments: block.arguments }).length; }": 1,
+        "if (!block || typeof block !== 'object') continue;": 1,
+        "if (typeof content === 'string') return content.length;": 1,
+        "if (typeof value !== 'string') return safeJson(value).length;": 1
+      },
+      "scripts/contextimate/probe-live-prefix.mjs": {
+        "if (typeof value === 'string') return value.length;": 1,
+        "if (value && typeof value === 'object') return Object.values(value).reduce((sum, item) => sum + textChars(item), 0);": 1
+      },
+      "scripts/contextimate/provider-token-counts.ts": {
+        "const model = typeof body.model === \"string\" ? body.model.replace(/^models\\//, \"\") : undefined;": 1,
+        "const model = typeof request?.model === \"string\" ? request.model.replace(/^models\\//, \"\") : undefined;": 1,
+        "if (Array.isArray(payload.input) || typeof payload.instructions === \"string\") return \"openai-responses\";": 1,
+        "if (entry && typeof entry.access === \"string\" && (typeof entry.expires !== \"number\" || entry.expires > Date.now())) {": 2,
+        "if (isJsonObject(data) && Array.isArray(data.tokens) && data.tokens.every((token) => typeof token === \"number\")) {": 1,
+        "if (isJsonObject(data) && isJsonObject(data.data) && typeof data.data.total_tokens === \"number\") return data.data.total_tokens;": 1,
+        "if (isJsonObject(data) && isJsonObject(data.usage) && typeof data.usage.total_tokens === \"number\") return data.usage.total_tokens;": 1,
+        "if (isJsonObject(data) && typeof data[key] === \"number\") return data[key];": 1,
+        "if (isJsonObject(tool.function) && typeof tool.function.name === \"string\") return tool.function.name;": 1,
+        "if (isJsonObject(tool.toolSpec) && typeof tool.toolSpec.name === \"string\") return tool.toolSpec.name;": 1,
+        "if (typeof model !== \"string\") throw new Error(\"payload has no model; pass --model\");": 1,
+        "if (typeof payload.modelId === \"string\" && Array.isArray(payload.messages)) return \"bedrock\";": 1,
+        "if (typeof response.inputTokens !== \"number\") throw new Error(\"Bedrock returned no inputTokens\");": 1,
+        "if (typeof tool.name === \"string\") return tool.name;": 1,
+        "if (typeof value === \"string\") return value;": 1,
+        "if (typeof value.content === \"string\") return value.content;": 1,
+        "if (typeof value.text === \"string\") return value.text;": 1,
+        "return typeof value === \"string\" ? value.length : JSON.stringify(value).length;": 1
+      },
+      "scripts/dev/agent-lint.mjs": {
+        "const deps = pkg.dependencies && typeof pkg.dependencies === \"object\" ? Object.keys(pkg.dependencies) : [];": 1,
+        "if (Array.isArray(value) || value === null || typeof value !== \"object\") return value;": 1
+      },
+      "scripts/dev/bash-corpus/extract.mjs": {
+        "if (typeof cmd === \"string\" && cmd.trim().length > 0) {": 1
+      },
+      "scripts/dev/bash-corpus/report.ts": {
+        "if (typeof cmd === \"string\") commands.push(cmd);": 1
+      },
+      "tests/cachemire/model-switch-events.test.ts": {
+        "if (typeof widget === \"function\") widget({ requestRender: () => {} });": 1,
+        "return typeof last === \"object\" && last !== null && \"id\" in last && typeof last.id === \"string\" ? last.id : null;": 2
+      }
+    },
+    "anti-slop(no-unknown-parameters)": {
+      "extensions/_lib/chatline.ts": {
+        "export function childAnchorKey(child: unknown): string | undefined {": 1,
+        "function ensureChatClearHook(chat: unknown, ns: string, host: ChatLineHost): void {": 1
+      },
+      "extensions/_lib/forecast.ts": {
+        "function blockList(content: unknown): ForecastBlock[] {": 1
+      },
+      "extensions/_lib/heuristics.ts": {
+        "export function cleanDenominator(value: unknown, fallback = 4): number {": 1
+      },
+      "extensions/_lib/tool-payloads.ts": {
+        "export function arrayItemsSchema(property: unknown): unknown {": 1,
+        "export function getSchemaProperties(schema: unknown): Record<string, unknown> {": 1,
+        "export function getSchemaRequired(schema: unknown): string[] {": 1,
+        "export function safeMinifiedJson(value: unknown): string {": 1,
+        "export function schemaArrayItemProperties(property: unknown): Record<string, unknown> {": 1,
+        "export function schemaPropertyDescription(property: unknown): string {": 1,
+        "export function schemaPropertyType(property: unknown): string {": 1,
+        "function estimateOpenAIPropertyTokens(propertyName: string, property: unknown): number {": 1,
+        "function schemaPropertyEnum(property: unknown): JsonValue[] {": 1
+      },
+      "extensions/pi-cachemire/classify.ts": {
+        "export function fingerprintPayload(payload: unknown): RequestFingerprint {": 1,
+        "function describeAnthropicThinking(thinking: unknown, outputConfig: unknown): string {": 2,
+        "function hashOf(value: unknown): string {": 1,
+        "function stripCacheMarkers(value: unknown): unknown {": 1
+      },
+      "extensions/pi-cachemire/index.ts": {
+        "function parseCachemireConfig(value: unknown): Partial<CachemireConfig> {": 1
+      },
+      "extensions/pi-cachemire/retention.ts": {
+        "function bedrockCacheTtlMs(payload: unknown): number | undefined {": 1
+      },
+      "extensions/pi-contextimate/index.ts": {
+        "function buildToolFields(schema: unknown): ToolField[] {": 1,
+        "function collectToolFields(name: string, property: unknown, depth: number, required: boolean, out: ToolField[], maxDepth = 3): void {": 1,
+        "function findResourceChatContainer(node: unknown): ContainerLike | undefined {": 1,
+        "function isResourceComponent(component: unknown): boolean {": 1,
+        "function parseContextimateConfig(value: unknown): ContextimateConfig {": 1,
+        "function parseHeuristicProfile(value: unknown): HeuristicProfile {": 1,
+        "function parseHeuristicRule(value: unknown): HeuristicRule | undefined {": 1
+      },
+      "extensions/pi-contextimate/session-accounting.ts": {
+        "function countTextContent(content: unknown): number {": 1,
+        "function countToolCallContent(block: unknown): number {": 1,
+        "function safeJson(value: unknown): string {": 1
+      },
+      "extensions/pi-traceline/cache-hooks.ts": {
+        "chat.addChild = (child: unknown) => { const result = original(child); binding.changed(); return result; };": 1,
+        "chat.removeChild = (child: unknown) => { cache.dirty(child); const result = original(child); binding.changed(); return result; };": 1
+      },
+      "extensions/pi-traceline/click.ts": {
+        "decorateNative: (row: ToolRowLike, lines: unknown) => unknown;": 1
+      },
+      "extensions/pi-traceline/drill-pager-content.ts": {
+        "export function argumentLines(theme: Theme | undefined, args: unknown, width: number): string[] {": 1,
+        "function argumentText(value: unknown): string {": 1
+      },
+      "extensions/pi-traceline/drill.ts": {
+        "export function drillDecorateNativeRow(theme: Theme | undefined, comp: unknown, lines: unknown, bulletInk: string): unknown {": 2,
+        "export function drillRenderKey(comp: unknown): string {": 1,
+        "export function drillTracePrefix(theme: Theme | undefined, comp: unknown, bulletInk: string): string | undefined {": 1
+      },
+      "extensions/pi-traceline/index.ts": {
+        "const breaks = (row: unknown) => isToolRow(row) ? row.expanded === true : !isEmptyConnector(row);": 1,
+        "const flattened = flattenInvocationLines(lines.map((line: unknown) => stripAnsi(String(line))));": 1,
+        "function compactJson(value: unknown): string {": 1,
+        "function displayPath(value: unknown): string | undefined {": 1,
+        "function isSpacerRow(comp: unknown): boolean {": 1,
+        "function isThinkingToggleStatusRow(comp: unknown): boolean {": 1,
+        "function parseTracelineConfig(value: unknown): TracelineConfig {": 1,
+        "function toolLabel(name: unknown): string {": 1
+      },
+      "extensions/pi-traceline/render-cache.ts": {
+        "depend(value: unknown): void {": 1,
+        "dirty(value: unknown): void {": 1
+      },
+      "extensions/pi-traceline/topology.ts": {
+        "export function isCollapsedThinkingRow(row: unknown): boolean {": 1,
+        "export function isEmptyConnector(row: unknown): boolean {": 1,
+        "export function isExpandedToolRow(row: unknown): boolean { return isToolRow(row) && row.expanded === true; }": 1,
+        "return !content.some((block: unknown) => {": 1
+      },
+      "scripts/contextimate/check-provider-tokens.ts": {
+        "function printTable(providerName: string, model: unknown, summary: ReturnType<typeof summarizeCounts>): void {": 1,
+        "main().catch((error: unknown) => {": 1
+      },
+      "scripts/contextimate/provider-token-counts.ts": {
+        "BedrockRuntimeClient: new (config: { region: string }) => { send(command: unknown): Promise<{ inputTokens?: number }> };": 1,
+        "export function detectPayloadKind(payload: unknown): PayloadKind | undefined {": 1,
+        "function numberField(data: unknown, key: string, provider: string): number {": 1
+      },
+      "tests/cachemire/forensics.test.ts": {
+        "const fp = (payload: unknown) => fingerprintPayload(payload);": 1
+      },
+      "tests/cachemire/model-switch-events.test.ts": {
+        "setWidget(_key: string, widget?: unknown): void {": 1
+      },
+      "tests/traceline/drill.test.ts": {
+        "factory: (tui: unknown, theme: unknown, kb: unknown, done: (result: T) => void) => unknown,": 3
+      }
+    },
     "anti-slop(no-unknown-returns)": {
       "extensions/_lib/chat.ts": {
         "__tracelineOriginalAssistantRender?: (width: number) => unknown;": 1,
@@ -197,9 +484,6 @@
       "extensions/pi-cachemire/ledger.ts": {
         "function stringField(message: Record<string, unknown>, key: string): string | undefined {": 1,
         "messages: Array<Record<string, unknown>>,": 1
-      },
-      "extensions/pi-cachemire/lineage.ts": {
-        "const byId = new Map<string, Record<string, unknown>>();": 1
       },
       "extensions/pi-traceline/drill-pager-content.ts": {
         "const entries = Object.entries(args as Record<string, unknown>);": 1,

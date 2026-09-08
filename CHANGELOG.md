@@ -5,8 +5,9 @@
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.
-  Two rules are off by policy because the zero-dependency boundary parsers use
-  `typeof` on `unknown`; the reasons are inline. `oxlint` and `@oxlint/plugins` are
+  Runtime `typeof` and `unknown` parameters are confined to named type guards and the
+  boundary modules; inline refinement elsewhere is baselined debt with a known exit.
+  `oxlint` and `@oxlint/plugins` are
   the package's first devDependencies. `npm run preflight` reminds you to re-run
   `npm run link-pi` after `npm install`.
 - Development: tests specify behaviour through public interfaces. A new

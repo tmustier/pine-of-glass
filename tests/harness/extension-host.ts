@@ -26,7 +26,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import * as pi from "@earendil-works/pi-coding-agent";
 
-import type { JsonObject } from "../../extensions/_lib/boundary.ts";
+import { isJsonObject, type JsonObject } from "../../extensions/_lib/boundary.ts";
 
 type ExtensionFactory = (api: ExtensionAPI) => void | Promise<void>;
 type PiExtension = ConstructorParameters<typeof pi.ExtensionRunner>[0][number];
@@ -44,15 +44,18 @@ type WidgetFactory = (tui: TUI, theme: Theme) => Component & { dispose?(): void 
 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
 
+function isFactoryLoader(module: unknown): module is FactoryLoader {
+  return isJsonObject(module) && typeof module.loadExtensionFromFactory === "function";
+}
+
 // Pi does not export its factory loader from the package index; the lifecycle contracts
 // pin the path. One import here means one place to move when Pi moves it.
 async function factoryLoader(): Promise<FactoryLoader> {
   const loader: unknown = await import(pathToFileURL(join(piRoot, "dist/core/extensions/loader.js")).href);
-  const candidate = loader as Partial<FactoryLoader>;
-  if (typeof candidate.loadExtensionFromFactory !== "function") {
+  if (!isFactoryLoader(loader)) {
     throw new Error("Pi's factory loader moved: tests/harness/extension-host.ts needs the new seam");
   }
-  return candidate as FactoryLoader;
+  return loader;
 }
 
 /** What a user would have seen on an interactive terminal. */
@@ -84,14 +87,14 @@ export class RecordedUi {
       this.widgets.delete(key);
       return;
     }
-    if (typeof content === "function") {
-      // SAFETY: the harness TUI only answers `requestRender`; extensions in this family
-      // capture it through `captureTui` and never touch other TUI members outside a
-      // real terminal. The theme is deliberately undefined: colour is not under test.
-      this.widgets.set(key, content(this.tui as unknown as TUI, undefined as unknown as Theme));
+    if (Array.isArray(content)) {
+      this.widgets.set(key, content);
       return;
     }
-    this.widgets.set(key, content);
+    // SAFETY: the harness TUI only answers `requestRender`; extensions in this family
+    // capture it through `captureTui` and never touch other TUI members outside a
+    // real terminal. The theme is deliberately undefined: colour is not under test.
+    this.widgets.set(key, content(this.tui as unknown as TUI, undefined as unknown as Theme));
   };
 
   readonly onTerminalInput = (handler: TerminalListener): (() => void) => {
