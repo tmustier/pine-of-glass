@@ -43,6 +43,15 @@ try {
   wait((text) => text.includes("FIRST_REASONING · FIRST_NEWEST") && !text.includes("SECOND_REASONING · SECOND_DETAIL") && text.includes("SECOND_DETAIL"), "second run click failed");
   keys("C-t");
   wait((text) => !text.includes("FIRST_REASONING · FIRST_NEWEST") && text.includes("FIRST_NEWEST"), "Ctrl+T did not clear overrides into global visible state");
+  keys("C-o");
+  wait((text) => text.includes("fixture output"), "Ctrl+O did not expand tool output");
+  click("FIRST_REASONING");
+  wait((text) => text.includes("FIRST_REASONING · FIRST_NEWEST · FIRST_ADJACENT_BLOCK") && !text.includes("SECOND_REASONING · SECOND_DETAIL") && !text.includes("Thinking...") && text.includes("fixture output"), "globally visible reasoning must collapse to a Traceline preview without collapsing tools");
+  shot("04-native-mode-collapsed-run");
+  click("FIRST_REASONING");
+  wait((text) => !text.includes("FIRST_REASONING · FIRST_NEWEST"), "native-mode preview did not reopen");
+  keys("C-o");
+  wait((text) => !text.includes("fixture output"), "Ctrl+O did not restore tool state");
   keys("C-t");
   wait((text) => text.includes("FIRST_REASONING · FIRST_NEWEST · FIRST_ADJACENT_BLOCK"), "Ctrl+T did not restore global compact state");
   tmux("resize-window", "-t", session, "-x", "60", "-y", "35");

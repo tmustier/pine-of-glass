@@ -50,6 +50,20 @@ test("compact reasoning previews keep Pi's run-level click state and independent
   assert.ok(painted(comp).some((line) => line.trim() === "final detail"));
 });
 
+test("clicking globally visible reasoning collapses only that run to a Traceline preview", () => {
+  const comp = new AssistantMessageComponent(assistantMessage([
+    { type: "thinking", thinking: "first run\nfirst detail" },
+    { type: "text", text: "visible bridge" },
+    { type: "thinking", thinking: "second run\nsecond detail" },
+  ]), false);
+  clickText(comp, "first run");
+  assert.deepEqual(painted(comp).map((line) => line.trim()), [
+    "", "first run · first detail", "", "visible bridge", "second run", "second detail",
+  ]);
+  clickText(comp, "first run · first detail");
+  assert.ok(painted(comp).some((line) => line.trim() === "first detail"));
+});
+
 test("streaming rebuilds compact geometry while Ctrl+T clears native overrides", () => {
   const comp = new AssistantMessageComponent(assistantMessage([
     { type: "thinking", thinking: "stream starts" },

@@ -29,3 +29,11 @@ the screenshot rig now exits with Pi's supported `/quit` command.
 
 Lint, typecheck, 135 focused tests and both fullscreen click smokes passed.
 Full suite: 333 passed with the same four baseline failures.
+
+## 2026-09-08: native-mode reasoning collapse
+
+Reproduced the reported `Thinking...` label with the pre-PR renderer, then verified
+that `/reload` into the current version fixes it in the same Pi process. No
+production change was needed. Added component and fullscreen smoke coverage for
+collapsing one reasoning run while other reasoning and tool output remain expanded.
+Lint/typecheck passed; full suite: 334 passed with the same four baseline failures.
