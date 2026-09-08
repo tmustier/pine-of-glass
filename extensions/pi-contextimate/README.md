@@ -34,7 +34,7 @@ pi -e ./extensions/pi-contextimate
 
 ## Use
 
-The panel renders after Pi's native startup resource list and re-inserts itself if a chat rebuild (for example `Ctrl+T` or `/reload`) drops it.
+The panel renders after Pi's native startup resource list and re-inserts itself if a chat rebuild (for example `/reload`) drops it. Ctrl+T preserves existing components in regular and fullscreen modes.
 
 - `Ctrl+O`, Pi's expand and collapse key, cycles summary, compact and expanded
 - `/contextimate` also cycles; `/contextimate summary`, `/contextimate compact` and `/contextimate expanded` jump to a mode

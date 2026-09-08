@@ -7,6 +7,7 @@ import { test } from "node:test";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 import type { CallRecord } from "../../extensions/pi-cachemire/index.ts";
+import { CEREBRAS_BOUNDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { expectGolden } from "../helpers.ts";
 
@@ -78,6 +79,10 @@ test("cachemire ledger and one-line surfaces golden", () => {
     clock({ now: 1 * MIN, ...base, modelSwitched: true, switchForecast: { targetId: "claude-opus-4-8", targetProvider: "anthropic", estTokens: 131_000, basis: "direct", prior: { requestAt: 0, window: CONTRACT_5M } } }),
     clock({ now: 1 * MIN, ...base, modelSwitched: true }),
     clock({ now: 24 * 60 * MIN, lastRequestAt: 0, window: { kind: "maximum", maxMs: 24 * 60 * MIN }, cachedTokens: 64_300, rewriteUsd: 0.12 }),
+    "",
+    "=== Cerebras bounded clock ===",
+    clock({ now: 5 * MIN, ...base, window: CEREBRAS_BOUNDED_WINDOW }),
+    clock({ now: 60 * MIN, ...base, window: CEREBRAS_BOUNDED_WINDOW }),
     "",
     "=== notices (chat lines) ===",
     `\u25cd ${renderBreakingLine({ cause: { kind: "ttl", detail: "5m TTL reached after 7m00s idle" }, expectedRewriteTokens: 150_300, expectedUsd: 2.82 })}`,

@@ -27,7 +27,7 @@ such as compaction or a model switch puts the next send at risk.
 | MiniMax M2.7, global and China routes | outgoing 5-minute `cache_control` on an M2.7 model | activate the 5-minute TTL after a cache read or write | [MiniMax Anthropic-compatible caching](https://platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache.md), Installed Pi request builders and model records |
 | Amazon Bedrock, documented Claude 4.5 and 4.6 models | outgoing `cachePoint` with a model-supported TTL | activate the 5-minute or 1-hour TTL after a cache read or write | [Amazon Bedrock prompt caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html), Installed Pi request builders and model records |
 | Groq GPT-OSS models | automatic cache read on a documented GPT-OSS model | start or refresh the 2-hour inactivity TTL after a cache read | [Groq prompt caching](https://console.groq.com/docs/prompt-caching), Installed Pi request builders and model records |
-| Cerebras GPT-OSS 120B and GLM 4.7 | automatic cache read on a documented model | after a cache read, record a 1-hour maximum with no prior warmth claim | [Cerebras prompt caching](https://inference-docs.cerebras.ai/capabilities/prompt-caching), Installed Pi request builders and model records |
+| Direct Cerebras, all models | automatic caching with a guaranteed 5-minute TTL and a 1-hour maximum | after a cache read, claim warmth before 5 minutes, unknown state until 1 hour, then stale | [Cerebras prompt caching](https://inference-docs.cerebras.ai/capabilities/prompt-caching), Installed Pi request builders and model records |
 <!-- END GENERATED CACHE RETENTION: policy-table -->
 
 The table is generated from Cachemire's runtime policy registry. A minimum is not an
@@ -155,11 +155,10 @@ Set `turnSummaryMinCalls` higher if you only want a ledger line for multi-call t
 Cachemire follows these rules:
 
 - Token and cost numbers come from provider-reported usage in assistant messages.
-  Cachemire normalizes top-level Moonshot and Together cache-read counts before Pi
-  records them.
+  Pi 0.85.1 normalizes Moonshot and Together cache-read counts natively.
 - The model-switch forecast is the only estimate and is always labelled `est`.
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
-- Everything Cachemire draws is UI-only and does not enter LLM context. Corrected usage
+- Everything Cachemire draws is UI-only and does not enter LLM context. Provider usage
   follows Pi's normal session persistence; Cachemire adds no custom session entries.
 - Freshness wording follows the generated policy table above. Unknown retention stays
   silent. Under subscription auth, Cachemire marks savings as notional.
@@ -174,10 +173,11 @@ Cachemire follows these rules:
 
 Cachemire uses 4 rules:
 
-- **Evidence** distinguishes a TTL, a minimum, a maximum and unknown retention.
+- **Evidence** distinguishes a TTL, a minimum, a maximum, a bounded window and unknown
+  retention.
 - **Scope** ties a cache entry to the provider, model, wire API and byte-exact prefix.
-  Switch-back warmth needs exact identity and an active TTL or minimum. Unknown
-  retention waits for billed usage.
+  Switch-back warmth needs exact identity and an active TTL or minimum, including the
+  minimum phase of a bounded window. Unknown retention waits for billed usage.
 - **Retention** follows the generated policy table. It makes no elapsed-time claim for
   unknown routes.
 - **Currency** keeps exact tokens and cost in the tokenizer and price card that billed
@@ -205,9 +205,10 @@ come from the family vocabulary. Read
 Cachemire appends scrollback lines directly to pi's chat container, which it finds
 structurally like Traceline. The lines persist across pi's chat rebuilds.
 
-Each line has a durable anchor. Cachemire re-attaches it in place after Ctrl+T,
-compaction or tree navigation rebuilds the chat. If a rebuild no longer contains the
-anchor, Cachemire drops the line instead of attaching it somewhere misleading.
+Each line has a durable anchor. Cachemire re-attaches it after compaction, tree
+navigation, reload or settings changes rebuild the chat. If the anchor disappears,
+Cachemire drops the line. Ctrl+T updates existing components in both regular and
+fullscreen modes, so it preserves the lines without re-attachment.
 
 If this internal seam drifts, Cachemire falls back to plain `notify` lines. The
 contract test suite names the break. Cachemire does not modify anything in pi's

@@ -81,6 +81,7 @@ export type CacheWindow =
   | { kind: "contract"; ttlMs: number; source: "observed" | "inferred" }
   | { kind: "minimum"; minMs: number }
   | { kind: "maximum"; maxMs: number }
+  | { kind: "bounded"; minMs: number; maxMs: number }
   | { kind: "unknown" };
 
 export interface BreakPrediction {

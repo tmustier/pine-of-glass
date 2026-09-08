@@ -1,4 +1,5 @@
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
+import { pastWindow } from "./classify.ts";
 import type { SwitchForecast } from "./forecast.ts";
 import type { CacheWindow } from "./types.ts";
 
@@ -7,7 +8,7 @@ const EXACT_WARNING_MAX_MS = 5 * 60 * 1000;
 
 export function withinWarmHorizon(window: CacheWindow | undefined, sinceMs: number): boolean {
   if (window?.kind === "contract") return sinceMs < window.ttlMs;
-  return window?.kind === "minimum" && sinceMs < window.minMs;
+  return (window?.kind === "minimum" || window?.kind === "bounded") && sinceMs < window.minMs;
 }
 
 function warningLeadMs(window: Extract<CacheWindow, { kind: "contract" }>): number {
@@ -54,16 +55,14 @@ export function cacheClock(input: ClockInput): ClockState {
     if (forecast?.prior) {
       const prior = forecast.prior;
       const priorAge = input.now - prior.requestAt;
-      if (!prior.window || prior.window.kind === "unknown" ||
-          (prior.window.kind === "maximum" && priorAge < prior.window.maxMs) ||
-          (prior.window.kind === "minimum" && priorAge >= prior.window.minMs)) {
-        return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
-      }
       if (withinWarmHorizon(prior.window, priorAge)) {
         return {
           phase: "warm-unknown",
           text: `cache may still be warm \u00b7 switched back to ${forecast.targetId} \u00b7 next send confirms`,
         };
+      }
+      if (!pastWindow(prior.window, priorAge)) {
+        return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
       }
     }
     if (forecast?.estTokens === undefined) {
@@ -95,16 +94,16 @@ export function cacheClock(input: ClockInput): ClockState {
     const suffix = rewriteSuffix("may re-write", input.cachedTokens, input.rewriteUsd);
     return { phase: "closing", text: `cache expires in ${formatDuration(display)}${suffix}` };
   }
-  if (window.kind === "minimum" && since >= window.minMs) {
+  if ((window.kind === "maximum" || window.kind === "bounded") && since >= window.maxMs) {
+    const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd, " uncached");
+    return { phase: "cold", text: `cache stale \u00b7 ${formatDuration(window.maxMs)} retention maximum reached${suffix}` };
+  }
+  if ((window.kind === "minimum" || window.kind === "bounded") && since >= window.minMs) {
     const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd, " uncached");
     return {
       phase: "warm-unknown",
       text: `cache state unknown \u00b7 ${formatDuration(window.minMs)} retention minimum reached${suffix}`,
     };
-  }
-  if (window.kind === "maximum" && since >= window.maxMs) {
-    const suffix = rewriteSuffix("may re-send", input.cachedTokens, input.rewriteUsd, " uncached");
-    return { phase: "cold", text: `cache stale \u00b7 ${formatDuration(window.maxMs)} retention maximum reached${suffix}` };
   }
   return { phase: "idle", text: "" };
 }
@@ -116,10 +115,12 @@ export function nextClockUpdateMs(input: ClockInput): number | undefined {
     const prior = input.switchForecast?.prior;
     const priorWindow = prior?.window;
     if (!prior || !priorWindow || priorWindow.kind === "unknown") return undefined;
+    const age = input.now - prior.requestAt;
     const horizon = priorWindow.kind === "contract"
       ? priorWindow.ttlMs
-      : priorWindow.kind === "minimum" ? priorWindow.minMs : priorWindow.maxMs;
-    const remaining = horizon - (input.now - prior.requestAt);
+      : priorWindow.kind === "minimum" ? priorWindow.minMs
+      : priorWindow.kind === "bounded" && age < priorWindow.minMs ? priorWindow.minMs : priorWindow.maxMs;
+    const remaining = horizon - age;
     return remaining > 0 ? remaining : undefined;
   }
   const since = input.now - input.lastRequestAt;
@@ -127,6 +128,11 @@ export function nextClockUpdateMs(input: ClockInput): number | undefined {
   if (window.kind === "unknown" || (input.thinkingChanged && window.kind === "contract")) return undefined;
   if (window.kind === "minimum") {
     const remaining = window.minMs - since;
+    return remaining > 0 ? remaining : undefined;
+  }
+  if (window.kind === "bounded") {
+    const boundary = since < window.minMs ? window.minMs : window.maxMs;
+    const remaining = boundary - since;
     return remaining > 0 ? remaining : undefined;
   }
   if (window.kind === "maximum") {

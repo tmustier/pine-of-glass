@@ -9,6 +9,9 @@ Small observability and context management tools for [Pi](https://github.com/ear
 See each extension's own `README.md` for details and `docs/` for deeper reference.
 
 ## Installation
+
+Requires Pi 0.85.1 or later.
+
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
 - From npm (installs `contextimate`, `traceline`, and experimental `cachemire` and `meantime`): `pi install npm:pine-of-glass`. Meantime stays inert until its config sets `"enabled": true`.
 

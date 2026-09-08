@@ -31,7 +31,6 @@ import {
   resolveCacheLineage,
   restoreLineageSnapshots,
 } from "./lineage.ts";
-import { bindProviderUsageOverlays } from "./provider-usage.ts";
 import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
 import {
   confirmedWindow,
@@ -474,7 +473,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
   const s = state();
   const ownerToken = Symbol("pi-cachemire-owner");
   const ownsState = () => g.__piCachemireOwner === ownerToken;
-  bindProviderUsageOverlays(pi);
 
   pi.on("session_start", async (event, ctx) => {
     if (!ctx.hasUI) return;
@@ -577,13 +575,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
         rates: s.rates,
         switchForecast: s.switchForecast === undefined ? undefined : {
           ...s.switchForecast,
-          priorMayBeWarm: s.switchForecast.prior !== undefined && (
-            s.switchForecast.prior.window === undefined ||
-            s.switchForecast.prior.window.kind === "unknown" || s.switchForecast.prior.window.kind === "minimum" ||
-            (s.switchForecast.prior.window.kind === "maximum" &&
-              requestAt - s.switchForecast.prior.requestAt < s.switchForecast.prior.window.maxMs) ||
-            withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt)
-          ),
+          priorMayBeWarm: s.switchForecast.prior !== undefined &&
+            !pastWindow(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt),
         },
       });
       const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;

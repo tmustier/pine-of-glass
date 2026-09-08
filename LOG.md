@@ -82,3 +82,31 @@ failed its restored-row comparison; a diagnostic rerun and subsequent full smoke
 runs passed. No smoke assertions were weakened. Independent final review found no
 blocking regressions. #111 landed during final validation; clean latest main now
 passes all 340 tests, so refresh the integration before considering a merge.
+
+## 2026-09-08: Pi compatibility and Cerebras retention
+
+Required Pi 0.85.1 and removed Cachemire's obsolete provider-stream wrapper.
+Native SSE contracts cover cached-token accounting, precedence (including zero),
+totals and cost. Updated the bash renderer fixture and added real Pi thinking-toggle
+and chat-rebuild lifecycle contracts, including both TUI modes and missing anchors.
+
+Cerebras now has an explicit 5-minute minimum and 1-hour maximum for all models on
+its supported route, activated only after a cache read. Clock, scheduling, switch-back
+forecasts, classification and lineage checks preserve the unknown interval between
+those bounds. Refreshed dated evidence, generated policy docs and clock goldens.
+
+Validation: lint, typecheck and all 335 tests passed, with no baseline failures.
+The full real-Pi tmux smoke suite passed without model calls. Reviewed captured
+production widgets at both boundaries and the bounded ledger label. The existing
+fixed-width ledger still wraps at 60 columns; its table layout is unchanged.
+
+Rebased onto main's Astra support and contributor integrations (#109 and #110).
+Reran the full check: all 340 tests passed, followed by the complete real-Pi smoke
+suite. No baseline failures remain.
+
+## 2026-09-08: PR 111 review cleanup
+
+Removed redundant renderer scaffolding and source assertions from the native toggle
+contract. Reused `pastWindow` for switch-back expiry decisions and expressed the
+accounting fixture's expected cost as arithmetic. No new helpers or output changes.
+Lint, typecheck, all 340 tests and the full real-Pi smoke suite passed; goldens unchanged.

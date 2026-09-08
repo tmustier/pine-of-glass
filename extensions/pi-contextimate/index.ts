@@ -1525,8 +1525,8 @@ export default function piContextimate(pi: ExtensionAPI) {
       return {
         render: () => {
           const activeBlock = g.__piContextimateBlock;
-          // Ctrl+T rebuilds Pi's chat transcript to toggle thinking visibility,
-          // which can drop startup-only chat children. Keep this zero-line widget
+          // Reload and navigation can rebuild Pi's chat transcript and drop
+          // startup-only chat children. Keep this zero-line widget
           // mounted so it can quietly reinsert the estimator after such rebuilds.
           if (activeBlock && !isContextBlockInstalled(activeBlock)) scheduleInstall(activeBlock);
           return [] as string[];

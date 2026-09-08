@@ -176,7 +176,8 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   the state. A minimum stays hidden until its boundary, then shows an unknown cache
   state. An exact switch-back within an active minimum may say the cache could still be
   warm. A maximum appears only once reached, with no warmth claim or advance warning.
-  Routes with unknown retention stay silent
+  A bounded window combines both rules: warm before its minimum, unknown between its
+  bounds, and stale at its maximum. Routes with unknown retention stay silent
 - severity colour is reserved for exceeded thresholds and real states. Nothing is
   tinted for visual interest
 
@@ -212,7 +213,8 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   rescaled from a source-model bill: token density is not transferable across
   tokenizers, and the source bill may describe an earlier request.
   Switch-back warmth anchors require exact provider, API and model identity plus an
-  active TTL or minimum. Unknown retention makes no warmth claim. The
+  active TTL or minimum, including the minimum phase of a bounded window. Unknown
+  retention, including the middle of a bounded window, makes no warmth claim. The
   send-time notice keeps the grammar in progressive tense: `cache breaking · sending
   ~32.4k uncached to anthropic (est · ~$0.41) · cause: model switched
   openai-codex/gpt-5.6-sol → anthropic/claude-fable-5`; gateway routes use `(rough est ·
@@ -227,7 +229,8 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   137% claim
 - certainty ladder: an observed contract supports definite expiry wording. A minimum
   blocks stale wording until it ends, then changes to an unknown state. A maximum
-  supports definite wording only after it is reached. Unknown retention stays silent.
+  supports definite wording only after it is reached. A bounded window follows both
+  boundaries without treating its middle as warm or stale. Unknown retention stays silent.
   Never infer eviction, routing, replica identity or cache entry identity from provider
   usage
 - status one-liners are lowercase; Title Case only for panel headers and row labels

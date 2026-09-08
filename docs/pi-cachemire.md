@@ -22,23 +22,25 @@ that an entry exists.
 ## Moonshot and Together usage
 
 Moonshot and some Together responses report cache reads in top-level
-`usage.cached_tokens`, which Pi 0.83 does not read. Cachemire overlays `streamSimple` for
-those built-in providers and copies that value into Pi's supported nested field when no
-native cache-read field exists. It leaves custom streams alone and restores prior
-provider config on shutdown or reload. Corrected usage does not provide retention
-evidence.
+`usage.cached_tokens`. Pi 0.85.1 accounts for these reads natively, including cache-field
+precedence and cost. Cachemire uses that normalized usage without a provider wrapper.
+`tests/contract/pi-cache-retention-seams.test.ts` pins this behaviour with streamed
+response fixtures. Cache reads alone do not provide retention evidence.
 
 ## Four rules shape the UI
 
-1. Evidence: Cachemire distinguishes a TTL, a minimum, a maximum and unknown retention.
-   It does not turn a minimum lifetime into a maximum.
+1. Evidence: Cachemire distinguishes a TTL, a minimum, a maximum, a bounded
+   minimum-to-maximum window and unknown retention. It does not turn a minimum lifetime
+   into a maximum or a maximum into a prior warmth guarantee.
 2. Scope: a cache entry belongs to a provider, model, wire API and byte-exact prefix.
    Model-switch checks require all 3 identity fields. A switch-back hint needs an active
-   TTL or minimum. Unknown retention stays unknown until the next send reports usage.
+   TTL or minimum, including the minimum phase of a bounded window. Unknown retention
+   stays unknown until the next send reports usage.
 3. Retention: Anthropic-compatible, MiniMax, Bedrock and Groq TTLs support countdowns
    and expiry claims. The GPT-5.6+ and GPT-6 Astra minimum blocks stale claims for 30
-   minutes, then changes to unknown. OpenAI and Cerebras maxima support stale claims only
-   when reached. Healthy
+   minutes, then changes to unknown. An OpenAI maximum supports a stale claim only when
+   reached. Cerebras's bounded window is warm before 5 minutes, unknown until 1 hour,
+   then stale. Healthy
    states stay hidden.
 4. Currency: exact token and cost numbers stay in the tokenizer and price card that
    billed them. A model-switch forecast is a labelled estimate in the target model's
@@ -69,8 +71,10 @@ For an observed 24-hour OpenAI maximum, Cachemire waits for a cache read, stays 
 before the maximum, and marks the cache stale once the maximum is reached. MiniMax M2.7
 uses a confirmed 5-minute TTL. Documented Bedrock Claude models use their observed
 5-minute or 1-hour cache point. Groq GPT-OSS uses a 2-hour inactivity TTL after a read.
-Cerebras records a 1-hour maximum after a read. Unknown routes remain silent at every
-elapsed time.
+Cerebras activates a bounded window after a read for every model on its direct
+OpenAI Completions route. Cachemire can claim warmth before the guaranteed 5-minute
+minimum, reports an unknown state from that boundary, and marks the cache stale only
+when the 1-hour maximum is reached. Unknown routes remain silent at every elapsed time.
 
 The widget schedules its next update at a known boundary. It updates once per second
 only during the final 90 seconds of a visible countdown. Healthy and unknown states do
@@ -176,8 +180,8 @@ an old-model count as the denominator.
 ## State stays UI-only
 
 Working state and rendered output live in the extension process. Cachemire adds no custom
-session entries or exports. Corrected Moonshot and Together counts become ordinary Pi
-assistant usage and follow Pi's normal session lifecycle.
+session entries or exports. Pi normalizes and persists provider usage through its
+normal session lifecycle.
 
 On hot reload, Cachemire reattaches the process-live payload fingerprints to their
 persisted provider calls. Tool-schema and other prefix changes introduced by the reload
