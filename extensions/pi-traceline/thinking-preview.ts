@@ -75,12 +75,12 @@ type ThinkingRegion = {
   child: Component;
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined;
 };
-const installedRegions = new WeakSet<ThinkingRegion>();
+const installedChildren = new WeakSet<unknown[]>();
 
 /** Replace only Pi's hidden-label child, retaining its native run-level MouseRegion. */
 export function installThinkingPreviews(comp: AssistantPreviewRow): void {
   const children = comp.contentContainer?.children;
-  if (!Array.isArray(children)) return;
+  if (!Array.isArray(children) || installedChildren.has(children)) return;
 
   // SAFETY: Pi's AssistantMessageComponent wraps each consecutive thinking run in a
   // MouseRegion whose child is Text when hidden and Markdown when visible. The real
@@ -88,20 +88,20 @@ export function installThinkingPreviews(comp: AssistantPreviewRow): void {
   const regions = children
     .filter((child) => child instanceof MouseRegion)
     .map((region) => region as unknown as ThinkingRegion);
-  if (regions.every((region) => installedRegions.has(region))) return;
-  const previews = thinkingPreviews(comp);
-  if (!previews || regions.length !== previews.length) return;
+  let previews: string[] | undefined;
+  if (regions.some((region) => region.child instanceof Text)) {
+    previews = thinkingPreviews(comp);
+    if (!previews || regions.length !== previews.length) return;
+  }
 
   for (let i = 0; i < regions.length; i++) {
     const region = regions[i]!;
-    if (installedRegions.has(region)) continue;
     const handleMouse = region.handleMouse;
     region.handleMouse = function (event) {
       return drillState() ? undefined : handleMouse.call(this, event);
     };
-    installedRegions.add(region);
     const nativeLabel = region.child;
-    const preview = previews[i]!;
+    const preview = previews?.[i];
     if (!(nativeLabel instanceof Text) || !preview) continue;
     region.child = {
       render(width) {
@@ -111,4 +111,5 @@ export function installThinkingPreviews(comp: AssistantPreviewRow): void {
       invalidate: () => nativeLabel.invalidate(),
     };
   }
+  installedChildren.add(children);
 }

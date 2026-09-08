@@ -15,7 +15,6 @@ import {
   type ToolArgsLike,
   type ToolRowDataLike,
   type ToolRowLike,
-  type ToolRowPrototypeLike,
 } from "../_lib/chat.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
@@ -42,7 +41,7 @@ import {
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact } from "./image-fact.ts";
-import { installTraceMouse, isRevealed, resetRevealedFolds, revealedBullet } from "./click.ts";
+import { installTraceMouse, isRevealed, resetRevealedFolds, revealedBullet, type TraceMousePrototype } from "./click.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
@@ -160,7 +159,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const TOOL_ROW_PATCH_VERSION = 29;
-const ASSISTANT_ROW_PATCH_VERSION = 6;
+const ASSISTANT_ROW_PATCH_VERSION = 7;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
 // Before session_start (and in unit tests without a UI), ink falls back to basic ANSI.
@@ -1498,8 +1497,8 @@ function currentPatchInstalled(): boolean {
   return g.__tracelinePatchVersion === TOOL_ROW_PATCH_VERSION;
 }
 
-function patchToolRowPrototype(proto: ToolRowPrototypeLike & Pick<ToolRowLike, "render">): void {
-  if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
+function patchToolRowPrototype(proto: TraceMousePrototype): void {
+  if (currentPatchInstalled() || typeof proto.render !== "function" || typeof proto.handleMouse !== "function") return;
   installTraceMouse(proto, {
     bulletColumn: TOOL_PREFIX_VISIBLE_WIDTH - TOOL_AFTER_BULLET.length - 1,
     isCompact: (row) => displayMode() === "oneLine" && row.expanded !== true,

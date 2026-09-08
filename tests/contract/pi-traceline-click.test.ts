@@ -1,24 +1,27 @@
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { initTheme, ToolExecutionComponent, createReadTool } from "@earendil-works/pi-coding-agent";
-import { Container, Text, TuiAltScreen, type Terminal, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Container, Text, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { internals as trace } from "../../extensions/pi-traceline/index.ts";
-import { isRevealed, resetRevealedFolds } from "../../extensions/pi-traceline/click.ts";
+import { mouseViewport } from "../fixtures/mouse-viewport.ts";
+import { isRevealed, resetRevealedFolds, type TraceMousePrototype } from "../../extensions/pi-traceline/click.ts";
 import { assistantBefore } from "../traceline/runtime-fixtures.ts";
 
 initTheme(undefined, false);
-trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as ToolRowLike);
+trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);
 afterEach(() => { trace.setTracelineChat(undefined); resetRevealedFolds(); });
 
+let nextCallId = 0;
 function row(name: string, path: string, result = true, shell: "default" | "self" = "default") {
   const definition = {
     ...createReadTool("/tmp"),
+    name,
     renderShell: shell,
     renderCall: () => new Text(`${name} ${path}`, 0, 0),
     renderResult: (_result: unknown, options: { expanded: boolean }) => new Text(options.expanded ? "OUTPUT\nsecond line" : "preview", 0, 0),
   };
-  const comp = new ToolExecutionComponent(name, path, { path }, {}, definition, { requestRender() {} } as never, "/tmp");
+  const comp = new ToolExecutionComponent(name, `call-${nextCallId++}`, { path }, {}, definition, { requestRender() {} } as never, "/tmp");
   if (result) comp.updateResult({ content: [{ type: "text", text: "OUTPUT" }], isError: false });
   return comp;
 }
@@ -75,7 +78,7 @@ test("aggregate click reveals members first; glyph refolds the snapshot", () => 
   assert.ok(painted(c).some((line) => line.includes("2 calls")));
 });
 
-test("same-file pages and repeated tool calls also reveal before expansion", () => {
+test("same-file reads and repeated tool calls also reveal before expansion", () => {
   for (const name of ["read", "lookup"]) {
     const a = row(name, "/src/a.txt"), b = row(name, "/src/a.txt");
     const c = chat([a, b]);
@@ -100,7 +103,14 @@ test("blank spacing, margins, wheel, press, drag, release and wrong buttons neve
   const a = row("read", "/src/a.txt");
   const c = chat([a]);
   const lines = painted(c);
-  for (const e of [event(0), event(1, 0), event(1, 79), { ...event(1, 10, "wheel"), button: "none" as const, wheelDelta: 1 }, ...["press", "drag", "release", "move"].map((type) => event(1, 10, type as TuiMouseEvent["type"])), { ...event(1), button: "right" as const }]) {
+  const ignored = [
+    event(0), event(1, 0), event(1, 79),
+    { ...event(1, 10, "wheel"), button: "none" as const, wheelDelta: 1 },
+    { ...event(1, 10, "move"), button: "none" as const },
+    ...(["press", "drag", "release"] as const).map((type) => event(1, 10, type)),
+    { ...event(1, 10, "press"), button: "right" as const },
+  ];
+  for (const e of ignored) {
     assert.equal(c.handleMouse({ ...e, height: lines.length }), undefined);
     assert.equal(seam(a).expanded, false);
   }
@@ -115,11 +125,14 @@ test("pending rows wait for a partial result; streaming retains expansion and re
   a.updateResult({ content: [{ type: "text", text: "final" }], isError: false });
   assert.equal(seam(a).expanded, true);
   a.setExpanded(false);
-  const b = row("read", "/src/b.txt");
+  const b = row("read", "/src/b.txt", false);
+  b.updateResult({ content: [{ type: "text", text: "partial" }], isError: false }, true);
   const pair = chat([a, b]);
   clickLine(pair, "2 calls");
-  b.updateResult({ content: [{ type: "text", text: "more" }], isError: false });
+  b.updateResult({ content: [{ type: "text", text: "more" }], isError: false }, true);
   b.invalidate();
+  assert.equal(painted(pair).filter((line) => line.includes("read ")).length, 2);
+  b.updateResult({ content: [{ type: "text", text: "final" }], isError: false });
   assert.equal(painted(pair).filter((line) => line.includes("read ")).length, 2);
   const later = row("read", "/src/c.txt");
   const triple = chat([a, b, later]);
@@ -130,23 +143,13 @@ test("pending rows wait for a partial result; streaming retains expansion and re
 });
 
 test("fullscreen viewport preserves OSC 8 links, selection, overlay ownership and editor focus", () => {
-  let input: (data: string) => void = () => {};
-  const noop = () => {};
-  const terminal: Terminal = {
-    columns: 80, rows: 24, kittyProtocolActive: false,
-    start: (onInput) => { input = onInput; }, stop: noop, drainInput: async () => {},
-    write: noop, moveBy: noop, hideCursor: noop, showCursor: noop, clearLine: noop,
-    clearFromCursor: noop, clearScreen: noop, setTitle: noop, setProgress: noop,
-  };
-  class Viewport extends TuiAltScreen { paint() { this.doRender(); } }
-  const urls: string[] = [], typed: string[] = [];
-  const view = new Viewport(terminal, false, undefined, { openUrl: (url) => urls.push(url), copyOnSelect: false });
+  const { view, urls, mouse, sendInput } = mouseViewport();
+  const typed: string[] = [];
   const link = row("lookup", "\x1b]8;;https://example.com\x07example\x1b]8;;\x07");
   const a = row("read", "/solo/a.txt");
   const c = chat([link, a]);
   view.addChild(c);
   view.setFocus({ render: () => [], invalidate() {}, handleInput: (data) => typed.push(data) });
-  const mouse = (button: number, x: number, y: number, release = false) => input(`\x1b[<${button};${x + 1};${y + 1}${release ? "m" : "M"}`);
   try {
     view.start(); view.paint();
     const lines = painted(c);
@@ -162,7 +165,7 @@ test("fullscreen viewport preserves OSC 8 links, selection, overlay ownership an
     assert.equal(seam(a).expanded, false);
     mouse(0, ax, ay); mouse(0, ax, ay, true);
     assert.equal(seam(a).expanded, true);
-    input("z");
+    sendInput("z");
     assert.deepEqual(typed, ["z"], "click must leave keyboard focus alone");
     a.setExpanded(false); view.paint();
     const overlay = view.showOverlay(new Text("modal owns this area\nsecond row\nthird row", 0, 0), { row: 0, col: 0, width: 80 });

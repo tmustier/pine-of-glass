@@ -20,8 +20,9 @@ interface TraceMouseHost {
 }
 
 type MouseHandler = (this: ToolRowLike, event: TuiMouseEvent) => TuiMouseEventResult | undefined;
-interface MousePrototype extends ToolRowPrototypeLike {
-  handleMouse?: MouseHandler;
+export interface TraceMousePrototype extends ToolRowPrototypeLike {
+  render: ToolRowLike["render"];
+  handleMouse: MouseHandler;
   __tracelineOriginalMouse?: MouseHandler;
 }
 interface TraceLayout {
@@ -31,9 +32,9 @@ interface TraceLayout {
 }
 
 /** Pair Traceline's substituted geometry with normalized Pi mouse dispatch. */
-export function installTraceMouse(proto: MousePrototype & Pick<ToolRowLike, "render">, host: TraceMouseHost): void {
+export function installTraceMouse(proto: TraceMousePrototype, host: TraceMouseHost): void {
   const originalRender = proto.__tracelineOriginalRender ?? proto.render;
-  const originalMouse = "__tracelineOriginalMouse" in proto ? proto.__tracelineOriginalMouse : proto.handleMouse;
+  const originalMouse = proto.__tracelineOriginalMouse ?? proto.handleMouse;
   proto.__tracelineOriginalRender = originalRender;
   proto.__tracelineOriginalMouse = originalMouse;
   const layouts = new WeakMap<ToolRowLike, TraceLayout>();
@@ -52,7 +53,7 @@ export function installTraceMouse(proto: MousePrototype & Pick<ToolRowLike, "ren
   proto.handleMouse = function (this: ToolRowLike, event: TuiMouseEvent) {
     if (drillState()) return undefined; // preserve Drill's frozen keyboard targets
     const layout = layouts.get(this);
-    if (!layout) return originalMouse?.call(this, event);
+    if (!layout) return originalMouse.call(this, event);
     // Never dispatch compact coordinates into Pi's hidden native children.
     // Gesture recognition, OSC 8 precedence and selection stay with the viewport.
     if (event.type !== "click" || event.button !== "left" || layout.width !== event.width) return undefined;
@@ -64,7 +65,7 @@ export function installTraceMouse(proto: MousePrototype & Pick<ToolRowLike, "ren
         revealed.delete(member);
         member.setExpanded(false);
       }
-    } else if (layout.members && layout.members.length > 1) {
+    } else if (layout.members) {
       // Use the last painted membership, not a run recomputed after new results.
       for (const member of layout.members) revealed.set(member, layout.members);
     } else {

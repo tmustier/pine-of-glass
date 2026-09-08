@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { TuiAltScreen, type Terminal, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Markdown, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { AssistantRowPrototypeLike } from "../../extensions/_lib/chat.ts";
 import { internals as trace } from "../../extensions/pi-traceline/index.ts";
+import { mouseViewport } from "../fixtures/mouse-viewport.ts";
 import { assistantMessage } from "../helpers.ts";
 
 initTheme(undefined, false);
@@ -65,6 +66,20 @@ test("streaming rebuilds compact geometry while Ctrl+T clears native overrides",
   assert.ok(clickText(comp, "stream starts · then grows")?.handled);
 });
 
+test("visible streaming reasoning does not render unused previews", (t) => {
+  const render = t.mock.method(Markdown.prototype, "render");
+  const comp = new AssistantMessageComponent(assistantMessage([
+    { type: "thinking", thinking: "visible first line\nvisible second line" },
+  ]), false);
+  painted(comp);
+  comp.updateContent(assistantMessage([
+    { type: "thinking", thinking: "visible first line\nvisible second line\nnew streamed line" },
+  ]), true);
+  painted(comp);
+  assert.ok(render.mock.callCount() > 0);
+  assert.ok(render.mock.calls.every((call) => call.arguments[0] <= 80), "visible reasoning must render only at viewport width");
+});
+
 test("compact previews preserve native width and ignore non-click gestures", () => {
   const comp = new AssistantMessageComponent(assistantMessage([
     { type: "thinking", thinking: "opening thought\nintermediate detail that should be cut\nnewest thought" },
@@ -72,30 +87,20 @@ test("compact previews preserve native width and ignore non-click gestures", () 
   const lines = painted(comp, 42);
   assert.match(lines[1]!, /^ opening.*….*newest thought$/);
   for (const type of ["press", "move", "drag", "release"] as const) {
-    assert.equal(comp.handleMouse({ ...event(1, 5, type, 42), height: lines.length }), undefined);
+    assert.equal(comp.handleMouse({
+      ...event(1, 5, type, 42), button: type === "move" ? "none" : "left", height: lines.length,
+    }), undefined);
   }
   assert.equal(painted(comp, 42).length, 2);
 });
 
 test("expanded reasoning keeps Pi links and drag selection ahead of collapse", () => {
-  let input: (data: string) => void = () => {};
-  const noop = () => {};
-  const terminal: Terminal = {
-    columns: 80, rows: 24, kittyProtocolActive: false,
-    start: (onInput) => { input = onInput; }, stop: noop, drainInput: async () => {},
-    write: noop, moveBy: noop, hideCursor: noop, showCursor: noop, clearLine: noop,
-    clearFromCursor: noop, clearScreen: noop, setTitle: noop, setProgress: noop,
-  };
-  class Viewport extends TuiAltScreen { paint() { this.doRender(); } }
-  const urls: string[] = [];
-  const view = new Viewport(terminal, false, undefined, { openUrl: (url) => urls.push(url), copyOnSelect: false });
+  const { view, urls, mouse } = mouseViewport();
   const comp = new AssistantMessageComponent(assistantMessage([
     { type: "thinking", thinking: "[example](https://example.com) rationale\nanother detail" },
   ]), true);
   assert.ok(clickText(comp, "example rationale")?.handled);
   view.addChild(comp);
-  const mouse = (button: number, x: number, y: number, release = false) =>
-    input(`\x1b[<${button};${x + 1};${y + 1}${release ? "m" : "M"}`);
 
   try {
     view.start(); view.paint();
