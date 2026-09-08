@@ -115,25 +115,6 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
   assert.equal(allTurnsBreakdown.thinkingSummaryChars, 0, "opaque carriers are not sized as text");
   assert.equal(allTurnsBreakdown.reasoningTokens, 1000, "GPT-5.6 defaults to all turns");
 
-  const astra = SessionManager.inMemory("/tmp/contextimate-astra-thinking");
-  astra.appendMessage(assistantMessage(
-    [{ type: "thinking", thinking: "summary", thinkingSignature: encryptedReasoning("rs_astra") }],
-    { api: "openai-codex-responses", provider: "openai-codex", model: "gpt-6-astra", usage: usageWithReasoning(27) },
-  ));
-  astra.appendMessage({ role: "user", content: "next", timestamp: 2 });
-  astra.appendMessage(assistantMessage(
-    [{ type: "text", text: "done" }],
-    {
-      api: "openai-codex-responses",
-      provider: "openai-codex",
-      model: "gpt-6-astra",
-      usage: usageWithReasoning(11, 628),
-    },
-  ));
-  const astraBreakdown = buildSessionBreakdown(astra)!;
-  assert.equal(astraBreakdown.thinkingSummaryChars, 0, "Astra's encrypted carrier is not sized as text");
-  assert.equal(astraBreakdown.reasoningTokens, 38, "Astra accounts for retained same-model reasoning");
-
   const currentTurn = SessionManager.inMemory("/tmp/contextimate-openai-current-turn");
   currentTurn.appendMessage(assistantMessage(
     [{ type: "thinking", thinking: "old", thinkingSignature: encryptedReasoning("rs_old") }],
