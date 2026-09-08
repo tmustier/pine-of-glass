@@ -5,8 +5,13 @@
 // (notifications, widgets, status, chat lines). See docs/testing.md, "Public interfaces".
 //
 // The UI is a recorder, not a mock of Pi: nothing here re-implements behaviour under
-// test. Where an extension would append to the chat, the harness has no chat container,
-// so the extension's own notify fallback delivers the text into `ui.notifications`.
+// test. Two limits, so specs do not over-claim:
+// - There is no chat container. Where an extension would append to the chat, its own
+//   notify fallback delivers the text into `ui.notifications`; the chat-append path
+//   itself (anchoring, re-attachment) is not exercised here.
+// - Process-global state (`globalThis.__pi*`) is the one thing the harness cannot
+//   isolate. Pi resets it on `session_start` with reason `new`, `resume` or `fork`, so
+//   specs for an enabled extension should `start("new")` to be order-independent.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -73,6 +78,8 @@ export class RecordedUi {
   };
 
   readonly setWidget = (key: string, content: string[] | WidgetFactory | undefined): void => {
+    const previous = this.widgets.get(key);
+    if (previous !== undefined && !Array.isArray(previous)) previous.dispose?.();
     if (content === undefined) {
       this.widgets.delete(key);
       return;
@@ -146,7 +153,9 @@ export class IsolatedProject {
 export type HostOptions = {
   /** Loads with a UI-owning runner (interactive Pi); false hosts a headless SDK-style runner. */
   interactive?: boolean;
-  /** Project directory; the family resolves config from `process.cwd()` and `$HOME`. */
+  /** Project directory; the family resolves config from `process.cwd()` and `$HOME`.
+   * Defaults to a fresh, empty IsolatedProject owned (and disposed) by the host; pass
+   * your own when the spec writes config files before hosting, and dispose it yourself. */
   project?: IsolatedProject;
   /** Overrides for the context actions Pi binds; defaults are inert. */
   contextActions?: Partial<ExtensionContextActions>;
@@ -192,7 +201,8 @@ export class HostedExtension {
     await this.runner.emit({ type: "session_shutdown", reason: "quit" });
   }
 
-  /** Ends the session and restores `process.cwd()` and `$HOME`. */
+  /** Ends the session and restores `process.cwd()` and `$HOME`. Each host restores the
+   * values it found, so dispose hosts in reverse order of creation when nesting. */
   async dispose(): Promise<void> {
     try {
       await this.shutdown();
@@ -205,65 +215,69 @@ export class HostedExtension {
 /** Loads `factory` through Pi's real loader into a real ExtensionRunner. */
 export async function hostExtension(factory: ExtensionFactory, options: HostOptions = {}): Promise<HostedExtension> {
   const loader = await factoryLoader();
-  const project = options.project;
+  const ownedProject = options.project ? undefined : new IsolatedProject();
+  const project = options.project ?? ownedProject!;
   const previousCwd = process.cwd();
   const previousHome = process.env.HOME;
-  if (project) {
-    process.chdir(project.dir);
-    process.env.HOME = project.home;
-  }
+  process.chdir(project.dir);
+  process.env.HOME = project.home;
   const restoreProcess = () => {
-    if (!project) return;
     process.chdir(previousCwd);
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
+    ownedProject?.dispose();
   };
 
-  const cwd = project?.dir ?? previousCwd;
-  const runtime = pi.createExtensionRuntime();
-  const extension = await loader.loadExtensionFromFactory(
-    factory,
-    cwd,
-    pi.createEventBus(),
-    runtime,
-    options.name ?? "pine-of-glass-hosted-extension",
-  );
-  const modelRegistry = {
-    registerProvider(): void {},
-    unregisterProvider(): void {},
-    getRegisteredNativeProvider: () => undefined,
-    getRegisteredProviderConfig: () => undefined,
-  };
-  // SAFETY: the runner only reaches the registry members above when an extension
-  // registers a provider, which no extension in this family does; the lifecycle
-  // contract tests exercise this exact stub against the installed Pi.
-  const runner = new pi.ExtensionRunner([extension], runtime, cwd, pi.SessionManager.inMemory(cwd), modelRegistry as never);
-  const contextActions: ExtensionContextActions = {
-    getModel: () => undefined,
-    getScopedModels: () => [],
-    isIdle: () => true,
-    isProjectTrusted: () => true,
-    getSignal: () => undefined,
-    abort: () => {},
-    hasPendingMessages: () => false,
-    shutdown: () => {},
-    getContextUsage: () => undefined,
-    compact: () => {},
-    getSystemPrompt: () => "",
-    ...options.contextActions,
-  };
-  // SAFETY: the family reads only `getThinkingLevel` from ExtensionActions; the rest of
-  // the interface drives Pi's agent loop, which is not running here.
-  runner.bindCore({ getThinkingLevel: (): "off" => "off" } as never, contextActions);
+  try {
+    const cwd = project.dir;
+    const runtime = pi.createExtensionRuntime();
+    const extension = await loader.loadExtensionFromFactory(
+      factory,
+      cwd,
+      pi.createEventBus(),
+      runtime,
+      options.name ?? "pine-of-glass-hosted-extension",
+    );
+    const modelRegistry = {
+      registerProvider(): void {},
+      unregisterProvider(): void {},
+      getRegisteredNativeProvider: () => undefined,
+      getRegisteredProviderConfig: () => undefined,
+    };
+    // SAFETY: the runner only reaches the registry members above when an extension
+    // registers a provider, which no extension in this family does; the lifecycle
+    // contract tests exercise this exact stub against the installed Pi.
+    const runner = new pi.ExtensionRunner([extension], runtime, cwd, pi.SessionManager.inMemory(cwd), modelRegistry as never);
+    const contextActions: ExtensionContextActions = {
+      getModel: () => undefined,
+      getScopedModels: () => [],
+      isIdle: () => true,
+      isProjectTrusted: () => true,
+      getSignal: () => undefined,
+      abort: () => {},
+      hasPendingMessages: () => false,
+      shutdown: () => {},
+      getContextUsage: () => undefined,
+      compact: () => {},
+      getSystemPrompt: () => "",
+      ...options.contextActions,
+    };
+    // SAFETY: the family reads only `getThinkingLevel` from ExtensionActions; the rest of
+    // the interface drives Pi's agent loop, which is not running here.
+    runner.bindCore({ getThinkingLevel: (): "off" => "off" } as never, contextActions);
 
-  const ui = new RecordedUi();
-  if (options.interactive ?? true) {
-    // SAFETY: RecordedUi implements the ExtensionUIContext members this family uses
-    // (notify, setStatus, setWidget, onTerminalInput, tools-expanded, theme). Dialog and
-    // editor members are absent on purpose; calling one is a test failure, not a stub.
-    runner.setUIContext(ui as unknown as ExtensionUIContext, "tui");
+    const ui = new RecordedUi();
+    if (options.interactive ?? true) {
+      // SAFETY: RecordedUi implements the ExtensionUIContext members this family uses
+      // (notify, setStatus, setWidget, onTerminalInput, tools-expanded, theme). Dialog and
+      // editor members are absent on purpose; calling one is a test failure, not a stub.
+      runner.setUIContext(ui as unknown as ExtensionUIContext, "tui");
+    }
+    const errors: string[] = [];
+    runner.onError((error) => errors.push(`${error.event}: ${error.error}`));
+    return new HostedExtension(runner, ui, errors, restoreProcess);
+  } catch (error) {
+    restoreProcess();
+    throw error;
   }
-  const errors: string[] = [];
-  runner.onError((error) => errors.push(`${error.event}: ${error.error}`));
-  return new HostedExtension(runner, ui, errors, restoreProcess);
 }

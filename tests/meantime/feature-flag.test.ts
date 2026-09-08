@@ -15,6 +15,9 @@ async function withProject(config: JsonObject | undefined, run: (host: HostedExt
   if (config) project.writeProjectConfig("pi-meantime", config);
   const host = await hostExtension(piMeantime, { project });
   try {
+    // Reason "new" (what Pi sends on /new) resets meantime's process-global state, so
+    // each spec starts from zero regardless of test order.
+    await host.start("new");
     await run(host);
   } finally {
     await host.dispose();
@@ -24,7 +27,6 @@ async function withProject(config: JsonObject | undefined, run: (host: HostedExt
 
 test("a project without meantime config gets no /pace command and no widget", async () => {
   await withProject(undefined, async (host) => {
-    await host.start();
     assert.equal(host.hasCommand("pace"), false);
     assert.equal(host.ui.widgets.size, 0, "meantime must not draw a widget while disabled");
     assert.deepEqual(host.errors, []);
@@ -33,17 +35,15 @@ test("a project without meantime config gets no /pace command and no widget", as
 
 test("enabling meantime in .pi/pi-meantime.json makes /pace answer with the tempo ledger", async () => {
   await withProject({ enabled: true }, async (host) => {
-    await host.start();
     await host.runCommand("pace");
     assert.deepEqual(host.errors, []);
     assert.equal(host.ui.notifications.length, 1, "/pace should print one ledger");
-    assert.match(host.ui.notificationTexts[0]!, /no model calls yet|calls/i);
+    assert.match(host.ui.notificationTexts[0]!, /no timed model calls yet/);
   });
 });
 
 test("enabling meantime shows a waiting clock while a provider request is in flight", async () => {
   await withProject({ enabled: true }, async (host) => {
-    await host.start();
     assert.equal(host.ui.widgets.has("pi-meantime"), false, "idle sessions draw nothing");
     await host.runner.emit({ type: "agent_start" });
     await host.runner.emitBeforeProviderRequest({ model: "fixture", messages: [] });
@@ -53,11 +53,12 @@ test("enabling meantime shows a waiting clock while a provider request is in fli
   });
 });
 
-test("a config that disables the widget still answers /pace", async () => {
+test("widget: false keeps the widget away even mid-request, and still answers /pace", async () => {
   await withProject({ enabled: true, widget: false }, async (host) => {
-    await host.start();
-    assert.equal(host.ui.widgets.has("pi-meantime"), false);
+    await host.runner.emit({ type: "agent_start" });
+    await host.runner.emitBeforeProviderRequest({ model: "fixture", messages: [] });
+    assert.equal(host.ui.widgets.has("pi-meantime"), false, "the widget is off by config, not by idleness");
     await host.runCommand("pace");
-    assert.equal(host.ui.notifications.length, 1);
+    assert.match(host.ui.notificationTexts[0]!, /no timed model calls yet/);
   });
 });

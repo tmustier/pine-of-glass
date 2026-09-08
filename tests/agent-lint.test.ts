@@ -98,7 +98,7 @@ test("anti-slop findings join the migration ledger under their rule id and ratch
   assert.match(stale.stderr, /anti-slop\(no-unknown-returns\) stale baseline entry/);
 });
 
-test("test-only internals exports may shrink but not grow", () => {
+test("test-only internals exports may shrink but not grow, even through --update-baseline", () => {
   const dir = fixtureRepo();
   const source = join(dir, "extensions", "demo", "index.ts");
   writeFileSync(source, "const a = 1;\nconst b = 2;\nexport const internals = {\n  // comment\n  a,\n  b: () => ({ nested: [1, 2] }),\n};\n");
@@ -113,7 +113,25 @@ test("test-only internals exports may shrink but not grow", () => {
 
   writeFileSync(source, "const a = 1;\nexport const internals = {\n  a,\n  b: 2,\n  c: 3,\n};\n");
   assert.match(runLint(dir).stderr, /internals-entries:3 budget:2/);
+  // Regenerating the baseline does not legitimise growth: the budget stays at 2.
+  assert.equal(runLint(dir, "--update-baseline").status, 0);
+  assert.match(runLint(dir).stderr, /internals-entries:3 budget:2/);
 
   writeFileSync(source, "const a = 1;\nexport const internals = { a };\n");
   assert.match(runLint(dir).stderr, /internals-entries:1 stale-budget:2/);
+});
+
+test("renamed or annotated grab bags still count as internals", () => {
+  const dir = fixtureRepo();
+  const source = join(dir, "extensions", "demo", "index.ts");
+  writeFileSync(source, [
+    "type Internals = { a: number };",
+    "export const testInternals: Internals = {",
+    "  a: 1,",
+    "};",
+    "export const internalsForSpecs =",
+    "{ b: 2, c: 3 };",
+    "",
+  ].join("\n"));
+  assert.match(runLint(dir).stderr, /internals-entries:3 budget:0/);
 });

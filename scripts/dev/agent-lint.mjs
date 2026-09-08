@@ -269,13 +269,26 @@ function scanWithOxlint(findings) {
 // Counts the entries of an `export const internals = { ... }` object. The object is a
 // test-only grab bag of private functions; its size is a measure of how much test
 // coverage is coupled to implementation names rather than behaviour.
+// Any test-only aggregate export is an `internals` object regardless of its exact name
+// (`internals`, `testInternals`, `internalsForTests`, ...), with or without a type
+// annotation, so a rename cannot dodge the budget. Counts the top-level entries of every
+// such object literal in the file.
+const INTERNALS_DECLARATION = /export\s+const\s+\w*[iI]nternals\w*\s*(?::[^=]+)?=\s*\{/g;
+
 function internalsEntryCount(text) {
-  const start = text.indexOf("export const internals = {");
-  if (start < 0) return 0;
+  let entries = 0;
+  for (const match of text.matchAll(INTERNALS_DECLARATION)) {
+    entries += objectLiteralEntryCount(text, match.index + match[0].length - 1);
+  }
+  return entries;
+}
+
+// `open` indexes the literal's `{`; counts comma-separated top-level entries.
+function objectLiteralEntryCount(text, open) {
   let depth = 0;
   let entries = 0;
   let sawEntryText = false;
-  for (let i = start + "export const internals = ".length; i < text.length; i++) {
+  for (let i = open; i < text.length; i++) {
     const ch = text[i];
     if (ch === "{" || ch === "(" || ch === "[") depth++;
     else if (ch === "}" || ch === ")" || ch === "]") {
@@ -319,13 +332,17 @@ function scanInternalsBudgets(files, baseline, findings) {
   }
 }
 
-function buildInternalsBudgets(files) {
+// Budgets only ratchet down: `--update-baseline` keeps the smaller of the current count
+// and the previous budget, so growing a grab bag needs a hand edit of the baseline that
+// review can see, not a regenerate.
+function buildInternalsBudgets(files, previous) {
   const budgets = {};
   for (const absPath of files) {
     const file = rel(absPath);
     if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
     const count = internalsEntryCount(readText(absPath));
-    if (count > 0) budgets[file] = count;
+    if (count === 0) continue;
+    budgets[file] = Math.min(count, previous[file] ?? count);
   }
   return sortObjectDeep(budgets);
 }
@@ -460,7 +477,7 @@ function main() {
       generatedBy: "node scripts/dev/agent-lint.mjs --update-baseline",
       knownFindings: buildKnownFindings(findings),
       lineBudgets: buildLineBudgets(files),
-      internalsBudgets: buildInternalsBudgets(files),
+      internalsBudgets: buildInternalsBudgets(files, baseline.internalsBudgets ?? {}),
     };
     writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
     console.log(`Updated ${relative(ROOT, BASELINE_PATH)} with ${findings.length} current findings and line budgets.`);

@@ -33,6 +33,10 @@ Three tiers, from most to least preferred:
    `ExtensionRunner`, records the UI, and isolates `process.cwd()` and `$HOME` so config
    files can be written per test. `tests/meantime/feature-flag.test.ts` is the reference
    shape. Prefer this tier for lifecycle, commands, config, and anything a user sees.
+   Two things it does not cover: the recorder has no chat container, so the chat-append
+   path (anchoring, re-attachment) is observed only through each extension's notify
+   fallback; and process-global state is shared across hosts in one process, so specs
+   for an enabled extension start their session with reason `new` to reset it.
 2. **Pure logic goes through the named exports of a domain module.** ANSI truncation,
    SGR filtering, token formulas, heuristic precedence and retention policy are contracts
    whose inputs and outputs are the specification. Test them directly from their module
@@ -44,7 +48,13 @@ Three tiers, from most to least preferred:
    grab bags exist because logic was never extracted from the entry files. They are a
    migration ledger, not an API: `npm run lint` fails if one grows (POG012), and each
    entry leaves by moving its logic into a domain module (tier 2) or testing the
-   behaviour through the harness (tier 1). Do not add entries.
+   behaviour through the harness (tier 1). Do not add entries. Any test-only aggregate
+   export is an `internals` object regardless of its name; the lint counts every
+   `export const *internals*`, and review treats a differently named grab bag the same.
+
+Known gap: tier 2 cannot mechanically tell a domain module from a grab bag split into
+named exports. The tell is an `extensions/**` export with no runtime importer; a lint
+for that is the natural follow-up, and until then it is a review question.
 
 What a good test in any tier looks like:
 
