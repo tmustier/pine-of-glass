@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { TTL_LONG_MS, TTL_SHORT_MS } from "../../extensions/pi-cachemire/classify.ts";
 import {
+  CEREBRAS_BOUNDED_WINDOW,
   confirmedWindow,
   OPENAI_EXTENDED_WINDOW,
   OPENAI_MINIMUM_WINDOW,
@@ -52,9 +53,15 @@ test("model retention is limited to documented provider, API and model routes", 
   );
   assert.equal(retentionForModel("groq", "qwen/qwen3-32b", "openai-completions"), undefined);
   assert.equal(
-    retentionForModel("cerebras", "gpt-oss-120b", "openai-completions")?.window.kind,
-    "maximum",
+    retentionForModel("cerebras", "gpt-oss-120b", "openai-completions")?.window,
+    CEREBRAS_BOUNDED_WINDOW,
   );
+  assert.equal(
+    retentionForModel("cerebras", "qwen-3.8-27b", "openai-completions")?.window,
+    CEREBRAS_BOUNDED_WINDOW,
+  );
+  assert.equal(retentionForModel("cerebras", undefined, "openai-completions"), undefined);
+  assert.equal(retentionForModel("cerebras", "qwen-3.8-27b", "openai-responses"), undefined);
 });
 
 test("live request evidence resolves the supported retention contracts", () => {
@@ -130,11 +137,11 @@ test("live request evidence resolves the supported retention contracts", () => {
   assert.deepEqual(
     retentionForRequest({
       provider: "cerebras",
-      model: "zai-glm-4.7",
+      model: "qwen-3.8-27b",
       api: "openai-completions",
       payload: {},
     })?.window,
-    { kind: "maximum", maxMs: TTL_LONG_MS },
+    CEREBRAS_BOUNDED_WINDOW,
   );
   assert.equal(
     retentionForRequest({
@@ -161,6 +168,12 @@ test("usage activates only the evidence each provider exposes", () => {
     api: "openai-completions",
     payload: {},
   });
+  const cerebras = retentionForRequest({
+    provider: "cerebras",
+    model: "qwen-3.8-27b",
+    api: "openai-completions",
+    payload: {},
+  });
   const openaiExtended = retentionForRequest({
     provider: "openai",
     model: "gpt-5.5-codex",
@@ -172,6 +185,8 @@ test("usage activates only the evidence each provider exposes", () => {
     { kind: "contract", ttlMs: TTL_SHORT_MS, source: "observed" },
   );
   assert.equal(confirmedWindow(groq, CACHE_WRITE), undefined);
+  assert.equal(confirmedWindow(cerebras, CACHE_WRITE), undefined);
+  assert.equal(confirmedWindow(cerebras, CACHE_READ), CEREBRAS_BOUNDED_WINDOW);
   assert.deepEqual(
     confirmedWindow(groq, CACHE_READ),
     { kind: "contract", ttlMs: 2 * TTL_LONG_MS, source: "observed" },

@@ -11,6 +11,12 @@
   subagent child starts and ends in the same process. Rails still toggle after
   the child exits. Thanks to Ben Tang ([@0xbentang](https://github.com/0xbentang))
   for [#105](https://github.com/tmustier/pine-of-glass/pull/105).
+- Require Pi 0.85.1 or later. Cachemire now uses Pi's native Moonshot and Together
+  cache-read accounting, removing its provider-stream wrapper.
+- Cachemire follows Cerebras's all-model retention policy after a confirmed cache read:
+  a 5-minute minimum, unknown state between the bounds, and a 1-hour maximum.
+- Refresh native bash-renderer and chat lifecycle contracts. Ctrl+T preserves rows in
+  regular and fullscreen modes; genuine rebuilds still restore anchored family lines.
 
 ## 0.10.2 (2026-08-22)
 

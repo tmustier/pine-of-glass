@@ -21,7 +21,7 @@ export const TTL_LONG_MS = 60 * 60 * 1000;
 export function pastWindow(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
   if (!window || gapMs === undefined) return false;
   if (window.kind === "contract") return gapMs >= window.ttlMs;
-  if (window.kind === "maximum") return gapMs >= window.maxMs;
+  if (window.kind === "maximum" || window.kind === "bounded") return gapMs >= window.maxMs;
   return false;
 }
 
@@ -31,7 +31,7 @@ export function expiryCause(window: CacheWindow | undefined, gapMs: number | und
   if (window.kind === "contract" && gapMs >= window.ttlMs) {
     return { kind: "ttl", detail: `${formatDuration(window.ttlMs)} TTL reached after ${formatDuration(gapMs)} idle` };
   }
-  if (window.kind === "maximum" && gapMs >= window.maxMs) {
+  if ((window.kind === "maximum" || window.kind === "bounded") && gapMs >= window.maxMs) {
     return { kind: "ttl", detail: `${formatDuration(window.maxMs)} retention maximum reached after ${formatDuration(gapMs)} idle` };
   }
   return undefined;
@@ -221,7 +221,7 @@ export function classifyCall(args: ClassifyInput): CallClassification {
   if (args.compacted) {
     cause = { kind: "compaction", detail: "compaction rewrote history" };
   } else if (args.fingerprintCause) {
-    const expiry = args.window?.kind === "maximum"
+    const expiry = args.window?.kind === "maximum" || args.window?.kind === "bounded"
       ? "retention maximum reached"
       : "TTL reached";
     cause = pastWindow(args.window, args.gapMs)

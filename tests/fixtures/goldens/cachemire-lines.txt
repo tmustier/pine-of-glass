@@ -21,6 +21,10 @@
 [cold] ◍ cache cold expected · model switched · prompt size known at next send
 [cold] ◍ cache stale · 24h retention maximum reached · next send may re-send ~64.3k uncached (~$0.12)
 
+=== Cerebras bounded clock ===
+[warm-unknown] ◍ cache state unknown · 5m retention minimum reached · next send may re-send ~150.3k uncached (~$2.82)
+[cold] ◍ cache stale · 1h retention maximum reached · next send may re-send ~150.3k uncached (~$2.82)
+
 === notices (chat lines) ===
 ◍ cache breaking · re-writing ~150.3k (~$2.82) · cause: 5m TTL reached after 7m00s idle
 ◍ cache breaking · re-writing changed history · cause: history compacted

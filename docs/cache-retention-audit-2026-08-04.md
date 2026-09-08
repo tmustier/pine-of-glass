@@ -2,6 +2,11 @@
 
 Corrected on 5 August 2026 after rechecking the GPT-5.6 model-family default.
 
+Updated on 8 September 2026 after Cerebras documented automatic caching for all
+models, a guaranteed 5-minute TTL and a 1-hour maximum. Cachemire now treats that as a
+bounded window: warm before 5 minutes, unknown from 5 minutes to 1 hour, and stale only
+at the maximum.
+
 ## Outcome
 
 The generated evidence matrix and runtime resolution use the same typed registry.
@@ -14,8 +19,8 @@ The generated evidence matrix and runtime resolution use the same typed registry
 - [MiniMax Anthropic-compatible caching](https://platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache.md), reviewed 5 August 2026: M2.7 explicit 5-minute cache entries
 - [Amazon Bedrock prompt caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html), reviewed 5 August 2026: Claude cache points, model support and TTLs
 - [Groq prompt caching](https://console.groq.com/docs/prompt-caching), reviewed 5 August 2026: GPT-OSS cache support and 2-hour inactivity expiry
-- [Cerebras prompt caching](https://inference-docs.cerebras.ai/capabilities/prompt-caching), reviewed 5 August 2026: supported models and the 1-hour maximum
-- Installed Pi request builders and model records, reviewed 8 September 2026: Pi 0.85.1 provider payloads, normalized usage and generated model catalogue
+- [Cerebras prompt caching](https://inference-docs.cerebras.ai/capabilities/prompt-caching), reviewed 8 September 2026: all-model automatic caching, guaranteed 5-minute TTL and 1-hour maximum
+- Installed Pi request builders and model records, reviewed 8 September 2026: Pi 0.85.1 provider payloads, native normalized usage and generated model catalogue
 <!-- END GENERATED CACHE RETENTION: evidence-sources -->
 
 OpenAI states that `prompt_cache_options.ttl` applies to GPT-5.6 and later models,
@@ -35,7 +40,7 @@ Codex request shape.
 | MiniMax M2.7, global and China routes | outgoing 5-minute `cache_control` on an M2.7 model | activate the 5-minute TTL after a cache read or write | [MiniMax Anthropic-compatible caching](https://platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache.md), Installed Pi request builders and model records |
 | Amazon Bedrock, documented Claude 4.5 and 4.6 models | outgoing `cachePoint` with a model-supported TTL | activate the 5-minute or 1-hour TTL after a cache read or write | [Amazon Bedrock prompt caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html), Installed Pi request builders and model records |
 | Groq GPT-OSS models | automatic cache read on a documented GPT-OSS model | start or refresh the 2-hour inactivity TTL after a cache read | [Groq prompt caching](https://console.groq.com/docs/prompt-caching), Installed Pi request builders and model records |
-| Cerebras GPT-OSS 120B and GLM 4.7 | automatic cache read on a documented model | after a cache read, record a 1-hour maximum with no prior warmth claim | [Cerebras prompt caching](https://inference-docs.cerebras.ai/capabilities/prompt-caching), Installed Pi request builders and model records |
+| Direct Cerebras, all models | automatic caching with a guaranteed 5-minute TTL and a 1-hour maximum | after a cache read, claim warmth before 5 minutes, unknown state until 1 hour, then stale | [Cerebras prompt caching](https://inference-docs.cerebras.ai/capabilities/prompt-caching), Installed Pi request builders and model records |
 <!-- END GENERATED CACHE RETENTION: policy-table -->
 
 `in_memory` is not a supported Cachemire retention signal. Cachemire also has no
@@ -43,6 +48,8 @@ Codex request shape.
 
 A minimum does not provide a maximum. Reaching 30 minutes does not prove eviction or
 explain a miss. Cachemire changes the clock to `cache state unknown` at that boundary.
+Likewise, Cerebras's 5-minute guarantee does not imply eviction then, and its 1-hour
+maximum does not prove warmth before then.
 
 ## Limits of provider usage
 

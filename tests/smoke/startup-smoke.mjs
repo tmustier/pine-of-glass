@@ -6,7 +6,7 @@
 //   3. /reload leaves exactly one estimator block,
 //   4. traceline announces itself (extension loaded without crashing the TUI),
 //   5. the explicit Meantime feature flag enables /pace through real Pi,
-//   6. /pace and /cache render, and both survive the Ctrl+T chat rebuild.
+//   6. /pace and /cache render, and both survive the Ctrl+T visibility update.
 // Local-only: needs tmux + an installed pi on PATH. Exits non-zero on any failure.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
@@ -171,10 +171,9 @@ try {
   const blocks = (pane.match(/\[Contextimate\]/g) ?? []).length;
   check("exactly one estimator block after /reload", blocks === 1, `found ${blocks}`);
 
-  // 4. The Ctrl+T chat rebuild (pi clears + rebuilds the chat container from session
-  // messages, dropping raw appended children): cachemire's /cache ledger line must
-  // survive it, and traceline must have eaten pi's status caption. Visible-only:
-  // scrollback retains pre-toggle frames.
+  // 4. Ctrl+T updates thinking visibility on existing components. The ledger and
+  // pace panel must remain, and traceline must suppress Pi's status caption.
+  // Capture only the visible screen: scrollback retains pre-toggle frames.
   run(["tmux", "send-keys", "-t", session, "/cache", "Enter"]);
   waitFor("cachemire ledger renders", (text) => text.includes("cache & loop ledger"));
   // Meantime's /pace shares the anchored chat-line machinery; the no-auth fixture has
@@ -193,15 +192,15 @@ try {
       return false;
     }
   });
-  sleep(1500); // settle: the toggle clears + rebuilds the chat container
+  sleep(1500); // settle: native visibility update and traceline status suppression
   pane = capture({ visibleOnly: true });
   check(
     "traceline suppresses the Ctrl+T status caption",
     !/Thinking blocks: (hidden|visible)/.test(pane),
     "status line still rendered",
   );
-  check("cachemire ledger survives the Ctrl+T chat rebuild", pane.includes("cache & loop ledger"));
-  check("meantime pace panel survives the Ctrl+T chat rebuild", pane.includes("no timed model calls yet"));
+  check("cachemire ledger survives the Ctrl+T visibility update", pane.includes("cache & loop ledger"));
+  check("meantime pace panel survives the Ctrl+T visibility update", pane.includes("no timed model calls yet"));
 } finally {
   run(["tmux", "send-keys", "-t", session, "/quit", "Enter"]);
   sleep(1000);

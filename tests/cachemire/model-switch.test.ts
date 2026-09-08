@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 import { computeSwitchForecast, type SwitchTarget } from "../../extensions/pi-cachemire/forecast.ts";
+import { CEREBRAS_BOUNDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 const {
@@ -64,6 +65,26 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
     "cache state unknown \u00b7 model switched \u00b7 next send confirms",
   );
 
+  const boundedForecast = { ...FORECAST, prior: { requestAt: 0, window: CEREBRAS_BOUNDED_WINDOW } };
+  assert.match(
+    cacheClock({ now: 5 * MIN - 1, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).text,
+    /cache may still be warm/,
+  );
+  assert.match(
+    cacheClock({ now: 5 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).text,
+    /cache state unknown/,
+  );
+  assert.equal(nextClockUpdateMs({
+    now: 5 * MIN,
+    lastRequestAt: 0,
+    modelSwitched: true,
+    switchForecast: boundedForecast,
+  }), 55 * MIN);
+  assert.equal(
+    cacheClock({ now: 60 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).phase,
+    "cold",
+  );
+
   const maximum = { kind: "maximum", maxMs: 24 * 60 * MIN } as const;
   const extendedForecast = { ...FORECAST, prior: { requestAt: 0, window: maximum } };
   assert.equal(
@@ -90,6 +111,8 @@ test("warm horizon requires a contract or minimum", () => {
   assert.equal(withinWarmHorizon(CONTRACT_5M, 5 * MIN), false, "the exact TTL boundary is expired");
   assert.equal(withinWarmHorizon(OPENAI_MINIMUM_WINDOW, 29 * MIN), true);
   assert.equal(withinWarmHorizon(OPENAI_MINIMUM_WINDOW, 30 * MIN), false, "the minimum has ended");
+  assert.equal(withinWarmHorizon(CEREBRAS_BOUNDED_WINDOW, 5 * MIN - 1), true);
+  assert.equal(withinWarmHorizon(CEREBRAS_BOUNDED_WINDOW, 5 * MIN), false);
   assert.equal(
     withinWarmHorizon({ kind: "maximum", maxMs: 24 * 60 * MIN }, 4 * MIN),
     false,

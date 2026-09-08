@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 import type { CallRecord } from "../../extensions/pi-cachemire/index.ts";
+import { CEREBRAS_BOUNDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 
 const {
   uncachedCostUsd, rewriteCostUsd, sessionSavings,
@@ -100,6 +101,9 @@ test("cache clock stays silent until attention is useful", () => {
     },
   );
 
+  const bounded = { lastRequestAt: 0, window: CEREBRAS_BOUNDED_WINDOW, cachedTokens: 109_800 };
+  assert.deepEqual([5 * MIN - 1, 5 * MIN, 60 * MIN - 1, 60 * MIN].map((now) => cacheClock({ ...bounded, now }).phase),
+    ["idle", "warm-unknown", "warm-unknown", "cold"]);
   // A maximum is not a minimum lifetime, so it stays silent before the boundary.
   const maximum = { lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
   assert.deepEqual(
@@ -126,6 +130,7 @@ test("cache clock schedules only useful state changes", () => {
   assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: CONTRACT_5M, thinkingChanged: true }), undefined);
   assert.equal(nextClockUpdateMs({ now: 15 * MIN, lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW }), 15 * MIN);
   assert.equal(nextClockUpdateMs({ now: 30 * MIN, lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW }), undefined);
+  assert.deepEqual([5 * MIN - 1, 5 * MIN, 60 * MIN].map((now) => nextClockUpdateMs({ now, lastRequestAt: 0, window: CEREBRAS_BOUNDED_WINDOW })), [1, 55 * MIN, undefined]);
   assert.equal(
     nextClockUpdateMs({ now: 23 * 60 * MIN, lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW }),
     60 * MIN,
@@ -261,6 +266,9 @@ test("break prediction: knowable at request time, silent when healthy", () => {
   assert.equal(predictBreak({ ...base, expectedRead: 0, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
   // Unknown window: no contract, no definite prediction.
   assert.equal(predictBreak({ ...base, gapMs: 590 * MIN }), undefined);
+  assert.equal(predictBreak({ ...base, gapMs: 60 * MIN - 1, window: CEREBRAS_BOUNDED_WINDOW }), undefined);
+  assert.equal(predictBreak({ ...base, gapMs: 60 * MIN, window: CEREBRAS_BOUNDED_WINDOW })!.cause.detail,
+    "1h retention maximum reached after 1h idle");
   // A maximum says nothing before the boundary, but is definite at the boundary.
   assert.equal(predictBreak({ ...base, gapMs: 23 * 60 * MIN, window: OPENAI_EXTENDED_WINDOW }), undefined);
   assert.equal(
