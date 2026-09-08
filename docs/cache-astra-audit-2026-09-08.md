@@ -9,8 +9,9 @@ IDs remain unknown. The reviewed sources did not establish a dated Astra model I
 no dated suffix is inferred.
 
 Contextimate keeps its existing OpenAI heuristic numbers. Astra uses the existing
-OpenAI or Codex profile selected by route and the documented keep-all reasoning rule;
-the probe did not justify a tokenizer-number change.
+OpenAI or Codex profile selected by route and the existing version-based keep-all
+reasoning rule. OpenAI explicitly documents that default for GPT-5.6; Astra's effective
+default remains unverified. The probe did not justify a tokenizer-number change.
 
 ## Official source claims
 
