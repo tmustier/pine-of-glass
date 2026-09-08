@@ -12,13 +12,43 @@ npm run lint
 npm run check
 ```
 
-`npm run lint` runs `scripts/dev/agent-lint.mjs`, a zero-dependency source lint
-for repo-specific invariants, then checks generated Cachemire retention docs. Existing
-source violations are recorded in
-`scripts/dev/agent-lint-baseline.json` so the rule can prevent regressions while the
+`npm run lint` runs `scripts/dev/agent-lint.mjs`, which applies the repo-specific `POG`
+rules below, runs Oxlint with the vendored anti-slop plugin (next section), and then
+checks generated Cachemire retention docs. Existing violations of every rule are recorded
+in `scripts/dev/agent-lint-baseline.json` so each rule prevents regressions while the
 codebase is migrated deliberately. Do not grow the baseline as a way to dodge the
 standard. Fix the code, add a precise `SAFETY:` comment for a real seam, or update a
 reviewed migration plan.
+
+## Slop lint
+
+`.oxlintrc.json` runs Oxlint with [anti-slop](https://github.com/dmmulroy/anti-slop),
+vendored at `tools/oxlint/anti-slop/` (provenance in `tools/oxlint/UPSTREAM.md`). The
+rules reject low-evidence TypeScript: `unknown` returns, unsafe dictionaries, chained or
+unexplained assertions, widening known values, conditional empty-object spreads,
+accumulator copies, vague `shape` names, module mocking. `npm run lint:slop` prints the
+full diagnostics; `npm run lint` feeds them into the same baseline as the `POG` rules,
+keyed by rule id such as `anti-slop(no-unknown-returns)`.
+
+Rules that are off are off by policy, with the reason inline in `.oxlintrc.json`, never
+baselined:
+
+- `no-runtime-typeof` and `no-unknown-parameters` assume a schema library at the
+  boundary. This package has none, so `parse(value: unknown): T` with `typeof`
+  refinement is the sanctioned boundary mechanism (see "Boundary typing"). Leaking
+  `unknown` inward is still caught by POG001 and POG004.
+- `eslint/no-control-regex`: ANSI escape parsing is the domain.
+- In `tests/**`, `require-safety-comment-for-type-assertion` and
+  `no-chained-type-assertions` are off because synthetic duck-typed fixtures are the
+  documented stand-in pattern, proven against real Pi by the contract suite.
+
+A baseline entry is debt with an intended fix. If a finding is correct code that should
+stay, the right move is a rule-level decision in `.oxlintrc.json` with its reason, or
+an inline `oxlint-disable-next-line` with a justification, not a baseline entry.
+
+`oxlint` and `@oxlint/plugins` are the repo's only devDependencies and are pinned to the
+same exact version; the plugin's API tracks Oxlint. `npm install` prunes the Pi runtime
+symlinks, so run `npm run link-pi` after it; `npm run preflight` says so if you forget.
 
 ## Boundary typing
 
@@ -101,6 +131,10 @@ The lint also protects existing repo rules:
   exemption.
 - TypeScript files should stay context-sized. Existing oversized files have temporary
   budgets in the baseline and should be split over time rather than grown.
+- The test-only `export const internals` objects on the older entry files do not grow
+  (POG012). Tests reach behaviour through public interfaces; see
+  [testing.md](./testing.md), "Public interfaces". Each entry leaves by extracting its
+  logic into a domain module or covering the behaviour through the extension harness.
 
 ## Baseline policy
 
@@ -113,7 +147,8 @@ When touching a baselined area:
 2. Do not add generic record guards.
 3. Add `SAFETY:` only for real Pi or runtime boundary seams.
 4. If a file is over its line budget, split by domain before adding unrelated logic.
-5. Regenerate the baseline only after review when current violations were intentionally
+5. If an `internals` entry is in reach, move its logic to a domain module and delete it.
+6. Regenerate the baseline only after review when current violations were intentionally
    fixed, moved, or reclassified.
 
 To inspect the migration ledger:

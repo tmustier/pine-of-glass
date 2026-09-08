@@ -33,8 +33,8 @@ function boundedLcsLength(a: string[], b: string[]): number {
   if (a.length === 0 || b.length === 0) return 0;
   if (a.length * b.length > LCS_CELL_LIMIT) return 0;
 
-  let previous = new Array<number>(b.length + 1).fill(0);
-  let current = new Array<number>(b.length + 1).fill(0);
+  let previous = Array.from({ length: b.length + 1 }, () => 0);
+  let current = Array.from({ length: b.length + 1 }, () => 0);
   for (let i = 1; i <= a.length; i++) {
     for (let j = 1; j <= b.length; j++) {
       current[j] = a[i - 1] === b[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, current[j - 1]!);

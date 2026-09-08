@@ -1,0 +1,57 @@
+{
+  // Oxlint + the vendored anti-slop plugin (tools/oxlint/anti-slop, see UPSTREAM.md).
+  // Policy lives in docs/agent-coding-standard.md ("Slop lint"). Rules that are off
+  // here are off on purpose, with the reason inline; do not baseline them instead.
+  // Debt on the enabled rules ratchets down through scripts/dev/agent-lint-baseline.json.
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": [
+    ".pi/**",
+    ".worktrees/**",
+    "node_modules/**",
+    "tools/oxlint/anti-slop/**",
+    "scripts/dev/bash-corpus/out/**"
+  ],
+  "jsPlugins": [
+    { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }
+  ],
+  "rules": {
+    // ANSI escape parsing is this repo's domain; \x1b in regexes is the job, not a bug.
+    "eslint/no-control-regex": "off",
+
+    "oxc/no-accumulating-spread": "error",
+    "anti-slop/no-array-filter-map": "error",
+    "anti-slop/no-reduce-accumulator-copy": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+
+    // Off by policy, not debt. This package ships zero runtime dependencies, so there is
+    // no schema library to parse boundaries with: `parse(value: unknown): T` plus
+    // `typeof` refinement IS the sanctioned boundary mechanism (agent-coding-standard,
+    // "Boundary typing"). Where unknown leaks inward, POG001/POG004 already catch it.
+    "anti-slop/no-runtime-typeof": "off",
+    "anti-slop/no-unknown-parameters": "off"
+  },
+  "overrides": [
+    {
+      // Synthetic duck-typed fixtures (`as ToolRowLike`, `as unknown as Theme`) are the
+      // documented stand-in pattern for unit tests (docs/testing.md); the contract suite
+      // proves the duck types against real Pi. A SAFETY comment on each would be noise.
+      "files": ["tests/**"],
+      "rules": {
+        "anti-slop/require-safety-comment-for-type-assertion": "off",
+        "anti-slop/no-chained-type-assertions": "off"
+      }
+    }
+  ]
+}

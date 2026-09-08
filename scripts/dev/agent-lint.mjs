@@ -1,11 +1,13 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 const ROOT = process.cwd();
 const BASELINE_PATH = join(ROOT, "scripts", "dev", "agent-lint-baseline.json");
+const OXLINT_BIN = join(ROOT, "node_modules", ".bin", "oxlint");
 const DEFAULT_TS_MAX_LINES = 350;
-const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011"]);
+const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012"]);
 
 const RULE_MESSAGES = {
   POG001: [
@@ -57,7 +59,21 @@ const RULE_MESSAGES = {
     "agent lint baseline is stale.",
     "Prune fixed findings or lower shrunk line budgets instead of leaving old allowance behind.",
   ],
+  POG012: [
+    "test-only `internals` export grew.",
+    "Tests reach behaviour through public interfaces (docs/testing.md): the extension's default export via the test harness, or named exports of a domain module.",
+    "Move the logic into a domain module and import it directly, or test it through the harness; do not add another entry to the grab bag.",
+  ],
 };
+
+// Oxlint findings (anti-slop plus oxlint's defaults, configured in .oxlintrc.json) join
+// the same migration ledger under their own rule ids, e.g. `anti-slop(no-unknown-returns)`.
+// Each such finding carries oxlint's own message, so the baseline and the failure output
+// speak the rule's language rather than a paraphrase.
+const OXLINT_HELP = [
+  "Rule policy: .oxlintrc.json (inline reasons) and docs/agent-coding-standard.md (\"Slop lint\").",
+  "See the full diagnostic with `npm run lint:slop`.",
+];
 
 function usage() {
   console.log(`Usage: node scripts/dev/agent-lint.mjs [--update-baseline] [--show-baseline]\n\nDeterministic source checks for the pine-of-glass agent coding standard.`);
@@ -97,8 +113,8 @@ function messageFor(code) {
   return RULE_MESSAGES[code].join("\n");
 }
 
-function makeFinding(code, file, line, lineText) {
-  return { code, file, line, lineText, message: messageFor(code) };
+function makeFinding(code, file, line, lineText, message = messageFor(code)) {
+  return { code, file, line, lineText, message };
 }
 
 function signature(finding) {
@@ -110,7 +126,7 @@ function isTsLike(path) {
 }
 
 function isMarkdown(path) {
-  return /\.md$/.test(path);
+  return path.endsWith(".md");
 }
 
 function inPath(path, prefix) {
@@ -200,7 +216,7 @@ function scanFileBudgets(files, baseline, findings) {
   const seenBudgetFiles = new Set();
   for (const absPath of files) {
     const file = rel(absPath);
-    if (!/\.ts$/.test(file)) continue;
+    if (!file.endsWith(".ts")) continue;
     if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
     const lineCount = readText(absPath).split(/\r?\n/).length;
     const storedBudget = fileBudgets[file];
@@ -220,6 +236,100 @@ function scanFileBudgets(files, baseline, findings) {
   }
 }
 
+// Runs oxlint over the repo (its .oxlintrc.json owns the targets and ignores) and
+// converts every diagnostic into a ledger finding keyed by the source line, the same
+// signature scheme the POG rules use, so line-number drift never invalidates the baseline.
+// A repo without an oxlint config has nothing to run.
+function scanWithOxlint(findings) {
+  if (!existsSync(join(ROOT, ".oxlintrc.json"))) return;
+  if (!existsSync(OXLINT_BIN)) {
+    console.error("agent-lint: oxlint is not installed; run `npm install` then `npm run link-pi`.");
+    process.exit(1);
+  }
+  const result = spawnSync(OXLINT_BIN, [".", "--format", "json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) throw result.error;
+  // oxlint exits 1 when it reports findings; anything else is a tooling failure.
+  if (result.status !== 0 && result.status !== 1) {
+    console.error(result.stderr || result.stdout);
+    console.error(`agent-lint: oxlint exited with ${result.status}`);
+    process.exit(1);
+  }
+  const report = JSON.parse(result.stdout);
+  const sources = new Map();
+  for (const diagnostic of report.diagnostics) {
+    const file = diagnostic.filename.split(sep).join("/");
+    const line = diagnostic.labels?.[0]?.span?.line ?? 1;
+    if (!sources.has(file)) sources.set(file, readText(join(ROOT, file)).split(/\r?\n/));
+    const lineText = sources.get(file)[line - 1] ?? "";
+    const message = [diagnostic.message, ...(diagnostic.help ? [diagnostic.help] : []), ...OXLINT_HELP].join("\n");
+    findings.push(makeFinding(diagnostic.code, file, line, lineText, message));
+  }
+}
+
+// Counts the entries of an `export const internals = { ... }` object. The object is a
+// test-only grab bag of private functions; its size is a measure of how much test
+// coverage is coupled to implementation names rather than behaviour.
+function internalsEntryCount(text) {
+  const start = text.indexOf("export const internals = {");
+  if (start < 0) return 0;
+  let depth = 0;
+  let entries = 0;
+  let sawEntryText = false;
+  for (let i = start + "export const internals = ".length; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    else if (ch === "}" || ch === ")" || ch === "]") {
+      depth--;
+      if (depth === 0) {
+        if (sawEntryText) entries++;
+        break;
+      }
+    } else if (depth === 1) {
+      if (ch === ",") {
+        if (sawEntryText) entries++;
+        sawEntryText = false;
+      } else if (ch === "/" && text[i + 1] === "/") {
+        i = text.indexOf("\n", i);
+      } else if (!/\s/.test(ch)) {
+        sawEntryText = true;
+      }
+    }
+  }
+  return entries;
+}
+
+function scanInternalsBudgets(files, baseline, findings) {
+  const budgets = baseline.internalsBudgets ?? {};
+  const seen = new Set();
+  for (const absPath of files) {
+    const file = rel(absPath);
+    if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
+    const count = internalsEntryCount(readText(absPath));
+    const budget = budgets[file];
+    if (budget !== undefined) seen.add(file);
+    if (count > (budget ?? 0)) {
+      findings.push(makeFinding("POG012", file, 1, `internals-entries:${count} budget:${budget ?? 0}`));
+    }
+    if (budget !== undefined && count < budget) {
+      findings.push(makeFinding("POG011", file, 1, `internals-entries:${count} stale-budget:${budget}`));
+    }
+  }
+  for (const budgetFile of Object.keys(budgets)) {
+    if (!seen.has(budgetFile)) findings.push(makeFinding("POG011", budgetFile, 1, "missing file still has an internals budget"));
+  }
+}
+
+function buildInternalsBudgets(files) {
+  const budgets = {};
+  for (const absPath of files) {
+    const file = rel(absPath);
+    if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
+    const count = internalsEntryCount(readText(absPath));
+    if (count > 0) budgets[file] = count;
+  }
+  return sortObjectDeep(budgets);
+}
+
 function scanStructural(findings) {
   if (existsSync(join(ROOT, "extensions", "_lib", "index.ts"))) {
     findings.push(makeFinding("POG008", "extensions/_lib/index.ts", 1, "extensions/_lib/index.ts"));
@@ -236,7 +346,9 @@ function scanStructural(findings) {
 }
 
 function loadBaseline() {
-  if (!existsSync(BASELINE_PATH)) return { version: 1, knownFindings: {}, lineBudgets: { defaultTsMax: DEFAULT_TS_MAX_LINES, files: {} } };
+  if (!existsSync(BASELINE_PATH)) {
+    return { version: 1, knownFindings: {}, lineBudgets: { defaultTsMax: DEFAULT_TS_MAX_LINES, files: {} }, internalsBudgets: {} };
+  }
   return JSON.parse(readText(BASELINE_PATH));
 }
 
@@ -268,7 +380,7 @@ function buildLineBudgets(files) {
   const budgets = {};
   for (const absPath of files) {
     const file = rel(absPath);
-    if (!/\.ts$/.test(file)) continue;
+    if (!file.endsWith(".ts")) continue;
     if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
     const lineCount = readText(absPath).split(/\r?\n/).length;
     if (lineCount > DEFAULT_TS_MAX_LINES) budgets[file] = lineCount;
@@ -311,6 +423,8 @@ function collectFiles() {
   return walk(ROOT).filter((path) => {
     const file = rel(path);
     if (file.startsWith("scripts/dev/bash-corpus/out/")) return false;
+    // Other git worktrees and vendored lint plugins are not this checkout's source.
+    if (file.startsWith(".worktrees/") || file.startsWith("tools/oxlint/")) return false;
     return isTsLike(file) || isMarkdown(file) || file === "package.json";
   });
 }
@@ -323,7 +437,9 @@ function collectFindings(files, baseline) {
     if (isMarkdown(file)) scanMarkdownFile(absPath, findings);
   }
   scanFileBudgets(files, baseline, findings);
+  scanInternalsBudgets(files, baseline, findings);
   scanStructural(findings);
+  scanWithOxlint(findings);
   return findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.code.localeCompare(b.code));
 }
 
@@ -344,6 +460,7 @@ function main() {
       generatedBy: "node scripts/dev/agent-lint.mjs --update-baseline",
       knownFindings: buildKnownFindings(findings),
       lineBudgets: buildLineBudgets(files),
+      internalsBudgets: buildInternalsBudgets(files),
     };
     writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
     console.log(`Updated ${relative(ROOT, BASELINE_PATH)} with ${findings.length} current findings and line budgets.`);
@@ -370,7 +487,7 @@ function main() {
         console.error(`${file} ${code} stale baseline entry (${count}):\n  > ${lineText}\n`);
       }
     }
-    console.error("Fix the issue, add a SAFETY comment for a real boundary seam, or update the reviewed baseline after deliberate fixes.");
+    console.error("Fix the issue, add a SAFETY comment for a real boundary seam, or update the reviewed baseline after deliberate fixes (node scripts/dev/agent-lint.mjs --update-baseline).");
     process.exitCode = 1;
     return;
   }

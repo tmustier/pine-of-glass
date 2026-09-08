@@ -22,7 +22,7 @@ import {
   pastWindow,
 } from "./classify.ts";
 import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, withinWarmHorizon } from "./clock.ts";
-import { activeToolShapes, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
+import { activeToolDefinitions, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
 import { restoreBranchRecords } from "./ledger.ts";
 import {
   cacheStateForLineage,
@@ -319,7 +319,7 @@ function parseCachemireConfig(value: unknown): Partial<CachemireConfig> {
 
 function loadConfig(cwd: string): CachemireConfig {
   return configPaths("pi-cachemire", cwd).reduce(
-    (config, filePath) => ({ ...config, ...readJsonConfig(filePath, parseCachemireConfig) }),
+    (config, filePath) => Object.assign(config, readJsonConfig(filePath, parseCachemireConfig)),
     { ...DEFAULT_CONFIG },
   );
 }
@@ -462,7 +462,7 @@ function refreshSwitchForecast(
     entries: ctx.sessionManager.getEntries(),
     activeLeafId,
     systemPromptChars: ctx.getSystemPrompt().length,
-    tools: activeToolShapes(pi),
+    tools: activeToolDefinitions(pi),
     snapshots: s.lineages,
   });
 }

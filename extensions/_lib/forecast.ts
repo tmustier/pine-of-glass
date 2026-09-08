@@ -4,7 +4,7 @@ import {
   fallbackHeuristicNumbers,
   type ModelSummary,
 } from "./heuristics.ts";
-import { estimateToolListTokens, type ToolShape } from "./tool-payloads.ts";
+import { estimateToolListTokens, type ToolDefinition } from "./tool-payloads.ts";
 
 // Pi's compaction estimator uses the same flat cost for every retained image.
 export const ESTIMATED_IMAGE_CHARS = 4800;
@@ -111,7 +111,7 @@ export function forecastHistoryForTarget(messages: readonly ForecastMessage[], t
 export function forecastTargetPrompt(args: {
   history: readonly ForecastMessage[];
   systemPromptChars: number;
-  tools: ToolShape[];
+  tools: ToolDefinition[];
   target: TargetModel;
 }) {
   const heuristic = builtInHeuristicForModel(args.target) ?? fallbackHeuristicNumbers();

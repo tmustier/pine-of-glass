@@ -38,17 +38,26 @@ function assistant(timestamp: number, prompt: number, model = "claude-opus-4-8")
   };
 }
 
+type FixtureRequest = {
+  model: string;
+  system: Array<{ type: "text"; text: string; cache_control: { type: "ephemeral" } }>;
+  messages: Array<{ role: "user"; content: Array<{ type: "text"; text: string }> }>;
+  tools?: unknown[];
+  thinking?: { type: "enabled"; budget_tokens: number };
+};
+
 function payload(
   messages: string[],
   options: { model?: string; system?: string; tools?: unknown[]; thinkingBudget?: number } = {},
-) {
-  return {
+): FixtureRequest {
+  const request: FixtureRequest = {
     model: options.model ?? "claude-opus-4-8",
     system: [{ type: "text", text: options.system ?? "fixture", cache_control: { type: "ephemeral" } }],
     messages: messages.map((text) => ({ role: "user", content: [{ type: "text", text }] })),
-    ...(options.tools ? { tools: options.tools } : {}),
-    ...(options.thinkingBudget ? { thinking: { type: "enabled", budget_tokens: options.thinkingBudget } } : {}),
   };
+  if (options.tools) request.tools = options.tools;
+  if (options.thinkingBudget) request.thinking = { type: "enabled", budget_tokens: options.thinkingBudget };
+  return request;
 }
 
 function snapshotById(snapshots: CacheLineageSnapshot[], id: string): CacheLineageSnapshot {

@@ -7,12 +7,9 @@ import {
   findChatContainer,
   isAssistantRow,
   isToolRow,
-  type AssistantRowDataLike,
-  type AssistantRowLike,
   type AssistantRowPrototypeLike,
   type ContainerLike,
   resultTextCharCount as rawResultTextCharCount,
-  type ToolArgsLike,
   type ToolRowDataLike,
   type ToolRowLike,
 } from "../_lib/chat.ts";
@@ -256,11 +253,11 @@ function parseTracelineConfig(value: unknown): TracelineConfig {
   const sizeWarningChars = positiveNumberValue(value.sizeWarningChars);
   const sizeErrorChars = positiveNumberValue(value.sizeErrorChars);
   const drillKey = stringValue(value.drillKey);
-  return {
-    ...(sizeWarningChars !== undefined ? { sizeWarningChars: Math.floor(sizeWarningChars) } : {}),
-    ...(sizeErrorChars !== undefined ? { sizeErrorChars: Math.floor(sizeErrorChars) } : {}),
-    ...(drillKey !== undefined && drillKey.length > 0 ? { drillKey } : {}),
-  };
+  const config: TracelineConfig = {};
+  if (sizeWarningChars !== undefined) config.sizeWarningChars = Math.floor(sizeWarningChars);
+  if (sizeErrorChars !== undefined) config.sizeErrorChars = Math.floor(sizeErrorChars);
+  if (drillKey !== undefined && drillKey.length > 0) config.drillKey = drillKey;
+  return config;
 }
 
 function configureSizeThresholds(config: TracelineConfig | undefined): void {
@@ -565,9 +562,9 @@ function compactJson(value: unknown): string {
 // break was — middle truncation then keeps the head *and* the operative tail. The marks
 // stay plain here; inkBashBody dims them with the rest of the shell apparatus.
 function flattenInvocationLines(lines: string[]): string | undefined {
-  const visible = lines
-    .filter((line) => stripAnsi(line).trim().length > 0)
-    .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
+  const visible = lines.flatMap((line) =>
+    stripAnsi(line).trim().length > 0 ? [trimLeadingVisibleWhitespace(line.trimEnd())] : [],
+  );
   if (visible.length === 0) return undefined;
   return visible.join(` ${LINE_BREAK_MARK} `);
 }
@@ -1281,8 +1278,10 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
     const dir = lastSlash >= 0 ? boringPrefix(last, path) : "";
     const base = path.slice(dir.length);
     const ranges = rows
-      .map((row) => lineRange(row?.args).slice(1))
-      .filter(Boolean)
+      .flatMap((row) => {
+        const range = lineRange(row?.args).slice(1);
+        return range ? [range] : [];
+      })
       .join(",");
     const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
     // rows[0] is the carrier: in drill mode the fold is one target and rows[0] renders it.

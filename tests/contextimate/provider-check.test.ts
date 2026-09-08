@@ -25,12 +25,12 @@ import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, fakePi, fixtureSystemPrompt } from "../helpers.ts";
 
-const { buildSnapshot, toolPayloadForShape } = internals;
+const { buildSnapshot, toolPayloadForNumerator } = internals;
 
 function capturedAnthropicPayload() {
   const snapshot = buildSnapshot(fakePi(), () => fixtureSystemPrompt(), undefined, () => undefined, () => anthropicModel, {});
   const tools = snapshot.tools.slice(0, 3).map((tool) => {
-    const payload = toolPayloadForShape(tool, "anthropic");
+    const payload = toolPayloadForNumerator(tool, "anthropic");
     assert.ok(isJsonObject(payload));
     return payload;
   });

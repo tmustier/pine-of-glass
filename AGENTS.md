@@ -6,12 +6,14 @@ language. TypeScript, zero runtime dependencies, tests on `node:test`.
 ## Commands
 
 ```bash
-npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests); run first on a fresh clone
+npm install             # oxlint + anti-slop plugin (the only devDependencies); prunes the Pi symlinks, so:
+npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests); run after every npm install
 npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
 npm run docs:cache      # regenerate Cachemire retention docs
-npm run lint            # coding-standard and generated-doc drift checks
+npm run lint            # POG rules + oxlint/anti-slop (baselined) + generated-doc drift checks
+npm run lint:slop       # oxlint alone, full diagnostics
 npm run typecheck       # tsc against the real installed pi
-npm test                # unit + golden + pi contract tests (zero deps, node:test)
+npm test                # unit + golden + pi contract tests (node:test)
 npm run check           # lint + typecheck + tests
 npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)
 ```
@@ -43,10 +45,17 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   tmux/HOME; see its README for the recipe. The `cachemire` scenario makes live model
   calls (costs cents).
 - Agent coding standards live in [`docs/agent-coding-standard.md`](./docs/agent-coding-standard.md)
-  and are enforced by `scripts/dev/agent-lint.mjs`. Boundary uncertainty belongs at
-  Pi, JSON, config, provider-payload, and catch seams only. Do not add generic
-  `isRecord` or `isObject` helpers. Parse or refine at the edge, pass typed values
-  inward, and document real escape hatches with `SAFETY:` comments.
+  and are enforced by `scripts/dev/agent-lint.mjs` plus the vendored
+  [anti-slop](https://github.com/dmmulroy/anti-slop) Oxlint rules in `.oxlintrc.json`
+  (rules that are off say why inline). Boundary uncertainty belongs at Pi, JSON,
+  config, provider-payload, and catch seams only. Do not add generic `isRecord` or
+  `isObject` helpers. Parse or refine at the edge, pass typed values inward, and
+  document real escape hatches with `SAFETY:` comments. The baseline is debt that only
+  shrinks; a finding that is correct code gets a rule decision, not a baseline entry.
+- Tests specify behaviour through public interfaces: the extension's default export
+  hosted by `tests/harness/extension-host.ts`, or the named exports of a domain module.
+  The `internals` grab bags on the older entry files may not grow. See
+  [`docs/testing.md`](./docs/testing.md), "Public interfaces".
 
 ## Style
 

@@ -15,6 +15,47 @@ likelihood. Anything that does not map to one of these failure modes does not ge
    These change as a side effect of unrelated edits (e.g. the Total-row reorder) and are
    only verifiable today by eyeballing a live TUI.
 
+## Public interfaces: what a test may touch
+
+A test is a specification of a capability. It names something the extension does for a
+user ("enabling meantime makes `/pace` answer with the ledger"), drives that capability
+through the surface a user or Pi would use, and asserts on what a user would see. The
+code behind the capability can change entirely; the test should not have to. A test that
+breaks on a refactor with no behaviour change is a bug in the test.
+
+Three tiers, from most to least preferred:
+
+1. **Extension behaviour goes through Pi.** The public interface of an extension is its
+   default export loaded by Pi, the config files it reads, the events Pi delivers, the
+   commands it registers, and the UI surface it writes to (notifications, widgets,
+   status, chat lines, terminal input). `tests/harness/extension-host.ts` makes this
+   cheap: it loads the default export through Pi's real factory loader into a real
+   `ExtensionRunner`, records the UI, and isolates `process.cwd()` and `$HOME` so config
+   files can be written per test. `tests/meantime/feature-flag.test.ts` is the reference
+   shape. Prefer this tier for lifecycle, commands, config, and anything a user sees.
+2. **Pure logic goes through the named exports of a domain module.** ANSI truncation,
+   SGR filtering, token formulas, heuristic precedence and retention policy are contracts
+   whose inputs and outputs are the specification. Test them directly from their module
+   (`extensions/_lib/*.ts` or an extension's own domain module such as
+   `pi-cachemire/retention.ts`), with tables and invariants, not by inspecting how they
+   compute. A module's exports are its interface; if a test needs something the module
+   does not export, the module boundary is wrong, not the test.
+3. **Privates of `index.ts` are not a test surface.** The `export const internals`
+   grab bags exist because logic was never extracted from the entry files. They are a
+   migration ledger, not an API: `npm run lint` fails if one grows (POG012), and each
+   entry leaves by moving its logic into a domain module (tier 2) or testing the
+   behaviour through the harness (tier 1). Do not add entries.
+
+What a good test in any tier looks like:
+
+- The name states the capability in user terms, not the function under test.
+- Inputs are the smallest realistic fixture; synthetic duck-typed comps are fine where
+  the contract suite proves the duck type against real Pi.
+- Assertions are on outputs and visible state, never on which helpers ran or in what
+  order. `assert.deepEqual(events, ["session_start", ...])` against a fake `pi` is the
+  anti-pattern this section exists to stop.
+- It fails against the bug it guards or a plausible mutation. Delete tests that cannot.
+
 ## Explicit non-goals
 
 Deliberately **not** tested:
@@ -41,10 +82,16 @@ Deliberately **not** tested:
   gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
   runtime. Pi 0.85.1 is the minimum supported version, so a `pi update` followed by
   `npm test` is the drift detector.
-- **Testability route:** pure domain logic lives in importable modules or an exported
-  `internals` object consumed by tests. Pi imports only each extension's default entry
-  point, so named test surfaces are runtime-inert. Split files by domain when the code
-  needs it, as cachemire's renderer and meantime's timing/render modules do.
+- **Testability route:** pure domain logic lives in importable domain modules; see
+  "Public interfaces" above. Pi imports only each extension's default entry point, so
+  named exports are runtime-inert. Split files by domain when the code needs it, as
+  cachemire's renderer and meantime's timing/render modules do. The legacy `internals`
+  objects on the three older entry files only shrink.
+- **Extension host:** `tests/harness/extension-host.ts` hosts a default export the way
+  Pi does (real loader, real runner, recorded UI, isolated project and home directories).
+  Pi installs a UI context by spreading it, so the recorder's members are own properties.
+  There is no chat container in the recorder; chat lines arrive through each extension's
+  own notify fallback and are read from `ui.notifications`.
 - **Scripts:** `npm run lint` (agent coding-standard and generated-doc drift checks),
   `npm run docs:cache` (regenerate Cachemire retention docs),
   `npm run typecheck`, `npm test` (unit + render + contract),
@@ -55,6 +102,7 @@ Layout:
 
 ```
 tests/
+  harness/extension-host.ts          # real Pi loader + runner + recorded UI
   contract/*.test.ts                 # layer 1: Pi drift and lifecycle contracts
   contextimate/*.test.ts             # layer 2/3
   traceline/*.test.ts                # layer 2
@@ -132,10 +180,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   families and leave dynamic or unverified aliases on the fallback. Separate cases pin
   Claude family boundaries and tool payload routing by provider and API.
 - **Tool payload shaping**: for one frozen `ToolSummary` fixture, the exact JSON emitted
-  per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`),
-  the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to
-  the OpenAI Responses payload.
-  Consistency invariant: `buildToolDisplayEstimate` counts the same payload shape that
+  per tool numerator (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`,
+  `raw-schema`), the *aggregated* gemini `functionDeclarations` form, and the
+  unknown-numerator fallback to the OpenAI Responses payload.
+  Consistency invariant: `buildToolDisplayEstimate` counts the same payload that
   `buildToolNumerator` counts (per-tool vs aggregate); this is also the invariant the
   issue-#8 checker must preserve.
 - **OpenAI cookbook formula** (`estimateOpenAIFunctionToolTokens`): frozen multi-tool
@@ -198,8 +246,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   calibration skips calls without a usable reasoning split.
 - **Session totals and config parsing**: open idle time contributes to idle, active is
   the watched span minus idle, and malformed boundary values are ignored.
-- **Feature-flag registration**: the default config registers no hooks or command;
-  explicit `enabled: true` registers the full event surface and `/pace`.
+- **Opt-in through config**: hosted through the extension harness, a project without
+  `.pi/pi-meantime.json` has no `/pace` and no widget; `enabled: true` answers `/pace`
+  with the ledger and shows the waiting clock once a provider request is in flight;
+  `widget: false` keeps `/pace` and suppresses the widget.
 
 ## Layer 3: render goldens
 

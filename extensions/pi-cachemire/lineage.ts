@@ -69,15 +69,22 @@ function persistedEntryTimes(entries: readonly unknown[]): Map<string, number> {
   return times;
 }
 
+function billedSnapshots(entries: readonly unknown[]): CacheLineageSnapshot[] {
+  const entryTimes = persistedEntryTimes(entries);
+  const snapshots: CacheLineageSnapshot[] = [];
+  for (const entry of entries) {
+    const snapshot = billedSnapshotFromEntry(entry, entryTimes);
+    if (snapshot) snapshots.push(snapshot);
+  }
+  return snapshots;
+}
+
 /** Restore every normal provider call in the session tree, not only the active branch. */
 export function restoreLineageSnapshots(
   entries: readonly unknown[],
   previousSnapshots?: CacheLineageSnapshot[],
 ): CacheLineageSnapshot[] {
-  const entryTimes = persistedEntryTimes(entries);
-  const restored = entries
-    .map((entry) => billedSnapshotFromEntry(entry, entryTimes))
-    .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined);
+  const restored = billedSnapshots(entries);
   if (!previousSnapshots) return restored;
 
   const fingerprints = new Map<string, RequestFingerprint>();
@@ -110,12 +117,8 @@ export function hydrateLineageResponseIds(
 ): void {
   const unresolved = snapshots.filter((snapshot) => snapshot.responseEntryId === undefined);
   if (unresolved.length === 0) return;
-  const entryTimes = persistedEntryTimes(entries);
   const persisted = new Map(
-    entries
-      .map((entry) => billedSnapshotFromEntry(entry, entryTimes))
-      .filter((snapshot): snapshot is CacheLineageSnapshot => snapshot !== undefined)
-      .map((snapshot) => [responseLinkKey(snapshot), snapshot]),
+    billedSnapshots(entries).map((snapshot) => [responseLinkKey(snapshot), snapshot]),
   );
   for (const snapshot of unresolved) {
     const match = persisted.get(responseLinkKey(snapshot));
