@@ -146,3 +146,19 @@ every 0.5 s on the pi process:
 
 Rendered folds, ranges and size columns looked correct in both captures. Released
 v0.11.0 from main after the soak.
+## 2026-09-08: preserve multiline call summaries
+
+Reproduced generic call renderers collapsing to `Ran` because Traceline kept only
+one line. Added a tool-independent call summarizer that joins continuation lines,
+removes layout indentation and tree branches, and preserves ANSI styling. Removed
+per-line expand hints before joining and restricted path reconstruction to single
+lines so read continuations survive too. Native expanded rendering is unchanged.
+
+Six new real-Pi component tests cover execution states, command/code/exploration
+layouts, distinct invocations with matching headers, colour preservation, widths
+1 through 100 and click expansion. Updated the obsolete first-line-only test.
+The initial regressions failed before implementation. Final full suite: 345 passed,
+the same four baseline contract failures; lint and typecheck pass. Verified actual
+installed Codex-conversion renderers and reviewed screenshots at 100 and 50 columns.
+All real-Pi smoke suites passed, including fullscreen clicks, Drill, pager fidelity,
+reasoning and startup/reload. No PR comments posted.

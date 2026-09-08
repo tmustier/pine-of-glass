@@ -733,13 +733,13 @@ test("hyperlinked read rows (OSC 8, ST-terminated): text survives stripAnsi, URL
   );
 });
 
-test("native invocation drops the expand hint and keeps only the first visible line", () => {
+test("native invocation drops per-line expand hints and retains continuation text", () => {
   const comp = toolComp({
     callRendererComponent: { render: () => ["read ~/projects/demo/file.ts:1-40 (ctrl+o to expand)", "  body line"] },
   });
   const visible = stripAnsi(oneLine(comp, 80));
   assert.ok(!visible.includes("to expand"), visible);
-  assert.ok(!visible.includes("body line"), visible);
+  assert.ok(visible.includes("file.ts:1-40 · body line"), visible);
 });
 
 test("tool-group spacing: blank before a group, tight within it, connectors skipped", () => {
