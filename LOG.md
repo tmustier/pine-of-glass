@@ -128,3 +128,21 @@ assertions. Six deliberate mutations failed their targeted tests, including exis
 fold grammar tests. Lint, typecheck, all 355 tests and all real-Pi smokes pass.
 Component benchmark: 500 rows warm 0.193 ms, active 0.276 ms; giant-group active
 1.530 ms. Live-session soak remains outstanding.
+
+## 2026-09-08: v0.11.0 release and live CPU soak
+
+Live soak on real Pi 0.85.1 with `openai-codex/gpt-5.6-sol:low`, Traceline only,
+isolated HOME, same prompt (60 sequential reads then 15 bash calls), CPU sampled
+every 0.5 s on the pi process:
+
+| | v0.10.2 | main (5e572a2) |
+|---|---|---|
+| tool rows streamed | 76 (turn finished, 342 s) | 123 (stopped at 600 s, model looping) |
+| total CPU time | 17.3 s | 6.9 s |
+| CPU per row | ~0.23 s | ~0.06 s |
+| mean / peak CPU | 4.8% / 39.7% | 0.9% / 8.8% |
+| RSS | 190 MB | 152 MB |
+| idle after turn | 0% | 0% |
+
+Rendered folds, ranges and size columns looked correct in both captures. Released
+v0.11.0 from main after the soak.
