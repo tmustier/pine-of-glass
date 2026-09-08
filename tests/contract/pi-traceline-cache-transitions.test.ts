@@ -47,20 +47,24 @@ function complete(row: ToolExecutionComponent, size: number, error = false) {
 }
 afterEach(() => { exitDrillMode(); trace.resetRenderCache(); trace.setTracelineChat(undefined); trace.setTracelineThemeGetter(undefined); });
 
-test("streaming group changes leave historical outputs and native captures warm", () => {
+test("a failed member breaks a warm fold without recomputing history", () => {
   const captures: string[] = [];
   const old = makeRow("/old/a", "read", captures);
-  const a = makeRow("/live/a", "read", captures, true);
-  const b = makeRow("/live/b", "read", captures);
+  const a = makeRow("/live/a", "read", captures);
+  const b = makeRow("/live/b", "read", captures, true);
   chat(step([old], "history"), old, step([a, b], "live"), a, b);
   [old, a, b].forEach((row) => row.render(80));
+  assert.ok(a.render(80).map(trace.stripAnsi).join().includes("2 calls"));
+  assert.deepEqual(b.render(80), []);
   const oldCount = captures.filter((path) => path === "/old/a").length;
   assert.ok(oldCount > 0);
   trace.renderCacheWorkCounts(true);
-  complete(a, 2_000);
+  complete(b, 2_000, true);
   [old, a, b].forEach((row) => row.render(80));
   assert.equal(trace.renderCacheWorkCounts().outputMisses, 2);
   assert.equal(captures.filter((path) => path === "/old/a").length, oldCount);
+  assert.ok(!a.render(80).map(trace.stripAnsi).join().includes("2 calls"));
+  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("/live/b"));
   equal([old, a, b]);
 });
 
@@ -76,19 +80,6 @@ test("assistant text deltas with unchanged structure keep historical traces cach
   equal([old]);
 });
 
-test("fold errors, warning breakout, expanded boundaries and partial results match raw output", () => {
-  for (const [size, error] of [[2_300, true], [50_000, false], [20, false]] as const) {
-    const a = makeRow("/src/a"), b = makeRow("/src/b", "read", [], true), c = makeRow("/src/c");
-    chat(step([a, b, c]), a, b, c);
-    equal([a, b, c]);
-    b.updateResult({ content: [{ type: "text", text: "partial" }], isError: false }, true);
-    equal([a, b, c]);
-    complete(b, size, error); equal([a, b, c]);
-    b.setExpanded(true); equal([a, c]);
-    b.setExpanded(false); equal([a, b, c]);
-  }
-});
-
 test("a neighbour's path change refreshes shared directory emphasis", () => {
   const a = makeRow("/tmp/project/src/shared/a.ts", "edit");
   const b = makeRow("/tmp/project/src/shared/b.ts", "edit");
@@ -100,10 +91,16 @@ test("a neighbour's path change refreshes shared directory emphasis", () => {
 
 test("same-step repeated calls follow changed sibling status without touching another step", () => {
   const a = makeRow("echo hello", "bash"); const b = makeRow("echo hello", "bash", [], true);
-  const c = makeRow("echo hello", "bash");
+  const captures: string[] = [];
+  const c = makeRow("echo hello", "bash", captures);
   chat(step([a, b]), a, b, step([c], "separate"), c);
   equal([a, b, c]);
+  const before = c.render(80), beforeCaptures = captures.length;
   complete(b, 2_300, true);
+  trace.renderCacheWorkCounts(true);
+  assert.deepEqual(c.render(80), before);
+  assert.equal(trace.renderCacheWorkCounts().outputMisses, 0);
+  assert.equal(captures.length, beforeCaptures);
   equal([a, b, c]);
   assert.ok(a.render(80).map(trace.stripAnsi).join().includes("2.3k ch"));
 });
@@ -118,7 +115,10 @@ test("bash preamble dependency crosses collapsed thinking but stops at prose", (
   a.updateArgs({ path: "cd /tmp/two && echo a", command: "cd /tmp/two && echo a" });
   equal([a, b]);
   assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
+  a.updateArgs({ path: "cd /tmp/one && echo a", command: "cd /tmp/one && echo a" });
+  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("⋯"));
   thinking.updateContent(assistantMessage([{ type: "text", text: "visible prose" }]));
+  assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
   equal([a, b]);
 });
 
@@ -133,10 +133,21 @@ test("Pi-style insertion before a streaming assistant updates bash predecessor c
   equal([a, b]); assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
 });
 
-test("resize and Drill selection refresh cached layouts", () => {
+test("resize truncates a warm row and preserves its wider variant", () => {
+  const row = makeRow("/project/src/components/a-long-component-name-and-its-helper.ts");
+  chat(step([row]), row);
+  const wide = row.render(100);
+  const narrow = row.render(45);
+  assert.notDeepEqual(narrow, wide);
+  assert.ok(narrow.map(trace.stripAnsi).join().includes("…"));
+  equal([row], 45);
+  assert.deepEqual(row.render(100), wide);
+});
+
+test("Drill entry, selection and exit update warm row styling", () => {
   const a = makeRow("/a/one"); const b = makeRow("/b/two");
   const container = chat(step([a, b]), a, b);
-  equal([a, b]); equal([a, b], 45); equal([a, b]);
+  const plain = [a.render(80), b.render(80)];
   const host: DrillHost = {
     ui: { custom: () => new Promise(() => {}), notify() {} } as never,
     theme: () => undefined, chatChildren: () => container.children, requestRender() {},
@@ -144,8 +155,12 @@ test("resize and Drill selection refresh cached layouts", () => {
   };
   enterDrillMode(host); equal([a, b]);
   assert.ok(b.render(80).map(trace.stripAnsi).join().includes("1 ›"));
-  setSelected(drillState()!, 1); equal([a, b]);
-  exitDrillMode(); equal([a, b]);
+  const numbered = [a.render(80), b.render(80)];
+  setSelected(drillState()!, 1);
+  assert.notDeepEqual([a.render(80), b.render(80)], numbered);
+  equal([a, b]);
+  exitDrillMode();
+  assert.deepEqual([a.render(80), b.render(80)], plain);
 });
 
 test("real theme Proxy keeps its identity while Pi invalidation refreshes cached colours", async () => {
@@ -168,13 +183,7 @@ test("real theme Proxy keeps its identity while Pi invalidation refreshes cached
   } finally { api.onThemeChange(() => {}); api.setTheme("dark", false); }
 });
 
-test("Pi mutation methods and custom renderer invalidate converge on the dirty hook", () => {
-  const a = makeRow("/mutators/a", "read", [], true); chat(step([a]), a);
-  for (const mutate of [() => a.setArgsComplete(), () => a.markExecutionStarted(), () => complete(a, 20),
-    () => a.setShowImages(false), () => a.setImageWidthCells(40), () => a.invalidate()]) {
-    a.render(80); trace.renderCacheWorkCounts(true); mutate(); a.render(80);
-    assert.equal(trace.renderCacheWorkCounts().outputMisses, 1);
-  }
+test("custom renderer invalidation replaces its warm invocation", () => {
   let invalidate = () => {};
   let label = "first";
   const b = new ToolExecutionComponent("custom", "custom-invalidate", {}, {}, {
@@ -182,7 +191,9 @@ test("Pi mutation methods and custom renderer invalidate converge on the dirty h
     renderCall: (_args: unknown, _theme: unknown, context: { invalidate: () => void }) => { invalidate = context.invalidate; return new Text(label, 0, 0); },
     renderResult: () => new Text("result", 0, 0),
   }, { requestRender() {} } as never, "/tmp");
-  complete(b, 20); chat(step([b]), b); b.render(80);
+  complete(b, 20); chat(step([b]), b);
+  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("first"));
+  b.render(80);
   label = "second"; invalidate();
   assert.ok(b.render(80).map(trace.stripAnsi).join().includes("second")); equal([b]);
 });

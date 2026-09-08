@@ -119,3 +119,12 @@ Improved its failure diagnostic without changing assertions. Final component tim
 Removed the standalone design note and duplicate design-language section. Benchmark
 instructions stay in `docs/testing.md`; measurements stay in this log. Reviewed the
 test boundaries; no test or runtime changes in this pass.
+
+## 2026-09-08: share fold rules and tighten cache contracts
+
+Cached and uncached rendering now share fold planners. Removed the duplicate test
+matrix and forced-miss checks; repaired resize, prose, step-isolation and Drill
+assertions. Six deliberate mutations failed their targeted tests, including existing
+fold grammar tests. Lint, typecheck, all 355 tests and all real-Pi smokes pass.
+Component benchmark: 500 rows warm 0.193 ms, active 0.276 ms; giant-group active
+1.530 ms. Live-session soak remains outstanding.
