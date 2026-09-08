@@ -20,7 +20,11 @@ publication date has been assigned.
   ([@0xbentang](https://github.com/0xbentang)) for
   [#105](https://github.com/tmustier/pine-of-glass/pull/105).
 
-Both contributors' original commits are preserved through merge commits.
+- Cache tool rows and shared layout work during streaming. Based on Alexey Bagno's
+  ([@swit33](https://github.com/swit33))
+  [#106](https://github.com/tmustier/pine-of-glass/pull/106).
+
+All three contributors' original commits are preserved through merge commits.
 
 ## Cachemire
 
@@ -30,7 +34,6 @@ Both contributors' original commits are preserved through merge commits.
 
 ## Maintainer validation
 
-Lint and typecheck pass against Pi 0.85.1. The integrated suite has 339 passing
-tests and the same four pre-existing contract failures as main. All real-Pi smoke
-suites pass, including tool/reasoning clicks, Ctrl+T, Drill, pager fidelity, resize,
-reload and startup. PR #106 is not included.
+The scoped cache remains in draft pending a live-session soak.
+See [the work log](../../LOG.md) for check results.
+PR #112 is not included.

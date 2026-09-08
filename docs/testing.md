@@ -256,6 +256,12 @@ model call required:
   documented manual step in the publish checklist, not a script dependency on provider
   auth.
 
+## Scoped render cache
+
+Run `node --expose-gc scripts/dev/bench-trace-cache.ts` for isolated component timings
+and deterministic capture-count checks. It makes no model calls. Timings are
+observations, not CI thresholds or end-to-end TUI latency measurements.
+
 ## What "passing" means
 
 `npm test` green on a machine with the current Pi installed means: our assumptions about

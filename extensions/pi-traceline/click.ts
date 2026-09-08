@@ -1,22 +1,23 @@
 import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
-import { stripAnsi } from "../_lib/ansi.ts";
 import type { ToolRowDataLike, ToolRowLike, ToolRowPrototypeLike } from "../_lib/chat.ts";
 import { drillState } from "./drill.ts";
 
 // View-only fold state. Output expansion always belongs to Pi's setExpanded().
 let revealed = new WeakMap<ToolRowDataLike, ToolRowLike[]>();
-export function resetRevealedFolds(): void { revealed = new WeakMap(); }
+let revealRevision = 0;
+export function resetRevealedFolds(): void { revealed = new WeakMap(); revealRevision++; }
+export function revealRenderKey(): number { return revealRevision; }
 export function isRevealed(comp: ToolRowDataLike): boolean { return revealed.has(comp); }
 export function revealedBullet(comp: ToolRowDataLike | undefined): string | undefined {
   return comp && revealed.get(comp)?.[0] === comp ? "▾" : undefined;
 }
 
-interface TraceMouseHost {
+export interface TraceMouseHost {
   bulletColumn: number;
   isCompact: (row: ToolRowLike) => boolean;
-  renderTrace: (row: ToolRowLike, width: number) => string[];
+  renderTrace: (row: ToolRowLike, width: number) => { lines: string[]; plain: string[]; members?: ToolRowLike[] };
   decorateNative: (row: ToolRowLike, lines: unknown) => unknown;
-  runRows: (row: ToolRowLike) => ToolRowLike[] | undefined;
+  viewChanged: (rows: ToolRowLike[]) => void;
 }
 
 type MouseHandler = (this: ToolRowLike, event: TuiMouseEvent) => TuiMouseEventResult | undefined;
@@ -42,9 +43,9 @@ export function installTraceMouse(proto: TraceMousePrototype, host: TraceMouseHo
     layouts.delete(this);
     if (!host.isCompact(this)) return host.decorateNative(this, originalRender.call(this, width));
     try {
-      const lines = host.renderTrace(this, width);
-      layouts.set(this, { width, lines: lines.map(stripAnsi), members: host.runRows(this) });
-      return lines;
+      const rendered = host.renderTrace(this, width);
+      layouts.set(this, { width, lines: rendered.plain, members: rendered.members });
+      return rendered.lines;
     } catch {
       // Pi seam: a failed compact render must keep its native geometry and input.
       return originalRender.call(this, width);
@@ -65,12 +66,15 @@ export function installTraceMouse(proto: TraceMousePrototype, host: TraceMouseHo
         revealed.delete(member);
         member.setExpanded(false);
       }
+      host.viewChanged(group);
     } else if (layout.members) {
       // Use the last painted membership, not a run recomputed after new results.
       for (const member of layout.members) revealed.set(member, layout.members);
+      host.viewChanged(layout.members);
     } else {
       if (!this.result) return undefined;
       this.setExpanded(true);
+      host.viewChanged([this]);
     }
     return { handled: true };
   };

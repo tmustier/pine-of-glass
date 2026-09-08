@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Traceline caches tool rows and shared layout work, keeping unrelated history cached
+  during streaming. Based on [#106](https://github.com/tmustier/pine-of-glass/pull/106)
+  by Alexey Bagno ([@swit33](https://github.com/swit33)).
+
 - Traceline reuses thinking previews across component rebuilds instead of parsing
   unchanged reasoning repeatedly. Thanks to Alexandre Stahmer
   ([@astahmer](https://github.com/astahmer)) for

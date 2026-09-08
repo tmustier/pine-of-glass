@@ -59,6 +59,15 @@ Fetched main again before landing and found #109 (Astra support). Merged it with
 conflicts and reran the full check: 339 passed, the same four baseline failures.
 Added its release-note entry without changing its implementation.
 
+## 2026-09-08: scoped cache integration for PR 106
+
+Reworked Alexey Bagno's (@swit33) proposal into dependency-scoped rendering, preserving
+both author commits and keeping #112 separate. Added cache/transition tests and
+`scripts/dev/bench-trace-cache.ts`. Initial validation: lint/typecheck passed;
+355 tests passed with four baseline failures. An early Drill smoke comparison failed;
+diagnostic and subsequent full smoke runs passed without weakening assertions.
+#111 landed during validation and resolved the baseline failures on main.
+
 ## 2026-09-08: Pi compatibility and Cerebras retention
 
 Required Pi 0.85.1 and removed Cachemire's obsolete provider-stream wrapper.
@@ -86,3 +95,36 @@ Removed redundant renderer scaffolding and source assertions from the native tog
 contract. Reused `pastWindow` for switch-back expiry decisions and expressed the
 accounting fixture's expected cost as arithmetic. No new helpers or output changes.
 Lint, typecheck, all 340 tests and the full real-Pi smoke suite passed; goldens unchanged.
+
+## 2026-09-08: final scoped-cache validation on current main
+
+Integrated #111; lint, typecheck, all 357 tests and all real-Pi smoke suites passed.
+Reviewed tool/reasoning screenshots. Fixed Pi's direct streaming-message insertion
+with predecessor-link tokens after reproducing its cache regression. Opened draft #113;
+no PR comments, #112 integration or session activation.
+
+## 2026-09-08: simplify scoped-cache review
+
+Removed cache aliases, single-use wrappers, two module splits and repeated prose.
+Corrected same-object and lifecycle fixtures; removed overlapping tests. Disabling
+tool/container invalidation makes the relevant regressions fail. Lint, typecheck,
+355 tests and the final full smoke run pass. The earlier Drill comparison flake
+recurred once; three follow-up runs on each of pre-review and simplified code passed.
+Improved its failure diagnostic without changing assertions. Final component timings:
+500 rows warm 0.183 ms, active update 0.253 ms; one 200-row group active update
+1.516 ms. These are synthetic component measurements; the live-session soak remains open.
+
+## 2026-09-08: remove redundant cache documentation
+
+Removed the standalone design note and duplicate design-language section. Benchmark
+instructions stay in `docs/testing.md`; measurements stay in this log. Reviewed the
+test boundaries; no test or runtime changes in this pass.
+
+## 2026-09-08: share fold rules and tighten cache contracts
+
+Cached and uncached rendering now share fold planners. Removed the duplicate test
+matrix and forced-miss checks; repaired resize, prose, step-isolation and Drill
+assertions. Six deliberate mutations failed their targeted tests, including existing
+fold grammar tests. Lint, typecheck, all 355 tests and all real-Pi smokes pass.
+Component benchmark: 500 rows warm 0.193 ms, active 0.276 ms; giant-group active
+1.530 ms. Live-session soak remains outstanding.

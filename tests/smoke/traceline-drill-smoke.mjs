@@ -261,7 +261,7 @@ try {
   });
   const retracedRows = traceRowsOf(retraced).map((line) => line.trimEnd());
   if (retracedRows.join("\n") !== beforeRows.join("\n")) {
-    throw new Error(`Ctrl+T left Ctrl+O rows pinned open instead of restoring the trace\n${retraced}`);
+    throw new Error(`Ctrl+T changed restored trace rows\nbefore:\n${beforeRows.join("\n")}\nafter:\n${retracedRows.join("\n")}\n${retraced}`);
   }
 
   // 3. A draft, then Alt+T: hint bar replaces the editor, numbers land at equal width.
