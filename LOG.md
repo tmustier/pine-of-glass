@@ -54,3 +54,7 @@ Lint and typecheck pass. Main baseline: 334 pass, four contract failures; integr
 narrow expanded reasoning screenshots; native clicks, grouping and rails remain
 intact. Independent read-only review found no blocking findings. PR #106 remains
 out of scope.
+
+Fetched main again before landing and found #109 (Astra support). Merged it without
+conflicts and reran the full check: 339 passed, the same four baseline failures.
+Added its release-note entry without changing its implementation.

@@ -22,6 +22,12 @@ publication date has been assigned.
 
 Both contributors' original commits are preserved through merge commits.
 
+## Cachemire
+
+- Recognise GPT-6 Astra's documented 30-minute cache minimum on direct OpenAI
+  Responses and Codex routes after a reported cache read or write. Other routes
+  remain unknown. [#109](https://github.com/tmustier/pine-of-glass/pull/109).
+
 ## Maintainer validation
 
 Lint and typecheck pass against Pi 0.85.1. The integrated suite has 339 passing
