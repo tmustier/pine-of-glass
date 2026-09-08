@@ -36,18 +36,16 @@ function markdownToPlainInline(rawLine: string): string {
   return first ? stripAnsi(first).replace(/\s+/g, " ").trim() : markdown;
 }
 
-// The assistant-row prototype patch routes every row render (one per streaming-delta
-// frame) through replaceThinkingLabels(), so preview derivation must not rescan the
-// whole message each frame: on long conversations that cost scales with total thinking
-// volume and dominates render time. Cache one derived preview per thinking block
-// object; the length key means a streaming block that grows in place re-derives only
-// itself while historical blocks hit the cache. WeakMap keys die with their message.
-const blockPreviewCache = new WeakMap<object, { sourceLength: number; preview: string }>();
+// Pi rebuilds thinking regions during streaming updates and click/visibility toggles.
+// Reuse derived previews across those rebuilds. Compare source text, not just length:
+// OpenAI Responses can replace thinking in place with final text at thinking_end.
+// WeakMap keys die with their message.
+const blockPreviewCache = new WeakMap<object, { source: string; preview: string }>();
 
 function previewForBlock(block: { type?: unknown; thinking?: unknown }): string | undefined {
   if (block?.type !== "thinking" || typeof block.thinking !== "string" || !block.thinking.trim()) return undefined;
   const cached = blockPreviewCache.get(block);
-  if (cached && cached.sourceLength === block.thinking.length) return cached.preview;
+  if (cached && cached.source === block.thinking) return cached.preview;
 
   const fragments: string[] = [];
   for (const line of block.thinking.split(/\r\n|\r|\n/)) {
@@ -55,7 +53,7 @@ function previewForBlock(block: { type?: unknown; thinking?: unknown }): string 
     if (fragment) fragments.push(fragment);
   }
   const preview = fragments.join(" · ");
-  blockPreviewCache.set(block, { sourceLength: block.thinking.length, preview });
+  blockPreviewCache.set(block, { source: block.thinking, preview });
   return preview;
 }
 

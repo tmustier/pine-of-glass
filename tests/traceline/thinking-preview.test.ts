@@ -28,6 +28,20 @@ test("the preview preserves native zone marks and fits the terminal width", () =
   assert.match(stripAnsi(lines[1]!).trim(), /^first.*….*newest appended thought$/);
 });
 
+test("same-length final thinking replacement invalidates the block preview", () => {
+  const block = { type: "thinking" as const, thinking: "Plan A" };
+  const message = assistantMessage([block]);
+  const comp = new AssistantMessageComponent(message, true);
+  installThinkingPreviews(comp as unknown as AssistantRowDataLike);
+  assert.deepEqual(comp.render(80).map((line) => stripAnsi(line).trim()), ["", "Plan A"]);
+
+  // OpenAI Responses finalizes reasoning by assigning final text to the same block.
+  block.thinking = "Plan B";
+  comp.updateContent(message, false);
+  installThinkingPreviews(comp as unknown as AssistantRowDataLike);
+  assert.deepEqual(comp.render(80).map((line) => stripAnsi(line).trim()), ["", "Plan B"]);
+});
+
 test("a run without printable preview text keeps its native label", () => {
   assert.deepEqual(preview("\x01\x02").map((line) => stripAnsi(line).trim()), ["", "Thinking..."]);
 });
