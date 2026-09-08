@@ -36,6 +36,27 @@ function markdownToPlainInline(rawLine: string): string {
   return first ? stripAnsi(first).replace(/\s+/g, " ").trim() : markdown;
 }
 
+// Pi rebuilds thinking regions during streaming updates and click/visibility toggles.
+// Reuse derived previews across those rebuilds. Compare source text, not just length:
+// OpenAI Responses can replace thinking in place with final text at thinking_end.
+// WeakMap keys die with their message.
+const blockPreviewCache = new WeakMap<object, { source: string; preview: string }>();
+
+function previewForBlock(block: { type?: unknown; thinking?: unknown }): string | undefined {
+  if (block?.type !== "thinking" || typeof block.thinking !== "string" || !block.thinking.trim()) return undefined;
+  const cached = blockPreviewCache.get(block);
+  if (cached && cached.source === block.thinking) return cached.preview;
+
+  const fragments: string[] = [];
+  for (const line of block.thinking.split(/\r\n|\r|\n/)) {
+    const fragment = markdownToPlainInline(line);
+    if (fragment) fragments.push(fragment);
+  }
+  const preview = fragments.join(" · ");
+  blockPreviewCache.set(block, { source: block.thinking, preview });
+  return preview;
+}
+
 function replaceVisibleLabel(line: string, preview: string, width: number): string {
   const visible = stripAnsi(line);
   const leading = visible.match(/^\s*/)?.[0].length ?? 0;
@@ -51,22 +72,19 @@ function thinkingPreviews(comp: AssistantRowDataLike): string[] | undefined {
   if (!Array.isArray(content)) return undefined;
 
   const previews: string[] = [];
-  let fragments: string[] | undefined;
+  let group: string[] | undefined;
   for (const block of content) {
-    if (block?.type === "thinking") {
-      if (typeof block.thinking === "string" && block.thinking.trim()) {
-        fragments ??= [];
-        for (const line of block.thinking.split(/\r\n|\r|\n/)) {
-          const fragment = markdownToPlainInline(line);
-          if (fragment) fragments.push(fragment);
-        }
-      }
+    if (block && typeof block === "object" && (block as { type?: unknown }).type === "thinking") {
+      // Non-empty thinking blocks extend the current group; empty ones leave it open,
+      // matching the previous accumulation semantics.
+      const preview = previewForBlock(block as { type?: unknown; thinking?: unknown });
+      if (preview !== undefined) (group ??= []).push(preview);
       continue;
     }
-    if (fragments) previews.push(fragments.join(" · "));
-    fragments = undefined;
+    if (group) previews.push(group.join(" · "));
+    group = undefined;
   }
-  if (fragments) previews.push(fragments.join(" · "));
+  if (group) previews.push(group.join(" · "));
   return previews;
 }
 

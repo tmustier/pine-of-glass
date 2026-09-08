@@ -37,3 +37,24 @@ that `/reload` into the current version fixes it in the same Pi process. No
 production change was needed. Added component and fullscreen smoke coverage for
 collapsing one reasoning run while other reasoning and tool output remain expanded.
 Lint/typecheck passed; full suite: 334 passed with the same four baseline failures.
+
+## 2026-09-08: integrate contributor PRs 104 and 105
+
+Merged both contributor histories into an integration branch based on #108, retaining
+all four original commits. Adapted #104 to native click regions and replaced its old
+renderer timing test with deterministic Markdown parse-count coverage across
+component rebuilds. Added a separate source-string cache fix with a same-length
+replacement regression test, verified failing before the fix and passing after it.
+Resolved #105 alongside the click fold-reset lifecycle without dropping either change.
+Credited Alexandre Stahmer (@astahmer) and Ben Tang (@0xbentang) in the changelog and
+prepared `docs/releases/next.md` for the next release. No package release requested.
+
+Lint and typecheck pass. Main baseline: 334 pass, four contract failures; integrated:
+339 pass, the same four failures. All real-Pi smoke suites pass. Reviewed compact and
+narrow expanded reasoning screenshots; native clicks, grouping and rails remain
+intact. Independent read-only review found no blocking findings. PR #106 remains
+out of scope.
+
+Fetched main again before landing and found #109 (Astra support). Merged it without
+conflicts and reran the full check: 339 passed, the same four baseline failures.
+Added its release-note entry without changing its implementation.
