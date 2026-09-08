@@ -34,6 +34,6 @@ All three contributors' original commits are preserved through merge commits.
 
 ## Maintainer validation
 
-The scoped cache remains in draft pending a live-session soak. See
-[cache validation](../traceline-cache-design.md) and `LOG.md` for check results.
+The scoped cache remains in draft pending a live-session soak.
+See [the work log](../../LOG.md) for check results.
 PR #112 is not included.

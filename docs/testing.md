@@ -258,10 +258,9 @@ model call required:
 
 ## Scoped render cache
 
-The cache contract suites compare exact cached/raw output and assert avoided work.
 Run `node --expose-gc scripts/dev/bench-trace-cache.ts` for isolated component timings
-and capture-count checks. It makes no model calls. See
-[cache design and measurements](./traceline-cache-design.md) for coverage and limits.
+and deterministic capture-count checks. It makes no model calls. Timings are
+observations, not CI thresholds or end-to-end TUI latency measurements.
 
 ## What "passing" means
 

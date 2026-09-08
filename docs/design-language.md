@@ -742,12 +742,6 @@ Mouse:
 - drill mode stays keyboard-only. Future row clicking must use a public Pi
   component-click API, never a render-wide hit map or raw terminal mouse input
 
-### 9.14 Cached rendering
-
-Cached rows must match uncached output, including ANSI styling, column alignment
-and click membership. Tool mutations, resize, theme, Drill and fold reveals must
-preserve this equivalence. See [cache design](./traceline-cache-design.md).
-
 ## 10. Tempo facts
 
 Meantime decomposes the loop's wall-clock: where the time went, and why. Its lines

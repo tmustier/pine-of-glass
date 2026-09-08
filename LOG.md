@@ -100,8 +100,7 @@ Lint, typecheck, all 340 tests and the full real-Pi smoke suite passed; goldens 
 
 Integrated #111; lint, typecheck, all 357 tests and all real-Pi smoke suites passed.
 Reviewed tool/reasoning screenshots. Fixed Pi's direct streaming-message insertion
-with predecessor-link tokens after reproducing its cache regression. Measurements
-and live-soak follow-up are in `docs/traceline-cache-design.md`. Opened draft #113;
+with predecessor-link tokens after reproducing its cache regression. Opened draft #113;
 no PR comments, #112 integration or session activation.
 
 ## 2026-09-08: simplify scoped-cache review
@@ -111,5 +110,12 @@ Corrected same-object and lifecycle fixtures; removed overlapping tests. Disabli
 tool/container invalidation makes the relevant regressions fail. Lint, typecheck,
 355 tests and the final full smoke run pass. The earlier Drill comparison flake
 recurred once; three follow-up runs on each of pre-review and simplified code passed.
-Improved its failure diagnostic without changing assertions. Updated component
-measurements in `docs/traceline-cache-design.md`; the live-session soak remains open.
+Improved its failure diagnostic without changing assertions. Final component timings:
+500 rows warm 0.183 ms, active update 0.253 ms; one 200-row group active update
+1.516 ms. These are synthetic component measurements; the live-session soak remains open.
+
+## 2026-09-08: remove redundant cache documentation
+
+Removed the standalone design note and duplicate design-language section. Benchmark
+instructions stay in `docs/testing.md`; measurements stay in this log. Reviewed the
+test boundaries; no test or runtime changes in this pass.
