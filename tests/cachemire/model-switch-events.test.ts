@@ -101,12 +101,12 @@ test("event flow: a healthy first send and an abort both stay silent", async () 
   }
 });
 
-test("event flow: restored GPT-5.6 Codex reaches unknown at its 30m minimum", async (t) => {
-  const startedAt = Date.UTC(2026, 7, 4, 12);
+test("event flow: restored GPT-6 Astra Codex reaches unknown at its 30m minimum", async (t) => {
+  const startedAt = Date.UTC(2026, 8, 8, 12);
   const now = startedAt + 30 * 60_000;
   t.mock.method(Date, "now", () => now);
   const model = {
-    id: "gpt-5.6-sol", provider: "openai-codex", api: "openai-codex-responses",
+    id: "gpt-6-astra", provider: "openai-codex", api: "openai-codex-responses",
     reasoning: true, contextWindow: 200_000,
     cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
   };

@@ -50,7 +50,7 @@ test("Claude thinking-retention boundaries follow Anthropic's model policy", () 
 });
 
 test("OpenAI reasoning-retention boundaries follow the effective context default", () => {
-  for (const keepAll of ["gpt-5.6", "gpt-5.6-sol", "openai/gpt-5-6-20260801", "gpt-6"]) {
+  for (const keepAll of ["gpt-5.6", "gpt-5.6-sol", "openai/gpt-5-6-20260801", "gpt-6", "gpt-6-astra"]) {
     assert.equal(keepsAllOpenAIReasoning(keepAll), true, keepAll);
   }
   for (const currentTurn of ["gpt-5.5", "gpt-5-20250807", "o3", "gpt-oss-120b"]) {

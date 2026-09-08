@@ -65,8 +65,8 @@ export const RETENTION_EVIDENCE_SOURCES = {
   "openai-docs": {
     label: "OpenAI prompt caching",
     url: "https://developers.openai.com/api/docs/guides/prompt-caching",
-    reviewedOn: "5 August 2026",
-    detail: `GPT-5.${OPENAI_MINIMUM_MINOR} minimum eligibility and legacy extended retention`,
+    reviewedOn: "8 September 2026",
+    detail: `GPT-5.${OPENAI_MINIMUM_MINOR}+ and GPT-6 Astra minimum eligibility, plus legacy extended retention`,
   },
   "anthropic-docs": {
     label: "Anthropic prompt caching",
@@ -101,8 +101,8 @@ export const RETENTION_EVIDENCE_SOURCES = {
   "installed-pi": {
     label: "Installed Pi request builders and model records",
     url: undefined,
-    reviewedOn: "5 August 2026",
-    detail: "Pi 0.83.0 provider payloads, normalized usage and generated model catalogue",
+    reviewedOn: "8 September 2026",
+    detail: "Pi 0.85.1 provider payloads, normalized usage and generated model catalogue",
   },
 } as const;
 
@@ -137,8 +137,12 @@ function onRoute(input: RetentionIdentity, provider: string, api: string): boole
   return input.provider === provider && input.api === api;
 }
 
+function terminalModelId(model: string | undefined): string {
+  return (model ?? "").toLowerCase().split("/").at(-1) ?? "";
+}
+
 function gpt5Minor(model: string | undefined): number | undefined {
-  const id = (model ?? "").toLowerCase().split("/").at(-1) ?? "";
+  const id = terminalModelId(model);
   if (id === "gpt-5") return 0;
   const version = /^gpt-5\.(\d+)(?:-|$)/.exec(id);
   return version === null ? undefined : Number(version[1]);
@@ -146,9 +150,11 @@ function gpt5Minor(model: string | undefined): number | undefined {
 
 function usesMinimumRetention(input: RetentionIdentity): boolean {
   const minor = gpt5Minor(input.model);
+  const supportedModel = (minor !== undefined && minor >= OPENAI_MINIMUM_MINOR) ||
+    terminalModelId(input.model) === "gpt-6-astra";
   const route = onRoute(input, "openai", "openai-responses") ||
     onRoute(input, "openai-codex", "openai-codex-responses");
-  return route && minor !== undefined && minor >= OPENAI_MINIMUM_MINOR;
+  return route && supportedModel;
 }
 
 function bedrockCacheTtlMs(payload: unknown): number | undefined {
@@ -201,7 +207,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
       : undefined,
   },
   {
-    route: `OpenAI or OpenAI Codex, GPT-5.${OPENAI_MINIMUM_MINOR} and later GPT-5 models`,
+    route: `OpenAI or OpenAI Codex, GPT-5.${OPENAI_MINIMUM_MINOR}+ or GPT-6 Astra`,
     evidence: "documented `prompt_cache_options.ttl` default",
     behavior: `after a cache read or write, use the ${formatDuration(OPENAI_MINIMUM_WINDOW.minMs)} minimum; ` +
       "then show that the cache state is unknown",
