@@ -16,15 +16,18 @@ OpenAI's [prompt caching guide](https://developers.openai.com/api/docs/guides/pr
 says GPT-5.6 and later models use a `30m` minimum by default and names GPT-6 Astra in
 its cache-preserving configuration guidance.
 
-A sanitized Codex probe produced a cache read on its second long-prompt request. A
-separate two-turn probe preserved Astra's encrypted reasoning carrier and reported
-reasoning usage, but Pi does not expose the effective `reasoning.context` value. This
-does not conclusively verify `all_turns`.
+Sanitized Codex probes found:
 
-A small tokenizer comparison did not justify changing Contextimate's estimates.
+- cache reuse: the second request reported 170 uncached and 3,840 cached tokens
+- token counts: Astra, Sol, Terra and Luna each reported 549 input tokens for the same prompt
+- reasoning: Pi replayed Astra's encrypted carrier, but did not expose the effective
+  `reasoning.context` value; this does not confirm `all_turns`
+
+These observations do not justify changing Contextimate's estimates.
 
 ## Limits
 
 Direct OpenAI cache writes were not tested live. The installed Pi 0.85.1 catalogue
-lists Astra on both direct OpenAI and Codex routes, with a smaller context window than
-OpenAI's model page. This change does not alter Pi's catalogue or infer route limits.
+lists a 272,000-token Astra window on direct OpenAI and Codex routes. The
+[OpenAI model page](https://developers.openai.com/api/docs/models/gpt-6-astra) lists
+1,050,000. Codex's effective cap remains unverified; this change leaves Pi's catalogue alone.

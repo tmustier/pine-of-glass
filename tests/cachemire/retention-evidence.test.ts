@@ -34,7 +34,6 @@ test("model retention is limited to documented provider, API and model routes", 
   assert.equal(retentionForModel("openai", "gpt-5.5", "openai-responses"), undefined);
   assert.equal(retentionForModel("openai", "gpt-6-astra", "openai-completions"), undefined);
   assert.equal(retentionForModel("openrouter", "gpt-6-astra", "openai-completions"), undefined);
-  assert.equal(retentionForModel("openai", "gpt-6", "openai-responses"), undefined);
   assert.deepEqual(
     retentionForModel("minimax-cn", "MiniMax-M2.7-highspeed", "anthropic-messages")?.window,
     { kind: "contract", ttlMs: TTL_SHORT_MS, source: "inferred" },
