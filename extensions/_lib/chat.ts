@@ -78,14 +78,14 @@ export interface AssistantRowLike extends AssistantRowDataLike {
 
 export interface ToolRowPrototypeLike extends Partial<ToolRowLike> {
   __tracelineOriginalRender?: (width: number) => unknown;
-  updateDisplay?: (...args: unknown[]) => unknown;
+  updateDisplay: (...args: unknown[]) => unknown;
   __tracelineOriginalUpdateDisplay?: (...args: unknown[]) => unknown;
 }
 
 export interface AssistantRowPrototypeLike extends Partial<AssistantRowLike> {
   __tracelineAssistantPatchVersion?: number;
   __tracelineOriginalAssistantRender?: (width: number) => unknown;
-  updateContent?: (...args: unknown[]) => unknown;
+  updateContent: (...args: unknown[]) => unknown;
   __tracelineOriginalUpdateContent?: (...args: unknown[]) => unknown;
 }
 

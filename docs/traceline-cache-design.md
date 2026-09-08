@@ -1,121 +1,63 @@
 # Scoped Traceline render cache
 
-This reworks [#106](https://github.com/tmustier/pine-of-glass/pull/106), contributed
-by Alexey Bagno ([@swit33](https://github.com/swit33)). Both original commits are
-preserved in the integration history. It does not include #112's call-summary work.
+The cache reworks Alexey Bagno's [#106](https://github.com/tmustier/pine-of-glass/pull/106).
+Cached output, ANSI styling and click membership must match an uncached render.
 
-## Invariants
+## Structure
 
-Cached output and its click membership must match the uncached renderer. There is no
-TTL and no assumption that finished tools or provider result objects are immutable.
-The cache does not use `requestRender()` as an invalidation signal.
+`render-cache.ts` tracks dependencies between cached computations. Dirtying a row
+invalidates its dependants. Nested hits depend on entry tokens, so a shared group
+stores linear rather than quadratic dependency edges. Weak-map owners retain at most
+16 variants; invalidation and eviction unlink dependencies and release stored values.
 
-`render-cache.ts` records a graph of computations. Nested cache hits depend on the
-nested entry, not a copy of every underlying row. Dirtying a row invalidates its
-computations and their dependants. Replacing or evicting an entry removes reverse
-links; invalid entries release their stored values. Each owner has at most 16 variants
-in insertion order. Owners live in weak maps.
+The cache stores row facts, shared fold/column plans, fitted lines and final layouts.
+Fitted lines use their evaluated inputs as keys: a group update can reuse unchanged
+members' layout work. Final layouts include stripped click geometry and fold members.
 
-The layers are:
+`topology.ts` indexes positions, visual blocks, assistant steps and bash predecessors.
+Structural changes rebuild the index while retaining unchanged group identities.
+Repetition follows assistant tool-call IDs. Bash context can cross collapsed thinking
+but stops at prose, so visual blocks alone cannot describe every dependency.
 
-- Row facts: native call capture, output counts, image/diff/record facts and invocation
-  formatting. These survive unrelated row updates and, where width-independent,
-  resizes.
-- Topology: row positions, contiguous blocks, assistant-step membership and bash
-  predecessor links. A cheap
-  metadata pass runs after structural changes; unchanged group arrays retain identity.
-  The last assistant pointer makes compact/native mode lookup constant-time per row.
-- Shared plans: read/repetition folds, column facts, suffix reserves and path context.
-  Compute once per affected group, rather than independently for each member.
-- Fitted lines: key by the actual body, suffix, width, reserve, tone and view state.
-  A group may need reconsideration without discarding unchanged fitted lines.
-- Output layout: cache styled lines, stripped hit geometry and the exact fold members
-  together. No per-repaint ANSI stripping or membership rescan on a warm hit.
+## Invalidation
 
-Pi still walks mounted components. Cache hits do not make total frame work O(1).
+- Tool `updateDisplay()` covers arguments, results, expansion, image settings and
+  custom renderer invalidation. Contract tests pin this private Pi method.
+- Assistant `updateContent()` compares tool-call IDs and prose/reasoning boundaries.
+  Ordinary text deltas leave historical tool rows cached.
+- Container add/remove/clear hooks update topology and rebind on reload. Length
+  checks also detect Pi's direct insertion before its streaming assistant.
+- Width, theme identity, Drill selection and fold reveal state enter layout keys.
+  Pi's identity-stable theme Proxy changes through TUI invalidation, which reaches
+  each tool's `updateDisplay()`.
+- Write snapshots dirty their tool row. Session, reload and configuration changes
+  reset the cache. Native expanded rendering stays with Pi.
 
-## Mutation boundaries
+Finished rows can change. Custom renderers must signal changes through Pi's
+invalidation API. Neither elapsed time nor `requestRender()` invalidates the cache.
 
-- Pi 0.85.1 tool `updateDisplay()` is the central dirty seam for args/results,
-  execution state, expansion, images and renderer-requested invalidation. Missing
-  that seam disables caching for that tool prototype instead of serving stale data.
-- Assistant `updateContent()` compares the shape that tools depend on: hidden-thinking
-  state, empty/prose/reasoning boundary classification and tool-call IDs. Ordinary
-  text deltas do not invalidate historical tool rows. This private method is pinned
-  by a contract test.
-- Container add/remove/clear updates topology, including earlier fold carriers.
-  Pi also inserts messages before its streaming component with a direct splice;
-  length changes trigger reindexing, and changed predecessor tokens invalidate bash
-  context even if visual block membership stays identical.
-  Hooks attach to replacement containers even when prototypes are already patched;
-  their callback is rebound on reload without stacking wrappers.
-- Click reveal/refold dirties affected rows. Drill number/selection state participates
-  in each row's output and fitting key. Native expanded rendering stays with Pi.
-- Write snapshot capture dirties an existing matching tool row, if any.
-- Theme object keys distinguish explicit theme objects. Pi's production theme is an
-  identity-stable Proxy, so the real theme-change contract matters: InteractiveMode
-  invalidates its TUI, reaching each tool's `invalidate()` and `updateDisplay()`.
-  A real-theme contract test covers this path. We do not replace Pi's single-slot
-  `onThemeChange` listener or add a private theme-symbol lookup.
-- Session/reload and configuration changes reset the cache. A temporarily missing
-  chat container takes the uncached path, rather than storing structure-blind output.
+## Validation and measurements
 
-Repetition membership follows assistant-step tool IDs. Bash preamble dependencies
-follow the preceding bash across reads, empty connectors and collapsed thinking,
-but stop at prose. Both relationships can differ from contiguous visual blocks.
+The two cache contract suites compare cached and raw output after real Pi mutations.
+They assert avoided work, shared dependency invalidation and bounded resize variants.
+Run `node --expose-gc scripts/dev/bench-trace-cache.ts` for isolated real-component
+fixtures: 30 warm frames, 20 result updates and 5 appends, without model calls.
+Every update must recapture only its changed tool's native invocation.
 
-## Validation
+After simplification, 8 September 2026, Pi 0.85.1, Node 26.5.1. Medians in ms:
 
-`tests/contract/pi-traceline-render-cache.test.ts` and
-`tests/contract/pi-traceline-cache-transitions.test.ts` use real Pi components and
-compare exact cached and uncached strings, including ANSI. They cover warm hits,
-same-object mutations, group isolation, fold errors/size breakouts, append/remove,
-path emphasis, cross-block bash preambles, text streaming, expansion, native custom
-renderer invalidation, the real theme Proxy, resize, Drill and new containers.
-Engine tests cover nested dependencies and variant eviction. Final validation on
-main including #111: lint, typecheck, all 357 tests and all real-Pi smoke suites pass. Existing native click
-and reasoning contracts continue to run against the patched prototype.
+| Rows | Rows per block | Uncached | Warm | Active update |
+|---|---|---|---|---|
+| 50 | 5 | 45.334 | 0.019 | 0.119 |
+| 200 | 5 | 180.745 | 0.068 | 0.147 |
+| 500 | 5 | 497.468 | 0.183 | 0.253 |
+| 200 | 200 | not timed | 0.068 | 1.516 |
 
-`node --expose-gc scripts/dev/bench-trace-cache.ts` runs each fixture in a separate
-process with real Pi tool components and no model calls. It measures cold renders,
-30 warm frames, 20 result updates and 5 appends. Work-count assertions require zero
-warm captures/misses and exactly one native invocation recapture per active update.
-Only the active block's output entries are reconsidered.
+These measure component rendering, not terminal paint or live-session latency.
+Uncached medians have 3 samples; the giant case uses selected raw oracle rows because
+full uncached frames exceeded the benchmark budget. Timings are not CI thresholds.
+Post-GC heap deltas include fixture and runtime costs, not just cache storage.
 
-## Measurements
-
-One local run on 8 September 2026, Pi 0.85.1 and Node 26.5.1. These are synthetic
-component-render measurements, not terminal paint, scrolling or live-provider latency.
-Medians are milliseconds; raw rendering has only three samples. Cold measurements
-include JIT effects and are not directly comparable across fixture sizes.
-
-| Tool rows | Rows per block | Uncached | Cold | Warm | Active update | Append |
-|---|---|---|---|---|---|---|
-| 50 | 5 | 56.394 | 11.599 | 0.024 | 0.235 | 0.306 |
-| 200 | 5 | 203.998 | 29.787 | 0.076 | 0.169 | 0.385 |
-| 500 | 5 | 600.313 | 60.449 | 0.159 | 0.295 | 0.791 |
-| 200 | 200 | not timed | 31.079 | 0.082 | 2.162 | 2.379 |
-
-For five-row blocks, every update reconsidered five output entries and recaptured one
-native invocation, regardless of transcript length. In the single 200-row block, all
-200 output entries were reconsidered, but unchanged invocation/fitting computations
-remained cached; the active-update p95 was 3.249 ms. The giant uncached case took too
-long for the benchmark's original time budget, so the script checks selected raw
-oracle rows instead of reporting a misleading partial-frame baseline.
-
-The script also reports post-GC process heap deltas. These include JIT/runtime and
-fixture effects, not just cache bytes; do not interpret them as per-row cache sizes.
-There are deliberately no machine-dependent timing thresholds in `npm test`.
-
-## Remaining limits
-
-- Structural changes still rebuild cheap topology metadata across the transcript.
-  They do not reparse or reformat unrelated historical rows.
-- A change inside one giant group can reconsider that whole group. There is no claim
-  of constant work for arbitrarily large shared column/fold scopes.
-- Resize retains raw facts but invalidates width-dependent output. Real theme changes
-  currently invalidate mounted row facts too, following Pi's existing invalidation.
-- Custom renderer changes must use Pi's invalidation contract. A renderer that changes
-  its output without signalling invalidation cannot safely participate in memoization.
-- A representative live-session CPU/interaction soak remains useful before merging;
-  synthetic wins alone do not establish an end-to-end user-visible speedup.
+Pi still visits mounted components. Structural edits reindex the transcript; updates
+can reconsider every member of a large shared group. A live-session CPU and
+interaction soak remains outstanding before merging.

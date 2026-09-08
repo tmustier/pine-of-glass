@@ -61,27 +61,12 @@ Added its release-note entry without changing its implementation.
 
 ## 2026-09-08: scoped cache integration for PR 106
 
-Reworked Alexey Bagno's (@swit33) render memoization proposal while preserving both
-original commits in the local merge history. Added dependency-linked row facts,
-shared block/step plans, topology indexing and fitted-line reuse. Cached click
-geometry and membership travel with the exact output variant. Mutation hooks cover
-same-object updates, native renderer invalidation, semantic assistant shape changes,
-container replacement and reload. No #112 call-summary changes are included.
-
-Added 16 deterministic cache/transition tests and a real-component benchmark with
-isolated processes. On the 500-row fixture, warm rendering measured 0.202 ms median
-and an active update 0.325 ms; only the active five-row group was reconsidered, with
-one native call recapture. The single 200-row group measured 2.349 ms per active
-update after retaining unchanged fitted lines. These are synthetic component costs,
-not end-to-end TUI frame claims; detailed methodology and limits are in
-`docs/traceline-cache-design.md`.
-
-Lint/typecheck and all smoke suites passed on the initial integration base; full
-suite: 355 passed with the same four baseline failures. One early Drill smoke run
-failed its restored-row comparison; a diagnostic rerun and subsequent full smoke
-runs passed. No smoke assertions were weakened. Independent final review found no
-blocking regressions. #111 landed during final validation; clean latest main now
-passes all 340 tests, so refresh the integration before considering a merge.
+Reworked Alexey Bagno's (@swit33) proposal into dependency-scoped rendering, preserving
+both author commits and keeping #112 separate. Added cache/transition tests and
+`scripts/dev/bench-trace-cache.ts`. Initial validation: lint/typecheck passed;
+355 tests passed with four baseline failures. An early Drill smoke comparison failed;
+diagnostic and subsequent full smoke runs passed without weakening assertions.
+#111 landed during validation and resolved the baseline failures on main.
 
 ## 2026-09-08: Pi compatibility and Cerebras retention
 
@@ -113,16 +98,18 @@ Lint, typecheck, all 340 tests and the full real-Pi smoke suite passed; goldens 
 
 ## 2026-09-08: final scoped-cache validation on current main
 
-Integrated #111 without changing its runtime work. Clean main passes 340 tests;
-this branch now passes lint, typecheck, all 357 tests and every real-Pi smoke suite.
-Reviewed revealed tool rows plus compact and narrow expanded reasoning screenshots.
-No intended output changes, no PR comments and no #112 integration.
+Integrated #111; lint, typecheck, all 357 tests and all real-Pi smoke suites passed.
+Reviewed tool/reasoning screenshots. Fixed Pi's direct streaming-message insertion
+with predecessor-link tokens after reproducing its cache regression. Measurements
+and live-soak follow-up are in `docs/traceline-cache-design.md`. Opened draft #113;
+no PR comments, #112 integration or session activation.
 
-A final source check found Pi's direct insertion before its streaming component,
-which disproved an append-only assumption in the advisory review. Added a failing
-cached-versus-raw regression, then fixed it with stable predecessor-link tokens in
-the topology index. The test passes after the fix. Final benchmark: 500 rows warm
-0.159 ms, active update 0.295 ms; one 200-row group active update 2.162 ms (p95
-3.249 ms). One native invocation recapture per tool update in every fixture. Results
-and limits are recorded in `docs/traceline-cache-design.md`; a live-session soak is
-still recommended before merging. Original #106 author commits remain preserved.
+## 2026-09-08: simplify scoped-cache review
+
+Removed cache aliases, single-use wrappers, two module splits and repeated prose.
+Corrected same-object and lifecycle fixtures; removed overlapping tests. Disabling
+tool/container invalidation makes the relevant regressions fail. Lint, typecheck,
+355 tests and the final full smoke run pass. The earlier Drill comparison flake
+recurred once; three follow-up runs on each of pre-review and simplified code passed.
+Improved its failure diagnostic without changing assertions. Updated component
+measurements in `docs/traceline-cache-design.md`; the live-session soak remains open.

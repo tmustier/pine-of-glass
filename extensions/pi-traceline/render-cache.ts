@@ -1,5 +1,3 @@
-import type { ToolRowDataLike } from "../_lib/chat.ts";
-
 type Entry = { valid: boolean; value: unknown; dependencies: Set<object> };
 export type RenderCacheWork = {
   outputHits: number; outputMisses: number; intrinsicHits: number; intrinsicMisses: number;
@@ -23,20 +21,12 @@ export class TraceRenderCache {
     if (this.active && value && typeof value === "object") this.collecting!.add(value);
   }
 
-  render(row: ToolRowDataLike, key: string, compute: () => string[]): string[] {
-    return this.value(row, key, compute);
-  }
-
   value<T>(owner: object, key: string, compute: () => T): T {
     return this.bypass ? compute() : this.compute(owner, `output:${key}`, compute, true);
   }
 
   memo<T>(owner: object, key: string, compute: () => T): T {
     return this.active ? this.compute(owner, `memo:${key}`, compute, false) : compute();
-  }
-
-  intrinsic<T>(owner: object, key: string, compute: () => T): T {
-    return this.memo(owner, key, compute);
   }
 
   private compute<T>(owner: object, key: string, compute: () => T, output: boolean): T {

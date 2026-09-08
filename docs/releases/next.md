@@ -20,11 +20,9 @@ publication date has been assigned.
   ([@0xbentang](https://github.com/0xbentang)) for
   [#105](https://github.com/tmustier/pine-of-glass/pull/105).
 
-- Reuse unchanged tool-row output and shared fold/column plans while keeping streaming
-  invalidation scoped to dependent groups. Based on Alexey Bagno's
-  ([@swit33](https://github.com/swit33)) contribution in
-  [#106](https://github.com/tmustier/pine-of-glass/pull/106), reworked to retain native
-  click, Drill, theme and lifecycle correctness.
+- Cache tool rows and shared layout work during streaming. Based on Alexey Bagno's
+  ([@swit33](https://github.com/swit33))
+  [#106](https://github.com/tmustier/pine-of-glass/pull/106).
 
 All three contributors' original commits are preserved through merge commits.
 
@@ -36,8 +34,6 @@ All three contributors' original commits are preserved through merge commits.
 
 ## Maintainer validation
 
-Lint, typecheck and all 357 tests pass against Pi 0.85.1 on the #106 integration,
-including #111's compatibility changes. The previous four baseline failures are resolved. All real-Pi smoke
-suites pass, including tool/reasoning clicks, Ctrl+T, Drill, pager fidelity, resize,
-reload and startup. The scoped #106 integration is documented separately in
-[the cache design and validation](../traceline-cache-design.md). PR #112 is not included.
+The scoped cache remains in draft pending a live-session soak. See
+[cache validation](../traceline-cache-design.md) and `LOG.md` for check results.
+PR #112 is not included.

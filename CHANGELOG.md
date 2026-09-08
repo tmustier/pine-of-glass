@@ -2,11 +2,9 @@
 
 ## Unreleased
 
-- Traceline caches unchanged tool-row rendering with dependency-scoped invalidation,
-  shared fold/column plans and paired click geometry. Streaming updates leave unrelated
-  historical groups cached. Based on [#106](https://github.com/tmustier/pine-of-glass/pull/106)
-  by Alexey Bagno ([@swit33](https://github.com/swit33)); both original commits are
-  preserved. Integration adds mutation, theme, Drill, click and lifecycle coverage.
+- Traceline caches tool rows and shared layout work, keeping unrelated history cached
+  during streaming. Based on [#106](https://github.com/tmustier/pine-of-glass/pull/106)
+  by Alexey Bagno ([@swit33](https://github.com/swit33)).
 
 - Traceline reuses thinking previews across component rebuilds instead of parsing
   unchanged reasoning repeatedly. Thanks to Alexandre Stahmer

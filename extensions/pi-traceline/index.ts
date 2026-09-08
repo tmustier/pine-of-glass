@@ -45,8 +45,6 @@ import { resultImageFact as rawResultImageFact } from "./image-fact.ts";
 import { isRevealed, resetRevealedFolds, revealRenderKey, revealedBullet, type TraceMousePrototype } from "./click.ts";
 import {
   cachedIntrinsic,
-  cachedBlockPaths,
-  cachedTraceLayout,
   installAssistantCacheHook,
   installCachedTraceMouse,
   installContainerCacheHooks,
@@ -55,10 +53,8 @@ import {
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 import { TraceRenderCache } from "./render-cache.ts";
-import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun } from "./repetition-fold.ts";
-import { TraceTopology, uncachedBlockRows } from "./topology.ts";
-import { isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./connectors.ts";
-import { readPlan, repetitionPlan } from "./fold-plans.ts";
+import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun, readPlan, repetitionPlan } from "./repetition-fold.ts";
+import { TraceTopology, isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./topology.ts";
 import {
   captureWriteCallSnapshot,
   clearWriteCallSnapshots,
@@ -72,33 +68,7 @@ import { installThinkingPreviews } from "./thinking-preview.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 import { createTracelineTuiOwner } from "./tui-owner.ts";
 
-/**
- * Collapse tool calls to scannable trace lines that follow Pi's reasoning toggle.
- * Rendering and spacing follow the family grammar in docs/design-language.md §9;
- * detailed behaviour and examples live in the user-facing Traceline documentation.
- *
- * Native mode leaves Pi's rows intact. One-line mode keeps status in the bullet,
- * preserves informative invocation tails, and aligns output facts by visual block.
- * It uses Pi's own call renderer where possible so custom tools retain their grammar.
- * Bash is flattened and re-inked to keep command-heavy turns visually quiet.
- *
- * Fold boundaries are semantic rather than merely adjacent. Read paging groups by
- * path and repetition folds stay within the assistant step linked by toolCallId.
- * Collapsed thinking and visible prose break the visual rail. Empty tool-call-only
- * connectors do not. Expansion restores native output and also breaks the rail.
- *
- * Width only affects final layout. Parsed row facts and shared fold computations are
- * cached independently, while rendered output records the rows and assistant step it
- * inspected. Pi's updateDisplay seam and container membership hooks invalidate those
- * dependencies without flushing unrelated history. Theme and Drill state remain part
- * of the rendered-output key because both can change pixels without mutating a row.
- *
- * Mouse geometry and fold membership are captured from the same cached render. Clicks
- * therefore act on the group that was painted rather than recomputing against newer
- * results. Missing mutation hooks deliberately force uncached rendering at that Pi
- * boundary. Direct internal helpers stay uncached unless a cache test opts in.
- *
- */
+/** Compact trace rendering; see docs/design-language.md §9. */
 
 type ToolDisplayMode = "native" | "oneLine";
 
@@ -112,7 +82,7 @@ type TracelineGlobal = typeof globalThis & {
 };
 const g = globalThis as TracelineGlobal;
 const renderCache = g.__tracelineRenderCache ??= new TraceRenderCache();
-const topology = new TraceTopology(renderCache, isEmptyConnector);
+const topology = new TraceTopology(renderCache);
 function topologyChanged(): void { if (g.__tracelineChat) topology.changed(g.__tracelineChat); }
 function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
 function getTracelineChat(): ContainerLike | undefined { return g.__tracelineChat; }
@@ -145,7 +115,6 @@ function dim(text: string): string {
   return ink(currentTheme(), "dim", text);
 }
 
-// Immutable row facts survive width changes and unrelated transcript work.
 const resultTextCharCount = cachedIntrinsic(renderCache, "result-chars", rawResultTextCharCount);
 const resultImageFact = cachedIntrinsic(renderCache, "image-fact", rawResultImageFact);
 const mutationDiffStats = cachedIntrinsic(renderCache, "mutation-diff", rawMutationDiffStats);
@@ -346,7 +315,14 @@ function blockToolRows(comp: ToolRowLike): ToolRowLike[] {
   if (renderCache.active && g.__tracelineChat) return topology.block(g.__tracelineChat, comp);
   const found = componentLocation(comp);
   if (!found) return [comp];
-  const rows = uncachedBlockRows(found.sibs, found.index);
+  const breaks = (row: unknown) => isToolRow(row) ? row.expanded === true : !isEmptyConnector(row);
+  let start = found.index;
+  while (start > 0 && !breaks(found.sibs[start - 1])) start--;
+  const rows: ToolRowLike[] = [];
+  for (let i = start; i < found.sibs.length && !breaks(found.sibs[i]); i++) {
+    const row = found.sibs[i];
+    if (isToolRow(row)) rows.push(row);
+  }
   return rows.length ? rows : [comp];
 }
 
@@ -360,39 +336,35 @@ type BlockFacts = { sizeColumnLive: boolean; diffColumns: DiffColumns };
 function blockFacts(rows: ToolRowLike[]): BlockFacts {
   return renderCache.memo(rows, `facts:${objectCacheKey(currentTheme())}`, () => {
     for (const row of rows) renderCache.depend(row);
-    return computeBlockFacts(rows);
-  });
-}
-
-function computeBlockFacts(rows: ToolRowLike[]): BlockFacts {
-  // Columns are block-scoped (design language §9.7): the size column lights up for
-  // a whole contiguous trace block when any of its completed rows clears the fact
-  // floor. An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
-  // Inline-diff mutations (§9.5) carry no right-column fact, so they neither light the
-  // size column nor set its width — their magnitude lives on the basename instead.
-  const sizeColumnLive = rows.some((c) => {
-    if (inlineMutationRow(c)) return false;
-    const chars = resultTextCharCount(c);
-    if (chars === undefined) return false;
-    // Record rows (§9.10) suppress their size cell below warning severity, so only
-    // a ballooning record output lights the column.
-    if (recordRow(c)) return chars >= sizeThresholds.warning;
-    return chars >= CHAR_SUFFIX_FLOOR;
-  });
-  let plus = 0;
-  let minus = 0;
-  let size = 0;
-  for (const row of rows) {
-    if (inlineMutationRow(row)) continue;
-    const stats = mutationDiffStats(row);
-    if (stats) {
-      if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
-      if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
+    // Columns are block-scoped (design language §9.7): the size column lights up for
+    // a whole contiguous trace block when any of its completed rows clears the fact
+    // floor. An all-tiny block (a `mkdir`/`rm` cleanup run) keeps a clean right edge.
+    // Inline-diff mutations (§9.5) carry no right-column fact, so they neither light the
+    // size column nor set its width — their magnitude lives on the basename instead.
+    const sizeColumnLive = rows.some((c) => {
+      if (inlineMutationRow(c)) return false;
+      const chars = resultTextCharCount(c);
+      if (chars === undefined) return false;
+      // Record rows (§9.10) suppress their size cell below warning severity, so only
+      // a ballooning record output lights the column.
+      if (recordRow(c)) return chars >= sizeThresholds.warning;
+      return chars >= CHAR_SUFFIX_FLOOR;
+    });
+    let plus = 0;
+    let minus = 0;
+    let size = 0;
+    for (const row of rows) {
+      if (inlineMutationRow(row)) continue;
+      const stats = mutationDiffStats(row);
+      if (stats) {
+        if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
+        if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
+      }
+      const cell = recordRow(row) ? recordCharSuffix(row) : imageFactCell(row) || charSuffix(resultTextCharCount(row), sizeColumnLive);
+      size = Math.max(size, visibleWidth(cell));
     }
-    const cell = recordRow(row) ? recordCharSuffix(row) : imageFactCell(row) || charSuffix(resultTextCharCount(row), sizeColumnLive);
-    size = Math.max(size, visibleWidth(cell));
-  }
-  return { sizeColumnLive, diffColumns: { plus, minus, size } };
+    return { sizeColumnLive, diffColumns: { plus, minus, size } };
+  });
 }
 
 function blockFactsOf(comp: ToolRowLike): BlockFacts {
@@ -408,27 +380,25 @@ function blockSizeColumnLive(comp: ToolRowLike): boolean {
 // cell — plus the two-space gap (§9.1), so every truncated row in the block cuts at
 // the same columns and its tail ends flush where the suffix column begins.
 function blockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: number): number {
-  return renderCache.memo(rows, `reserve:${available}:${objectCacheKey(currentTheme())}`, () =>
-    computeBlockSuffixReserve(rows, renderCache.active ? blockFacts(rows) : facts, available));
-}
-
-function computeBlockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: number): number {
-  let widest = 0;
-  const seen = new Set<ToolRowLike[]>();
-  for (const row of rows) {
-    const read = readRun(row);
-    const repeated = read ? undefined : repetitionRun(row);
-    const group = read?.rows ?? repeated?.rows;
-    if (group && seen.has(group)) continue;
-    if (group) seen.add(group);
-    const suffix = read
-      ? foldedReadSuffix(read.rows, facts)
-      : repeated
-        ? charSuffix(combinedResultChars(repeated.rows), facts.sizeColumnLive)
-        : toolFactSuffix(row, available, facts);
-    widest = Math.max(widest, visibleWidth(suffix));
-  }
-  return widest > 0 ? widest + 2 : 0;
+  return renderCache.memo(rows, `reserve:${available}:${objectCacheKey(currentTheme())}`, () => {
+    facts = renderCache.active ? blockFacts(rows) : facts;
+    let widest = 0;
+    const seen = new Set<ToolRowLike[]>();
+    for (const row of rows) {
+      const read = readRun(row);
+      const repeated = read ? undefined : repetitionRun(row);
+      const group = read?.rows ?? repeated?.rows;
+      if (group && seen.has(group)) continue;
+      if (group) seen.add(group);
+      const suffix = read
+        ? foldedReadSuffix(read.rows, facts)
+        : repeated
+          ? charSuffix(combinedResultChars(repeated.rows), facts.sizeColumnLive)
+          : toolFactSuffix(row, available, facts);
+      widest = Math.max(widest, visibleWidth(suffix));
+    }
+    return widest > 0 ? widest + 2 : 0;
+  });
 }
 
 // Zero sides are dropped (design language §9.7): `+2 -0` → `+2` — the dimmed zero
@@ -477,19 +447,18 @@ function mutationInlineDiffInk(comp: ToolRowDataLike): string {
 type RecordCellData = { verb: string; data: string[]; tone: RecordTone; opaque: boolean };
 
 function recordCellData(comp: ToolRowDataLike): RecordCellData[] {
-  return renderCache.intrinsic(comp, "records", () => computeRecordCells(comp));
-}
-function computeRecordCells(comp: ToolRowDataLike): RecordCellData[] {
-  const merged: RecordCellData[] = [];
-  for (const fact of recordFacts(comp)) {
-    const last = merged[merged.length - 1];
-    if (last && last.verb === fact.verb && last.tone === fact.tone) {
-      if (!last.data.includes(fact.datum)) last.data.push(fact.datum);
-    } else {
-      merged.push({ verb: fact.verb, data: [fact.datum], tone: fact.tone, opaque: fact.opaque });
+  return renderCache.memo(comp, "records", () => {
+    const merged: RecordCellData[] = [];
+    for (const fact of recordFacts(comp)) {
+      const last = merged[merged.length - 1];
+      if (last && last.verb === fact.verb && last.tone === fact.tone) {
+        if (!last.data.includes(fact.datum)) last.data.push(fact.datum);
+      } else {
+        merged.push({ verb: fact.verb, data: [fact.datum], tone: fact.tone, opaque: fact.opaque });
+      }
     }
-  }
-  return merged;
+    return merged;
+  });
 }
 
 function recordCellText(cell: RecordCellData): string {
@@ -736,18 +705,15 @@ function stripTimeoutSuffix(text: string): string {
 // The rendered bash invocation as plain text: every visible line flattened into one,
 // leading bullet and timeout boilerplate dropped. All later transforms (tildify, cd
 // elision) stay in plain text; inkBashRow applies the family ink last.
-function computeBashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
-  const call = comp?.callRendererComponent;
-  if (!call || typeof call.render !== "function") return undefined;
-  const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
-  const lines = Array.isArray(rendered) ? rendered : [];
-  const flattened = flattenInvocationLines(lines.map((line: unknown) => stripAnsi(String(line))));
-  if (!flattened) return undefined;
-  return stripTimeoutSuffix(flattened.replace(/^•\s*/, ""));
-}
-
 function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
-  return comp ? renderCache.intrinsic(comp, "bash-invocation", () => computeBashInvocationText(comp)) : undefined;
+  return comp ? renderCache.memo(comp, "bash-invocation", () => {
+    const call = comp.callRendererComponent;
+    if (!call || typeof call.render !== "function") return undefined;
+    const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
+    const lines = Array.isArray(rendered) ? rendered : [];
+    const flattened = flattenInvocationLines(lines.map((line: unknown) => stripAnsi(String(line))));
+    return flattened ? stripTimeoutSuffix(flattened.replace(/^•\s*/, "")) : undefined;
+  }) : undefined;
 }
 
 // Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
@@ -952,22 +918,20 @@ function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): s
 // the native visual grammar (paths/backticks, warning line ranges, custom-tool
 // renderers) and only suppresses result/output lines by taking the first visible call
 // line. The verb is re-inked neutral bold (error rows error) per the family hierarchy.
-function computeNativeInvocationLine(comp: ToolRowDataLike | undefined): string | undefined {
-  const call = comp?.callRendererComponent;
-  if (!call || typeof call.render !== "function") return undefined;
-  const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
-  const lines = Array.isArray(rendered) ? rendered : [];
-  const line = firstVisibleLine(lines);
-  // Demote *after* the verb re-ink: colourCommandPrefix strips foregrounds from the
-  // prefix region, so a dim span opened before the verb would lose its opener and
-  // strand the rest of the line back at the terminal default.
-  return line
-    ? dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))))
-    : undefined;
-}
-
 function nativeInvocationLine(comp: ToolRowDataLike | undefined): string | undefined {
-  return comp ? renderCache.intrinsic(comp, `native-invocation:${objectCacheKey(currentTheme())}`, () => computeNativeInvocationLine(comp)) : undefined;
+  return comp ? renderCache.memo(comp, `native-invocation:${objectCacheKey(currentTheme())}`, () => {
+    const call = comp.callRendererComponent;
+    if (!call || typeof call.render !== "function") return undefined;
+    const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
+    const lines = Array.isArray(rendered) ? rendered : [];
+    const line = firstVisibleLine(lines);
+    // Demote *after* the verb re-ink: colourCommandPrefix strips foregrounds from the
+    // prefix region, so a dim span opened before the verb would lose its opener and
+    // strand the rest of the line back at the terminal default.
+    return line
+      ? dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))))
+      : undefined;
+  }) : undefined;
 }
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
@@ -1018,7 +982,10 @@ function toolPathArg(c: ToolRowDataLike): string | undefined {
 function boringPrefix(comp: ToolRowLike, tildePath: string): string {
   const dir = tildePath.slice(0, tildePath.lastIndexOf("/") + 1);
   const candidates: string[] = [];
-  const blockPaths = cachedBlockPaths(renderCache, blockToolRows(comp), toolPathArg);
+  const rows = blockToolRows(comp);
+  const blockPaths = renderCache.memo(rows, "paths", () => rows.map((row) => {
+    renderCache.depend(row); return toolPathArg(row);
+  }).filter((path): path is string => path !== undefined));
   const common = commonDirSegments(blockPaths.length ? blockPaths : [tildePath]);
   // `./` counts like `~` (§9.5): alone it is a trivial root marker, but `./src/`
   // is a meaningful shared prefix. Either way it is always boring on its own.
@@ -1067,19 +1034,18 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
 // rows get the dim-directory emphasis, everything else keeps pi's native line with a
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
 function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY): string {
-  return renderCache.intrinsic(comp, `invocation:${available}:${objectCacheKey(currentTheme())}`, () => computeInvocationInk(comp, available));
-}
-function computeInvocationInk(comp: ToolRowLike, available: number): string {
-  if (toolLabel(comp?.toolName) === "bash") {
-    const plain = bashInvocationText(comp);
-    if (plain === undefined) return inkedFallbackLine(comp);
-    const body = inkBashRow(comp, foldBashPreamble(comp, tildify(plain)));
-    const headline = recordHeadline(comp, available);
-    return headline ? `${headline} ${body}` : body;
-  }
-  const native = nativeInvocationLine(comp);
-  const base = native ? pathEmphasisLine(comp, native) ?? native : undefined;
-  return base ? tildify(base) : inkedFallbackLine(comp);
+  return renderCache.memo(comp, `invocation:${available}:${objectCacheKey(currentTheme())}`, () => {
+    if (toolLabel(comp?.toolName) === "bash") {
+      const plain = bashInvocationText(comp);
+      if (plain === undefined) return inkedFallbackLine(comp);
+      const body = inkBashRow(comp, foldBashPreamble(comp, tildify(plain)));
+      const headline = recordHeadline(comp, available);
+      return headline ? `${headline} ${body}` : body;
+    }
+    const native = nativeInvocationLine(comp);
+    const base = native ? pathEmphasisLine(comp, native) ?? native : undefined;
+    return base ? tildify(base) : inkedFallbackLine(comp);
+  });
 }
 
 // The body+suffix budget inside the two-sided inset (§9.1): what remains after the
@@ -1093,7 +1059,7 @@ function traceRowAvailable(width: number): number {
 function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string, suffix: string, reserve: number, width: number, disclosure?: string): string {
   const key = JSON.stringify(["fit", width, reserve, tone, body, suffix, disclosure, drillRenderKey(comp), objectCacheKey(currentTheme())]);
   const fit = () => truncateToWidth(`${toolPrefix(tone, comp, disclosure)}${rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve)}`, Math.max(1, width), ELLIPSIS);
-  return comp ? renderCache.intrinsic(comp, key, fit) : fit();
+  return comp ? renderCache.memo(comp, key, fit) : fit();
 }
 
 function oneLine(comp: ToolRowLike, width: number): string {
@@ -1487,13 +1453,14 @@ function patchToolRowPrototype(proto: TraceMousePrototype): void {
 }
 
 function cachedLayout(row: ToolRowLike, width: number) {
-  const chat = g.__tracelineChat;
-  if (!chat) return renderCache.withoutCache(() => cachedTraceLayout(renderCache, row, "uncached", () => renderTraceRow(row, width), () => readRun(row)?.rows ?? repetitionRun(row)?.rows));
+  const chat = g.__tracelineChat!;
   installContainerCacheHooks(renderCache, chat, topologyChanged);
   topology.prepare(chat);
-  return cachedTraceLayout(renderCache, row,
-    `${width}:${objectCacheKey(chat)}:${objectCacheKey(currentTheme())}:${drillRenderKey(row)}:${revealRenderKey()}`,
-    () => renderTraceRow(row, width), () => readRun(row)?.rows ?? repetitionRun(row)?.rows);
+  const key = `${width}:${objectCacheKey(chat)}:${objectCacheKey(currentTheme())}:${drillRenderKey(row)}:${revealRenderKey()}`;
+  return renderCache.value(row, `layout:${key}`, () => {
+    const lines = renderTraceRow(row, width);
+    return { lines, plain: lines.map(stripAnsi), members: readRun(row)?.rows ?? repetitionRun(row)?.rows };
+  });
 }
 
 function assistantPatchInstalled(): boolean {

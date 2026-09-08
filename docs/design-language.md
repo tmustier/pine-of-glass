@@ -744,19 +744,9 @@ Mouse:
 
 ### 9.14 Cached rendering
 
-Caching must not change this grammar or the mouse geometry paired with it. A cached
-row is valid only while its own data, shared fold/column context, width, theme and
-Drill/reveal state still describe the same output. Finished tools are not assumed
-immutable: Pi renderer invalidation remains authoritative.
-
-Unrelated repaints reuse both rendered lines and their plain-text hit geometry.
-Tool updates invalidate dependent row/block/assistant-step computations, not the
-whole transcript. Shared facts and fold plans are computed once per affected scope;
-unchanged fitted rows may survive reconsideration of that scope. Bash preamble
-links can cross collapsed thinking, so visual block membership alone is insufficient.
-
-See [the cache design and measurements](./traceline-cache-design.md) for mutation
-boundaries, exact cached-versus-uncached tests and remaining performance limits.
+Cached rows must match uncached output, including ANSI styling, column alignment
+and click membership. Tool mutations, resize, theme, Drill and fold reveals must
+preserve this equivalence. See [cache design](./traceline-cache-design.md).
 
 ## 10. Tempo facts
 

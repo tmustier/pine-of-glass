@@ -258,17 +258,10 @@ model call required:
 
 ## Scoped render cache
 
-The cache contract suites compare exact cached and uncached Traceline output after
-real Pi mutations. They also assert that warm paints perform no new work and that
-updating one block does not recapture unrelated native calls. Native click contracts
-exercise the same cached layout/membership path. Theme coverage uses Pi's actual
-identity-stable theme Proxy and its TUI invalidation path, not just a fake object swap.
-
-Run `node --expose-gc scripts/dev/bench-trace-cache.ts` for cold/warm/update/append
-measurements and deterministic capture-count checks across transcript sizes. It makes
-no model calls and runs fixtures in separate processes. See
-[the cache design](./traceline-cache-design.md) for results, dependency boundaries and
-limits. Timings are reported, not used as brittle CI assertions.
+The cache contract suites compare exact cached/raw output and assert avoided work.
+Run `node --expose-gc scripts/dev/bench-trace-cache.ts` for isolated component timings
+and capture-count checks. It makes no model calls. See
+[cache design and measurements](./traceline-cache-design.md) for coverage and limits.
 
 ## What "passing" means
 

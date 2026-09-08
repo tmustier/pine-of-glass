@@ -12,7 +12,7 @@ initTheme(undefined, false);
 trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);
 trace.patchAssistantRowPrototype(AssistantMessageComponent.prototype as unknown as AssistantRowPrototypeLike);
 let id = 0;
-function makeRow(path: string, name = "read", captures: string[] = []) {
+function makeRow(path: string, name = "read", captures: string[] = [], pending = false) {
   const comp = new ToolExecutionComponent(name, `transition-${id++}`, { path, command: path }, {}, {
     ...createReadTool("/tmp"), name,
     renderCall: (args: { path: string }) => {
@@ -23,7 +23,7 @@ function makeRow(path: string, name = "read", captures: string[] = []) {
     },
     renderResult: () => new Text("native result", 0, 0),
   }, { requestRender() {} } as never, "/tmp");
-  comp.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+  if (!pending) comp.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
   return comp;
 }
 const seam = (row: ToolExecutionComponent) => row as unknown as ToolRowLike;
@@ -50,7 +50,7 @@ afterEach(() => { exitDrillMode(); trace.resetRenderCache(); trace.setTracelineC
 test("streaming group changes leave historical outputs and native captures warm", () => {
   const captures: string[] = [];
   const old = makeRow("/old/a", "read", captures);
-  const a = makeRow("/live/a", "read", captures);
+  const a = makeRow("/live/a", "read", captures, true);
   const b = makeRow("/live/b", "read", captures);
   chat(step([old], "history"), old, step([a, b], "live"), a, b);
   [old, a, b].forEach((row) => row.render(80));
@@ -77,15 +77,16 @@ test("assistant text deltas with unchanged structure keep historical traces cach
 });
 
 test("fold errors, warning breakout, expanded boundaries and partial results match raw output", () => {
-  const a = makeRow("/src/a"); const b = makeRow("/src/b"); const c = makeRow("/src/c");
-  chat(step([a, b, c]), a, b, c);
-  equal([a, b, c]);
-  b.updateResult({ content: [{ type: "text", text: "partial" }], isError: false }, true);
-  equal([a, b, c]);
-  complete(b, 2_300, true); equal([a, b, c]);
-  complete(b, 50_000); equal([a, b, c]);
-  b.setExpanded(true); equal([a, c]);
-  b.setExpanded(false); complete(b, 20); equal([a, b, c]);
+  for (const [size, error] of [[2_300, true], [50_000, false], [20, false]] as const) {
+    const a = makeRow("/src/a"), b = makeRow("/src/b", "read", [], true), c = makeRow("/src/c");
+    chat(step([a, b, c]), a, b, c);
+    equal([a, b, c]);
+    b.updateResult({ content: [{ type: "text", text: "partial" }], isError: false }, true);
+    equal([a, b, c]);
+    complete(b, size, error); equal([a, b, c]);
+    b.setExpanded(true); equal([a, c]);
+    b.setExpanded(false); equal([a, b, c]);
+  }
 });
 
 test("a neighbour's path change refreshes shared directory emphasis", () => {
@@ -98,7 +99,7 @@ test("a neighbour's path change refreshes shared directory emphasis", () => {
 });
 
 test("same-step repeated calls follow changed sibling status without touching another step", () => {
-  const a = makeRow("echo hello", "bash"); const b = makeRow("echo hello", "bash");
+  const a = makeRow("echo hello", "bash"); const b = makeRow("echo hello", "bash", [], true);
   const c = makeRow("echo hello", "bash");
   chat(step([a, b]), a, b, step([c], "separate"), c);
   equal([a, b, c]);
@@ -132,17 +133,13 @@ test("Pi-style insertion before a streaming assistant updates bash predecessor c
   equal([a, b]); assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
 });
 
-test("theme, width and Drill state never reuse stale styled variants", () => {
+test("resize and Drill selection refresh cached layouts", () => {
   const a = makeRow("/a/one"); const b = makeRow("/b/two");
   const container = chat(step([a, b]), a, b);
-  equal([a, b]);
-  // SAFETY: Traceline consumes fg at this theme seam; native Text is already built.
-  const theme = { fg: (_tone: string, text: string) => `\x1b[35m${text}\x1b[39m` } as unknown as Theme;
-  trace.setTracelineThemeGetter(() => theme);
   equal([a, b]); equal([a, b], 45); equal([a, b]);
   const host: DrillHost = {
     ui: { custom: () => new Promise(() => {}), notify() {} } as never,
-    theme: () => theme, chatChildren: () => container.children, requestRender() {},
+    theme: () => undefined, chatChildren: () => container.children, requestRender() {},
     traceLines: trace.renderTraceRow, runRows: () => undefined, hiddenByFold: () => false, statusTone: trace.statusTone,
   };
   enterDrillMode(host); equal([a, b]);
@@ -172,10 +169,8 @@ test("real theme Proxy keeps its identity while Pi invalidation refreshes cached
 });
 
 test("Pi mutation methods and custom renderer invalidate converge on the dirty hook", () => {
-  const a = makeRow("/mutators/a"); chat(step([a]), a);
-  assert.equal(typeof (a as unknown as { updateDisplay: unknown }).updateDisplay, "function");
-  assert.equal(typeof (AssistantMessageComponent.prototype as unknown as { updateContent: unknown }).updateContent, "function");
-  for (const mutate of [() => a.markExecutionStarted(), () => a.setArgsComplete(),
+  const a = makeRow("/mutators/a", "read", [], true); chat(step([a]), a);
+  for (const mutate of [() => a.setArgsComplete(), () => a.markExecutionStarted(), () => complete(a, 20),
     () => a.setShowImages(false), () => a.setImageWidthCells(40), () => a.invalidate()]) {
     a.render(80); trace.renderCacheWorkCounts(true); mutate(); a.render(80);
     assert.equal(trace.renderCacheWorkCounts().outputMisses, 1);
@@ -192,11 +187,12 @@ test("Pi mutation methods and custom renderer invalidate converge on the dirty h
   assert.ok(b.render(80).map(trace.stripAnsi).join().includes("second")); equal([b]);
 });
 
-test("new containers install mutation hooks after prototypes are already patched", () => {
+test("replacement containers track batched membership changes with unchanged length", () => {
   const a = makeRow("/a/one"); chat(step([a]), a); equal([a]);
-  const b = makeRow("/b/one"); const c = makeRow("/b/two");
-  const container = chat(step([b]), b); equal([b]);
-  container.addChild(c); equal([b, c]);
-  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("2 calls"));
-  container.removeChild(c); equal([b]);
+  const b = makeRow("/b/one"), c = makeRow("/b/two"), d = makeRow("/b/three");
+  const container = chat(step([b, c, d]), b, c); equal([b, c]);
+  container.addChild(d);
+  container.removeChild(b);
+  equal([c, d]);
+  assert.ok(c.render(80).map(trace.stripAnsi).join().includes("2 calls"));
 });

@@ -1,6 +1,31 @@
 import { isAssistantRow, isToolRow, type ContainerLike, type AssistantRowLike, type ToolRowDataLike, type ToolRowLike } from "../_lib/chat.ts";
 import type { TraceRenderCache } from "./render-cache.ts";
-import { isEmptyConnector, isCollapsedThinkingRow } from "./connectors.ts";
+
+export function isExpandedToolRow(row: unknown): boolean { return isToolRow(row) && row.expanded === true; }
+
+export function isEmptyConnector(row: unknown): boolean {
+  if (!isAssistantRow(row)) return false;
+  const content = row.lastMessage?.content;
+  if (!Array.isArray(content)) return true;
+  return !content.some((block: unknown) => {
+    if (!block || typeof block !== "object") return false;
+    const b = block as { type?: unknown; text?: unknown; thinking?: unknown };
+    return (b.type === "text" && typeof b.text === "string" && b.text.trim()) ||
+      (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim());
+  });
+}
+
+export function isCollapsedThinkingRow(row: unknown): boolean {
+  if (!isAssistantRow(row) || row.hideThinkingBlock !== true) return false;
+  const content = row.lastMessage?.content;
+  if (!Array.isArray(content)) return false;
+  let hasThinking = false;
+  for (const block of content) {
+    if (block?.type === "text" && block.text?.trim()) return false;
+    if (block?.type === "thinking" && block.thinking?.trim()) hasThinking = true;
+  }
+  return hasThinking;
+}
 
 type Step = { assistant: object; rows: ToolRowLike[] };
 type BashLink = { previous: ToolRowLike | undefined };
@@ -17,11 +42,7 @@ type Index = {
 export class TraceTopology {
   private indexes = new WeakMap<ContainerLike, Index>();
   private cache: TraceRenderCache;
-  private empty: (row: unknown) => boolean;
-  constructor(cache: TraceRenderCache, empty: (row: unknown) => boolean) {
-    this.cache = cache;
-    this.empty = empty;
-  }
+  constructor(cache: TraceRenderCache) { this.cache = cache; }
 
   changed(chat: ContainerLike): void {
     const index = this.indexes.get(chat);
@@ -36,7 +57,7 @@ export class TraceTopology {
     const groups: ToolRowLike[][] = [];
     let block: ToolRowLike[] = [];
     const byId = new Map<string, ToolRowLike>();
-    const assistants: object[] = [];
+    const assistants: AssistantRowLike[] = [];
     let previousBash: ToolRowLike | undefined;
     for (let i = 0; i < chat.children.length; i++) {
       const row = chat.children[i];
@@ -49,9 +70,10 @@ export class TraceTopology {
         if (row.expanded === true) { if (block.length) groups.push(block); block = []; }
         else block.push(row);
       } else {
-        if (!this.empty(row) && !isCollapsedThinkingRow(row)) previousBash = undefined;
+        const empty = isEmptyConnector(row);
+        if (!empty && !isCollapsedThinkingRow(row)) previousBash = undefined;
         if (isAssistantRow(row)) { assistants.push(row); next.lastAssistant = row; }
-        if (!this.empty(row)) { if (block.length) groups.push(block); block = []; }
+        if (!empty) { if (block.length) groups.push(block); block = []; }
       }
     }
     if (block.length) groups.push(block);
@@ -63,7 +85,6 @@ export class TraceTopology {
       for (const row of stable) next.blocks.set(row, stable);
     }
     for (const assistant of assistants) {
-      if (!isAssistantRow(assistant)) continue;
       const content = assistant.lastMessage?.content;
       if (!Array.isArray(content)) continue;
       const rows: ToolRowLike[] = [];
@@ -107,18 +128,6 @@ export class TraceTopology {
     if (step) { this.cache.depend(step.rows); this.cache.depend(step.assistant); }
     return step;
   }
-}
-
-export function uncachedBlockRows(sibs: unknown[], index: number): ToolRowLike[] {
-  const breaks = (row: unknown) => isToolRow(row) ? row.expanded === true : !isEmptyConnector(row);
-  let start = index;
-  while (start > 0 && !breaks(sibs[start - 1])) start--;
-  const rows: ToolRowLike[] = [];
-  for (let i = start; i < sibs.length && !breaks(sibs[i]); i++) {
-    const row = sibs[i];
-    if (isToolRow(row)) rows.push(row);
-  }
-  return rows;
 }
 
 function equalRows(a: ToolRowLike[], b: ToolRowLike[]): boolean {
