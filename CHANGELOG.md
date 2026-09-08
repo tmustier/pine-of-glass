@@ -1,11 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 (2026-09-08)
 
+- Traceline: click a tool trace or reasoning run in fullscreen Pi to expand or
+  collapse it. Folded tool groups reveal on click and refold from the glyph; native
+  reasoning clicks stay independent. Works with selection, resize, Drill and reload.
+  [#108](https://github.com/tmustier/pine-of-glass/pull/108).
 - Traceline caches tool rows and shared layout work, keeping unrelated history cached
-  during streaming. Based on [#106](https://github.com/tmustier/pine-of-glass/pull/106)
-  by Alexey Bagno ([@swit33](https://github.com/swit33)).
-
+  during streaming instead of repainting every row. Based on
+  [#106](https://github.com/tmustier/pine-of-glass/pull/106) by Alexey Bagno
+  ([@swit33](https://github.com/swit33)); integrated as
+  [#113](https://github.com/tmustier/pine-of-glass/pull/113). In a live Pi 0.85.1
+  soak streaming 120 tool rows, pi's CPU time per row fell from about 0.23 s to
+  0.06 s and the peak sample from 40% to 9%.
 - Traceline reuses thinking previews across component rebuilds instead of parsing
   unchanged reasoning repeatedly. Thanks to Alexandre Stahmer
   ([@astahmer](https://github.com/astahmer)) for
@@ -15,12 +22,18 @@
   subagent child starts and ends in the same process. Rails still toggle after
   the child exits. Thanks to Ben Tang ([@0xbentang](https://github.com/0xbentang))
   for [#105](https://github.com/tmustier/pine-of-glass/pull/105).
-- Require Pi 0.85.1 or later. Cachemire now uses Pi's native Moonshot and Together
-  cache-read accounting, removing its provider-stream wrapper.
+- Cachemire recognises GPT-6 Astra's documented 30-minute cache minimum on direct
+  OpenAI Responses and Codex routes after a reported cache read or write.
+  [#109](https://github.com/tmustier/pine-of-glass/pull/109).
 - Cachemire follows Cerebras's all-model retention policy after a confirmed cache read:
   a 5-minute minimum, unknown state between the bounds, and a 1-hour maximum.
+- Require Pi 0.85.1 or later. Cachemire now uses Pi's native Moonshot and Together
+  cache-read accounting, removing its provider-stream wrapper.
+  [#111](https://github.com/tmustier/pine-of-glass/pull/111).
 - Refresh native bash-renderer and chat lifecycle contracts. Ctrl+T preserves rows in
   regular and fullscreen modes; genuine rebuilds still restore anchored family lines.
+
+Contributor commits from #104, #105 and #106 are preserved in the merge history.
 
 ## 0.10.2 (2026-08-22)
 
