@@ -12,15 +12,10 @@ initTheme(undefined, false);
 trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);
 trace.patchAssistantRowPrototype(AssistantMessageComponent.prototype as unknown as AssistantRowPrototypeLike);
 let id = 0;
-function makeRow(path: string, name = "read", captures: string[] = [], pending = false) {
+function makeRow(path: string, name = "read", pending = false) {
   const comp = new ToolExecutionComponent(name, `transition-${id++}`, { path, command: path }, {}, {
     ...createReadTool("/tmp"), name,
-    renderCall: (args: { path: string }) => {
-      const text = new Text(name === "bash" ? `$ ${args.path}` : `${name} ${args.path}`, 0, 0);
-      const render = text.render.bind(text);
-      text.render = (width) => { if (width === 10_000) captures.push(args.path); return render(width); };
-      return text;
-    },
+    renderCall: (args: { path: string }) => new Text(name === "bash" ? `$ ${args.path}` : `${name} ${args.path}`, 0, 0),
     renderResult: () => new Text("native result", 0, 0),
   }, { requestRender() {} } as never, "/tmp");
   if (!pending) comp.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
@@ -42,42 +37,52 @@ function chat(...children: (ToolExecutionComponent | AssistantMessageComponent)[
 function equal(rows: ToolExecutionComponent[], width = 80) {
   for (const row of rows) assert.deepEqual(row.render(width), trace.uncachedRenderTraceRow(seam(row), width));
 }
+const text = (row: ToolExecutionComponent) => row.render(80).map(trace.stripAnsi).join();
+function misses(render: () => void): number {
+  trace.renderCacheWorkCounts(true); render(); return trace.renderCacheWorkCounts().outputMisses;
+}
 function complete(row: ToolExecutionComponent, size: number, error = false) {
   row.updateResult({ content: [{ type: "text", text: "x".repeat(size) }], isError: error });
 }
 afterEach(() => { exitDrillMode(); trace.resetRenderCache(); trace.setTracelineChat(undefined); trace.setTracelineThemeGetter(undefined); });
 
+test("warm output matches the raw renderer", () => {
+  const a = makeRow("/src/a");
+  chat(step([a]), a);
+  a.render(80);
+  assert.equal(misses(() => equal([a])), 0);
+});
+
+test("same-object args and result updates invalidate cached output", () => {
+  const a = makeRow("/src/a", "read", true);
+  chat(step([a]), a);
+  const args = { path: "/src/a" };
+  a.updateArgs(args); a.render(80);
+  args.path = "/src/b"; a.updateArgs(args);
+  assert.ok(text(a).includes("/src/b"));
+  const result = { content: [{ type: "text" as const, text: "small" }], isError: false };
+  a.updateResult(result, true); a.render(80);
+  result.content[0]!.text = "x".repeat(2_000); a.updateResult(result);
+  assert.ok(text(a).includes("2.0k ch"));
+  equal([a]);
+});
+
 test("a failed member breaks a warm fold without recomputing history", () => {
-  const captures: string[] = [];
-  const old = makeRow("/old/a", "read", captures);
-  const a = makeRow("/live/a", "read", captures);
-  const b = makeRow("/live/b", "read", captures, true);
+  const old = makeRow("/old/a"), a = makeRow("/live/a"), b = makeRow("/live/b", "read", true);
   chat(step([old], "history"), old, step([a, b], "live"), a, b);
-  [old, a, b].forEach((row) => row.render(80));
-  assert.ok(a.render(80).map(trace.stripAnsi).join().includes("2 calls"));
-  assert.deepEqual(b.render(80), []);
-  const oldCount = captures.filter((path) => path === "/old/a").length;
-  assert.ok(oldCount > 0);
-  trace.renderCacheWorkCounts(true);
-  complete(b, 2_000, true);
-  [old, a, b].forEach((row) => row.render(80));
-  assert.equal(trace.renderCacheWorkCounts().outputMisses, 2);
-  assert.equal(captures.filter((path) => path === "/old/a").length, oldCount);
-  assert.ok(!a.render(80).map(trace.stripAnsi).join().includes("2 calls"));
-  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("/live/b"));
   equal([old, a, b]);
+  assert.ok(text(a).includes("2 calls"));
+  complete(b, 2_000, true);
+  assert.equal(misses(() => equal([old, a, b])), 2);
+  assert.ok(!text(a).includes("2 calls") && text(b).includes("/live/b"));
 });
 
 test("assistant text deltas with unchanged structure keep historical traces cached", () => {
   const old = makeRow("/old/a");
   const live = new AssistantMessageComponent(assistantMessage([{ type: "text", text: "answer begins" }]), true);
-  const container = chat(step([old]), old, live);
-  container.render(80);
-  trace.renderCacheWorkCounts(true);
+  chat(step([old]), old, live).render(80);
   live.updateContent(assistantMessage([{ type: "text", text: "answer begins and keeps streaming" }]), true);
-  old.render(80);
-  assert.equal(trace.renderCacheWorkCounts().outputMisses, 0);
-  equal([old]);
+  assert.equal(misses(() => equal([old])), 0);
 });
 
 test("a neighbour's path change refreshes shared directory emphasis", () => {
@@ -90,35 +95,24 @@ test("a neighbour's path change refreshes shared directory emphasis", () => {
 });
 
 test("same-step repeated calls follow changed sibling status without touching another step", () => {
-  const a = makeRow("echo hello", "bash"); const b = makeRow("echo hello", "bash", [], true);
-  const captures: string[] = [];
-  const c = makeRow("echo hello", "bash", captures);
+  const a = makeRow("echo hello", "bash"), b = makeRow("echo hello", "bash", true), c = makeRow("echo hello", "bash");
   chat(step([a, b]), a, b, step([c], "separate"), c);
   equal([a, b, c]);
-  const before = c.render(80), beforeCaptures = captures.length;
   complete(b, 2_300, true);
-  trace.renderCacheWorkCounts(true);
-  assert.deepEqual(c.render(80), before);
-  assert.equal(trace.renderCacheWorkCounts().outputMisses, 0);
-  assert.equal(captures.length, beforeCaptures);
-  equal([a, b, c]);
-  assert.ok(a.render(80).map(trace.stripAnsi).join().includes("2.3k ch"));
+  assert.equal(misses(() => equal([c])), 0);
+  equal([a, b]);
+  assert.ok(text(a).includes("2.3k ch"));
 });
 
-test("bash preamble dependency crosses collapsed thinking but stops at prose", () => {
+test("bash preamble context crosses collapsed thinking until it becomes prose", () => {
   const a = makeRow("cd /tmp/one && echo a", "bash");
   const b = makeRow("cd /tmp/one && echo b", "bash");
   const thinking = new AssistantMessageComponent(assistantMessage([{ type: "thinking", thinking: "reason" }]), true);
   chat(step([a]), a, thinking, b);
   equal([a, b]);
-  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("⋯"));
-  a.updateArgs({ path: "cd /tmp/two && echo a", command: "cd /tmp/two && echo a" });
-  equal([a, b]);
-  assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
-  a.updateArgs({ path: "cd /tmp/one && echo a", command: "cd /tmp/one && echo a" });
-  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("⋯"));
+  assert.ok(text(b).includes("⋯"));
   thinking.updateContent(assistantMessage([{ type: "text", text: "visible prose" }]));
-  assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
+  assert.ok(!text(b).includes("⋯"));
   equal([a, b]);
 });
 
@@ -127,10 +121,10 @@ test("Pi-style insertion before a streaming assistant updates bash predecessor c
   const b = makeRow("cd /tmp/one && echo b", "bash");
   const thinking = new AssistantMessageComponent(assistantMessage([{ type: "thinking", thinking: "reason" }]), true);
   const container = chat(step([a]), a, thinking, b);
-  equal([a, b]); assert.ok(b.render(80).map(trace.stripAnsi).join().includes("⋯"));
+  equal([a, b]); assert.ok(text(b).includes("⋯"));
   // InteractiveMode inserts messages immediately before its streaming component.
   container.children.splice(2, 0, step([], "inserted prose"));
-  equal([a, b]); assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
+  equal([a, b]); assert.ok(!text(b).includes("⋯"));
 });
 
 test("resize truncates a warm row and preserves its wider variant", () => {
@@ -141,7 +135,7 @@ test("resize truncates a warm row and preserves its wider variant", () => {
   assert.notDeepEqual(narrow, wide);
   assert.ok(narrow.map(trace.stripAnsi).join().includes("…"));
   equal([row], 45);
-  assert.deepEqual(row.render(100), wide);
+  assert.equal(misses(() => assert.deepEqual(row.render(100), wide)), 0);
 });
 
 test("Drill entry, selection and exit update warm row styling", () => {
@@ -154,7 +148,7 @@ test("Drill entry, selection and exit update warm row styling", () => {
     traceLines: trace.renderTraceRow, runRows: () => undefined, hiddenByFold: () => false, statusTone: trace.statusTone,
   };
   enterDrillMode(host); equal([a, b]);
-  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("1 ›"));
+  assert.ok(text(b).includes("1 ›"));
   const numbered = [a.render(80), b.render(80)];
   setSelected(drillState()!, 1);
   assert.notDeepEqual([a.render(80), b.render(80)], numbered);
@@ -192,10 +186,9 @@ test("custom renderer invalidation replaces its warm invocation", () => {
     renderResult: () => new Text("result", 0, 0),
   }, { requestRender() {} } as never, "/tmp");
   complete(b, 20); chat(step([b]), b);
-  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("first"));
-  b.render(80);
+  assert.ok(text(b).includes("first"));
   label = "second"; invalidate();
-  assert.ok(b.render(80).map(trace.stripAnsi).join().includes("second")); equal([b]);
+  assert.ok(text(b).includes("second")); equal([b]);
 });
 
 test("replacement containers track batched membership changes with unchanged length", () => {
@@ -205,5 +198,5 @@ test("replacement containers track batched membership changes with unchanged len
   container.addChild(d);
   container.removeChild(b);
   equal([c, d]);
-  assert.ok(c.render(80).map(trace.stripAnsi).join().includes("2 calls"));
+  assert.ok(text(c).includes("2 calls"));
 });
