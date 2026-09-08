@@ -65,6 +65,7 @@ import {
   type DiffStats,
 } from "./write-diff.ts";
 import { installThinkingPreviews } from "./thinking-preview.ts";
+import { summarizeCallLines } from "./call-summary.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 import { createTracelineTuiOwner } from "./tui-owner.ts";
 
@@ -558,10 +559,6 @@ function compactJson(value: unknown): string {
   }
 }
 
-function firstVisibleLine(lines: string[]): string | undefined {
-  return lines.find((line) => stripAnsi(line).trim().length > 0);
-}
-
 // Bash commands keep their real newlines (heredocs, inline python, chained pipelines),
 // so first-line-only collapses them to an uninformative prefix like `$ python3 -c "`
 // (issue #10). Flatten every visible line into the one trace line, with a ↵ where each
@@ -914,24 +911,23 @@ function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): s
   return `${ink(currentTheme(), verbTone(comp), `${BOLD}${prefix}${BOLD_OFF}`)}${rest}`;
 }
 
-// Prefer pi's own renderCall output for one-line mode (non-bash tools). This borrows
-// the native visual grammar (paths/backticks, warning line ranges, custom-tool
-// renderers) and only suppresses result/output lines by taking the first visible call
-// line. The verb is re-inked neutral bold (error rows error) per the family hierarchy.
-function nativeInvocationLine(comp: ToolRowDataLike | undefined): string | undefined {
-  return comp ? renderCache.memo(comp, `native-invocation:${objectCacheKey(currentTheme())}`, () => {
+// Borrow the complete native call grammar, including continuation lines (§9.6).
+// Results stay separate. Re-ink the verb neutral bold (error rows error).
+function nativeInvocationLine(comp: ToolRowLike): string | undefined {
+  return renderCache.memo(comp, `native-invocation:${objectCacheKey(currentTheme())}`, () => {
     const call = comp.callRendererComponent;
     if (!call || typeof call.render !== "function") return undefined;
     const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
-    const lines = Array.isArray(rendered) ? rendered : [];
-    const line = firstVisibleLine(lines);
-    // Demote *after* the verb re-ink: colourCommandPrefix strips foregrounds from the
-    // prefix region, so a dim span opened before the verb would lose its opener and
-    // strand the rest of the line back at the terminal default.
-    return line
-      ? dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(stripTrailingExpandHint(line))))
-      : undefined;
-  }) : undefined;
+    const lines = (Array.isArray(rendered) ? rendered : []).map(stripTrailingExpandHint)
+      .filter((line) => stripAnsi(line).trim().length > 0);
+    const line = summarizeCallLines(lines);
+    // Demote after verb re-inking, which strips foregrounds from the prefix region;
+    // doing it first would lose the dim opener and leave its body at terminal default.
+    if (!line) return undefined;
+    const styled = dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(line)));
+    // Path reconstruction is lossless only for a single native call line.
+    return lines.length === 1 ? pathEmphasisLine(comp, styled) ?? styled : styled;
+  });
 }
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
@@ -1043,8 +1039,7 @@ function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY):
       return headline ? `${headline} ${body}` : body;
     }
     const native = nativeInvocationLine(comp);
-    const base = native ? pathEmphasisLine(comp, native) ?? native : undefined;
-    return base ? tildify(base) : inkedFallbackLine(comp);
+    return native ? tildify(native) : inkedFallbackLine(comp);
   });
 }
 

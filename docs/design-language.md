@@ -414,7 +414,12 @@ Read, edit and write rows dim what is boring and bolden what discriminates:
 ### 9.6 Native rows
 
 Rows for other tools (`grep`, `web_search`, `fetch_content`, `mcp`, and kin)
-reuse pi's native invocation line. Spans the native renderer left unstyled demote
+reuse pi's native call rendering, not just its first line. Non-empty continuation
+lines join the header with ` · `, with indentation and leading tree-branch markers
+removed: `Ran` followed by `└ surf tabs.list` becomes `Ran · surf tabs.list`.
+Middle truncation keeps the head and operative tail within the shared body budget.
+Result rendering is never included; expanded rows remain native. Single-line calls
+keep their existing presentation. Spans the native renderer left unstyled demote
 to L3-dim; spans pi deliberately coloured (patterns, ranges, backticks) and
 bold-only spans survive untouched. §9.3's "bold is the trace row's white" holds
 for every tool, not just the hand-rebuilt rows.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Traceline keeps continuation lines from native tool-call renderers in compact
+  summaries. A `Ran` header followed by a command now shows `Ran · command`,
+  without tool-specific adapters. Expanded calls and results stay native.
+
 ## 0.11.0 (2026-09-08)
 
 - Traceline: click a tool trace or reasoning run in fullscreen Pi to expand or
