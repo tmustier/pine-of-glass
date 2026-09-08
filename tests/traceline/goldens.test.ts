@@ -11,16 +11,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import { installThinkingPreviews } from "../../extensions/pi-traceline/thinking-preview.ts";
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
-import { expectGolden } from "../helpers.ts";
+import { assistantMessage, expectGolden } from "../helpers.ts";
 import { assistantBefore, completedWriteRow, nativeBashLines } from "./runtime-fixtures.ts";
 
 const {
   renderTraceRow,
   stripAnsi,
   isToolRow,
-  replaceThinkingLabels,
   setTracelineChat,
   setTracelineThemeGetter,
 } = internals;
@@ -157,8 +158,12 @@ test("one-line trace goldens at 80 and 120 columns", () => {
           lines.push("", prose);
           continue;
         }
-        const previews = replaceThinkingLabels(child, ["Thinking..."], width).map(stripAnsi);
-        lines.push("", ...(previews.length > 0 ? previews : ["Thinking..."]));
+        initTheme(undefined, false);
+        const comp = new AssistantMessageComponent(
+          assistantMessage(child.lastMessage!.content as Parameters<typeof assistantMessage>[0]), true, undefined, "Thinking...", 0,
+        );
+        installThinkingPreviews(comp as never);
+        lines.push(...comp.render(width).map((line) => stripAnsi(line).trimEnd()));
       }
       return `${lines.join("\n")}\n`;
     };

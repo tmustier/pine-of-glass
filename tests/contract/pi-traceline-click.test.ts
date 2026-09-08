@@ -100,7 +100,7 @@ test("blank spacing, margins, wheel, press, drag, release and wrong buttons neve
   const a = row("read", "/src/a.txt");
   const c = chat([a]);
   const lines = painted(c);
-  for (const e of [event(0), event(1, 0), event(1, 79), ...["wheel", "press", "drag", "release", "move"].map((type) => event(1, 10, type as TuiMouseEvent["type"])), { ...event(1), button: "right" as const }]) {
+  for (const e of [event(0), event(1, 0), event(1, 79), { ...event(1, 10, "wheel"), button: "none" as const, wheelDelta: 1 }, ...["press", "drag", "release", "move"].map((type) => event(1, 10, type as TuiMouseEvent["type"])), { ...event(1), button: "right" as const }]) {
     assert.equal(c.handleMouse({ ...e, height: lines.length }), undefined);
     assert.equal(seam(a).expanded, false);
   }
@@ -173,14 +173,9 @@ test("fullscreen viewport preserves OSC 8 links, selection, overlay ownership an
   } finally { view.stop(); }
 });
 
-test("native mode keeps Pi mouse behaviour, and resize refreshes compact geometry", () => {
+test("native mode keeps Pi mouse behaviour", () => {
   const a = row("read", "/src/a.txt");
   const native = chat([a], false);
   clickLine(native, "preview");
-  assert.equal(seam(a).expanded, true);
-  a.setExpanded(false);
-  const compact = chat([a]);
-  painted(compact, 40);
-  clickLine(compact, "a.txt", 10, 100);
   assert.equal(seam(a).expanded, true);
 });

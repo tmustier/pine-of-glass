@@ -31,17 +31,16 @@ interface TraceLayout {
 }
 
 /** Pair Traceline's substituted geometry with normalized Pi mouse dispatch. */
-export function installTraceMouse(proto: MousePrototype, host: TraceMouseHost): void {
+export function installTraceMouse(proto: MousePrototype & Pick<ToolRowLike, "render">, host: TraceMouseHost): void {
   const originalRender = proto.__tracelineOriginalRender ?? proto.render;
-  if (!originalRender) return;
   const originalMouse = "__tracelineOriginalMouse" in proto ? proto.__tracelineOriginalMouse : proto.handleMouse;
   proto.__tracelineOriginalRender = originalRender;
   proto.__tracelineOriginalMouse = originalMouse;
   const layouts = new WeakMap<ToolRowLike, TraceLayout>();
   proto.render = function (this: ToolRowLike, width: number) {
     layouts.delete(this);
+    if (!host.isCompact(this)) return host.decorateNative(this, originalRender.call(this, width));
     try {
-      if (!host.isCompact(this)) return host.decorateNative(this, originalRender.call(this, width));
       const lines = host.renderTrace(this, width);
       layouts.set(this, { width, lines: lines.map(stripAnsi), members: host.runRows(this) });
       return lines;
@@ -70,7 +69,7 @@ export function installTraceMouse(proto: MousePrototype, host: TraceMouseHost): 
       for (const member of layout.members) revealed.set(member, layout.members);
     } else {
       if (!this.result) return undefined;
-      this.setExpanded(this.expanded !== true);
+      this.setExpanded(true);
     }
     return { handled: true };
   };

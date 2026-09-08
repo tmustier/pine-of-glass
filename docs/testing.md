@@ -78,6 +78,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | A successful silent built-in bash call returns exactly `(no output)` | traceline's terminal `gh pr merge` evidence rule |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
+| Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
 | Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
 | OpenAI Completions ignores top-level `usage.cached_tokens`; provider registration and custom fetch remain public extension seams | cachemire Moonshot and Together usage overlay |
@@ -236,9 +237,11 @@ model call required:
   blocks, standalone strong-emphasis summary paragraphs, and empty or whitespace-only
   fragments interleaved. It requires the whole run to render on exactly one preview row,
   with the newest fragment visible after width fitting, then proves Pi still handles
-  `/quit`. A 45-second hard watchdog
-  kills only the uniquely launched fixture process if rendering blocks, so the regression
-  cannot leave a hot orphan behind.
+  `/quit`. A 45-second hard watchdog kills only the uniquely launched fixture process
+  if rendering blocks, so the regression cannot leave a hot orphan behind.
+- `test:smoke:click` exercises tool and reasoning clicks in fullscreen Pi through raw
+  mouse input: independent expansion, tool aggregate reveal/refold, native collapse,
+  Drill isolation, global toggles, resize and reload.
 - The full startup smoke checks that the `[Contextimate]` block renders, that
   `/contextimate compact` and `expanded` change the rendered mode line, and that `/reload`
   keeps exactly one block. Its project config explicitly enables Meantime, proving the

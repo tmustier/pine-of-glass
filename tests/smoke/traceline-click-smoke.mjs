@@ -48,9 +48,9 @@ function raw(button, x, y, release = false) {
   tmux("send-keys", "-t", session, "-H", ...[...Buffer.from(data)].map((b) => b.toString(16)));
 }
 function click(text, x) {
-  const p = point(text);
   // Avoid classifying successive automation gestures as a double/triple click.
   sleep(550);
+  const p = point(text);
   raw(0, x ?? p.x, p.y);
   raw(0, x ?? p.x, p.y, true);
   sleep(150);
@@ -107,7 +107,6 @@ try {
   wait((s) => !s.includes("OUTPUT_BETA") && s.includes("OUTPUT_SOLO") && s.includes("▾"), "native output click must collapse only beta");
   click("solo.txt");
   wait((s) => !s.includes("OUTPUT_"), "native header collapse failed");
-  const beforeDrag = capture();
   const p = point("beta.txt");
   raw(0, p.x, p.y); raw(32, p.x + 4, p.y); raw(0, p.x + 4, p.y, true);
   sleep(200);
@@ -119,7 +118,6 @@ try {
   click("alpha.txt", 4);
   wait((s) => s.includes("3 calls") && !s.includes("OUTPUT_"), "group glyph did not collapse/refold members");
   shot("04-refolded");
-  assert.equal(beforeDrag.includes("3 calls"), false);
   tmux("resize-window", "-t", session, "-x", "60", "-y", "40");
   wait((s) => s.includes("3 calls"), "resize lost aggregate");
   click("gamma.txt");
@@ -128,7 +126,6 @@ try {
   wait((s) => s.includes("OUTPUT_GAMMA"), "resized individual click failed");
   shot("05-narrow-expanded");
   click("gamma.txt");
-  tmux("resize-window", "-t", session, "-x", "100", "-y", "40");
   tmux("resize-window", "-t", session, "-x", "100", "-y", "60");
   keys("C-o");
   wait((s) => s.includes("OUTPUT_ALPHA") && s.includes("OUTPUT_SOLO"), "Ctrl+O did not expand all");

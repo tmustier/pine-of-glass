@@ -2,7 +2,7 @@
 
 `pi-traceline` turns each tool call into one line. Use it to see what Pi did, which files it changed and which tool results used the most context.
 
-Press `Ctrl+T` to switch between the trace and Pi's full tool output. Press `Alt+T` to drill into a single row without moving the transcript.
+Press `Ctrl+T` to switch between the trace and Pi's full tool output. In fullscreen mode, click a compact tool call or reasoning preview to expand it inline. Press `Alt+T` to drill into a single tool row without moving the transcript.
 
 ![Traceline showing one tool call per line](../../docs/img/pi-traceline-collapsed.png)
 
@@ -58,11 +58,16 @@ The tool view reads its state from the live assistant row. It cannot get out of 
 
 Traceline never enables, disables or reads terminal mouse reporting. Pi and the terminal keep full control of scrolling, selection and links.
 
-## Click to expand a call
+## Click to expand a call or reasoning run
 
 In Pi's fullscreen mode (`pi --tui-mode fullscreen`), click a compact call to
 expand its output inline. Click its native header or output to collapse it.
 Other calls keep their current state, and your editor keeps keyboard focus.
+
+Click a compact reasoning preview to expand that consecutive reasoning run in
+place. Click the expanded reasoning to collapse it. Each run has independent
+visibility, and `Ctrl+T` clears those choices when it applies the global setting.
+Adjacent thinking blocks expand together; source lines are not separate traces.
 
 An aggregate has a `▸` bullet. Click it to reveal individual compact calls first,
 then click the call you want. The first revealed call has a `▾` bullet: click

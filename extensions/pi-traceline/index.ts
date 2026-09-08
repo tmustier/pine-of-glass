@@ -55,7 +55,7 @@ import {
   writeDiffStats,
   type DiffStats,
 } from "./write-diff.ts";
-import { replaceThinkingLabels } from "./thinking-preview.ts";
+import { installThinkingPreviews } from "./thinking-preview.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 
 /**
@@ -160,7 +160,7 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 const TOOL_RIGHT_MARGIN = 2;
 const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const TOOL_ROW_PATCH_VERSION = 29;
-const ASSISTANT_ROW_PATCH_VERSION = 5;
+const ASSISTANT_ROW_PATCH_VERSION = 6;
 
 // --- theme-derived ink (design language §3) --------------------------------------------
 // Before session_start (and in unit tests without a UI), ink falls back to basic ANSI.
@@ -1481,15 +1481,12 @@ function patchAssistantRowPrototype(proto: AssistantRowPrototypeLike): void {
   const original = proto.__tracelineOriginalAssistantRender ?? proto.render;
   proto.__tracelineOriginalAssistantRender = original;
   proto.render = function (this: AssistantRowDataLike, width: number) {
-    const lines = original.call(this, width);
     try {
-      if (this.hideThinkingBlock === true && Array.isArray(lines)) {
-        return replaceThinkingLabels(this, lines, width);
-      }
+      installThinkingPreviews(this);
     } catch {
       /* never let pi-traceline break a render */
     }
-    return lines;
+    return original.call(this, width);
   };
   proto.__tracelineAssistantPatchVersion = ASSISTANT_ROW_PATCH_VERSION;
   g.__tracelineAssistantPatchVersion = ASSISTANT_ROW_PATCH_VERSION;
@@ -1501,7 +1498,7 @@ function currentPatchInstalled(): boolean {
   return g.__tracelinePatchVersion === TOOL_ROW_PATCH_VERSION;
 }
 
-function patchToolRowPrototype(proto: ToolRowPrototypeLike): void {
+function patchToolRowPrototype(proto: ToolRowPrototypeLike & Pick<ToolRowLike, "render">): void {
   if (currentPatchInstalled() || !proto || typeof proto.render !== "function") return;
   installTraceMouse(proto, {
     bulletColumn: TOOL_PREFIX_VISIBLE_WIDTH - TOOL_AFTER_BULLET.length - 1,
@@ -1585,6 +1582,7 @@ export const internals = {
   leadingBlank,
   renderTraceRow,
   patchToolRowPrototype,
+  patchAssistantRowPrototype,
   isExpandedToolRow,
   statusTone,
   foldedReadLines,
@@ -1594,7 +1592,6 @@ export const internals = {
   foldBashPreamble,
   previousBashRow,
   readRun,
-  replaceThinkingLabels,
   // typed test/dev accessors for traceline's Pi seam globals
   setTracelineChat,
   getTracelineChat,

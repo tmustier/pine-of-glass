@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import * as pi from "@earendil-works/pi-coding-agent";
 
 import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
+import { installThinkingPreviews } from "../../extensions/pi-traceline/thinking-preview.ts";
 import { assistantMessage } from "../helpers.ts";
 
 function collapsedLines(content: Parameters<typeof assistantMessage>[0], width = 80) {
@@ -11,7 +12,8 @@ function collapsedLines(content: Parameters<typeof assistantMessage>[0], width =
   const component = new pi.AssistantMessageComponent(assistantMessage(content));
   component.setHideThinkingBlock(true);
   const native = component.render(width);
-  const preview = traceline.replaceThinkingLabels(component as never, native, width);
+  installThinkingPreviews(component as never);
+  const preview = component.render(width);
   const normalize = (lines: string[]) => lines.map((line) => traceline.stripAnsi(line).trim());
   return { native: normalize(native), preview: normalize(preview) };
 }
@@ -40,12 +42,12 @@ test("current Pi thinking runs map one-to-one to Traceline previews", () => {
 });
 
 test("prose matching the native label is not mistaken for a thinking run", () => {
-  const { native, preview } = collapsedLines([
+  const { preview } = collapsedLines([
     { type: "text", text: "Thinking..." },
     { type: "thinking", thinking: "actual reasoning" },
   ]);
 
-  assert.deepEqual(preview, native);
+  assert.deepEqual(preview, ["", "Thinking...", "actual reasoning"]);
 });
 
 test("source lines and Markdown flatten within the native row width", () => {

@@ -14,7 +14,7 @@ See each extension's own `README.md` for details and `docs/` for deeper referenc
 
 ## Screenshots
 ### [Traceline](./extensions/pi-traceline)
-`ctrl+t` now collapses each tool call and thinking summary to a single line, and you can expand everything back to see per-item details.
+`ctrl+t` collapses each tool call and reasoning run to a single line. In fullscreen mode, click a compact call or reasoning preview to expand it independently, or use `ctrl+t` to reset the whole view.
 
 ![Traceline: one tool call per trace line](./docs/img/pi-traceline-collapsed.png)
 

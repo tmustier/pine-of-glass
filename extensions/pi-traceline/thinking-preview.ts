@@ -1,8 +1,9 @@
-import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { Markdown, MouseRegion, Text, type Component, type MarkdownTheme, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import type { AssistantRowDataLike } from "../_lib/chat.ts";
 import { middleTruncate } from "../_lib/style.ts";
+import { drillState } from "./drill.ts";
 
 const PREVIEW_RENDER_WIDTH = 10_000;
 
@@ -35,21 +36,19 @@ function markdownToPlainInline(rawLine: string): string {
   return first ? stripAnsi(first).replace(/\s+/g, " ").trim() : markdown;
 }
 
-function replaceVisibleLabel(line: string, preview: string, width?: number): string {
+function replaceVisibleLabel(line: string, preview: string, width: number): string {
   const visible = stripAnsi(line);
   const leading = visible.match(/^\s*/)?.[0].length ?? 0;
   const trailing = visible.match(/\s*$/)?.[0].length ?? 0;
   const start = rawIndexAtVisibleIndex(line, leading);
   const end = rawIndexBeforeVisibleIndex(line, visible.length - trailing);
-  const suffix = width && width > 0 ? line.slice(end).replace(/[ \t]+$/g, "") : line.slice(end);
-  const replaced = `${line.slice(0, start)}${preview}${suffix}`;
-  return width && width > 0 ? middleTruncate(replaced, width) : replaced;
+  const suffix = line.slice(end).replace(/[ \t]+$/g, "");
+  return middleTruncate(`${line.slice(0, start)}${preview}${suffix}`, width);
 }
 
-export function replaceThinkingLabels(comp: AssistantRowDataLike, lines: string[], width?: number): string[] {
-  const label = comp.hiddenThinkingLabel;
+function thinkingPreviews(comp: AssistantRowDataLike): string[] | undefined {
   const content = comp.lastMessage?.content;
-  if (typeof label !== "string" || label.length === 0 || !Array.isArray(content)) return lines;
+  if (!Array.isArray(content)) return undefined;
 
   const previews: string[] = [];
   let fragments: string[] | undefined;
@@ -68,13 +67,48 @@ export function replaceThinkingLabels(comp: AssistantRowDataLike, lines: string[
     fragments = undefined;
   }
   if (fragments) previews.push(fragments.join(" · "));
+  return previews;
+}
 
-  if (lines.filter((line) => stripAnsi(line).trim() === label).length !== previews.length) return lines;
+type AssistantPreviewRow = AssistantRowDataLike & { contentContainer?: { children?: unknown[] } };
+type ThinkingRegion = {
+  child: Component;
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined;
+};
+const installedRegions = new WeakSet<ThinkingRegion>();
 
-  let previewIndex = 0;
-  return lines.map((line) => {
-    if (stripAnsi(line).trim() !== label) return line;
-    const preview = previews[previewIndex++]!;
-    return preview ? replaceVisibleLabel(line, preview, width) : line;
-  });
+/** Replace only Pi's hidden-label child, retaining its native run-level MouseRegion. */
+export function installThinkingPreviews(comp: AssistantPreviewRow): void {
+  const children = comp.contentContainer?.children;
+  if (!Array.isArray(children)) return;
+
+  // SAFETY: Pi's AssistantMessageComponent wraps each consecutive thinking run in a
+  // MouseRegion whose child is Text when hidden and Markdown when visible. The real
+  // component contract tests pin this shape and the one-region-per-run ordering.
+  const regions = children
+    .filter((child) => child instanceof MouseRegion)
+    .map((region) => region as unknown as ThinkingRegion);
+  if (regions.every((region) => installedRegions.has(region))) return;
+  const previews = thinkingPreviews(comp);
+  if (!previews || regions.length !== previews.length) return;
+
+  for (let i = 0; i < regions.length; i++) {
+    const region = regions[i]!;
+    if (installedRegions.has(region)) continue;
+    const handleMouse = region.handleMouse;
+    region.handleMouse = function (event) {
+      return drillState() ? undefined : handleMouse.call(this, event);
+    };
+    installedRegions.add(region);
+    const nativeLabel = region.child;
+    const preview = previews[i]!;
+    if (!(nativeLabel instanceof Text) || !preview) continue;
+    region.child = {
+      render(width) {
+        const lines = nativeLabel.render(width);
+        return lines.length === 1 ? [replaceVisibleLabel(lines[0]!, preview, width)] : lines;
+      },
+      invalidate: () => nativeLabel.invalidate(),
+    };
+  }
 }
