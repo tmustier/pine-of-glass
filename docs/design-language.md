@@ -561,6 +561,18 @@ preview. Any non-thinking content entry, including text or a tool call, ends
 the run and keeps the native boundary before the next one-line preview. A run
 that cannot yield sanitized text keeps its native label.
 
+In fullscreen mode, each collapsed preview keeps Pi's native reasoning-run click
+region. Click a preview to expand that consecutive run in place, then click its
+expanded reasoning to collapse it. Runs expand independently. The native
+`thinkingVisibilityOverrides` map remains the only expansion state, and Ctrl+T
+clears every override before applying the global visibility setting.
+
+A consecutive run is the indivisible unit. Pi combines adjacent provider thinking
+blocks into one Markdown component and one override, so Traceline does not present
+those blocks or their lines as independently expandable traces. The compact line
+may summarize many blocks and source lines, but its click opens the exact native
+run that produced it.
+
 With traceline loaded, Ctrl+T's effect is self-evident: every tool row collapses
 to a trace line or expands back. So traceline suppresses pi's
 `Thinking blocks: hidden/visible` status caption before it renders. The
@@ -593,6 +605,34 @@ with its own blank line. Collapsing back restores all of it. Expansion is the
 one deliberate reflow in traceline: an expanded row grows in place and the
 transcript moves to make room. The zero-reflow surfaces are z0 and drill
 mode's numbering.
+
+### 9.12.1 Pointer expansion (fullscreen)
+
+Reasoning previews follow §9.11: a primary click toggles one native consecutive
+thinking run. The preview replaces the native hidden-label child inside Pi's
+existing `MouseRegion`, rather than replacing the assistant row's rendered string,
+so hit geometry, links and selection remain Pi-owned.
+
+A primary click on a compact tool row opens that call inline at z1; native Pi
+click handling collapses it again. Calls expand independently, without opening
+Drill or moving keyboard focus. Pi owns links, drag selection and scrolling;
+blank group spacing and the outer margins are not click targets. A call becomes
+expandable when its first result arrives, including partial output.
+
+An aggregate wears `▸` in its existing status-bullet cell. Clicking it first
+reveals its members as individual compact rows, without expanding any output.
+The first revealed member wears `▾`: click that glyph to refold the original
+group (also collapsing any expanded members), or click its body to expand only
+that call. Other members retain the ordinary `›` bullet. A native-expanded first
+member must be collapsed before its group control is visible again.
+
+Revealed membership is a snapshot: later calls do not silently join it, and its
+members do not automatically refold after individual collapse. It is transient
+view state, retained through redraws and streaming, reset on reload/session
+replacement. Pi's per-row `expanded` remains the only output-expansion state;
+Ctrl+O still sets all rows and Ctrl+T retains the existing zoom rules. Regular
+terminal-scrollback mode never captures the mouse. Mouse expansion is inactive
+while Drill is open, preserving its frozen keyboard targets.
 
 ### 9.13 Drill mode
 

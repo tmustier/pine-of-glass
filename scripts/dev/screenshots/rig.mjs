@@ -152,7 +152,7 @@ function cleanup(fixture) {
     console.log(`kept tmux session ${session} and fixture ${fixture.cwd}`);
     return;
   }
-  send("/exit", "Enter");
+  send("/quit", "Enter");
   sleep(800);
   tmux("kill-session", "-t", session);
   rmSync(fixture.home, { recursive: true, force: true });

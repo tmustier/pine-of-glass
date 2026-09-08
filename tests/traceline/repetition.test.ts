@@ -98,7 +98,7 @@ test("a failed member makes the folded repetition visibly fail", () => {
   setTracelineChat({ children: [assistantBefore([ok, failed]), ok, failed] });
 
   const line = renderTraceRow(ok, 100).at(-1)!;
-  assert.ok(line.includes("\x1b[31m›"), "the folded bullet is red when any call failed");
+  assert.ok(line.includes("\x1b[31m▸"), "the folded bullet is red when any call failed");
   assert.ok(line.includes("\x1b[31m\x1b[1mmcp"), "the folded invocation keeps error emphasis");
   assert.ok(stripAnsi(line).includes("×2"));
 });

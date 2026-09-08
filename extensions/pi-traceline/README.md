@@ -2,7 +2,7 @@
 
 `pi-traceline` turns each tool call into one line. Use it to see what Pi did, which files it changed and which tool results used the most context.
 
-Press `Ctrl+T` to switch between the trace and Pi's full tool output. Press `Alt+T` to drill into a single row without moving the transcript.
+Press `Ctrl+T` to switch between the trace and Pi's full tool output. In fullscreen mode, click a compact tool call or reasoning preview to expand it inline. Press `Alt+T` to drill into a single tool row without moving the transcript.
 
 ![Traceline showing one tool call per line](../../docs/img/pi-traceline-collapsed.png)
 
@@ -57,6 +57,29 @@ Traceline follows Pi's reasoning visibility setting. The full view reuses Pi's o
 The tool view reads its state from the live assistant row. It cannot get out of sync with the reasoning view. Traceline hides Pi's `Thinking blocks: hidden/visible` caption because the changing tool rows already show the state.
 
 Traceline never enables, disables or reads terminal mouse reporting. Pi and the terminal keep full control of scrolling, selection and links.
+
+## Click to expand a call or reasoning run
+
+In Pi's fullscreen mode (`pi --tui-mode fullscreen`), click a compact call to
+expand its output inline. Click its native header or output to collapse it.
+Other calls keep their current state, and your editor keeps keyboard focus.
+
+Click a compact reasoning preview to expand that consecutive reasoning run in
+place. Click the expanded reasoning to collapse it. Each run has independent
+visibility, and `Ctrl+T` clears those choices when it applies the global setting.
+Adjacent thinking blocks expand together; source lines are not separate traces.
+
+An aggregate has a `▸` bullet. Click it to reveal individual compact calls first,
+then click the call you want. The first revealed call has a `▾` bullet: click
+that glyph to collapse and refold the group, or click its body to expand that
+call. If the first call is expanded, collapse it to show the group control again.
+
+Revealed calls stay separate through redraws, streaming and individual collapse.
+Reloading or switching sessions resets this view state. Ctrl+O still controls
+all output expansion. Selection, links and scrolling stay with Pi. Mouse
+expansion is inactive while keyboard-only Drill mode is open.
+
+Regular terminal-scrollback mode does not support clicks.
 
 ## Drill into one row
 
@@ -162,7 +185,7 @@ Traceline shortens rows before they reach the terminal edge. It:
 
 ## Understand colours and status
 
-The `›` bullet shows status: blue while running, green after success and red after failure. Failed rows also colour the action and main target red, so the failure does not depend on one small glyph.
+The `›` bullet shows status: blue while running, green after success and red after failure. Group controls (`▸` and `▾`) keep the same status colours. Failed rows also colour the action and main target red, so the failure does not depend on one small glyph.
 
 The dim `▏` rail joins consecutive tool calls into a visible block. Traceline uses theme-derived colours rather than fixed terminal colours.
 

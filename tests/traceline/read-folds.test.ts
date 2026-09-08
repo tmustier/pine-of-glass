@@ -56,7 +56,7 @@ test("a running last page keeps the fold live: running bullet, no premature size
 
   const folded = renderTraceRow(r1, 120);
   const line = folded[folded.length - 1]!;
-  assert.ok(line.includes("\x1b[34m\u203a"), "bullet must reflect the in-flight last call");
+  assert.ok(line.includes("\x1b[34m▸"), "bullet must reflect the in-flight last call");
   const visible = stripAnsi(line);
   assert.ok(visible.trimEnd().endsWith("2 calls · 9.0k ch"), `only landed results count: ${visible}`);
 });
@@ -68,8 +68,8 @@ test("a running earlier sibling keeps the fold live after a later sibling lands"
   setTracelineChat({ children: [running, completed] });
 
   const line = renderTraceRow(running, 120).at(-1)!;
-  assert.ok(line.includes("\x1b[34m\u203a"), "any in-flight call keeps the folded bullet blue");
-  assert.ok(!line.includes("\x1b[32m\u203a"), "a completed last call must not turn the fold green");
+  assert.ok(line.includes("\x1b[34m▸"), "any in-flight call keeps the folded bullet blue");
+  assert.ok(!line.includes("\x1b[32m▸"), "a completed last call must not turn the fold green");
   const visible = stripAnsi(line);
   assert.ok(visible.trimEnd().endsWith("2 calls · 1.0k ch"), `only landed results count: ${visible}`);
 });
@@ -185,10 +185,10 @@ test("a long dir fold wraps at file boundaries onto rail-only continuation lines
   assert.equal(lines[0], "", "the fold keeps its leading blank");
   const [first, ...rest] = lines.slice(1).map(stripAnsi);
   assert.ok(rest.length >= 1, `the list wraps: ${JSON.stringify([first, ...rest])}`);
-  assert.match(first!, /^ {2}\u258f \u203a read ~\/projects\/demo\/ alpha\.test\.ts,\s+5 calls · 5\.0k ch$/, first);
+  assert.match(first!, /^ {2}\u258f ▸ read ~\/projects\/demo\/ alpha\.test\.ts,\s+5 calls · 5\.0k ch$/, first);
   for (const cont of rest) {
     assert.match(cont, /^ {2}\u258f {8}\S/, `rail-only continuation, content aligned under the dir cell: ${cont}`);
-    assert.ok(!cont.includes("\u203a"), `one entity, one bullet: ${cont}`);
+    assert.ok(!cont.includes("▸"), `one entity, one bullet: ${cont}`);
   }
   assert.equal(rest[0]!.indexOf("bravo"), first!.indexOf("~/projects"), "continuation cells share the dir cell's left edge");
   for (const line of [first!, ...rest]) {
