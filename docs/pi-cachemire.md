@@ -14,8 +14,10 @@ no idle-time or warmth claim.
 
 The wider provider inventory and implementation record are in
 [`cache-provider-stocktake-2026-08-05.md`](./cache-provider-stocktake-2026-08-05.md).
-Cachemire keeps an observed request policy pending until reported cache reads or writes
-confirm that an entry exists.
+The [`GPT-6 Astra audit`](./cache-astra-audit-2026-09-08.md) records the newer model's
+official contract, sanitized Codex observations and unresolved route limits. Cachemire
+keeps an observed request policy pending until reported cache reads or writes confirm
+that an entry exists.
 
 ## Moonshot and Together usage
 
@@ -34,8 +36,9 @@ evidence.
    Model-switch checks require all 3 identity fields. A switch-back hint needs an active
    TTL or minimum. Unknown retention stays unknown until the next send reports usage.
 3. Retention: Anthropic-compatible, MiniMax, Bedrock and Groq TTLs support countdowns
-   and expiry claims. The GPT-5.6 minimum blocks stale claims for 30 minutes, then changes
-   to unknown. OpenAI and Cerebras maxima support stale claims only when reached. Healthy
+   and expiry claims. The GPT-5.6+ and GPT-6 Astra minimum blocks stale claims for 30
+   minutes, then changes to unknown. OpenAI and Cerebras maxima support stale claims only
+   when reached. Healthy
    states stay hidden.
 4. Currency: exact token and cost numbers stay in the tokenizer and price card that
    billed them. A model-switch forecast is a labelled estimate in the target model's
@@ -56,9 +59,10 @@ contains a cache read or write, Cachemire mirrors Pi's ordinary-call default:
 `PI_CACHE_RETENTION=long` means 1 hour, otherwise 5 minutes. The first confirmed live
 payload replaces that inference.
 
-For GPT-5.6 and later GPT-5 models, OpenAI documents a 30-minute minimum. This default
-applies on OpenAI and OpenAI Codex. Cachemire stays silent during the minimum. At the
-boundary it reports an unknown cache state because OpenAI may retain the prefix longer.
+For GPT-5.6+ models and GPT-6 Astra, OpenAI documents a 30-minute minimum. This default
+applies on direct OpenAI Responses and OpenAI Codex routes. Cachemire stays silent during
+the minimum. At the boundary it reports an unknown cache state because OpenAI may retain
+the prefix longer.
 Reaching the minimum does not classify a later miss as eviction.
 
 For an observed 24-hour OpenAI maximum, Cachemire waits for a cache read, stays silent
@@ -129,7 +133,7 @@ suffix estimate until provider usage makes the new request exact.
 
 Restored snapshots retain provider usage, model identity and timestamps. Only a
 persisted cache read or supported write activates a recovered window. Exact model and API
-checks recover GPT-5.6, Anthropic, MiniMax, Groq and Cerebras policies. Bedrock and
+checks recover GPT-5.6+, GPT-6 Astra, Anthropic, MiniMax, Groq and Cerebras policies. Bedrock and
 legacy OpenAI routes lose request-only policy evidence, so their retention becomes
 unknown.
 

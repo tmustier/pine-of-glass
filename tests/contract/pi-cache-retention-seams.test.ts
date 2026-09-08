@@ -34,14 +34,16 @@ function modelRecord(name: string, api: string, model: string): Record<string, u
   return raw[api][model];
 }
 
-test("installed GPT-5.6 models keep direct API and Codex routes distinct", () => {
-  const direct = modelRecord("openai.json", "openai-responses", "gpt-5.6-sol");
-  const codex = modelRecord("openai-codex.json", "openai-codex-responses", "gpt-5.6-sol");
-  assert.equal(direct.provider, "openai");
-  assert.ok(isJsonObject(direct.compat));
-  assert.equal(direct.compat.supportsExplicitPromptCacheMode, true);
-  assert.equal(codex.provider, "openai-codex");
-  assert.equal(codex.baseUrl, "https://chatgpt.com/backend-api");
+test("installed GPT-5.6 and GPT-6 Astra models keep direct API and Codex routes distinct", () => {
+  for (const model of ["gpt-5.6-sol", "gpt-6-astra"]) {
+    const direct = modelRecord("openai.json", "openai-responses", model);
+    const codex = modelRecord("openai-codex.json", "openai-codex-responses", model);
+    assert.equal(direct.provider, "openai");
+    assert.ok(isJsonObject(direct.compat));
+    assert.equal(direct.compat.supportsExplicitPromptCacheMode, true);
+    assert.equal(codex.provider, "openai-codex");
+    assert.equal(codex.baseUrl, "https://chatgpt.com/backend-api");
+  }
 });
 
 test("installed provider records keep Cachemire's new routes exact", () => {

@@ -25,7 +25,25 @@ test("model retention is limited to documented provider, API and model routes", 
     retentionForModel("openai", "gpt-5.6", "openai-responses")?.window,
     OPENAI_MINIMUM_WINDOW,
   );
+  assert.equal(
+    retentionForModel("openai", "gpt-6-astra", "openai-responses")?.window,
+    OPENAI_MINIMUM_WINDOW,
+  );
+  assert.equal(
+    retentionForModel("openai-codex", "gpt-6-astra", "openai-codex-responses")?.window,
+    OPENAI_MINIMUM_WINDOW,
+  );
   assert.equal(retentionForModel("openai", "gpt-5.5", "openai-responses"), undefined);
+  for (const [provider, api, model] of [
+    ["openrouter", "openai-completions", "gpt-6-astra"],
+    ["azure-openai-responses", "azure-openai-responses", "gpt-6-astra"],
+    ["openai", "openai-completions", "gpt-6-astra"],
+    ["openai", "openai-responses", "gpt-6"],
+    ["openai", "openai-responses", "gpt-6-terra"],
+    ["openai", "openai-responses", "gpt-6-astra-2026-09-08"],
+  ] as const) {
+    assert.equal(retentionForModel(provider, model, api), undefined, `${provider}/${api}/${model}`);
+  }
   assert.deepEqual(
     retentionForModel("minimax-cn", "MiniMax-M2.7-highspeed", "anthropic-messages")?.window,
     { kind: "contract", ttlMs: TTL_SHORT_MS, source: "inferred" },
@@ -59,6 +77,24 @@ test("live request evidence resolves the supported retention contracts", () => {
     })?.window,
     OPENAI_MINIMUM_WINDOW,
   );
+  assert.equal(
+    retentionForRequest({
+      provider: "openai-codex",
+      model: "gpt-6-astra",
+      api: "openai-codex-responses",
+      payload: {},
+    })?.window,
+    OPENAI_MINIMUM_WINDOW,
+  );
+  for (const [provider, api, model] of [
+    ["openrouter", "openai-completions", "gpt-6-astra"],
+    ["azure-openai-responses", "azure-openai-responses", "gpt-6-astra"],
+    ["openai", "openai-completions", "gpt-6-astra"],
+    ["openai", "openai-responses", "gpt-6"],
+    ["openai", "openai-responses", "gpt-6-astra-2026-09-08"],
+  ] as const) {
+    assert.equal(retentionForRequest({ provider, api, model, payload: {} }), undefined);
+  }
   assert.equal(
     retentionForRequest({
       provider: "openai-codex",
@@ -150,7 +186,15 @@ test("usage activates only the evidence each provider exposes", () => {
     api: "openai-responses",
     payload: { prompt_cache_retention: "24h" },
   });
+  const astra = retentionForRequest({
+    provider: "openai",
+    model: "gpt-6-astra",
+    api: "openai-responses",
+    payload: {},
+  });
 
+  assert.equal(confirmedWindow(astra, CACHE_WRITE), OPENAI_MINIMUM_WINDOW);
+  assert.equal(confirmedWindow(astra, CACHE_READ), OPENAI_MINIMUM_WINDOW);
   assert.deepEqual(
     confirmedWindow(anthropic, CACHE_WRITE),
     { kind: "contract", ttlMs: TTL_SHORT_MS, source: "observed" },
