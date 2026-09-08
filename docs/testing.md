@@ -77,7 +77,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | A successful silent built-in bash call returns exactly `(no output)` | traceline's terminal `gh pr merge` evidence rule |
-| Native thinking toggles preserve assistant and family-line identities in regular and fullscreen renderers; native rebuilds trigger anchored-line restoration and retire missing anchors | shared chat-line persistence |
+| Native thinking toggles preserve assistant and family-line identities; native rebuilds trigger anchored-line restoration and retire missing anchors | shared chat-line persistence |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |

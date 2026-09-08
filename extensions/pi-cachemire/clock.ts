@@ -1,4 +1,5 @@
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
+import { pastWindow } from "./classify.ts";
 import type { SwitchForecast } from "./forecast.ts";
 import type { CacheWindow } from "./types.ts";
 
@@ -54,17 +55,14 @@ export function cacheClock(input: ClockInput): ClockState {
     if (forecast?.prior) {
       const prior = forecast.prior;
       const priorAge = input.now - prior.requestAt;
-      if (!prior.window || prior.window.kind === "unknown" ||
-          (prior.window.kind === "maximum" && priorAge < prior.window.maxMs) ||
-          (prior.window.kind === "minimum" && priorAge >= prior.window.minMs) ||
-          (prior.window.kind === "bounded" && priorAge >= prior.window.minMs && priorAge < prior.window.maxMs)) {
-        return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
-      }
       if (withinWarmHorizon(prior.window, priorAge)) {
         return {
           phase: "warm-unknown",
           text: `cache may still be warm \u00b7 switched back to ${forecast.targetId} \u00b7 next send confirms`,
         };
+      }
+      if (!pastWindow(prior.window, priorAge)) {
+        return { phase: "warm-unknown", text: "cache state unknown \u00b7 model switched \u00b7 next send confirms" };
       }
     }
     if (forecast?.estTokens === undefined) {

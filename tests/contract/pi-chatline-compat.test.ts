@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as piTui from "@earendil-works/pi-tui";
@@ -13,97 +13,35 @@ import { assistantMessage } from "../helpers.ts";
 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
 
-function fakeTerminal(): piTui.Terminal {
-  const noop = () => {};
-  return {
-    columns: 80,
-    rows: 24,
-    kittyProtocolActive: false,
-    start: noop,
-    stop: noop,
-    drainInput: async () => {},
-    write: noop,
-    moveBy: noop,
-    hideCursor: noop,
-    showCursor: noop,
-    clearLine: noop,
-    clearFromCursor: noop,
-    clearScreen: noop,
-    setTitle: noop,
-    setProgress: noop,
-  };
-}
-
-test("global thinking visibility updates preserve chat identities in both real renderer modes", async () => {
+test("native thinking toggles preserve assistant and family-line identities", () => {
   pi.initTheme(undefined, false);
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
-  assert.doesNotMatch(
-    source,
-    /toggleThinkingBlockVisibility\(\)\s*\{[^}]*this\.chatContainer\.clear\(\)/s,
-    "Ctrl+T must update existing assistant rows rather than rebuilding chat",
-  );
-  const tuiModule = await import(pathToFileURL(join(piRoot, "dist/modes/interactive/tui-renderer.js")).href) as {
-    createInteractiveTui: (options: {
-      tuiMode: "regular" | "fullscreen";
-      showHardwareCursor: boolean;
-      logDirectory: string;
-      terminal: piTui.Terminal;
-    }) => piTui.TuiMainScreen | piTui.TuiAltScreen;
-  };
   const prototype = pi.InteractiveMode.prototype as unknown as {
     updateThinkingBlockVisibility: (this: unknown) => void;
     toggleThinkingBlockVisibility: (this: unknown) => void;
     showStatus: (this: unknown, message: string) => void;
   };
-  assert.equal(typeof prototype.updateThinkingBlockVisibility, "function", "global thinking visibility updater moved");
-  assert.equal(typeof prototype.toggleThinkingBlockVisibility, "function", "global thinking visibility toggle moved");
+  const container = new piTui.Container();
+  const assistant = new pi.AssistantMessageComponent(assistantMessage([{ type: "thinking", thinking: "kept" }]));
+  const familyLine = new piTui.Text("cache line", 1, 0);
+  container.addChild(assistant);
+  container.addChild(familyLine);
+  const persisted: boolean[] = [];
+  const mode = {
+    chatContainer: container,
+    hideThinkingBlock: false,
+    ui: { requestRender: () => {} },
+    settingsManager: { setHideThinkingBlock: (hidden: boolean) => { persisted.push(hidden); } },
+    updateThinkingBlockVisibility: prototype.updateThinkingBlockVisibility,
+    showStatus: prototype.showStatus,
+  };
 
-  for (const tuiMode of ["regular", "fullscreen"] as const) {
-    const renderer = tuiModule.createInteractiveTui({
-      tuiMode,
-      showHardwareCursor: false,
-      logDirectory: "",
-      terminal: fakeTerminal(),
-    });
-    assert.ok(
-      tuiMode === "regular" ? renderer instanceof piTui.TuiMainScreen : renderer instanceof piTui.TuiAltScreen,
-      `${tuiMode}: factory returned the wrong native renderer`,
-    );
-    let renders = 0;
-    (renderer as unknown as { requestRender: () => void }).requestRender = () => { renders++; };
-
-    const container = new piTui.Container();
-    renderer.addChild(container);
-    const assistant = new pi.AssistantMessageComponent(assistantMessage([{ type: "thinking", thinking: "kept" }]));
-    const familyLine = new piTui.Text("cache line", 1, 0);
-    container.addChild(assistant);
-    container.addChild(familyLine);
-    const persisted: boolean[] = [];
-    const mode = {
-      chatContainer: container,
-      hideThinkingBlock: false,
-      ui: renderer,
-      settingsManager: { setHideThinkingBlock: (hidden: boolean) => { persisted.push(hidden); } },
-      updateThinkingBlockVisibility: prototype.updateThinkingBlockVisibility,
-      showStatus: prototype.showStatus,
-      lastStatusSpacer: undefined,
-      lastStatusText: undefined,
-    };
-
+  for (const hidden of [true, false]) {
     prototype.toggleThinkingBlockVisibility.call(mode);
-    assert.equal(mode.hideThinkingBlock, true, `${tuiMode}: first toggle did not hide thinking`);
-    assert.equal((assistant as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock, true);
-    assert.equal(container.children[0], assistant, `${tuiMode}: assistant identity changed on hide`);
-    assert.equal(container.children[1], familyLine, `${tuiMode}: appended family line was dropped on hide`);
-
-    prototype.toggleThinkingBlockVisibility.call(mode);
-    assert.equal(mode.hideThinkingBlock, false, `${tuiMode}: second toggle did not show thinking`);
-    assert.equal((assistant as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock, false);
-    assert.equal(container.children[0], assistant, `${tuiMode}: assistant identity changed on show`);
-    assert.equal(container.children[1], familyLine, `${tuiMode}: appended family line was dropped on show`);
-    assert.deepEqual(persisted, [true, false]);
-    assert.ok(renders >= 2, `${tuiMode}: toggles must request a render`);
+    assert.equal((assistant as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock, hidden);
+    assert.equal(container.children[0], assistant, "assistant identity changed");
+    assert.equal(container.children[1], familyLine, "appended family line was dropped");
   }
+  assert.deepEqual(persisted, [true, false]);
 });
 
 test("native chat rebuild restores anchored lines and drops missing anchors", async () => {

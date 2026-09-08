@@ -64,7 +64,8 @@ test("native OpenAI Completions accounts top-level cached_tokens for affected pr
       { input: 60, cacheRead: 40, output: 5, total: 105 },
       `${provider} must use Pi's native cached_tokens accounting`,
     );
-    assert.ok(Math.abs(result.usage.cost.total - 0.00074) < 1e-12);
+    const expectedCost = (60 * 10 + 40 * 1 + 5 * 20) / 1_000_000;
+    assert.ok(Math.abs(result.usage.cost.total - expectedCost) < 1e-12);
   }
 });
 

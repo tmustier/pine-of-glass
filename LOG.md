@@ -79,3 +79,10 @@ fixed-width ledger still wraps at 60 columns; its table layout is unchanged.
 Rebased onto main's Astra support and contributor integrations (#109 and #110).
 Reran the full check: all 340 tests passed, followed by the complete real-Pi smoke
 suite. No baseline failures remain.
+
+## 2026-09-08: PR 111 review cleanup
+
+Removed redundant renderer scaffolding and source assertions from the native toggle
+contract. Reused `pastWindow` for switch-back expiry decisions and expressed the
+accounting fixture's expected cost as arithmetic. No new helpers or output changes.
+Lint, typecheck, all 340 tests and the full real-Pi smoke suite passed; goldens unchanged.

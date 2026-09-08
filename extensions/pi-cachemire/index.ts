@@ -575,13 +575,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
         rates: s.rates,
         switchForecast: s.switchForecast === undefined ? undefined : {
           ...s.switchForecast,
-          priorMayBeWarm: s.switchForecast.prior !== undefined && (
-            s.switchForecast.prior.window === undefined ||
-            s.switchForecast.prior.window.kind === "unknown" || s.switchForecast.prior.window.kind === "minimum" ||
-            ((s.switchForecast.prior.window.kind === "maximum" || s.switchForecast.prior.window.kind === "bounded") &&
-              requestAt - s.switchForecast.prior.requestAt < s.switchForecast.prior.window.maxMs) ||
-            withinWarmHorizon(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt)
-          ),
+          priorMayBeWarm: s.switchForecast.prior !== undefined &&
+            !pastWindow(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt),
         },
       });
       const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;
