@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+- Traceline reuses thinking previews across component rebuilds instead of parsing
+  unchanged reasoning repeatedly. Thanks to Alexandre Stahmer
+  ([@astahmer](https://github.com/astahmer)) for
+  [#104](https://github.com/tmustier/pine-of-glass/pull/104). Integration preserves
+  native reasoning clicks and refreshes previews on same-length final replacements.
 - Traceline keeps the parent pane's Ctrl+T listener and TUI handle when a
   subagent child starts and ends in the same process. Rails still toggle after
-  the child exits.
+  the child exits. Thanks to Ben Tang ([@0xbentang](https://github.com/0xbentang))
+  for [#105](https://github.com/tmustier/pine-of-glass/pull/105).
 
 ## 0.10.2 (2026-08-22)
 
