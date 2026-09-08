@@ -21,7 +21,8 @@ The layers are:
 - Row facts: native call capture, output counts, image/diff/record facts and invocation
   formatting. These survive unrelated row updates and, where width-independent,
   resizes.
-- Topology: row positions, contiguous blocks and assistant-step membership. A cheap
+- Topology: row positions, contiguous blocks, assistant-step membership and bash
+  predecessor links. A cheap
   metadata pass runs after structural changes; unchanged group arrays retain identity.
   The last assistant pointer makes compact/native mode lookup constant-time per row.
 - Shared plans: read/repetition folds, column facts, suffix reserves and path context.
@@ -43,6 +44,9 @@ Pi still walks mounted components. Cache hits do not make total frame work O(1).
   text deltas do not invalidate historical tool rows. This private method is pinned
   by a contract test.
 - Container add/remove/clear updates topology, including earlier fold carriers.
+  Pi also inserts messages before its streaming component with a direct splice;
+  length changes trigger reindexing, and changed predecessor tokens invalidate bash
+  context even if visual block membership stays identical.
   Hooks attach to replacement containers even when prototypes are already patched;
   their callback is rebound on reload without stacking wrappers.
 - Click reveal/refold dirties affected rows. Drill number/selection state participates
@@ -68,7 +72,8 @@ compare exact cached and uncached strings, including ANSI. They cover warm hits,
 same-object mutations, group isolation, fold errors/size breakouts, append/remove,
 path emphasis, cross-block bash preambles, text streaming, expansion, native custom
 renderer invalidation, the real theme Proxy, resize, Drill and new containers.
-Engine tests cover nested dependencies and variant eviction. Existing native click
+Engine tests cover nested dependencies and variant eviction. Final validation on
+main including #111: lint, typecheck, all 357 tests and all real-Pi smoke suites pass. Existing native click
 and reasoning contracts continue to run against the patched prototype.
 
 `node --expose-gc scripts/dev/bench-trace-cache.ts` runs each fixture in a separate
@@ -86,15 +91,15 @@ include JIT effects and are not directly comparable across fixture sizes.
 
 | Tool rows | Rows per block | Uncached | Cold | Warm | Active update | Append |
 |---|---|---|---|---|---|---|
-| 50 | 5 | 72.207 | 13.391 | 0.031 | 0.194 | 0.863 |
-| 200 | 5 | 285.166 | 45.981 | 0.074 | 0.178 | 0.342 |
-| 500 | 5 | 710.124 | 62.655 | 0.202 | 0.325 | 1.587 |
-| 200 | 200 | not timed | 30.547 | 0.115 | 2.349 | 3.499 |
+| 50 | 5 | 56.394 | 11.599 | 0.024 | 0.235 | 0.306 |
+| 200 | 5 | 203.998 | 29.787 | 0.076 | 0.169 | 0.385 |
+| 500 | 5 | 600.313 | 60.449 | 0.159 | 0.295 | 0.791 |
+| 200 | 200 | not timed | 31.079 | 0.082 | 2.162 | 2.379 |
 
 For five-row blocks, every update reconsidered five output entries and recaptured one
 native invocation, regardless of transcript length. In the single 200-row block, all
 200 output entries were reconsidered, but unchanged invocation/fitting computations
-remained cached; the active-update p95 was 4.837 ms. The giant uncached case took too
+remained cached; the active-update p95 was 3.249 ms. The giant uncached case took too
 long for the benchmark's original time budget, so the script checks selected raw
 oracle rows instead of reporting a misleading partial-frame baseline.
 

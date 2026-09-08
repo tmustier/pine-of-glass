@@ -1126,6 +1126,7 @@ function oneLine(comp: ToolRowLike, width: number): string {
 // The previous bash row within the same visual group: reads and other tools interleave
 // freely, but visible prose opens a new paragraph — a `⋯` must never point across one.
 function previousBashRow(comp: ToolRowDataLike): ToolRowLike | undefined {
+  if (renderCache.active && g.__tracelineChat) return topology.previousBash(g.__tracelineChat, comp);
   const found = componentLocation(comp);
   if (!found) return undefined;
   for (let j = found.index - 1; j >= 0; j--) {

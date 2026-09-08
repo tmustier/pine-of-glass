@@ -110,3 +110,19 @@ Removed redundant renderer scaffolding and source assertions from the native tog
 contract. Reused `pastWindow` for switch-back expiry decisions and expressed the
 accounting fixture's expected cost as arithmetic. No new helpers or output changes.
 Lint, typecheck, all 340 tests and the full real-Pi smoke suite passed; goldens unchanged.
+
+## 2026-09-08: final scoped-cache validation on current main
+
+Integrated #111 without changing its runtime work. Clean main passes 340 tests;
+this branch now passes lint, typecheck, all 357 tests and every real-Pi smoke suite.
+Reviewed revealed tool rows plus compact and narrow expanded reasoning screenshots.
+No intended output changes, no PR comments and no #112 integration.
+
+A final source check found Pi's direct insertion before its streaming component,
+which disproved an append-only assumption in the advisory review. Added a failing
+cached-versus-raw regression, then fixed it with stable predecessor-link tokens in
+the topology index. The test passes after the fix. Final benchmark: 500 rows warm
+0.159 ms, active update 0.295 ms; one 200-row group active update 2.162 ms (p95
+3.249 ms). One native invocation recapture per tool update in every fixture. Results
+and limits are recorded in `docs/traceline-cache-design.md`; a live-session soak is
+still recommended before merging. Original #106 author commits remain preserved.

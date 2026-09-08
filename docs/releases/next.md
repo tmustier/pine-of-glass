@@ -36,8 +36,8 @@ All three contributors' original commits are preserved through merge commits.
 
 ## Maintainer validation
 
-Lint and typecheck pass against Pi 0.85.1. The earlier #104/#105 integration had 339 passing tests and four pre-existing
-contract failures. See the work log for the current #106 integration results. All real-Pi smoke
+Lint, typecheck and all 357 tests pass against Pi 0.85.1 on the #106 integration,
+including #111's compatibility changes. The previous four baseline failures are resolved. All real-Pi smoke
 suites pass, including tool/reasoning clicks, Ctrl+T, Drill, pager fidelity, resize,
 reload and startup. The scoped #106 integration is documented separately in
 [the cache design and validation](../traceline-cache-design.md). PR #112 is not included.

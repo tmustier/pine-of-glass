@@ -121,6 +121,17 @@ test("bash preamble dependency crosses collapsed thinking but stops at prose", (
   equal([a, b]);
 });
 
+test("Pi-style insertion before a streaming assistant updates bash predecessor context", () => {
+  const a = makeRow("cd /tmp/one && echo a", "bash");
+  const b = makeRow("cd /tmp/one && echo b", "bash");
+  const thinking = new AssistantMessageComponent(assistantMessage([{ type: "thinking", thinking: "reason" }]), true);
+  const container = chat(step([a]), a, thinking, b);
+  equal([a, b]); assert.ok(b.render(80).map(trace.stripAnsi).join().includes("⋯"));
+  // InteractiveMode inserts messages immediately before its streaming component.
+  container.children.splice(2, 0, step([], "inserted prose"));
+  equal([a, b]); assert.ok(!b.render(80).map(trace.stripAnsi).join().includes("⋯"));
+});
+
 test("theme, width and Drill state never reuse stale styled variants", () => {
   const a = makeRow("/a/one"); const b = makeRow("/b/two");
   const container = chat(step([a, b]), a, b);
