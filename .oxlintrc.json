@@ -35,24 +35,21 @@
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error",
 
-    // Runtime refinement is confined to two places: named type guards (`value is T`),
-    // which both rules exempt by design, and the boundary modules listed in the override
-    // below. Everywhere else a `typeof` or an `unknown` parameter is inline parsing that
-    // belongs in a guard or a boundary helper (agent-coding-standard, "Boundary typing");
-    // the existing debt ratchets down through the baseline.
-    "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }],
-    "anti-slop/no-unknown-parameters": "error"
+    // `typeof` also narrows already-typed unions. Banning its syntax rewards wrapper
+    // functions, not validation. TypeScript still checks every runtime source file.
+    "anti-slop/no-runtime-typeof": "off",
+    // Unknown is honest at an input boundary. Apply this check to the reviewed pure
+    // modules below, not files that also parse config, provider data or Pi internals.
+    "anti-slop/no-unknown-parameters": "off"
   },
   "overrides": [
     {
-      // The boundary modules. This package ships zero runtime dependencies, so there is
-      // no schema library: `stringValue(value: unknown)` and friends in boundary.ts, the
-      // config readers, and the duck-typing of Pi's undeclared TUI tree in chat.ts ARE
-      // the parsers the two rules above tell everyone else to call.
-      "files": ["extensions/_lib/boundary.ts", "extensions/_lib/config.ts", "extensions/*/config.ts", "extensions/_lib/chat.ts"],
+      // These modules format typed values or calculate timing. Review this list when
+      // extracting another pure module. This syntactic check is a backstop, not proof
+      // that all incoming data has been validated (aliases and predicates need review).
+      "files": ["extensions/_lib/fmt.ts", "extensions/_lib/ansi.ts", "extensions/pi-meantime/timing.ts", "extensions/pi-meantime/render.ts"],
       "rules": {
-        "anti-slop/no-runtime-typeof": "off",
-        "anti-slop/no-unknown-parameters": "off"
+        "anti-slop/no-unknown-parameters": "error"
       }
     },
     {
@@ -63,15 +60,6 @@
       "rules": {
         "anti-slop/require-safety-comment-for-type-assertion": "off",
         "anti-slop/no-chained-type-assertions": "off"
-      }
-    },
-    {
-      // The contract suite exists to probe Pi's undeclared shapes; its `typeof`s are the
-      // assertions, and its helpers take whatever Pi hands over.
-      "files": ["tests/contract/**"],
-      "rules": {
-        "anti-slop/no-runtime-typeof": "off",
-        "anti-slop/no-unknown-parameters": "off"
       }
     }
   ]

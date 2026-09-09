@@ -103,3 +103,17 @@ test("dispose restores the environment and reports errors caught during shutdown
   assert.ok(ownedRoot);
   assert.equal(existsSync(ownedRoot), false);
 });
+
+test("dispose fails a spec even when Pi swallowed an earlier event handler error", async () => {
+  const previousCwd = process.cwd();
+  const host = await hostExtension((pi) => {
+    pi.on("agent_start", () => { throw new Error("agent handler failed"); });
+  });
+  try {
+    await host.runner.emit({ type: "agent_start" });
+    await assert.rejects(host.dispose(), /extension runner caught errors:[\s\S]*agent handler failed/);
+  } finally {
+    await host.dispose();
+  }
+  assert.equal(process.cwd(), previousCwd);
+});

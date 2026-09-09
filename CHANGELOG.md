@@ -5,10 +5,11 @@
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.
-  Runtime `typeof` and `unknown` parameters are confined to named type guards and the
-  boundary modules; inline refinement elsewhere is baselined debt with a known exit.
-  `oxlint` and `@oxlint/plugins` are
-  the package's first devDependencies. `npm run preflight` reminds you to re-run
+  Typed union narrowing remains allowed. Reviewed pure modules reject explicit
+  `unknown` parameters; input parsers keep honest types for unvalidated fields.
+  Baseline updates only remove debt and refuse new findings or larger budgets.
+  `oxlint`, `@oxlint/plugins` and `oxc-parser` are development-only dependencies.
+  `npm run preflight` reminds you to re-run
   `npm run link-pi` after `npm install`.
 - Development: tests specify behaviour through public interfaces. A new
   `tests/harness/extension-host.ts` hosts an extension through Pi's real loader and

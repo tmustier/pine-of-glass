@@ -6,11 +6,16 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
 
-export function isJsonObject(value: unknown): value is JsonObject {
+// Shallow input inspection only. Fields remain unknown until the domain parser checks
+// them. This also accepts Pi objects; it does not prove recursive JSON compatibility.
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- Unvalidated fields belong at this input boundary, never in a parsed domain contract.
+export type JsonFields = { [key: string]: unknown };
+
+export function isJsonObject(value: unknown): value is JsonFields {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-export function jsonObjectOrEmpty(value: unknown): JsonObject {
+export function jsonObjectOrEmpty(value: unknown): JsonFields {
   return isJsonObject(value) ? value : {};
 }
 

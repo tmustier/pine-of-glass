@@ -30,8 +30,10 @@ Three tiers, from most to least preferred:
    commands it registers, and the UI surface it writes to (notifications, widgets,
    status, chat lines, terminal input). `tests/harness/extension-host.ts` makes this
    cheap: it loads the default export through Pi's real factory loader into a real
-   `ExtensionRunner`, records the UI, and isolates `process.cwd()` and `$HOME` so config
-   files can be written per test. `tests/meantime/feature-flag.test.ts` is the reference
+   `ExtensionRunner` and records the UI. It reserves `process.cwd()` and `$HOME` for one
+   scratch project at a time. Concurrent hosts must explicitly share that project;
+   attempts to use a different project fail before changing either value. Separate
+   projects need sequential tests or separate processes. `tests/meantime/feature-flag.test.ts` is the reference
    shape. Prefer this tier for lifecycle, commands, config, and anything a user sees.
    Two things it does not cover: the recorder has no chat container, so the chat-append
    path (anchoring, re-attachment) is observed only through each extension's notify
@@ -42,28 +44,30 @@ Three tiers, from most to least preferred:
    whose inputs and outputs are the specification. Test them directly from their module
    (`extensions/_lib/*.ts` or an extension's own domain module such as
    `pi-cachemire/retention.ts`), with tables and invariants, not by inspecting how they
-   compute. A module's exports are its interface; if a test needs something the module
-   does not export, the module boundary is wrong, not the test.
+   compute. Choose a stable capability to test before deciding what to export. Do not
+   expose private helpers or split them into a new module just to make them testable.
 3. **Privates of `index.ts` are not a test surface.** The `export const internals`
    grab bags exist because logic was never extracted from the entry files. They are a
    migration ledger, not an API: `npm run lint` fails if one grows (POG012), and each
    entry leaves by moving its logic into a domain module (tier 2) or testing the
    behaviour through the harness (tier 1). Do not add entries. Any test-only aggregate
-   export is an `internals` object regardless of its name; the lint counts every
-   `export const *internals*`, and review treats a differently named grab bag the same.
+   export is an `internals` object regardless of its name. The lint counts top-level
+   object properties for local or exported names containing `internals`, including
+   export aliases and TypeScript wrappers. It counts a spread as one property; it does
+   not expand imported objects or infer which exports exist only for tests. Review
+   checks those cases and differently named grab bags.
 
-Known gap: tier 2 cannot mechanically tell a domain module from a grab bag split into
-named exports. The tell is an `extensions/**` export with no runtime importer; a lint
-for that is the natural follow-up, and until then it is a review question.
+An export with no runtime importer is a review signal, not proof of bad design: public
+extension entry points and reusable library APIs can legitimately have no local caller.
 
 What a good test in any tier looks like:
 
 - The name states the capability in user terms, not the function under test.
 - Inputs are the smallest realistic fixture; synthetic duck-typed comps are fine where
   the contract suite proves the duck type against real Pi.
-- Assertions are on outputs and visible state, never on which helpers ran or in what
-  order. `assert.deepEqual(events, ["session_start", ...])` against a fake `pi` is the
-  anti-pattern this section exists to stop.
+- Prefer outputs and visible state over helper call counts or implementation order.
+  Keep focused installed-Pi registration contracts where registration itself is the
+  requirement, such as a disabled extension doing no background work.
 - It fails against the bug it guards or a plausible mutation. Delete tests that cannot.
 
 ## Explicit non-goals
@@ -86,7 +90,8 @@ Deliberately **not** tested:
 ## Infrastructure
 
 - **Runner:** `node:test` + `node:assert/strict`, native TypeScript type stripping
-  (Node ≥ 22.6; this repo develops on 26). **Zero new dependencies.**
+  (Node ≥ 22.6; this repo develops on 26). Lint fixture tests also use the pinned
+  development toolchain; the shipped extensions still have no runtime dependencies.
 - **Pi runtime linkage:** `scripts/dev/link-pi-runtime.sh` symlinks the globally installed
   Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) into the repo's
   gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
@@ -98,10 +103,14 @@ Deliberately **not** tested:
   cachemire's renderer and meantime's timing/render modules do. The legacy `internals`
   objects on the three older entry files only shrink.
 - **Extension host:** `tests/harness/extension-host.ts` hosts a default export the way
-  Pi does (real loader, real runner, recorded UI, isolated project and home directories).
+  Pi does (real loader, real runner, recorded UI, one reserved project environment).
+  The last host's disposal restores cwd and HOME. Disposal also fails the test if the
+  runner caught any handler errors, including errors during shutdown. Always dispose
+  hosts in `finally`, and clean caller-owned projects even when hosting or disposal fails.
   Pi installs a UI context by spreading it, so the recorder's members are own properties.
   There is no chat container in the recorder; chat lines arrive through each extension's
   own notify fallback and are read from `ui.notifications`.
+  These tests do not run a model or terminal and do not replace real-product acceptance.
 - **Scripts:** `npm run lint` (agent coding-standard and generated-doc drift checks),
   `npm run docs:cache` (regenerate Cachemire retention docs),
   `npm run typecheck`, `npm test` (unit + render + contract),

@@ -16,6 +16,9 @@ if (!existsSync(join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent")
 if (!existsSync(join(ROOT, "node_modules", ".bin", "oxlint"))) {
   problems.push("oxlint is not installed: run `npm install`, then `npm run link-pi`.");
 }
+if (!existsSync(join(ROOT, "node_modules", "oxc-parser"))) {
+  problems.push("oxc-parser is not installed: run `npm install`, then `npm run link-pi`.");
+}
 
 if (problems.length > 0) {
   for (const problem of problems) console.error(`preflight: ${problem}`);

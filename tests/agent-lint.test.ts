@@ -57,9 +57,12 @@ test("agent lint requires hand review before admitting a migration finding", () 
   assert.match(failed.stderr, /POG001/);
   assert.match(failed.stderr, /Do not carry unknown inward/);
 
+  const baselinePath = writeBaseline(dir);
+  const before = readFileSync(baselinePath, "utf8");
   const refused = runLint(dir, "--update-baseline");
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /refused to update/);
+  assert.equal(readFileSync(baselinePath, "utf8"), before);
 
   writeBaseline(dir, { knownFindings: { POG001: { "extensions/demo/index.ts": { [badGuard]: 1 } } } });
   assert.match(runLint(dir).stdout, /no new findings/);
@@ -186,4 +189,22 @@ test("line budgets for existing files ratchet down while new oversized files are
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /extensions\/demo\/new.ts:1 POG010/);
   assert.equal(readFileSync(baselinePath, "utf8"), before);
+});
+
+test("the repo policy allows typed union narrowing and boundary parsing but rejects untyped core input", () => {
+  const dir = oxlintFixtureRepo();
+  writeFileSync(join(dir, ".oxlintrc.json"), readFileSync(new URL(".oxlintrc.json", repoRoot), "utf8"));
+  const coreDir = join(dir, "extensions", "pi-meantime");
+  mkdirSync(coreDir, { recursive: true });
+  const core = join(coreDir, "render.ts");
+  const boundary = join(coreDir, "config.ts");
+  writeFileSync(core, 'export function label(value: string | number): string { return typeof value === "string" ? value : String(value); }\n');
+  writeFileSync(boundary, 'export function parseLabel(value: unknown): string { return typeof value === "string" ? value : ""; }\n');
+  const allowed = runLint(dir);
+  assert.equal(allowed.status, 0, allowed.stderr);
+
+  writeFileSync(core, 'export function label(value: unknown): string { return typeof value === "string" ? value : ""; }\n');
+  const rejected = runLint(dir);
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /render.ts:1 anti-slop\(no-unknown-parameters\)/);
 });

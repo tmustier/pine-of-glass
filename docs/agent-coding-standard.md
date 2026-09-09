@@ -30,18 +30,22 @@ accumulator copies, vague `shape` names, module mocking. `npm run lint:slop` pri
 full diagnostics; `npm run lint` feeds them into the same baseline as the `POG` rules,
 keyed by rule id such as `anti-slop(no-unknown-returns)`.
 
-Runtime refinement has exactly two homes, and `no-runtime-typeof` plus
-`no-unknown-parameters` enforce that everywhere else:
+Validate external data before passing it into calculations and rendering. Keep ordinary
+type narrowing: `typeof` on a `string | number` value is useful TypeScript, not debt.
+Moving a check into a named guard does not strengthen it. TypeScript trusts `value is T`;
+review must establish that the check proves the claimed fields and invariants.
 
-- A named type guard, `function isThing(value: unknown): value is Thing`. Both rules
-  exempt guards by design (`allowInTypeGuards`), so the fix for an inline `typeof` is
-  usually to give the check a name and a predicate return type. `isPersistedEntry` in
-  `pi-cachemire/lineage.ts` is the shape.
-- A boundary module: `_lib/boundary.ts` (`stringValue`, `nonNegativeNumberValue`, ...),
-  `_lib/config.ts` and each extension's `config.ts` (config files), and `_lib/chat.ts`
-  (Pi's undeclared TUI tree). These are exempt by path in `.oxlintrc.json` because they
-  are the parsers the rules tell everyone else to call. Add a helper there rather than
-  re-deriving `typeof value === "string" ? value : undefined` inline.
+`no-runtime-typeof` is off because it cannot distinguish these cases.
+`no-unknown-parameters` applies to four reviewed pure modules: `_lib/fmt.ts`,
+`_lib/ansi.ts`, `pi-meantime/timing.ts` and `pi-meantime/render.ts`. These should receive
+typed values. Review this list when extracting another pure module. The upstream rule
+checks explicit `unknown` parameters; aliases, nested types and predicate subjects need
+review. A green lint result is not proof that all inputs are validated.
+
+Elsewhere, `unknown` is honest for config, provider data and Pi internals. Refine the
+fields the consumer needs, then pass the resulting domain value inward. Small local
+checks are fine. Extract a helper when it establishes a reusable contract or simplifies
+the caller, not merely to satisfy a syntax rule.
 
 Rules that are off are off by policy, with the reason inline in `.oxlintrc.json`, never
 baselined:
@@ -49,16 +53,16 @@ baselined:
 - `eslint/no-control-regex`: ANSI escape parsing is the domain.
 - In `tests/**`, `require-safety-comment-for-type-assertion` and
   `no-chained-type-assertions` are off because synthetic duck-typed fixtures are the
-  documented stand-in pattern, proven against real Pi by the contract suite. In
-  `tests/contract/**` the two refinement rules are off too: probing Pi's shape is what
-  those tests are for.
+  documented stand-in pattern, checked against real Pi by focused contract tests.
+  Keep casts near the fixture construction; this exemption does not prove their safety.
 
 A baseline entry is debt with an intended fix. If a finding is correct code that should
 stay, the right move is a rule-level decision in `.oxlintrc.json` with its reason, or
 an inline `oxlint-disable-next-line` with a justification, not a baseline entry.
 
-`oxlint` and `@oxlint/plugins` are the repo's only devDependencies and are pinned to the
-same exact version; the plugin's API tracks Oxlint. `npm install` prunes the Pi runtime
+`oxlint` and `@oxlint/plugins` are pinned to the same exact version; the plugin's API
+tracks Oxlint. The pinned `oxc-parser` devDependency counts exported object properties
+using TypeScript syntax. `npm install` prunes the Pi runtime
 symlinks, so run `npm run link-pi` after it; `npm run preflight` says so if you forget.
 
 ## Boundary typing
@@ -94,6 +98,14 @@ isPiComponentLike(value)
 The shared generic JSON helpers live in `extensions/_lib/boundary.ts`. They are for
 boundary code and domain parsers, not an excuse to let `unknown` spread through core
 logic.
+
+`isJsonObject` performs a shallow non-null, non-array object check. Its `JsonFields`
+result leaves fields `unknown`; it does not prove recursive JSON compatibility.
+`isPersistedEntry` adds only a checked string id. Its consumers still validate usage,
+timestamps and other fields. `JsonValue` is justified for values produced directly by
+`JSON.parse` without a reviver, or by a complete validator. An object containing functions
+does not satisfy that contract. Pi function signatures need installed-Pi evidence;
+checking `typeof fn === "function"` alone cannot prove parameter or return types.
 
 ## JSON and config
 
@@ -159,8 +171,10 @@ When touching a baselined area:
 3. Add `SAFETY:` only for real Pi or runtime boundary seams.
 4. If a file is over its line budget, split by domain before adding unrelated logic.
 5. If an `internals` entry is in reach, move its logic to a domain module and delete it.
-6. Regenerate the baseline only after review when current violations were intentionally
-   fixed, moved, or reclassified.
+6. Prune the baseline after fixes. `--update-baseline` refuses new findings and larger
+   budgets without rewriting the file, including for new files. It only removes
+   signatures or lowers existing budgets. Exceptional admissions require an explicit
+   hand edit with the reason reviewed in the PR; there is no bulk admission command.
 
 To inspect the migration ledger:
 
@@ -168,7 +182,7 @@ To inspect the migration ledger:
 npm run lint -- --show-baseline
 ```
 
-To regenerate after reviewed fixes:
+To prune after reviewed fixes:
 
 ```bash
 node scripts/dev/agent-lint.mjs --update-baseline

@@ -1,4 +1,4 @@
-import { isJsonObject, nonNegativeNumberValue, stringValue, type JsonObject } from "../_lib/boundary.ts";
+import { isJsonObject, nonNegativeNumberValue, stringValue, type JsonFields } from "../_lib/boundary.ts";
 import { confirmedWindow, retentionForModel } from "./retention.ts";
 import type {
   CacheLineageSnapshot,
@@ -8,8 +8,8 @@ import type {
   ResolvedCacheLineage,
 } from "./types.ts";
 
-/** A persisted session entry as Pi writes it: a JSON object carrying its own id. */
-type PersistedEntry = JsonObject & { id: string };
+/** Only the entry id is validated here. Each consumer checks the fields it needs. */
+type PersistedEntry = JsonFields & { id: string };
 
 function isPersistedEntry(entry: unknown): entry is PersistedEntry {
   return isJsonObject(entry) && typeof entry.id === "string";
