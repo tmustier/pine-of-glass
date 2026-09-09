@@ -1,19 +1,43 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 
-const script = readFileSync(new URL("../scripts/dev/agent-lint.mjs", import.meta.url), "utf8");
+const repoRoot = new URL("../", import.meta.url);
+const script = readFileSync(new URL("scripts/dev/agent-lint.mjs", repoRoot), "utf8");
+const fixtureDirs: string[] = [];
+
+after(() => {
+  for (const dir of fixtureDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 function fixtureRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "pog-agent-lint-"));
+  fixtureDirs.push(dir);
   mkdirSync(join(dir, "scripts", "dev"), { recursive: true });
   mkdirSync(join(dir, "extensions", "demo"), { recursive: true });
   writeFileSync(join(dir, "scripts", "dev", "agent-lint.mjs"), script);
   writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }, null, 2));
+  symlinkSync(join(repoRoot.pathname, "node_modules"), join(dir, "node_modules"), "dir");
   return dir;
+}
+
+function writeBaseline(dir: string, overrides: {
+  knownFindings?: object;
+  lineBudgets?: { defaultTsMax: number; files: Record<string, number> };
+  internalsBudgets?: Record<string, number>;
+} = {}): string {
+  const path = join(dir, "scripts", "dev", "agent-lint-baseline.json");
+  writeFileSync(path, `${JSON.stringify({
+    version: 1,
+    knownFindings: {},
+    lineBudgets: { defaultTsMax: 350, files: {} },
+    internalsBudgets: {},
+    ...overrides,
+  }, null, 2)}\n`);
+  return path;
 }
 
 function runLint(cwd: string, ...args: string[]) {
@@ -23,39 +47,35 @@ function runLint(cwd: string, ...args: string[]) {
   });
 }
 
-test("agent lint gives instructional failures and supports a migration baseline", () => {
+test("agent lint requires hand review before admitting a migration finding", () => {
   const dir = fixtureRepo();
-  const badGuard = ["function is", "Record(value) { return !!value; }"];
-  writeFileSync(join(dir, "extensions", "demo", "index.ts"), badGuard.join(""));
+  const badGuard = ["function is", "Record(value) { return !!value; }"].join("");
+  writeFileSync(join(dir, "extensions", "demo", "index.ts"), badGuard);
 
   const failed = runLint(dir);
   assert.notEqual(failed.status, 0);
   assert.match(failed.stderr, /POG001/);
   assert.match(failed.stderr, /Do not carry unknown inward/);
 
-  const updated = runLint(dir, "--update-baseline");
-  assert.equal(updated.status, 0, updated.stderr);
+  const refused = runLint(dir, "--update-baseline");
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /refused to update/);
 
-  const passed = runLint(dir);
-  assert.equal(passed.status, 0, passed.stderr);
-  assert.match(passed.stdout, /no new findings/);
+  writeBaseline(dir, { knownFindings: { POG001: { "extensions/demo/index.ts": { [badGuard]: 1 } } } });
+  assert.match(runLint(dir).stdout, /no new findings/);
+
+  writeFileSync(join(dir, "extensions", "demo", "index.ts"), "export const ok = true;\n");
+  assert.equal(runLint(dir, "--update-baseline").status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "scripts", "dev", "agent-lint-baseline.json"), "utf8")).knownFindings, {});
 });
 
 test("agent lint fails when the baseline keeps stale signatures", () => {
   const dir = fixtureRepo();
   writeFileSync(join(dir, "extensions", "demo", "index.ts"), "export const ok = true;\n");
   const staleLine = ["function is", "Record(value) { return !!value; }"].join("");
-  writeFileSync(join(dir, "scripts", "dev", "agent-lint-baseline.json"), JSON.stringify({
-    version: 1,
-    knownFindings: {
-      POG001: {
-        "extensions/demo/index.ts": {
-          [staleLine]: 1,
-        },
-      },
-    },
-    lineBudgets: { defaultTsMax: 350, files: {} },
-  }, null, 2));
+  writeBaseline(dir, {
+    knownFindings: { POG001: { "extensions/demo/index.ts": { [staleLine]: 1 } } },
+  });
 
   const failed = runLint(dir);
   assert.notEqual(failed.status, 0);
@@ -66,8 +86,6 @@ test("agent lint fails when the baseline keeps stale signatures", () => {
 // under their rule id, ratchet the same way, and report oxlint's own message.
 function oxlintFixtureRepo(): string {
   const dir = fixtureRepo();
-  const repoRoot = new URL("../", import.meta.url);
-  symlinkSync(join(repoRoot.pathname, "node_modules"), join(dir, "node_modules"), "dir");
   symlinkSync(join(repoRoot.pathname, "tools"), join(dir, "tools"), "dir");
   writeFileSync(join(dir, ".oxlintrc.json"), JSON.stringify({
     ignorePatterns: ["node_modules/**", "tools/**"],
@@ -88,7 +106,12 @@ test("anti-slop findings join the migration ledger under their rule id and ratch
   assert.match(failed.stderr, /exposes `unknown` to its caller/);
   assert.match(failed.stderr, /npm run lint:slop/);
 
-  assert.equal(runLint(dir, "--update-baseline").status, 0);
+  const line = "export function load(): unknown {";
+  writeBaseline(dir, {
+    knownFindings: {
+      "anti-slop(no-unknown-returns)": { "extensions/demo/index.ts": { [line]: 1 } },
+    },
+  });
   assert.match(runLint(dir).stdout, /no new findings \(1 known/);
 
   // Fixing the finding without pruning the ledger is reported as stale.
@@ -98,40 +121,69 @@ test("anti-slop findings join the migration ledger under their rule id and ratch
   assert.match(stale.stderr, /anti-slop\(no-unknown-returns\) stale baseline entry/);
 });
 
-test("test-only internals exports may shrink but not grow, even through --update-baseline", () => {
+test("test-only internals exports may shrink but not grow through --update-baseline", () => {
   const dir = fixtureRepo();
   const source = join(dir, "extensions", "demo", "index.ts");
   writeFileSync(source, "const a = 1;\nconst b = 2;\nexport const internals = {\n  // comment\n  a,\n  b: () => ({ nested: [1, 2] }),\n};\n");
 
-  const fresh = runLint(dir);
-  assert.notEqual(fresh.status, 0);
-  assert.match(fresh.stderr, /POG012/);
-  assert.match(fresh.stderr, /internals-entries:2 budget:0/);
+  assert.match(runLint(dir).stderr, /internals-entries:2 budget:0/);
+  assert.notEqual(runLint(dir, "--update-baseline").status, 0);
 
-  assert.equal(runLint(dir, "--update-baseline").status, 0);
+  const baselinePath = writeBaseline(dir, { internalsBudgets: { "extensions/demo/index.ts": 2 } });
   assert.equal(runLint(dir).status, 0);
 
   writeFileSync(source, "const a = 1;\nexport const internals = {\n  a,\n  b: 2,\n  c: 3,\n};\n");
+  const before = readFileSync(baselinePath, "utf8");
   assert.match(runLint(dir).stderr, /internals-entries:3 budget:2/);
-  // Regenerating the baseline does not legitimise growth: the budget stays at 2.
-  assert.equal(runLint(dir, "--update-baseline").status, 0);
-  assert.match(runLint(dir).stderr, /internals-entries:3 budget:2/);
+  assert.notEqual(runLint(dir, "--update-baseline").status, 0);
+  assert.equal(readFileSync(baselinePath, "utf8"), before);
 
   writeFileSync(source, "const a = 1;\nexport const internals = { a };\n");
   assert.match(runLint(dir).stderr, /internals-entries:1 stale-budget:2/);
+  assert.equal(runLint(dir, "--update-baseline").status, 0);
+  assert.equal(JSON.parse(readFileSync(baselinePath, "utf8")).internalsBudgets["extensions/demo/index.ts"], 1);
 });
 
-test("renamed or annotated grab bags still count as internals", () => {
+test("renamed, wrapped and aliased grab bags count using TypeScript syntax", () => {
   const dir = fixtureRepo();
   const source = join(dir, "extensions", "demo", "index.ts");
   writeFileSync(source, [
-    "type Internals = { a: number };",
-    "export const testInternals: Internals = {",
-    "  a: 1,",
-    "};",
-    "export const internalsForSpecs =",
-    "{ b: 2, c: 3 };",
+    "type Shape = Record<string, unknown>;",
+    "const bag = ({",
+    "  text: '}, // not structure',",
+    "  template: `value,${{ nested: true }.nested}` ,",
+    "  method: () => ({ nested: [1, 2] }),",
+    "} as Shape) satisfies Shape;",
+    "export { bag as testInternals };",
+    "export const internalsForSpecs: Shape = ({ spread: 1, ...bag } as Shape);",
+    "const unexportedInternals = { ignored: true };",
     "",
   ].join("\n"));
-  assert.match(runLint(dir).stderr, /internals-entries:3 budget:0/);
+  assert.match(runLint(dir).stderr, /internals-entries:5 budget:0/);
+});
+
+test("line budgets for existing files ratchet down while new oversized files are refused", () => {
+  const dir = fixtureRepo();
+  const source = join(dir, "extensions", "demo", "index.ts");
+  writeFileSync(source, `${Array.from({ length: 355 }, () => "// line").join("\n")}\n`);
+  const baselinePath = writeBaseline(dir, {
+    lineBudgets: { defaultTsMax: 350, files: { "extensions/demo/index.ts": 370 } },
+  });
+
+  assert.match(runLint(dir).stderr, /line-count:356 stale-budget:370/);
+  assert.equal(runLint(dir, "--update-baseline").status, 0);
+  assert.equal(JSON.parse(readFileSync(baselinePath, "utf8")).lineBudgets.files["extensions/demo/index.ts"], 356);
+
+  writeFileSync(source, `${Array.from({ length: 356 }, () => "// growth").join("\n")}\n`);
+  const beforeGrowth = readFileSync(baselinePath, "utf8");
+  assert.notEqual(runLint(dir, "--update-baseline").status, 0);
+  assert.equal(readFileSync(baselinePath, "utf8"), beforeGrowth);
+
+  const newFile = join(dir, "extensions", "demo", "new.ts");
+  writeFileSync(newFile, `${Array.from({ length: 355 }, () => "// new").join("\n")}\n`);
+  const before = readFileSync(baselinePath, "utf8");
+  const refused = runLint(dir, "--update-baseline");
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /extensions\/demo\/new.ts:1 POG010/);
+  assert.equal(readFileSync(baselinePath, "utf8"), before);
 });

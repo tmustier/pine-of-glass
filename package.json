@@ -88,6 +88,7 @@
   },
   "devDependencies": {
     "@oxlint/plugins": "1.82.0",
+    "oxc-parser": "0.149.0",
     "oxlint": "1.82.0"
   }
 }

@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { parseSync } from "oxc-parser";
 
 const ROOT = process.cwd();
 const BASELINE_PATH = join(ROOT, "scripts", "dev", "agent-lint-baseline.json");
@@ -266,49 +267,49 @@ function scanWithOxlint(findings) {
   }
 }
 
-// Counts the entries of an `export const internals = { ... }` object. The object is a
-// test-only grab bag of private functions; its size is a measure of how much test
-// coverage is coupled to implementation names rather than behaviour.
-// Any test-only aggregate export is an `internals` object regardless of its exact name
-// (`internals`, `testInternals`, `internalsForTests`, ...), with or without a type
-// annotation, so a rename cannot dodge the budget. Counts the top-level entries of every
-// such object literal in the file.
-const INTERNALS_DECLARATION = /export\s+const\s+\w*[iI]nternals\w*\s*(?::[^=]+)?=\s*\{/g;
+// Counts object-literal properties exported under a local or exported name containing
+// `internals` (case-insensitive). This deliberately covers this repo's test grab-bag
+// convention, not every possible test aggregate. Parsing keeps comments, strings,
+// templates and TypeScript syntax from being mistaken for object structure.
+function internalsEntryCount(file, text) {
+  const { program, errors } = parseSync(file, text);
+  if (errors.length > 0) throw new Error(`Could not parse ${file} while counting internals: ${errors[0].message}`);
 
-function internalsEntryCount(text) {
+  const declarations = new Map();
+  const exportedLocals = new Set();
+  for (const statement of program.body) {
+    const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+    if (declaration?.type === "VariableDeclaration" && declaration.kind === "const") {
+      for (const item of declaration.declarations) {
+        if (item.id.type !== "Identifier") continue;
+        declarations.set(item.id.name, item.init);
+        if (statement.type === "ExportNamedDeclaration" && /internals/i.test(item.id.name)) {
+          exportedLocals.add(item.id.name);
+        }
+      }
+    }
+    if (statement.type === "ExportNamedDeclaration" && statement.source === null) {
+      for (const specifier of statement.specifiers) {
+        const local = specifier.local.name;
+        const exported = specifier.exported.name ?? specifier.exported.value;
+        if (/internals/i.test(local) || /internals/i.test(exported)) exportedLocals.add(local);
+      }
+    }
+  }
+
   let entries = 0;
-  for (const match of text.matchAll(INTERNALS_DECLARATION)) {
-    entries += objectLiteralEntryCount(text, match.index + match[0].length - 1);
+  for (const local of exportedLocals) {
+    const expression = unwrapExpression(declarations.get(local));
+    if (expression?.type === "ObjectExpression") entries += expression.properties.length;
   }
   return entries;
 }
 
-// `open` indexes the literal's `{`; counts comma-separated top-level entries.
-function objectLiteralEntryCount(text, open) {
-  let depth = 0;
-  let entries = 0;
-  let sawEntryText = false;
-  for (let i = open; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "{" || ch === "(" || ch === "[") depth++;
-    else if (ch === "}" || ch === ")" || ch === "]") {
-      depth--;
-      if (depth === 0) {
-        if (sawEntryText) entries++;
-        break;
-      }
-    } else if (depth === 1) {
-      if (ch === ",") {
-        if (sawEntryText) entries++;
-        sawEntryText = false;
-      } else if (ch === "/" && text[i + 1] === "/") {
-        i = text.indexOf("\n", i);
-      } else if (!/\s/.test(ch)) {
-        sawEntryText = true;
-      }
-    }
+function unwrapExpression(expression) {
+  while (["ParenthesizedExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion", "TSNonNullExpression"].includes(expression?.type)) {
+    expression = expression.expression;
   }
-  return entries;
+  return expression;
 }
 
 function scanInternalsBudgets(files, baseline, findings) {
@@ -317,7 +318,7 @@ function scanInternalsBudgets(files, baseline, findings) {
   for (const absPath of files) {
     const file = rel(absPath);
     if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
-    const count = internalsEntryCount(readText(absPath));
+    const count = internalsEntryCount(file, readText(absPath));
     const budget = budgets[file];
     if (budget !== undefined) seen.add(file);
     if (count > (budget ?? 0)) {
@@ -332,17 +333,16 @@ function scanInternalsBudgets(files, baseline, findings) {
   }
 }
 
-// Budgets only ratchet down: `--update-baseline` keeps the smaller of the current count
-// and the previous budget, so growing a grab bag needs a hand edit of the baseline that
-// review can see, not a regenerate.
+// Baseline updates only retain or lower budgets already admitted by hand. New files are
+// never added, and deleted or fully-shrunk entries disappear.
 function buildInternalsBudgets(files, previous) {
+  const sources = new Map(files.map((path) => [rel(path), path]));
   const budgets = {};
-  for (const absPath of files) {
-    const file = rel(absPath);
-    if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
-    const count = internalsEntryCount(readText(absPath));
-    if (count === 0) continue;
-    budgets[file] = Math.min(count, previous[file] ?? count);
+  for (const [file, oldBudget] of Object.entries(previous)) {
+    const absPath = sources.get(file);
+    if (!absPath) continue;
+    const count = internalsEntryCount(file, readText(absPath));
+    if (count > 0) budgets[file] = Math.min(count, oldBudget);
   }
   return sortObjectDeep(budgets);
 }
@@ -393,16 +393,17 @@ function buildKnownFindings(findings) {
   return sortObjectDeep(knownFindings);
 }
 
-function buildLineBudgets(files) {
+function buildLineBudgets(files, previous) {
+  const defaultTsMax = Math.min(previous.defaultTsMax ?? DEFAULT_TS_MAX_LINES, DEFAULT_TS_MAX_LINES);
+  const sources = new Map(files.map((path) => [rel(path), path]));
   const budgets = {};
-  for (const absPath of files) {
-    const file = rel(absPath);
-    if (!file.endsWith(".ts")) continue;
-    if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
+  for (const [file, oldBudget] of Object.entries(previous.files ?? {})) {
+    const absPath = sources.get(file);
+    if (!absPath) continue;
     const lineCount = readText(absPath).split(/\r?\n/).length;
-    if (lineCount > DEFAULT_TS_MAX_LINES) budgets[file] = lineCount;
+    if (lineCount > defaultTsMax) budgets[file] = Math.min(lineCount, oldBudget);
   }
-  return { defaultTsMax: DEFAULT_TS_MAX_LINES, files: sortObjectDeep(budgets) };
+  return { defaultTsMax, files: sortObjectDeep(budgets) };
 }
 
 function sortObjectDeep(value) {
@@ -471,20 +472,32 @@ function main() {
   const baseline = loadBaseline();
   const findings = collectFindings(files, baseline);
 
+  const { known, fresh, stale } = partitionFindings(findings, baseline);
   if (args.has("--update-baseline")) {
+    // Updating is a debt ratchet, never an admission mechanism. POG011 findings are the
+    // expected signals that an existing budget can shrink; every other fresh finding,
+    // including one in a new file or growth above a reviewed budget, must be fixed or
+    // admitted by a deliberate hand edit before this command may rewrite the file.
+    const unreviewed = fresh.filter((finding) => finding.code !== "POG011");
+    if (unreviewed.length > 0) {
+      console.error(`agent-lint refused to update the baseline with ${unreviewed.length} unreviewed finding(s):\n`);
+      for (const finding of unreviewed) console.error(`${formatFinding(finding)}\n`);
+      console.error("Fix the findings or admit them with a reviewed hand edit of scripts/dev/agent-lint-baseline.json.");
+      process.exitCode = 1;
+      return;
+    }
     const next = {
       version: 1,
       generatedBy: "node scripts/dev/agent-lint.mjs --update-baseline",
-      knownFindings: buildKnownFindings(findings),
-      lineBudgets: buildLineBudgets(files),
+      knownFindings: buildKnownFindings(known),
+      lineBudgets: buildLineBudgets(files, baseline.lineBudgets ?? {}),
       internalsBudgets: buildInternalsBudgets(files, baseline.internalsBudgets ?? {}),
     };
     writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
-    console.log(`Updated ${relative(ROOT, BASELINE_PATH)} with ${findings.length} current findings and line budgets.`);
+    console.log(`Pruned ${relative(ROOT, BASELINE_PATH)}; no new findings or budget growth were admitted.`);
     return;
   }
 
-  const { known, fresh, stale } = partitionFindings(findings, baseline);
   if (args.has("--show-baseline")) {
     for (const finding of known) console.log(`${formatFinding(finding)}\n`);
     console.log(`Known baseline findings: ${known.length}`);
