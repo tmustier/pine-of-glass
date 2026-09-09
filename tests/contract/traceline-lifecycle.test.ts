@@ -4,11 +4,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import piTraceline, { internals } from "../../extensions/pi-traceline/index.ts";
-import { hostExtension } from "../harness/extension-host.ts";
+import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
 
 test("real ExtensionRunner keeps a headless subagent child out of Traceline's TUI", async () => {
-  const root = await hostExtension(piTraceline, { name: "pi-traceline-contract" });
-  const child = await hostExtension(piTraceline, { name: "pi-traceline-contract", interactive: false });
+  const project = new IsolatedProject();
+  const root = await hostExtension(piTraceline, { name: "pi-traceline-contract", project });
+  const child = await hostExtension(piTraceline, {
+    name: "pi-traceline-contract",
+    interactive: false,
+    project,
+  }).catch(async (error: unknown) => {
+    await root.dispose().finally(() => project.dispose());
+    throw error;
+  });
   const listeners = root.ui.terminalListeners;
 
   assert.equal(child.runner.hasUI(), false, "Pi no longer marks the SDK-style runner headless");
@@ -29,8 +37,15 @@ test("real ExtensionRunner keeps a headless subagent child out of Traceline's TU
     assert.equal(listeners[0]!("\x14"), undefined, "Ctrl+T must continue to Pi");
     assert.equal(root.ui.toolsExpanded, false, "Ctrl+T must still collapse Ctrl+O expansion");
   } finally {
-    await child.dispose();
-    await root.dispose();
+    try {
+      await child.dispose();
+    } finally {
+      try {
+        await root.dispose();
+      } finally {
+        project.dispose();
+      }
+    }
   }
 
   assert.deepEqual(child.errors, [], "headless child lifecycle raised a real-runner error");

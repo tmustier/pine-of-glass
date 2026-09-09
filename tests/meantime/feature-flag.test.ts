@@ -13,15 +13,19 @@ import { hostExtension, IsolatedProject, type HostedExtension } from "../harness
 async function withProject(config: JsonObject | undefined, run: (host: HostedExtension) => Promise<void>) {
   const project = new IsolatedProject();
   if (config) project.writeProjectConfig("pi-meantime", config);
-  const host = await hostExtension(piMeantime, { project });
+  let host: HostedExtension | undefined;
   try {
+    host = await hostExtension(piMeantime, { project });
     // Reason "new" (what Pi sends on /new) resets meantime's process-global state, so
     // each spec starts from zero regardless of test order.
     await host.start("new");
     await run(host);
   } finally {
-    await host.dispose();
-    project.dispose();
+    try {
+      await host?.dispose();
+    } finally {
+      project.dispose();
+    }
   }
 }
 

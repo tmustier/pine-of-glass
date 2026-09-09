@@ -26,7 +26,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import * as pi from "@earendil-works/pi-coding-agent";
 
-import { isJsonObject, type JsonObject } from "../../extensions/_lib/boundary.ts";
+import type { JsonObject } from "../../extensions/_lib/boundary.ts";
 
 type ExtensionFactory = (api: ExtensionAPI) => void | Promise<void>;
 type PiExtension = ConstructorParameters<typeof pi.ExtensionRunner>[0][number];
@@ -45,7 +45,11 @@ type WidgetFactory = (tui: TUI, theme: Theme) => Component & { dispose?(): void 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
 
 function isFactoryLoader(module: unknown): module is FactoryLoader {
-  return isJsonObject(module) && typeof module.loadExtensionFromFactory === "function";
+  if (typeof module !== "object" || module === null || !("loadExtensionFromFactory" in module)) return false;
+  // SAFETY: contracts exercise this exact installed-Pi loader seam. Runtime inspection
+  // establishes that the export is callable; its full signature is trusted, not proved
+  // by `typeof`.
+  return typeof module.loadExtensionFromFactory === "function";
 }
 
 // Pi does not export its factory loader from the package index; the lifecycle contracts
@@ -153,6 +157,59 @@ export class IsolatedProject {
   }
 }
 
+type ActiveEnvironment = {
+  project: IsolatedProject;
+  refs: number;
+  previousCwd: string;
+  previousHome: string | undefined;
+  owned: boolean;
+};
+let activeEnvironment: ActiveEnvironment | undefined;
+function acquireEnvironment(explicitProject: IsolatedProject | undefined) {
+  if (activeEnvironment !== undefined) {
+    if (explicitProject === undefined || explicitProject !== activeEnvironment.project) {
+      throw new Error("the extension host already owns process.cwd() and HOME for a different IsolatedProject");
+    }
+    activeEnvironment.refs += 1;
+    const environment = activeEnvironment;
+    return { project: environment.project, release: () => releaseEnvironment(environment) };
+  }
+  const owned = explicitProject === undefined;
+  const project = explicitProject ?? new IsolatedProject();
+  const environment: ActiveEnvironment = {
+    project,
+    refs: 1,
+    previousCwd: process.cwd(),
+    previousHome: process.env.HOME,
+    owned,
+  };
+  try {
+    process.chdir(project.dir);
+    process.env.HOME = project.home;
+    activeEnvironment = environment;
+  } catch (error) {
+    process.chdir(environment.previousCwd);
+    if (environment.previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = environment.previousHome;
+    if (owned) project.dispose();
+    throw error;
+  }
+  return { project, release: () => releaseEnvironment(environment) };
+}
+function releaseEnvironment(environment: ActiveEnvironment): void {
+  if (activeEnvironment !== environment) throw new Error("extension host environment ownership was released out of band");
+  environment.refs -= 1;
+  if (environment.refs > 0) return;
+  activeEnvironment = undefined;
+  try {
+    process.chdir(environment.previousCwd);
+    if (environment.previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = environment.previousHome;
+  } finally {
+    if (environment.owned) environment.project.dispose();
+  }
+}
+
 export type HostOptions = {
   /** Loads with a UI-owning runner (interactive Pi); false hosts a headless SDK-style runner. */
   interactive?: boolean;
@@ -171,13 +228,14 @@ export class HostedExtension {
   readonly ui: RecordedUi;
   /** Errors Pi's runner caught from the extension's handlers; a spec expects none. */
   readonly errors: string[];
-  readonly #restoreProcess: () => void;
+  readonly #releaseEnvironment: () => void;
+  #disposed = false;
 
-  constructor(runner: pi.ExtensionRunner, ui: RecordedUi, errors: string[], restoreProcess: () => void) {
+  constructor(runner: pi.ExtensionRunner, ui: RecordedUi, errors: string[], releaseEnvironment: () => void) {
     this.runner = runner;
     this.ui = ui;
     this.errors = errors;
-    this.#restoreProcess = restoreProcess;
+    this.#releaseEnvironment = releaseEnvironment;
   }
 
   /** The registered command, or a failing assertion naming what is missing. */
@@ -204,34 +262,39 @@ export class HostedExtension {
     await this.runner.emit({ type: "session_shutdown", reason: "quit" });
   }
 
-  /** Ends the session and restores `process.cwd()` and `$HOME`. Each host restores the
-   * values it found, so dispose hosts in reverse order of creation when nesting. */
+  /** Ends the session. The last host for a project restores `process.cwd()` and `$HOME`. */
   async dispose(): Promise<void> {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    let shutdownError: unknown;
     try {
       await this.shutdown();
+    } catch (error) {
+      shutdownError = error;
     } finally {
-      this.#restoreProcess();
+      this.#releaseEnvironment();
     }
+
+    const caughtError = this.errors.length === 0
+      ? undefined
+      : new Error(`extension runner caught errors:\n${this.errors.join("\n")}`);
+    if (shutdownError !== undefined && caughtError !== undefined) {
+      throw new AggregateError([shutdownError, caughtError], "extension host disposal failed");
+    }
+    if (shutdownError !== undefined) throw shutdownError;
+    if (caughtError !== undefined) throw caughtError;
   }
 }
 
 /** Loads `factory` through Pi's real loader into a real ExtensionRunner. */
 export async function hostExtension(factory: ExtensionFactory, options: HostOptions = {}): Promise<HostedExtension> {
-  const loader = await factoryLoader();
-  const ownedProject = options.project ? undefined : new IsolatedProject();
-  const project = options.project ?? ownedProject!;
-  const previousCwd = process.cwd();
-  const previousHome = process.env.HOME;
-  process.chdir(project.dir);
-  process.env.HOME = project.home;
-  const restoreProcess = () => {
-    process.chdir(previousCwd);
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
-    ownedProject?.dispose();
-  };
+  // Claim the process globals synchronously, before the loader's first await, so two
+  // concurrently-started hosts cannot both observe an apparently free environment.
+  const environment = acquireEnvironment(options.project);
+  const project = environment.project;
 
   try {
+    const loader = await factoryLoader();
     const cwd = project.dir;
     const runtime = pi.createExtensionRuntime();
     const extension = await loader.loadExtensionFromFactory(
@@ -278,9 +341,9 @@ export async function hostExtension(factory: ExtensionFactory, options: HostOpti
     }
     const errors: string[] = [];
     runner.onError((error) => errors.push(`${error.event}: ${error.error}`));
-    return new HostedExtension(runner, ui, errors, restoreProcess);
+    return new HostedExtension(runner, ui, errors, environment.release);
   } catch (error) {
-    restoreProcess();
+    environment.release();
     throw error;
   }
 }

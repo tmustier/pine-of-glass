@@ -5,12 +5,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import piCachemire from "../../extensions/pi-cachemire/index.ts";
-import { hostExtension } from "../harness/extension-host.ts";
+import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
 import { assistantMessage } from "../helpers.ts";
 
 test("real ExtensionRunner keeps a headless child out of Cachemire's interactive state", async () => {
-  const root = await hostExtension(piCachemire, { name: "pi-cachemire-contract" });
-  const child = await hostExtension(piCachemire, { name: "pi-cachemire-contract", interactive: false });
+  const project = new IsolatedProject();
+  const root = await hostExtension(piCachemire, { name: "pi-cachemire-contract", project });
+  const child = await hostExtension(piCachemire, {
+    name: "pi-cachemire-contract",
+    interactive: false,
+    project,
+  }).catch(async (error: unknown) => {
+    await root.dispose().finally(() => project.dispose());
+    throw error;
+  });
   const billedMessage = (model: string, input: number) => assistantMessage([], {
     model,
     usage: {
@@ -37,8 +45,15 @@ test("real ExtensionRunner keeps a headless child out of Cachemire's interactive
     await root.runner.emitMessageEnd({ type: "message_end", message: billedMessage("root", 1_000) });
     await root.runCommand("cache");
   } finally {
-    await child.dispose();
-    await root.dispose();
+    try {
+      await child.dispose();
+    } finally {
+      try {
+        await root.dispose();
+      } finally {
+        project.dispose();
+      }
+    }
   }
 
   assert.deepEqual(child.errors, [], "headless child lifecycle raised a real-runner error");
