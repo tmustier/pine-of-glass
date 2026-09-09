@@ -140,10 +140,10 @@
         "const original = (chat[originalKey] as (() => unknown) | undefined) ?? chat.clear.bind(chat);": 1
       },
       "extensions/_lib/tool-payloads.ts": {
-        "export function aggregateToolPayloadForNumerator(tools: Array<ToolDefinition & { promptGuidelines?: string[] }>, numerator: string): unknown {": 1,
+        "export function aggregateToolPayloadForShape(tools: Array<ToolShape & { promptGuidelines?: string[] }>, shape: string): unknown {": 1,
         "export function arrayItemsSchema(property: unknown): unknown {": 1,
-        "export function openAIResponsesToolPayload(tool: ToolDefinition): unknown {": 1,
-        "export function toolPayloadForNumerator(tool: ToolDefinition & { promptGuidelines?: string[] }, numerator: string): unknown {": 1
+        "export function openAIResponsesToolPayload(tool: ToolShape): unknown {": 1,
+        "export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: string[] }, shape: string): unknown {": 1
       },
       "extensions/pi-cachemire/classify.ts": {
         "function stripCacheMarkers(value: unknown): unknown {": 1
@@ -213,7 +213,6 @@
         "buildSystemPrompt: (options: Record<string, unknown>) => string;": 1
       },
       "tests/traceline/runtime-fixtures.ts": {
-        "lastMessage: { content: Array<AssistantContentBlock | ReturnType<typeof toolCallFor>> };": 1,
         "type AssistantContentBlock = { type: string; [key: string]: unknown };": 1
       }
     },
@@ -329,7 +328,7 @@
     "files": {
       "extensions/pi-cachemire/index.ts": 852,
       "extensions/pi-contextimate/index.ts": 1568,
-      "extensions/pi-traceline/index.ts": 1679,
+      "extensions/pi-traceline/index.ts": 1677,
       "tests/contract/pi-internals.test.ts": 355,
       "tests/traceline/one-line.test.ts": 772
     }

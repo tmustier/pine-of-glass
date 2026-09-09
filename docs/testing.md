@@ -23,22 +23,14 @@ through the surface a user or Pi would use, and asserts on what a user would see
 code behind the capability can change entirely; the test should not have to. A test that
 breaks on a refactor with no behaviour change is a bug in the test.
 
-Three tiers, from most to least preferred:
+Use these seams:
 
-1. **Extension behaviour goes through Pi.** The public interface of an extension is its
+1. **Extension behaviour goes through Pi.** Its public interface is the
    default export loaded by Pi, the config files it reads, the events Pi delivers, the
    commands it registers, and the UI surface it writes to (notifications, widgets,
-   status, chat lines, terminal input). `tests/harness/extension-host.ts` makes this
-   cheap: it loads the default export through Pi's real factory loader into a real
-   `ExtensionRunner` and records the UI. It reserves `process.cwd()` and `$HOME` for one
-   scratch project at a time. Concurrent hosts must explicitly share that project;
-   attempts to use a different project fail before changing either value. Separate
-   projects need sequential tests or separate processes. `tests/meantime/feature-flag.test.ts` is the reference
-   shape. Prefer this tier for lifecycle, commands, config, and anything a user sees.
-   Two things it does not cover: the recorder has no chat container, so the chat-append
-   path (anchoring, re-attachment) is observed only through each extension's notify
-   fallback; and process-global state is shared across hosts in one process, so specs
-   for an enabled extension start their session with reason `new` to reset it.
+   status, chat lines, terminal input). `tests/harness/extension-host.ts` covers the
+   current notification and widget specifications through Pi's real loader and
+   `ExtensionRunner`. Prefer this seam when it can observe the real behavior.
 2. **Pure logic goes through the named exports of a domain module.** ANSI truncation,
    SGR filtering, token formulas, heuristic precedence and retention policy are contracts
    whose inputs and outputs are the specification. Test them directly from their module
@@ -46,19 +38,9 @@ Three tiers, from most to least preferred:
    `pi-cachemire/retention.ts`), with tables and invariants, not by inspecting how they
    compute. Choose a stable capability to test before deciding what to export. Do not
    expose private helpers or split them into a new module just to make them testable.
-3. **Privates of `index.ts` are not a test surface.** The `export const internals`
-   grab bags exist because logic was never extracted from the entry files. They are a
-   migration ledger, not an API: `npm run lint` fails if one grows (POG012), and each
-   entry leaves by moving its logic into a domain module (tier 2) or testing the
-   behaviour through the harness (tier 1). Do not add entries. Any test-only aggregate
-   export is an `internals` object regardless of its name. The lint counts top-level
-   object properties for local or exported names containing `internals`, including
-   export aliases and TypeScript wrappers. It counts a spread as one property; it does
-   not expand imported objects or infer which exports exist only for tests. Review
-   checks those cases and differently named grab bags.
-
-An export with no runtime importer is a review signal, not proof of bad design: public
-extension entry points and reusable library APIs can legitimately have no local caller.
+3. **Privates of `index.ts` are not a test surface.** The three legacy
+   `export const internals` objects are migration debt and may only shrink. Move a
+   capability to a real domain module or test it through Pi; do not create test APIs.
 
 What a good test in any tier looks like:
 
@@ -103,14 +85,10 @@ Deliberately **not** tested:
   cachemire's renderer and meantime's timing/render modules do. The legacy `internals`
   objects on the three older entry files only shrink.
 - **Extension host:** `tests/harness/extension-host.ts` hosts a default export the way
-  Pi does (real loader, real runner, recorded UI, one reserved project environment).
-  The last host's disposal restores cwd and HOME. Disposal also fails the test if the
-  runner caught any handler errors, including errors during shutdown. Always dispose
-  hosts in `finally`, and clean caller-owned projects even when hosting or disposal fails.
-  Pi installs a UI context by spreading it, so the recorder's members are own properties.
-  There is no chat container in the recorder; chat lines arrive through each extension's
-  own notify fallback and are read from `ui.notifications`.
-  These tests do not run a model or terminal and do not replace real-product acceptance.
+  Pi does. Its scratch project owns cwd and HOME until disposal, covering config reads
+  during both factory loading and session events. Its recording UI has no chat container,
+  so chat fallback behavior is observable but chat placement is not. These tests do not
+  replace live terminal acceptance.
 - **Scripts:** `npm run lint` (agent coding-standard and generated-doc drift checks),
   `npm run docs:cache` (regenerate Cachemire retention docs),
   `npm run typecheck`, `npm test` (unit + render + contract),
@@ -149,7 +127,6 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
 | Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
-| The same two-runner setup keeps a headless child's `session_start` and `session_shutdown` from dropping the interactive Traceline TUI handle or Ctrl+T listener | traceline process-global TUI ownership |
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
 | Native OpenAI Completions accounts top-level `usage.cached_tokens` for Moonshot, Moonshot CN and Together, while preserving detailed-field precedence and cost accounting | cachemire provider usage accounting |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
@@ -265,7 +242,7 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   calibration skips calls without a usable reasoning split.
 - **Session totals and config parsing**: open idle time contributes to idle, active is
   the watched span minus idle, and malformed boundary values are ignored.
-- **Opt-in through config**: hosted through the extension harness, a project without
+- **Opt-in through config**: a project without
   `.pi/pi-meantime.json` has no `/pace` and no widget; `enabled: true` answers `/pace`
   with the ledger and shows the waiting clock once a provider request is in flight;
   `widget: false` keeps `/pace` and suppresses the widget.

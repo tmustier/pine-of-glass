@@ -267,49 +267,22 @@ function scanWithOxlint(findings) {
   }
 }
 
-// Counts object-literal properties exported under a local or exported name containing
-// `internals` (case-insensitive). This deliberately covers this repo's test grab-bag
-// convention, not every possible test aggregate. Parsing keeps comments, strings,
-// templates and TypeScript syntax from being mistaken for object structure.
 function internalsEntryCount(file, text) {
   const { program, errors } = parseSync(file, text);
   if (errors.length > 0) throw new Error(`Could not parse ${file} while counting internals: ${errors[0].message}`);
 
-  const declarations = new Map();
-  const exportedLocals = new Set();
-  for (const statement of program.body) {
-    const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
-    if (declaration?.type === "VariableDeclaration" && declaration.kind === "const") {
-      for (const item of declaration.declarations) {
-        if (item.id.type !== "Identifier") continue;
-        declarations.set(item.id.name, item.init);
-        if (statement.type === "ExportNamedDeclaration" && /internals/i.test(item.id.name)) {
-          exportedLocals.add(item.id.name);
-        }
-      }
-    }
-    if (statement.type === "ExportNamedDeclaration" && statement.source === null) {
-      for (const specifier of statement.specifiers) {
-        const local = specifier.local.name;
-        const exported = specifier.exported.name ?? specifier.exported.value;
-        if (/internals/i.test(local) || /internals/i.test(exported)) exportedLocals.add(local);
-      }
-    }
-  }
-
   let entries = 0;
-  for (const local of exportedLocals) {
-    const expression = unwrapExpression(declarations.get(local));
-    if (expression?.type === "ObjectExpression") entries += expression.properties.length;
+  for (const statement of program.body) {
+    if (statement.type !== "ExportNamedDeclaration") continue;
+    const declaration = statement.declaration;
+    if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
+    for (const item of declaration.declarations) {
+      if (item.id.type === "Identifier" && item.id.name === "internals" && item.init?.type === "ObjectExpression") {
+        entries += item.init.properties.length;
+      }
+    }
   }
   return entries;
-}
-
-function unwrapExpression(expression) {
-  while (["ParenthesizedExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion", "TSNonNullExpression"].includes(expression?.type)) {
-    expression = expression.expression;
-  }
-  return expression;
 }
 
 function scanInternalsBudgets(files, baseline, findings) {

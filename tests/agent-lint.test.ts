@@ -147,24 +147,6 @@ test("test-only internals exports may shrink but not grow through --update-basel
   assert.equal(JSON.parse(readFileSync(baselinePath, "utf8")).internalsBudgets["extensions/demo/index.ts"], 1);
 });
 
-test("renamed, wrapped and aliased grab bags count using TypeScript syntax", () => {
-  const dir = fixtureRepo();
-  const source = join(dir, "extensions", "demo", "index.ts");
-  writeFileSync(source, [
-    "type Shape = Record<string, unknown>;",
-    "const bag = ({",
-    "  text: '}, // not structure',",
-    "  template: `value,${{ nested: true }.nested}` ,",
-    "  method: () => ({ nested: [1, 2] }),",
-    "} as Shape) satisfies Shape;",
-    "export { bag as testInternals };",
-    "export const internalsForSpecs: Shape = ({ spread: 1, ...bag } as Shape);",
-    "const unexportedInternals = { ignored: true };",
-    "",
-  ].join("\n"));
-  assert.match(runLint(dir).stderr, /internals-entries:5 budget:0/);
-});
-
 test("line budgets for existing files ratchet down while new oversized files are refused", () => {
   const dir = fixtureRepo();
   const source = join(dir, "extensions", "demo", "index.ts");

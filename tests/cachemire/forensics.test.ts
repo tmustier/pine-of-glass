@@ -7,10 +7,6 @@ const { fingerprintPayload, diffFingerprints, classifyCall } = internals;
 
 const MIN = 60_000;
 
-type CacheControl = { type: "ephemeral"; ttl?: "1h" };
-type FixtureTool = { name: string; description: string; input_schema: { type: "object"; properties: {} }; cache_control?: CacheControl };
-type FixtureTextBlock = { type: "text"; text: string; cache_control?: CacheControl };
-
 function anthropicPayload(options: {
   model?: string;
   system?: string;
@@ -28,19 +24,24 @@ function anthropicPayload(options: {
       {
         type: "text",
         text: options.system ?? "You are a fixture.",
-        cache_control: options.ttl ? { type: "ephemeral", ttl: options.ttl } : { type: "ephemeral" },
+        cache_control: { type: "ephemeral", ...(options.ttl ? { ttl: options.ttl } : {}) },
       },
     ],
-    tools: (options.tools ?? [{ name: "bash", description: "Run a command." }]).map((tool, index, all) => {
-      const entry: FixtureTool = { ...tool, input_schema: { type: "object", properties: {} } };
-      if (index === all.length - 1) entry.cache_control = { type: "ephemeral" };
-      return entry;
-    }),
-    messages: userTexts.map((text, index) => {
-      const block: FixtureTextBlock = { type: "text", text };
-      if (index === breakpointIndex) block.cache_control = { type: "ephemeral" };
-      return { role: "user", content: [block] };
-    }),
+    tools: (options.tools ?? [{ name: "bash", description: "Run a command." }]).map((tool, index, all) => ({
+      ...tool,
+      input_schema: { type: "object", properties: {} },
+      ...(index === all.length - 1 ? { cache_control: { type: "ephemeral" } } : {}),
+    })),
+    messages: userTexts.map((text, index) => ({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text,
+          ...(index === breakpointIndex ? { cache_control: { type: "ephemeral" } } : {}),
+        },
+      ],
+    })),
   };
 }
 

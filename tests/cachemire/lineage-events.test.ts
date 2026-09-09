@@ -51,21 +51,13 @@ function assistant(timestamp: number, prompt: number) {
   };
 }
 
-type FixtureRequest = {
-  model: string;
-  system: Array<{ type: "text"; text: string; cache_control: { type: "ephemeral" } }>;
-  messages: Array<{ role: "user"; content: Array<{ type: "text"; text: string }> }>;
-  tools?: unknown[];
-};
-
-function payload(messages: string[], tools?: unknown[]): FixtureRequest {
-  const request: FixtureRequest = {
+function payload(messages: string[], tools?: unknown[]) {
+  return {
     model: "claude-opus-4-8",
     system: [{ type: "text", text: "fixture", cache_control: { type: "ephemeral" } }],
     messages: messages.map((text) => ({ role: "user", content: [{ type: "text", text }] })),
+    ...(tools ? { tools } : {}),
   };
-  if (tools) request.tools = tools;
-  return request;
 }
 
 function context(entries: unknown[], leaf: { id: string }, notifications: string[]) {

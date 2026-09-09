@@ -13,11 +13,8 @@
   `npm run link-pi` after `npm install`.
 - Development: tests specify behaviour through public interfaces. A new
   `tests/harness/extension-host.ts` hosts an extension through Pi's real loader and
-  runner with a recorded UI; Meantime's opt-in specs and both lifecycle contracts use
-  it. The test-only `internals` exports may no longer grow (POG012).
-- Contextimate and the shared tool-payload helpers name the provider payload by its
-  config vocabulary (`toolPayloadForNumerator`, `ToolDefinition`) instead of `shape`.
-  The UI fallback label now reads `Unknown tool numerator`.
+  runner with a recorded UI; Meantime's opt-in specs and Cachemire's nested-runner
+  contract use it. The test-only `internals` exports may no longer grow (POG012).
 - Traceline keeps continuation lines from native tool-call renderers in compact
   summaries. A `Ran` header followed by a command now shows `Ran · command`,
   without tool-specific adapters. Expanded calls and results stay native.

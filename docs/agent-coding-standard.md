@@ -24,46 +24,21 @@ reviewed migration plan.
 
 `.oxlintrc.json` runs Oxlint with [anti-slop](https://github.com/dmmulroy/anti-slop),
 vendored at `tools/oxlint/anti-slop/` (provenance in `tools/oxlint/UPSTREAM.md`). The
-rules reject low-evidence TypeScript: `unknown` returns, unsafe dictionaries, chained or
-unexplained assertions, widening known values, conditional empty-object spreads,
-accumulator copies, vague `shape` names, module mocking. `npm run lint:slop` prints the
-full diagnostics; `npm run lint` feeds them into the same baseline as the `POG` rules,
-keyed by rule id such as `anti-slop(no-unknown-returns)`.
+enabled rules reject low-evidence TypeScript. `npm run lint:slop` prints their full
+diagnostics; `npm run lint` adds them to the existing migration ledger.
 
 Validate external data before passing it into calculations and rendering. Keep ordinary
-type narrowing: `typeof` on a `string | number` value is useful TypeScript, not debt.
-Moving a check into a named guard does not strengthen it. TypeScript trusts `value is T`;
-review must establish that the check proves the claimed fields and invariants.
-
-`no-runtime-typeof` is off because it cannot distinguish these cases.
-`no-unknown-parameters` applies to four reviewed pure modules: `_lib/fmt.ts`,
-`_lib/ansi.ts`, `pi-meantime/timing.ts` and `pi-meantime/render.ts`. These should receive
-typed values. Review this list when extracting another pure module. The upstream rule
-checks explicit `unknown` parameters; aliases, nested types and predicate subjects need
-review. A green lint result is not proof that all inputs are validated.
-
-Elsewhere, `unknown` is honest for config, provider data and Pi internals. Refine the
-fields the consumer needs, then pass the resulting domain value inward. Small local
-checks are fine. Extract a helper when it establishes a reusable contract or simplifies
-the caller, not merely to satisfy a syntax rule.
-
-Rules that are off are off by policy, with the reason inline in `.oxlintrc.json`, never
-baselined:
-
-- `eslint/no-control-regex`: ANSI escape parsing is the domain.
-- In `tests/**`, `require-safety-comment-for-type-assertion` and
-  `no-chained-type-assertions` are off because synthetic duck-typed fixtures are the
-  documented stand-in pattern, checked against real Pi by focused contract tests.
-  Keep casts near the fixture construction; this exemption does not prove their safety.
+type narrowing. A named guard is useful only when it proves its predicate. Keep `unknown`
+at config, provider and Pi boundaries, refine what the consumer needs, and pass typed
+values inward. Do not extract a helper merely to satisfy a syntax rule.
 
 A baseline entry is debt with an intended fix. If a finding is correct code that should
 stay, the right move is a rule-level decision in `.oxlintrc.json` with its reason, or
 an inline `oxlint-disable-next-line` with a justification, not a baseline entry.
 
-`oxlint` and `@oxlint/plugins` are pinned to the same exact version; the plugin's API
-tracks Oxlint. The pinned `oxc-parser` devDependency counts exported object properties
-using TypeScript syntax. `npm install` prunes the Pi runtime
-symlinks, so run `npm run link-pi` after it; `npm run preflight` says so if you forget.
+The Oxlint packages are pinned because their plugin APIs move together. `oxc-parser`
+counts `internals` properties. After `npm install`, run `npm run link-pi` to restore the
+Pi runtime symlinks.
 
 ## Boundary typing
 
@@ -98,14 +73,6 @@ isPiComponentLike(value)
 The shared generic JSON helpers live in `extensions/_lib/boundary.ts`. They are for
 boundary code and domain parsers, not an excuse to let `unknown` spread through core
 logic.
-
-`isJsonObject` performs a shallow non-null, non-array object check. Its `JsonFields`
-result leaves fields `unknown`; it does not prove recursive JSON compatibility.
-`isPersistedEntry` adds only a checked string id. Its consumers still validate usage,
-timestamps and other fields. `JsonValue` is justified for values produced directly by
-`JSON.parse` without a reviver, or by a complete validator. An object containing functions
-does not satisfy that contract. Pi function signatures need installed-Pi evidence;
-checking `typeof fn === "function"` alone cannot prove parameter or return types.
 
 ## JSON and config
 
@@ -154,10 +121,7 @@ The lint also protects existing repo rules:
   exemption.
 - TypeScript files should stay context-sized. Existing oversized files have temporary
   budgets in the baseline and should be split over time rather than grown.
-- The test-only `export const internals` objects on the older entry files do not grow
-  (POG012). Tests reach behaviour through public interfaces; see
-  [testing.md](./testing.md), "Public interfaces". Each entry leaves by extracting its
-  logic into a domain module or covering the behaviour through the extension harness.
+- The three legacy `export const internals` objects do not grow (POG012).
 
 ## Baseline policy
 

@@ -165,25 +165,18 @@ reasoning and startup/reload. No PR comments posted.
 
 ## 2026-09-09: anti-slop adoption quality review
 
-Revised PR #115's policy: ordinary typed-union narrowing stays legal. Four reviewed
-pure modules reject explicit unknown inputs; parser and predicate contracts still need
-review. Removed 197 broad-rule warnings from the ledger as a policy correction, not
-as code fixes. The remaining ledger has 176 findings.
+Simplified PR #115 after reviewing it for lint-driven code and implementation-coupled
+tests. Restored provider "shape" terminology, readable filter/map pipelines and direct
+test fixtures; disabled the generic rules that opposed those forms. Removed unused
+boundary and harness APIs, speculative environment ownership, and repeated commentary.
 
-Changed shallow object inspection to return unvalidated fields. Kept recursively typed
-JSON only where serialization/parsing establishes that provenance. Baseline updates now
-refuse new findings and larger budgets before writing. A pinned development-only
-oxc-parser counts internals properties using syntax, with its limits documented.
+The remaining hosted tests describe Meantime's config, command and widget behavior and
+Cachemire's interactive/headless isolation. Removed seven tests for harness internals,
+type-system tautologies and contrived syntax. Also removed the Traceline nested-runner
+test after a plausible ownership regression did not make it fail; that behavior needs a
+live TUI test. Meantime's enabled/widget guards and Cachemire's UI-owner guard each failed
+their focused mutation checks.
 
-The test host reserves one project environment per process. Explicit same-project
-hosts share it; competing projects fail before changing cwd or HOME. The last disposal
-restores the environment and reports any errors caught by Pi, including earlier events
-and shutdown. Lifecycle fixtures and failure-path tests cover ownership and cleanup.
-
-Verification: npm run check passed, including lint, typecheck and 374 tests. CLI fixture
-tests cover refused baseline writes, new-file budgets and the actual lint policy.
-Temporarily restoring the old JsonObject predicate made typecheck fail with TS2578 in
-the new boundary regression test; restored JsonFields and reran the full check.
-Independent read-only review found no blocking issues. These follow-up changes affect
-development tooling, tests and static type contracts. No live model or terminal test
-was run here; hosted tests are not end-to-end acceptance of the full extension PR.
+The scratch project now owns cwd and HOME until disposal because Cachemire reads config
+during `session_start`. A direct probe confirmed isolated `widget: false` config and cwd
+restoration. The full check passes with 366 tests and 175 known baseline findings.

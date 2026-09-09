@@ -562,9 +562,9 @@ function compactJson(value: unknown): string {
 // break was — middle truncation then keeps the head *and* the operative tail. The marks
 // stay plain here; inkBashBody dims them with the rest of the shell apparatus.
 function flattenInvocationLines(lines: string[]): string | undefined {
-  const visible = lines.flatMap((line) =>
-    stripAnsi(line).trim().length > 0 ? [trimLeadingVisibleWhitespace(line.trimEnd())] : [],
-  );
+  const visible = lines
+    .filter((line) => stripAnsi(line).trim().length > 0)
+    .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
   if (visible.length === 0) return undefined;
   return visible.join(` ${LINE_BREAK_MARK} `);
 }
@@ -1278,10 +1278,8 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
     const dir = lastSlash >= 0 ? boringPrefix(last, path) : "";
     const base = path.slice(dir.length);
     const ranges = rows
-      .flatMap((row) => {
-        const range = lineRange(row?.args).slice(1);
-        return range ? [range] : [];
-      })
+      .map((row) => lineRange(row?.args).slice(1))
+      .filter(Boolean)
       .join(",");
     const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
     // rows[0] is the carrier: in drill mode the fold is one target and rows[0] renders it.

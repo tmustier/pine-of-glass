@@ -10,13 +10,6 @@ const { captureWriteCallSnapshot } = internals;
 
 type AssistantContentBlock = { type: string; [key: string]: unknown };
 
-type AssistantRowFixture = {
-  setHideThinkingBlock: () => void;
-  hideThinkingBlock: boolean;
-  hiddenThinkingLabel?: string;
-  lastMessage: { content: Array<AssistantContentBlock | ReturnType<typeof toolCallFor>> };
-};
-
 let nextToolCallId = 0;
 
 export function toolCallFor(row: ToolRowLike) {
@@ -35,13 +28,12 @@ export function assistantBefore(
   content: AssistantContentBlock[] = [],
   hideThinkingBlock = false,
 ) {
-  const row: AssistantRowFixture = {
+  return {
     setHideThinkingBlock: () => {},
     hideThinkingBlock,
+    ...(hideThinkingBlock ? { hiddenThinkingLabel: "Thinking..." } : {}),
     lastMessage: { content: [...content, ...rows.map(toolCallFor)] },
   };
-  if (hideThinkingBlock) row.hiddenThinkingLabel = "Thinking...";
-  return row;
 }
 
 export function nativeBashLines(command: string, timeout?: number): string[] {

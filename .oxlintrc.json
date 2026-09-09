@@ -19,7 +19,8 @@
     "eslint/no-control-regex": "off",
 
     "oxc/no-accumulating-spread": "error",
-    "anti-slop/no-array-filter-map": "error",
+    // A filter followed by a map is often clearer than flatMap with singleton arrays.
+    "anti-slop/no-array-filter-map": "off",
     "anti-slop/no-reduce-accumulator-copy": "error",
     "anti-slop/no-chained-type-assertions": "error",
     "anti-slop/no-conditional-empty-object-spread": "error",
@@ -28,7 +29,8 @@
     "anti-slop/no-object-parameters": "error",
     "anti-slop/no-reflect-apply": "error",
     "anti-slop/no-reflect-get": "error",
-    "anti-slop/no-shape-in-symbol-names": "error",
+    // Shape is precise domain language for provider payload formats in this repo.
+    "anti-slop/no-shape-in-symbol-names": "off",
     "anti-slop/no-unknown-returns": "error",
     "anti-slop/no-unknown-type-aliases": "error",
     "anti-slop/no-unsafe-dictionary-type": "error",
@@ -58,6 +60,7 @@
       // proves the duck types against real Pi. A SAFETY comment on each would be noise.
       "files": ["tests/**"],
       "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "off",
         "anti-slop/require-safety-comment-for-type-assertion": "off",
         "anti-slop/no-chained-type-assertions": "off"
       }

@@ -21,19 +21,18 @@ import {
   summarizeCounts,
   vertexCountRequest,
 } from "../../scripts/contextimate/provider-token-counts.ts";
-import { isJsonObject, type JsonValue } from "../../extensions/_lib/boundary.ts";
+import { isJsonObject, type JsonObject } from "../../extensions/_lib/boundary.ts";
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, fakePi, fixtureSystemPrompt } from "../helpers.ts";
 
-const { buildSnapshot, toolPayloadForNumerator } = internals;
+const { buildSnapshot, toolPayloadForShape } = internals;
 
 function capturedAnthropicPayload() {
   const snapshot = buildSnapshot(fakePi(), () => fixtureSystemPrompt(), undefined, () => undefined, () => anthropicModel, {});
   const tools = snapshot.tools.slice(0, 3).map((tool) => {
-    // The count endpoint receives serialized JSON, not the in-memory tool object.
-    const payload: JsonValue = JSON.parse(JSON.stringify(toolPayloadForNumerator(tool, "anthropic")));
+    const payload = toolPayloadForShape(tool, "anthropic");
     assert.ok(isJsonObject(payload));
-    return payload;
+    return payload as JsonObject;
   });
   return {
     model: "claude-opus-4-8",

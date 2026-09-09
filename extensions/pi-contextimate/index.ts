@@ -16,7 +16,7 @@ import {
   type ModelSummary,
 } from "../_lib/heuristics.ts";
 import {
-  aggregateToolPayloadForNumerator,
+  aggregateToolPayloadForShape,
   arrayItemsSchema,
   estimateOpenAIFunctionToolTokens,
   estimateOpenAIToolDefinitionTokens,
@@ -28,7 +28,7 @@ import {
   schemaArrayItemProperties,
   schemaPropertyDescription,
   schemaPropertyType,
-  toolPayloadForNumerator,
+  toolPayloadForShape,
   toolPayloadLabel,
 } from "../_lib/tool-payloads.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
@@ -133,7 +133,7 @@ type ToolNumeratorResult = {
   label: string;
   content: string;
   chars: number;
-  /** Present only for the openai-cookbook formula; ratio numerators divide chars instead. */
+  /** Present only for the openai-cookbook formula; ratio shapes divide chars instead. */
   tokens?: number;
 };
 
@@ -593,8 +593,8 @@ function resolveHeuristic(model: ModelSummary | undefined, config: ContextimateC
 }
 
 function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic): ToolNumeratorResult {
-  const numerator = heuristic.toolNumerator;
-  if (numerator === "openai-cookbook") {
+  const shape = heuristic.toolNumerator;
+  if (shape === "openai-cookbook") {
     const content = safeMinifiedJson(tools.map(openAIResponsesToolPayload));
     return {
       label: "OpenAI-style local formula",
@@ -603,9 +603,9 @@ function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic):
       tokens: estimateOpenAIFunctionToolTokens(tools),
     };
   }
-  const content = safeMinifiedJson(aggregateToolPayloadForNumerator(tools, numerator));
+  const content = safeMinifiedJson(aggregateToolPayloadForShape(tools, shape));
   return {
-    label: toolPayloadLabel(numerator),
+    label: toolPayloadLabel(shape),
     content,
     chars: content.length,
   };
@@ -646,9 +646,9 @@ function buildToolFields(schema: unknown): ToolField[] {
 }
 
 function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristic): ToolDisplayEstimate {
-  const numerator = heuristic.toolNumerator;
-  const chars = safeMinifiedJson(toolPayloadForNumerator(tool, numerator)).length;
-  if (numerator === "openai-cookbook") {
+  const shape = heuristic.toolNumerator;
+  const chars = safeMinifiedJson(toolPayloadForShape(tool, shape)).length;
+  if (shape === "openai-cookbook") {
     return { tokens: estimateOpenAIToolDefinitionTokens(tool), chars };
   }
   return { tokens: estimateCharsAsTokens(chars, heuristic.toolDenominator), chars };
@@ -1432,8 +1432,8 @@ export const internals = {
   cleanDenominator,
   resolveHeuristic,
   // provider payload shaping
-  toolPayloadForNumerator,
-  aggregateToolPayloadForNumerator,
+  toolPayloadForShape,
+  aggregateToolPayloadForShape,
   buildToolNumerator,
   buildToolDisplayEstimate,
   // OpenAI cookbook-style formula

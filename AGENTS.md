@@ -45,20 +45,11 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   tmux/HOME; see its README for the recipe. The `cachemire` scenario makes live model
   calls (costs cents).
 - Agent coding standards live in [`docs/agent-coding-standard.md`](./docs/agent-coding-standard.md)
-  and are enforced by `scripts/dev/agent-lint.mjs` plus the vendored
-  [anti-slop](https://github.com/dmmulroy/anti-slop) Oxlint rules in `.oxlintrc.json`
-  (rules that are off say why inline). Boundary uncertainty belongs at Pi, JSON,
-  config, provider-payload, and catch seams only. Keep ordinary narrowing of typed
-  unions; a named guard must prove its claimed type, not just relocate a check.
-  The lint rejects explicit `unknown` inputs in the reviewed pure modules listed in
-  `.oxlintrc.json`; other boundaries and predicate claims need review. Do not
-  add generic `isRecord` or `isObject` helpers. Parse or refine at the edge, pass typed
-  values inward, and document real escape hatches with `SAFETY:` comments. The baseline is debt that only
-  shrinks; a finding that is correct code gets a rule decision, not a baseline entry.
-- Tests specify behaviour through public interfaces: the extension's default export
-  hosted by `tests/harness/extension-host.ts`, or the named exports of a domain module.
-  The `internals` grab bags on the older entry files may not grow. See
-  [`docs/testing.md`](./docs/testing.md), "Public interfaces".
+  and are enforced by `scripts/dev/agent-lint.mjs` and `.oxlintrc.json`. Parse external
+  data at its boundary, pass typed values inward, and document real escape hatches with
+  `SAFETY:` comments. The baseline and legacy `internals` exports only shrink.
+- Tests specify capabilities through Pi or stable domain-module APIs. Do not expose
+  private helpers for tests. See [`docs/testing.md`](./docs/testing.md).
 
 ## Style
 
