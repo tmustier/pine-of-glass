@@ -122,6 +122,28 @@ test("installed GPT-5.6 and GPT-6 Astra models keep direct API and Codex routes 
   }
 });
 
+test("installed Claude Fable 5.1 declares Pi's cache-safe effort protocol", () => {
+  const fable = modelRecord("anthropic.json", "anthropic-messages", "claude-fable-5-1");
+  assert.equal(fable.provider, "anthropic");
+  assert.ok(isJsonObject(fable.compat));
+  assert.equal(fable.compat.supportsMidConvoEffort, true);
+
+  const anthropic = source("anthropic-messages.js");
+  assert.match(anthropic, /insertThinkingLevelMessages\(converted, activeEffort\)/);
+  assert.match(anthropic, /prefix_mismatch_behavior: "drop_block"/);
+  assert.match(anthropic, /params\.output_config = \{ effort: "high" \}/);
+  assert.match(anthropic, /providerThinkingLevel/);
+});
+
+test("Pi 0.85.1 changes Astra request-level effort instead of appending an update", () => {
+  const direct = source("openai-responses.js");
+  const codex = source("openai-codex-responses.js");
+  assert.match(direct, /params\.reasoning = \{\s*effort:/);
+  assert.match(codex, /body\.reasoning = \{\s*effort,/);
+  assert.doesNotMatch(direct, /configuration_update/);
+  assert.doesNotMatch(codex, /configuration_update/);
+});
+
 test("installed provider records keep Cachemire's new routes exact", () => {
   for (const [file, api, model, provider] of [
     ["minimax.json", "anthropic-messages", "MiniMax-M2.7", "minimax"],

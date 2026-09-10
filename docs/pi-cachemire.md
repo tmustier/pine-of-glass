@@ -17,7 +17,9 @@ The wider provider inventory and implementation record are in
 The [`GPT-6 Astra audit`](./cache-astra-audit-2026-09-08.md) records the newer model's
 official contract, sanitized Codex observations and unresolved route limits. Cachemire
 keeps an observed request policy pending until reported cache reads or writes confirm
-that an entry exists.
+that an entry exists. The
+[`thinking-change audit`](./cache-thinking-change-audit-2026-09-10.md) records how
+Pi 0.85.1 handles Claude Fable 5.1 and GPT-6 Astra effort changes.
 
 ## Moonshot and Together usage
 
@@ -102,10 +104,20 @@ clock to show.
 
 ## Thinking changes follow wire evidence
 
-Cachemire fingerprints the wire form, not the Pi keystroke. Anthropic thinking changes
-can invalidate message cache entries. A known Anthropic TTL therefore supports an
-in-flight warning when the outgoing wire value changes. Levels that map to the same wire
-value stay silent.
+Cachemire fingerprints the wire form, not the Pi keystroke. Direct Anthropic Claude
+Fable 5.1 preserves the prior cached prefix across effort changes. Pi's declared
+`supportsMidConvoEffort` capability is the general form of that contract. Cachemire
+therefore keeps the clock and notices silent for those routes even when the outgoing
+effort value changes. Other Anthropic thinking changes can invalidate message cache
+entries. A known Anthropic TTL therefore supports an in-flight warning when their
+outgoing wire value changes. Levels that map to the same wire value stay silent.
+
+GPT-6 Astra preserves the prefix only when the client appends a
+`configuration_update` input item and leaves request-level `reasoning.effort`
+unchanged. Pi 0.85.1 changes the request-level value instead, on both OpenAI Responses
+implementations, so Cachemire continues to classify that observed difference as a
+thinking mutation. A later Pi implementation of the append-only protocol will compare
+as ordinary prefix growth without a model-name exception.
 
 Unknown routes get no retention-based prediction. If billed usage later proves a miss,
 Cachemire can report an observed payload mutation. A miss without such evidence keeps an

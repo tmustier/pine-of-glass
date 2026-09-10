@@ -80,7 +80,7 @@ export function cacheClock(input: ClockInput): ClockState {
   const window = input.window ?? UNKNOWN_WINDOW;
   if (input.thinkingChanged && window.kind === "contract") {
     // No survival promise here: docs say system/tools outlive *budget* changes, but a
-    // live adaptive-effort change on claude-fable-5 re-wrote 100% of the prompt.
+    // live adaptive-effort change on claude-fable-5 (not 5.1) re-wrote 100% of the prompt.
     return { phase: "stale", text: "cache stale \u00b7 thinking level changed \u00b7 next send may re-write the prompt" };
   }
   if (window.kind === "contract") {

@@ -12,7 +12,7 @@ const {
   cacheClock, renderRunSummary, renderMissLine, renderLedger,
   inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
   OPENAI_EXTENDED_WINDOW, OPENAI_MINIMUM_WINDOW,
-  thinkingLevelsDiffer, wireThinkingEffort, nextClockUpdateMs,
+  nextClockUpdateMs,
 } = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
@@ -148,25 +148,6 @@ test("cache clock schedules only useful state changes", () => {
       prior: { requestAt: 0, window: OPENAI_EXTENDED_WINDOW },
     },
   }), 24 * 60 * MIN - MIN);
-});
-
-test("thinking level changes are material only when they change the wire params", () => {
-  // Wire mapping mirrors pi-ai's mapThinkingLevelToEffort + the off→disabled case.
-  assert.equal(wireThinkingEffort(undefined, "minimal"), "low");
-  assert.equal(wireThinkingEffort(undefined, "xhigh"), "high", "unmapped xhigh falls back to high");
-  assert.equal(wireThinkingEffort({ xhigh: "xhigh" }, "xhigh"), "xhigh");
-  assert.equal(wireThinkingEffort(undefined, "off"), "off");
-
-  assert.equal(thinkingLevelsDiffer(undefined, "low", "high"), true);
-  assert.equal(thinkingLevelsDiffer(undefined, undefined, "high"), false, "unknown baseline: never invent a break");
-  // claude-fable-5 (adaptive, map { xhigh: "xhigh" }): minimal→low is a wire no-op —
-  // both become effort "low" (live-verified: byte-identical payload, 100% cache hit).
-  const fable = { xhigh: "xhigh" } as Record<string, string | null>;
-  assert.equal(thinkingLevelsDiffer(fable, "minimal", "low"), false);
-  assert.equal(thinkingLevelsDiffer(fable, "low", "medium"), true, "effort low → medium changes output_config");
-  assert.equal(thinkingLevelsDiffer(fable, "minimal", "off"), true, "off disables thinking on the wire");
-  assert.equal(thinkingLevelsDiffer(fable, "off", "xhigh"), true);
-  assert.equal(thinkingLevelsDiffer(fable, "xhigh", "high"), true);
 });
 
 test("anthropic TTL inference mirrors pi-ai's env resolution", () => {

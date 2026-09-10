@@ -25,6 +25,8 @@ export interface RequestFingerprint {
   ttlMs?: number;
   /** Canonical thinking/reasoning wire parameters. */
   thinking?: string;
+  /** The active route promises that effort changes leave the cached prefix intact. */
+  thinkingCacheNeutral?: true;
 }
 
 export type CauseKind =

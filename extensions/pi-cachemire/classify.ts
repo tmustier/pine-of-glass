@@ -13,6 +13,7 @@ import type {
   RequestFingerprint,
   UsageLike,
 } from "./types.ts";
+import { thinkingChangesPreserveCache, type ThinkingRoute } from "./thinking.ts";
 
 // Anthropic's two contract retentions; the wire's cache_control ttl names which one.
 export const TTL_SHORT_MS = 5 * 60 * 1000;
@@ -81,7 +82,10 @@ function findTtlMs(payload: Record<string, unknown>): number | undefined {
   return undefined;
 }
 
-export function fingerprintPayload(payload: unknown): RequestFingerprint {
+export function fingerprintPayload(
+  payload: unknown,
+  thinkingRoute?: ThinkingRoute,
+): RequestFingerprint {
   const body = isJsonObject(payload) ? payload : {};
   if (Array.isArray(body.input) || typeof body.instructions === "string") {
     const tools = Array.isArray(body.tools) ? body.tools : [];
@@ -122,6 +126,7 @@ export function fingerprintPayload(payload: unknown): RequestFingerprint {
         body.thinking ?? additional?.thinking,
         body.output_config ?? additional?.output_config,
       ),
+      thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute) ? true : undefined,
     };
   }
   return { kind: "unknown", toolHashes: [], messageHashes: [] };
@@ -139,6 +144,10 @@ function describeAnthropicThinking(thinking: unknown, outputConfig: unknown): st
     return effort ? `thinking effort ${effort}` : "thinking adaptive";
   }
   return "thinking off";
+}
+
+function isEffortThinking(value: string | undefined): boolean {
+  return value?.startsWith("thinking effort ") === true;
 }
 
 // --- forensics: name the first divergent prefix segment --------------------------------
@@ -169,7 +178,9 @@ export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerpri
   }
   // Before history: a thinking change is the root cause; any history-rendering churn it
   // drags along (e.g. thinking blocks stripped on disable) is a side effect.
-  if (prev.thinking !== cur.thinking) {
+  const cacheSafeEffortChange = cur.thinkingCacheNeutral === true &&
+    isEffortThinking(prev.thinking) && isEffortThinking(cur.thinking);
+  if (prev.thinking !== cur.thinking && !cacheSafeEffortChange) {
     return { kind: "thinking", detail: `thinking changed (${prev.thinking ?? "?"} \u2192 ${cur.thinking ?? "?"})` };
   }
   // History: the previous request's messages must be a prefix of the current ones.

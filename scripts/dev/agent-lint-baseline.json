@@ -70,9 +70,6 @@
       "scripts/dev/bash-corpus/report.ts": {
         "const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };": 1
       },
-      "tests/cachemire/economics-and-render.test.ts": {
-        "const fable = { xhigh: \"xhigh\" } as Record<string, string | null>;": 1
-      },
       "tests/cachemire/lineage-events.test.ts": {
         "return { handlers, commands };": 1
       },
@@ -325,7 +322,7 @@
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
-      "extensions/pi-cachemire/index.ts": 852,
+      "extensions/pi-cachemire/index.ts": 834,
       "extensions/pi-contextimate/index.ts": 1483,
       "extensions/pi-traceline/index.ts": 1677,
       "tests/contract/pi-internals.test.ts": 355,
@@ -333,7 +330,7 @@
     }
   },
   "internalsBudgets": {
-    "extensions/pi-cachemire/index.ts": 34,
+    "extensions/pi-cachemire/index.ts": 32,
     "extensions/pi-contextimate/index.ts": 28,
     "extensions/pi-traceline/index.ts": 55
   }
