@@ -6,14 +6,13 @@ import { homedir } from "node:os";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import type { ToolSummary } from "../../extensions/pi-contextimate/index.ts";
-import { fakePi, fixtureSystemPrompt, anthropicModel } from "../helpers.ts";
+import { fakePi, fixtureSystemPrompt, fixtureCodexSystemPrompt, anthropicModel } from "../helpers.ts";
 
 const {
   getPromptRemainder,
-  parseSkills,
+  parseSkillsBlock,
   parseContextSections,
   buildSkillsSection,
-  AVAILABLE_SKILLS_RE,
   detectRuntimeAdditions,
   runtimeAdditionsAttribution,
   buildSnapshot,
@@ -29,9 +28,7 @@ test("context sections split per file with Global AGENTS.md special-cased", () =
 });
 
 test("skills parse with XML entities unescaped and stable ordering by tokens", () => {
-  const match = fixtureSystemPrompt().match(AVAILABLE_SKILLS_RE);
-  assert.ok(match, "fixture must contain the available_skills block");
-  const skills = parseSkills(match![0], 4);
+  const { skills } = parseSkillsBlock(fixtureSystemPrompt(), 4)!;
   assert.equal(skills.length, 3);
   const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
   assert.equal(byName["alpha-skill"]!.description, "Handles A & B cases with a long description so it sorts first in token order for the fixture.");
@@ -103,6 +100,22 @@ test("system section: title renamed for #9 but id stays 'system' (config/signatu
   const expanded = system.expanded as { note?: string; attribution?: string };
   assert.ok(expanded.note!.includes("assembled at runtime"));
   assert.ok(expanded.attribution!.includes("tool/extension instructions"));
+});
+
+test("compact <skills_instructions> list parses into the same skills row as the XML index", () => {
+  const prompt = fixtureCodexSystemPrompt();
+  const { skills, section } = buildSkillsSection(prompt, 4);
+  assert.ok(section);
+  assert.equal(section!.title, "Skill frontmatter (3)");
+  assert.deepEqual(section!.compactRows!.map((row) => row.name), ["alpha-skill", "beta-skill", "gamma"]);
+  const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
+  assert.equal(byName["beta-skill"]!.description, "It's the medium one.", "description with a trailing newline");
+  assert.equal(byName["gamma"]!.description, "", "empty description");
+  assert.equal(byName["gamma"]!.location, `${homedir()}/skills/gamma/SKILL.md`);
+
+  const remainder = getPromptRemainder(prompt);
+  assert.ok(!remainder.includes("<skills_instructions>"));
+  assert.ok(remainder.includes("Current working directory"));
 });
 
 test("prompt without context/skills blocks degrades to remainder-only", () => {

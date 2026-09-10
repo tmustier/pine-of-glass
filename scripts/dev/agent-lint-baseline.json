@@ -6,7 +6,7 @@
     "defaultTsMax": 350,
     "files": {
       "extensions/pi-cachemire/index.ts": 852,
-      "extensions/pi-contextimate/index.ts": 1568,
+      "extensions/pi-contextimate/index.ts": 1497,
       "extensions/pi-traceline/index.ts": 1680,
       "tests/contract/pi-internals.test.ts": 355,
       "tests/traceline/one-line.test.ts": 774

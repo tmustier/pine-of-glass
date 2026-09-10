@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Contextimate shows the skill index again in Codex-dialect sessions: Pi omits
+  `<available_skills>` once `read`/`bash` are swapped out, and the compact
+  `<skills_instructions>` list that `pi-codex-conversion` injects per turn is now
+  parsed into the usual `Skill frontmatter` row. Pinned by a contract test against
+  the installed adapter.
 - Traceline keeps continuation lines from native tool-call renderers in compact
   summaries. A `Ran` header followed by a command now shows `Ran · command`,
   without tool-specific adapters. Expanded calls and results stay native.
