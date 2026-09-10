@@ -32,6 +32,13 @@ import {
 } from "../_lib/tool-payloads.ts";
 import { ELLIPSIS, GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import {
+  detectRuntimeAdditions,
+  getPromptRemainder,
+  parseSkillsBlock,
+  PROJECT_INSTRUCTIONS_RE,
+  type RuntimeAdditions,
+} from "./prompt-parsing.ts";
+import {
   buildSessionBreakdown,
   estimateSessionBreakdown,
   scanSession,
@@ -41,14 +48,6 @@ import {
 } from "./session-accounting.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
-
-type SkillSummary = {
-  name: string;
-  description: string;
-  location: string;
-  chars: number;
-  tokens: number;
-};
 
 type ToolSummary = {
   name: string;
@@ -171,10 +170,6 @@ type ContextimateGlobal = typeof globalThis & {
 
 const g = globalThis as ContextimateGlobal;
 
-const PROJECT_CONTEXT_RE = /\n?<project_context>\n\n[\s\S]*?\n<\/project_context>\n?/;
-const PROJECT_INSTRUCTIONS_RE = /<project_instructions path="([^"]*)">\n([\s\S]*?)\n<\/project_instructions>/g;
-const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>/;
-const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 const DEFAULT_MODE: ViewMode = "summary";
 
 // The family accent (design language §3): theme-derived, used sparingly — the panel
@@ -264,19 +259,6 @@ function middleTruncatePath(text: string, width: number): string {
   return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
 }
 
-function unescapeXml(value: string): string {
-  return value
-    .replace(/&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, ">")
-    .replace(/&lt;/g, "<")
-    .replace(/&amp;/g, "&");
-}
-
-function normalizeBlankLines(text: string): string {
-  return text.replace(/\n{3,}/g, "\n\n").trim();
-}
-
 function singleLine(text: string, max = 140): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (normalized.length <= max) return normalized;
@@ -289,25 +271,6 @@ function firstMeaningfulLines(text: string, maxLines: number): string[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .slice(0, maxLines);
-}
-
-function getPromptRemainder(systemPrompt: string): string {
-  return normalizeBlankLines(
-    systemPrompt.replace(PROJECT_CONTEXT_RE, "\n").replace(AVAILABLE_SKILLS_RE, "\n"),
-  );
-}
-
-function parseSkills(content: string, denominator: number): SkillSummary[] {
-  return [...content.matchAll(SKILL_RE)].map((m) => {
-    const chars = (m[0] ?? "").length;
-    return {
-      name: unescapeXml((m[1] ?? "").trim()),
-      description: unescapeXml((m[2] ?? "").trim()),
-      location: unescapeXml((m[3] ?? "").trim()),
-      chars,
-      tokens: estimateCharsAsTokens(chars, denominator),
-    };
-  });
 }
 
 function parseContextSections(systemPrompt: string, denominator: number): PrefixSection[] {
@@ -334,38 +297,6 @@ function parseContextSections(systemPrompt: string, denominator: number): Prefix
   return sections;
 }
 
-type RuntimeAdditions = { chars: number; snippetCount: number; guidelineCount: number };
-
-// Issue #9: the runtime system prompt is assembled from pi's base prompt plus tool- and
-// extension-provided instructions (the "Available tools" snippet lines and deduplicated
-// promptGuidelines). Attribute the part we can verify: count only text that is actually
-// present in the prompt remainder, deduplicating guidelines the same way pi does, so the
-// number is evidence-based rather than a guess from tool metadata.
-function detectRuntimeAdditions(promptRemainder: string, tools: ToolSummary[]): RuntimeAdditions {
-  let chars = 0;
-  let snippetCount = 0;
-  let guidelineCount = 0;
-  const seenGuidelines = new Set<string>();
-  for (const tool of tools) {
-    const escapedName = tool.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const snippetMatch = promptRemainder.match(new RegExp(`^- ${escapedName}: .+$`, "m"));
-    if (snippetMatch) {
-      chars += snippetMatch[0].length + 1; // +1 for the newline the line occupies
-      snippetCount += 1;
-    }
-    for (const guideline of tool.promptGuidelines) {
-      const normalized = guideline.trim();
-      if (normalized.length === 0 || seenGuidelines.has(normalized)) continue;
-      seenGuidelines.add(normalized);
-      if (promptRemainder.includes(normalized)) {
-        chars += normalized.length + 1;
-        guidelineCount += 1;
-      }
-    }
-  }
-  return { chars, snippetCount, guidelineCount };
-}
-
 function runtimeAdditionsAttribution(additions: RuntimeAdditions, denominator: number): string | undefined {
   if (additions.chars === 0) return undefined;
   const tokens = estimateCharsAsTokens(additions.chars, denominator);
@@ -375,11 +306,10 @@ function runtimeAdditionsAttribution(additions: RuntimeAdditions, denominator: n
   return `of which tool/extension instructions: ~${compactCount(tokens)} tokens (${parts.join(", ")}) · already counted in this row`;
 }
 
-function buildSkillsSection(systemPrompt: string, denominator: number): { section?: PrefixSection; skills: SkillSummary[] } {
-  const match = systemPrompt.match(AVAILABLE_SKILLS_RE);
-  if (!match) return { skills: [] };
-  const content = match[0].trim();
-  const skills = parseSkills(content, denominator);
+function buildSkillsSection(systemPrompt: string, denominator: number) {
+  const block = parseSkillsBlock(systemPrompt, denominator);
+  if (!block) return { skills: [] };
+  const { content, skills } = block;
   const sortedSkills = [...skills].sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name));
   const scanRows = sortedSkills.map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description }));
   const wrapperChars = Math.max(0, content.length - skills.reduce((sum, skill) => sum + skill.chars, 0));
@@ -396,7 +326,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       detail: ratioDetail(denominator),
       compactRows: scanRows,
       expanded: { kind: "skills", note: wrapperNote, rows: scanRows },
-    },
+    } satisfies PrefixSection,
   };
 }
 
@@ -1409,12 +1339,10 @@ function setMode(mode: ViewMode): void {
 // Test-only surface. Named exports are runtime-inert under Pi's jiti loader; this object
 // exists for the repo test suites (see docs/testing.md) and is not a stable public API.
 export const internals = {
-  // system-prompt parsing
-  PROJECT_CONTEXT_RE,
-  AVAILABLE_SKILLS_RE,
+  // system-prompt parsing (see prompt-parsing.ts)
   RESOURCE_HEADER_RE,
   getPromptRemainder,
-  parseSkills,
+  parseSkillsBlock,
   parseContextSections,
   buildSkillsSection,
   // heuristic resolution

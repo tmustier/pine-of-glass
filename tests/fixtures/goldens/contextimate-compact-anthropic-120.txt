@@ -19,7 +19,7 @@
     bash                       ~0.1k  Execute a bash command in the current working directory.
     write                       -     (inactive) Write content to a file.
 
-  Total harness                ~0.9k tokens (2.2k ch · <1% ctx)
+  Total harness                ~0.9k tokens (2.3k ch · <1% ctx)
 
   Tool outputs                              ~20.1k tokens (52.3k ch)
   Messages                                   ~3.1k tokens (8.1k ch)

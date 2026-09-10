@@ -11,6 +11,7 @@ import {
   expectGolden,
   fakePi,
   fixtureSystemPrompt,
+  fixtureCodexSystemPrompt,
   fixtureSession,
   fixtureContextUsage,
   anthropicModel,
@@ -26,13 +27,16 @@ const { buildSnapshot, renderSummary, renderCompact, renderExpanded } = internal
 // snapshot to keep the goldens independent of the developer's home-directory length.
 const FIXTURE_HOME = "/home/pi";
 
-function fixtureSnapshot(model: ModelSummary): PrefixSnapshot {
+function fixtureSnapshot(
+  model: ModelSummary,
+  options: { prompt?: () => string; activeTools?: string[] } = {},
+): PrefixSnapshot {
   const previousHome = process.env.HOME;
   process.env.HOME = FIXTURE_HOME;
   try {
     const snapshot = buildSnapshot(
-      fakePi(),
-      () => fixtureSystemPrompt(),
+      fakePi({ activeTools: options.activeTools }),
+      options.prompt ?? (() => fixtureSystemPrompt()),
       undefined,
       () => fixtureContextUsage,
       () => model,
@@ -62,6 +66,11 @@ test("compact view goldens at 80 and 120 columns", () => {
   expectGolden("contextimate-compact-anthropic-80.txt", rendered(renderCompact(snapshot, plainTheme, 80)));
   expectGolden("contextimate-compact-anthropic-120.txt", rendered(renderCompact(snapshot, plainTheme, 120)));
   expectGolden("contextimate-compact-codex-100.txt", rendered(renderCompact(fixtureSnapshot(codexModel), plainTheme, 100)));
+});
+
+test("compact view golden for an adapter-injected <skills_instructions> list", () => {
+  const snapshot = fixtureSnapshot(codexModel, { activeTools: ["search"], prompt: () => fixtureCodexSystemPrompt() });
+  expectGolden("contextimate-compact-codex-skills-instructions-100.txt", rendered(renderCompact(snapshot, plainTheme, 100)));
 });
 
 // The golden normalizes the trailing newline away, so the panel tail spacer
