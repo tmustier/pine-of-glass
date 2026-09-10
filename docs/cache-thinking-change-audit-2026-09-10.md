@@ -137,6 +137,38 @@ calls on `openai-codex/gpt-6-astra` and a ~10.5k-token prompt:
   effort neutrality: it is why a hit counts as evidence only on an effort the route
   has never billed before
 
+### Review follow-up, same day
+
+An independent review of the merged change found four holes in the evidence rules,
+all confirmed in code and closed together:
+
+- on a contract-neutral Anthropic route the cache-key diff withheld the effort change
+  (so that lineage keeps one prefix across efforts), which also kept it out of the
+  resolved cause: a miss there read `cause: unknown` and could never record that the
+  route breaks. The withheld change is now named after the fact, so the resolved
+  cause and the verdict see it while lineage and the in-flight claim still do not
+- a miss counted against a route unless a contract TTL or a maximum had provably
+  closed. OpenAI routes carry a 30-minute minimum or an unknown window, which never
+  "close", so a miss after hours idle was booked as proof that the effort change
+  broke the cache. The rule is now the inverse: a miss counts only while the previous
+  window still promised a warm entry (contract inside its TTL, minimum or bounded
+  inside its floor). The resolved cause shares the blame with a passed minimum
+- the level a change was measured from came from Pi's current level at session start
+  and was never touched on a branch switch. Pi restores the level on resume but not on
+  `/tree`, and `--thinking` on `--continue` overrides it, so the recorded pair could
+  be `medium → high` while the wire went `high → high`. The active path's last billed
+  call now supplies it, on start and on every `session_tree`
+- the billed-effort seed ran only at start on the path of that moment, so a sibling
+  branch billed at some effort in an earlier process was not seeded; navigating there
+  and returning to that effort hit its own warm entry and read as fresh evidence. The
+  seed now runs on every path change. A hit served by another session's identical
+  prefix stays indistinguishable and is accepted as a residual
+
+Each is pinned by a hosted test that fails against the merged revision. Live
+regression on the positive Astra scenario (Cachemire before `pi-codex-conversion`)
+reproduced the earlier result; the negative paths cannot be forced on a real provider
+and stay hosted.
+
 ## Sources
 
 - OpenAI, [Reasoning models](https://developers.openai.com/api/docs/guides/reasoning),

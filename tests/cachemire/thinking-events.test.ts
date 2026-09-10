@@ -1,6 +1,7 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import type { AssistantMessage, Model, ThinkingLevel } from "@earendil-works/pi-ai";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import piCachemire from "../../extensions/pi-cachemire/index.ts";
 import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
@@ -222,6 +223,116 @@ test("GPT-6 Astra: the usage decides, and only a fresh effort can prove the rout
 		assert.match(ledger, /\u25cc miss \u2014 thinking changed \(effort high \u2192 effort medium\)/);
 		assert.match(ledger, /\u25cf hit \u2014 effort high \u2192 xhigh kept the prefix/);
 		assert.equal((ledger.match(/\u25cf hit \u2014/g) ?? []).length, 1, "only the fresh-effort hit names the change");
+	} finally {
+		await host.dispose();
+		project.dispose();
+	}
+});
+
+test("a billed miss on a contract-neutral route names the effort change and charges the route", async () => {
+	const project = new IsolatedProject();
+	const host = await hostExtension(piCachemire, { project, model: fable, thinkingLevel: "low" });
+	const runner = host.session.extensionRunner;
+	const notices = host.ui.notifications;
+	try {
+		await call(host, anthropicPayload(fable, "low", ["first"]), billed(fable, { input: 2, cacheRead: 0, cacheWrite: 100_000 }));
+		host.session.setThinkingLevel("high");
+		assert.equal(host.ui.widgetLines("pi-cachemire"), undefined, "the contract calls the change neutral: no claim");
+
+		// The cache-key diff withheld the change (lineage keeps one prefix), and the contract
+		// silenced the in-flight claim; the bill still says miss, so the change is charged.
+		await call(host, anthropicPayload(fable, "high", ["first", "second"]), billed(fable, { input: 2, cacheRead: 0, cacheWrite: 101_000 }));
+		assert.equal(notices.length, 1, "no in-flight claim on a contract-neutral route");
+		assert.match(notices[0]!, /^\u25cd cache broke .* cause: thinking changed \(thinking effort low \u2192 thinking effort high\)$/);
+
+		// The verdict now outranks the contract: the next change is material end to end.
+		host.session.setThinkingLevel("low");
+		assert.match(host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "", /thinking level changed/, "a billed miss overrides the contract");
+		host.session.sessionManager.appendMessage({ role: "user", content: "third", timestamp: Date.now() });
+		await runner.emitBeforeProviderRequest(anthropicPayload(fable, "low", ["first", "second", "third"]));
+		assert.equal(notices.length, 2);
+		assert.match(notices[1]!, /^\u25cd cache breaking .* cause: thinking changed \(thinking effort high \u2192 thinking effort low\)$/);
+		const back = billed(fable, { input: 200, cacheRead: 101_000, cacheWrite: 300 });
+		await runner.emitMessageEnd({ type: "message_end", message: back });
+		host.session.sessionManager.appendMessage(back);
+		assert.equal(notices.length, 2, "the claim resolves in place; a hit on a billed effort adds nothing");
+		host.session.setThinkingLevel("high");
+		assert.match(host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "", /thinking level changed/, "low was billed before: that hit is not a fresh verdict");
+	} finally {
+		await host.dispose();
+		project.dispose();
+	}
+});
+
+test("GPT-6 Astra: a miss after the retention floor is expiry, not evidence against a route that held", async () => {
+	mock.timers.enable({ apis: ["Date"], now: Date.now() });
+	const project = new IsolatedProject();
+	const host = await hostExtension(piCachemire, { project, model: astra, thinkingLevel: "low" });
+	const notices = host.ui.notifications;
+	const turns = ["first"];
+	const change = async (level: ThinkingLevel, usage: { input: number; cacheRead: number }) => {
+		host.session.setThinkingLevel(level);
+		turns.push(level);
+		await call(host, astraPayload(level, turns), billed(astra, { ...usage, cacheWrite: 0 }));
+	};
+	try {
+		await call(host, astraPayload("low", turns), billed(astra, { input: 30_000, cacheRead: 0, cacheWrite: 0 }));
+		await change("high", { input: 400, cacheRead: 29_800 });
+		assert.equal(notices.length, 1);
+		assert.match(notices[0]!, /^\u25cd cache held .* effort low \u2192 high kept the prefix warm on this route$/);
+
+		// Three hours idle: the 30-minute minimum stopped vouching for the entry long ago.
+		// The payload diff still names the effort change, the lapse shares the blame, and
+		// the verdict is left alone.
+		mock.timers.tick(3 * 60 * 60 * 1000);
+		await change("medium", { input: 30_800, cacheRead: 0 });
+		assert.equal(notices.length, 2);
+		assert.match(notices[1]!, /^\u25cd cache broke .* cause: thinking changed \(effort high \u2192 effort medium\) \(also 30m minimum passed\)$/);
+
+		// Still held: a fresh-effort hit is expected and earns no line.
+		await change("xhigh", { input: 400, cacheRead: 30_600 });
+		assert.equal(notices.length, 2, "an unproven miss must not reinstate the expectation");
+	} finally {
+		mock.timers.reset();
+		await host.dispose();
+		project.dispose();
+	}
+});
+
+test("a branch switch measures the next effort change from that branch's last billed call", async () => {
+	const project = new IsolatedProject();
+	// A session file from an earlier process: one turn at low, then two sibling branches,
+	// A billed at high and B (the leaf being resumed) billed at low.
+	const history = SessionManager.inMemory(project.dir);
+	const now = Date.now();
+	const turn = (text: string, level: string, prompt: number, at: number) => {
+		history.appendMessage({ role: "user", content: text, timestamp: at - 1_000 });
+		const message = { ...billed(astra, { input: prompt, cacheRead: 0, cacheWrite: 0 }), timestamp: at };
+		history.appendMessage(message);
+		return { id: history.getLeafId()!, level, prompt };
+	};
+	history.appendThinkingLevelChange("low");
+	const root = turn("first", "low", 20_000, now - 3_000_000);
+	history.appendThinkingLevelChange("high");
+	const branchA = turn("second (A)", "high", 30_000, now - 2_000_000);
+	history.branch(root.id);
+	turn("second (B)", "low", 30_500, now - 1_000_000);
+
+	// pi --continue: a fresh process (startup) opening the file at branch B's leaf.
+	const host = await hostExtension(piCachemire, { project, model: astra, sessionManager: history });
+	const notices = host.ui.notifications;
+	try {
+		assert.equal(host.session.thinkingLevel, "low", "Pi restores the resumed branch's level");
+		await host.session.navigateTree(branchA.id);
+		assert.equal(host.session.thinkingLevel, "low", "Pi does not restore the level on a branch switch");
+
+		// Cachemire does: branch A was last billed at high, so returning to high is no
+		// change on the wire. The hit reads A's own entry back and proves nothing.
+		host.session.setThinkingLevel("high");
+		await call(host, astraPayload("high", ["first", "second (A)", "third"]), billed(astra, { input: 400, cacheRead: 29_900, cacheWrite: 0 }));
+		assert.deepEqual(notices, [], "a return to the branch's billed effort is not a fresh-effort verdict");
+		await host.session.prompt("/cache");
+		assert.doesNotMatch(notices.at(-1)!, /kept the prefix/);
 	} finally {
 		await host.dispose();
 		project.dispose();

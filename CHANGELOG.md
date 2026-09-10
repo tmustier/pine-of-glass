@@ -25,6 +25,14 @@
   the last 24 hours. On/off toggles stay material.
   The `/cache` ledger names the change on hit rows. `predictBreak` and the session
   economics helpers moved to `extensions/pi-cachemire/economics.ts`.
+  Review follow-up: a miss counts against a route only while the previous window
+  still promised a warm entry (a reached Anthropic TTL, a passed OpenAI 30-minute
+  minimum, any maximum or unknown window means eviction explains it as well, and the
+  resolved cause now says `(also 30m minimum passed)`); a contract-neutral Anthropic
+  route (Claude Fable 5.1) now names the effort change on a miss instead of `unknown`,
+  so the bill can overrule the contract there too; and the level a change is measured
+  from, plus the efforts already billed, come from the active path's persisted entries
+  on start and on every branch switch, since Pi restores neither on `/tree`.
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.

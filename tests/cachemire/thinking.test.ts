@@ -2,13 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Model } from "@earendil-works/pi-ai";
 
-import { diffFingerprints, fingerprintPayload } from "../../extensions/pi-cachemire/classify.ts";
+import { diffFingerprints, fingerprintPayload, withheldThinkingCause, withinWarmPromise } from "../../extensions/pi-cachemire/classify.ts";
 import { OPENAI_EXTENDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 import {
 	type BilledThinkingChange,
 	EFFORT_MEMORY_MS,
 	recordBilledThinking,
-	rememberBilledEfforts,
+	restoreBilledThinking,
 	thinkingChangeInvalidatesCache,
 	thinkingChangesPreserveCache,
 	type ThinkingEvidenceLedger,
@@ -160,7 +160,7 @@ const change = (overrides: Partial<BilledThinkingChange>): BilledThinkingChange 
 	incomparable: false,
 	classification: { kind: "hit" },
 	thinkingNamedAtSend: true,
-	windowExpired: false,
+	warmPromised: true,
 	...bill(29_800),
 	...overrides,
 });
@@ -184,10 +184,10 @@ test("a billed hit on a fresh effort, or an attributable miss, is evidence; noth
 	assert.equal(observe({}, ["low", "high", "medium"]), undefined);
 	assert.equal(observe({ classification: miss, ...bill(0) }, ["low", "high"])?.held, false, "a miss counts regardless");
 
-	// A miss the payload did not attribute to thinking, or that a closed window
-	// explains, says nothing about the route.
+	// A miss the payload did not attribute to thinking, or that arrived after the window
+	// stopped vouching for warmth (ordinary expiry explains it), says nothing about the route.
 	assert.equal(observe({ classification: miss, thinkingNamedAtSend: false, ...bill(0) }), undefined);
-	assert.equal(observe({ classification: miss, windowExpired: true, ...bill(0) }), undefined);
+	assert.equal(observe({ classification: miss, warmPromised: false, ...bill(0) }), undefined);
 	// A hit reads the prefix back even when the payload diff saw nothing: still evidence.
 	assert.equal(observe({ thinkingNamedAtSend: false })?.held, true);
 
@@ -234,6 +234,41 @@ test("the most recent billed verdict on the exact route outranks the contract ei
 	assert.equal(thinkingChangesPreserveCache(flagged, ledger), true);
 });
 
+test("only a window still vouching for warmth lets a miss count against a route", () => {
+	const minute = 60_000;
+	assert.equal(withinWarmPromise({ kind: "contract", ttlMs: 5 * minute, source: "observed" }, 4 * minute), true);
+	assert.equal(withinWarmPromise({ kind: "contract", ttlMs: 5 * minute, source: "observed" }, 5 * minute), false);
+	assert.equal(withinWarmPromise({ kind: "minimum", minMs: 30 * minute }, 29 * minute), true, "inside the floor the provider promises the entry");
+	assert.equal(withinWarmPromise({ kind: "minimum", minMs: 30 * minute }, 3 * 60 * minute), false, "past the floor a miss may be plain eviction");
+	assert.equal(withinWarmPromise({ kind: "bounded", minMs: 5 * minute, maxMs: 60 * minute }, 4 * minute), true);
+	assert.equal(withinWarmPromise({ kind: "bounded", minMs: 5 * minute, maxMs: 60 * minute }, 10 * minute), false);
+	assert.equal(withinWarmPromise({ kind: "maximum", maxMs: 60 * minute }, 1), false, "a maximum never promises warmth");
+	assert.equal(withinWarmPromise({ kind: "unknown" }, 1), false);
+	assert.equal(withinWarmPromise(undefined, 1), false);
+	assert.equal(withinWarmPromise({ kind: "contract", ttlMs: 5 * minute, source: "observed" }, undefined), false);
+});
+
+test("a contract-neutral effort change is withheld from the cache-key diff but not from the bill", () => {
+	const flagged = directAnthropic("claude-fable-5-1", true);
+	const low = fingerprintPayload(anthropicRequest("low"), flagged);
+	const high = fingerprintPayload(anthropicRequest("high"), flagged);
+	assert.equal(diffFingerprints(low, high), undefined, "lineage treats the two requests as one prefix");
+	assert.deepEqual(withheldThinkingCause(low, high), {
+		kind: "thinking",
+		detail: "thinking changed (thinking effort low \u2192 thinking effort high)",
+	});
+	assert.equal(withheldThinkingCause(low, low), undefined, "no wire change to withhold");
+	assert.equal(withheldThinkingCause(undefined, high), undefined);
+	const plain = directAnthropic("claude-fable-5");
+	assert.equal(
+		withheldThinkingCause(fingerprintPayload(anthropicRequest("low"), plain), fingerprintPayload(anthropicRequest("high"), plain)),
+		undefined,
+		"a route the contract expects to break names the change in the diff itself",
+	);
+	const off = fingerprintPayload({ ...anthropicRequest("low"), thinking: { type: "disabled" }, output_config: undefined }, flagged);
+	assert.equal(withheldThinkingCause(low, off), undefined, "on/off is never withheld, so never re-named");
+});
+
 test("a resumed session remembers which efforts its history billed within retention", () => {
 	assert.equal(EFFORT_MEMORY_MS, OPENAI_EXTENDED_WINDOW.maxMs, "the memory bound is the longest known retention");
 	const now = 1_800_000_000_000;
@@ -260,7 +295,7 @@ test("a resumed session remembers which efforts its history billed within retent
 	];
 
 	const ledger: ThinkingEvidenceLedger = new Map();
-	rememberBilledEfforts(ledger, entries, "a4", model, now);
+	assert.equal(restoreBilledThinking(ledger, entries, "a4", model, now), "minimal", "the path's last call was billed at the level in force then, whatever its route");
 	const hitOn = (to: string) =>
 		recordBilledThinking(ledger, astraRoute, change({ lastCallLevel: "medium", currentLevel: to }));
 	assert.equal(hitOn("high"), undefined, "high was billed ten minutes ago: its entry may still be warm");
@@ -269,6 +304,8 @@ test("a resumed session remembers which efforts its history billed within retent
 	assert.equal(recordBilledThinking(ledger, astraRoute, change({ lastCallLevel: "high", currentLevel: "medium" }))?.held, true,
 		"medium was last billed beyond the longest retention");
 
-	rememberBilledEfforts(new Map(), entries, null, model, now);
-	rememberBilledEfforts(new Map(), entries, "a4", undefined, now);
+	assert.equal(restoreBilledThinking(new Map(), entries, "a5", model, now), "xhigh", "another leaf, another last level");
+	assert.equal(restoreBilledThinking(new Map(), entries, "t0", model, now), undefined, "nothing billed yet on this path");
+	assert.equal(restoreBilledThinking(new Map(), entries, null, model, now), undefined);
+	assert.equal(restoreBilledThinking(new Map(), entries, "a4", undefined, now), undefined);
 });
