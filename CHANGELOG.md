@@ -1,56 +1,67 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 (2026-09-10)
 
-- Contextimate shows the skill index again in Codex-dialect sessions: Pi omits
+- Cachemire lets the bill outrank the payload for thinking-effort changes.
+  [#119](https://github.com/tmustier/pine-of-glass/pull/119),
+  [#120](https://github.com/tmustier/pine-of-glass/pull/120). A later-loaded
+  extension (for example `pi-codex-conversion`'s append-only `configuration_update`
+  for GPT-6 Astra) can rewrite a request after Cachemire has read it, so billed
+  effort-to-effort changes on a route (provider, API and model) now decide what
+  Cachemire expects from that route for the rest of the process:
+  - a hit on an effort the route has never billed silences the stale clock and the
+    in-flight claim for later changes there, and says so once
+    (`cache held · … · effort low → high kept the prefix warm on this route`)
+  - a hit on a previously billed effort proves nothing: providers keep a warm entry
+    per effort, and a return within retention reads that entry back
+  - a miss the payload attributed to thinking reinstates the expectation, but only
+    while the previous window still promised a warm entry (an Anthropic TTL not yet
+    reached, an OpenAI 30-minute minimum not yet passed). After that, eviction
+    explains it as well, and the cause says so (`(also 30m minimum passed)`)
+  - on a contract-neutral Anthropic route (Claude Fable 5.1) the effort change is
+    still named on a miss instead of `unknown`, so the bill can overrule the
+    contract there too
+  - the level a change is measured from, and the efforts already billed, come from
+    the active path's persisted thinking-level entries on start and on every branch
+    switch, since Pi restores neither on `/tree`
+  On/off toggles stay material. The `/cache` ledger names the change on hit rows.
+  `predictBreak` and the session economics helpers moved to
+  `extensions/pi-cachemire/economics.ts`.
+- Cachemire no longer marks direct Anthropic Claude Fable 5.1 cache state stale when
+  its thinking effort changes. [#118](https://github.com/tmustier/pine-of-glass/pull/118).
+  Live Pi 0.85.1 calls retained the full prior prefix, and Pi's built-in model record
+  declares its mid-conversation effort protocol (`supportsMidConvoEffort`). GPT-6 Astra
+  remains a real mutation in stock Pi 0.85.1 because Pi changes request-level effort
+  instead of appending OpenAI's cache-safe `configuration_update` item; the billed
+  verdict above covers extensions that append it.
+- Contextimate shows the skill index again in Codex-dialect sessions.
+  [#116](https://github.com/tmustier/pine-of-glass/pull/116). Pi omits
   `<available_skills>` once `read`/`bash` are swapped out, and the compact
   `<skills_instructions>` list that `pi-codex-conversion` injects per turn is now
   parsed into the usual `Skill frontmatter` row. Pinned by a contract test against
   the installed adapter.
-- Cachemire no longer marks direct Anthropic Claude Fable 5.1 cache state stale when
-  its thinking effort changes. Live Pi 0.85.1 calls retained the full prior prefix, and
-  Pi's built-in model record declares its mid-conversation effort protocol. GPT-6 Astra
-  remains a real mutation in Pi 0.85.1 because Pi changes request-level effort instead
-  of appending OpenAI's cache-safe `configuration_update` item.
-- Cachemire lets the bill outrank the payload for thinking-effort changes. A
-  later-loaded extension (for example `pi-codex-conversion`'s append-only
-  `configuration_update` for GPT-6 Astra) can rewrite a request after Cachemire has
-  read it, so billed effort-to-effort changes on a route now decide what Cachemire
-  expects from that route for the rest of the process: a hit on an effort the route
-  has never billed silences the stale clock and in-flight claim for later changes
-  there, and says so once (`cache held · … · effort low → high kept the prefix warm on
-  this route`); a miss the payload attributed to thinking reinstates them. A hit on a
-  previously billed effort proves nothing (providers keep a warm entry per effort),
-  and a resumed session seeds those efforts from Pi's persisted level changes within
-  the last 24 hours. On/off toggles stay material.
-  The `/cache` ledger names the change on hit rows. `predictBreak` and the session
-  economics helpers moved to `extensions/pi-cachemire/economics.ts`.
-  Review follow-up: a miss counts against a route only while the previous window
-  still promised a warm entry (a reached Anthropic TTL, a passed OpenAI 30-minute
-  minimum, any maximum or unknown window means eviction explains it as well, and the
-  resolved cause now says `(also 30m minimum passed)`); a contract-neutral Anthropic
-  route (Claude Fable 5.1) now names the effort change on a miss instead of `unknown`,
-  so the bill can overrule the contract there too; and the level a change is measured
-  from, plus the efforts already billed, come from the active path's persisted entries
-  on start and on every branch switch, since Pi restores neither on `/tree`.
+- Traceline keeps continuation lines from native tool-call renderers in compact
+  summaries. [#112](https://github.com/tmustier/pine-of-glass/pull/112). A `Ran`
+  header followed by a command now shows `Ran · command`, without tool-specific
+  adapters. Expanded calls and results stay native.
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.
+  [#115](https://github.com/tmustier/pine-of-glass/pull/115),
+  [#117](https://github.com/tmustier/pine-of-glass/pull/117).
   `--update-baseline` only prunes. `oxlint`, `@oxlint/plugins` and `oxc-parser` are
   development-only dependencies; run `npm run link-pi` after `npm install`.
 - Development: tests specify behaviour through public interfaces.
   `tests/harness/extension-host.ts` hosts an extension through Pi's SDK with a recorded
-  UI; Meantime's opt-in specs and Cachemire's nested-session contract use it.
-  Traceline's nested-session ownership is a real-terminal smoke (`test:smoke:nested`).
-  The test-only `internals` exports may no longer grow (POG012).
+  UI (and accepts a pre-populated session to resume); Meantime's opt-in specs and
+  Cachemire's nested-session and thinking-evidence specs use it. Traceline's
+  nested-session ownership is a real-terminal smoke (`test:smoke:nested`). The
+  test-only `internals` exports may no longer grow (POG012).
 - Development: `no-shape-in-symbol-names` is on; tool payload builders are named for
   their role (`ToolDefinition`, `toolPayload(tool, format)`). `no-runtime-typeof`
   guards the reviewed pure modules, now including `_lib/forecast.ts` and
   `_lib/heuristics.ts`; forecast messages carry a declared content type and config
   denominators are validated once, at parse time.
-- Traceline keeps continuation lines from native tool-call renderers in compact
-  summaries. A `Ran` header followed by a command now shows `Ran · command`,
-  without tool-specific adapters. Expanded calls and results stay native.
 
 ## 0.11.0 (2026-09-08)
 
