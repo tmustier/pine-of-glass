@@ -14,14 +14,9 @@ import {
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
-import {
-  classifyCall,
-  diffFingerprints,
-  expiryCause,
-  fingerprintPayload,
-  pastWindow,
-} from "./classify.ts";
+import { classifyCall, diffFingerprints, fingerprintPayload, pastWindow } from "./classify.ts";
 import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, withinWarmHorizon } from "./clock.ts";
+import { predictBreak, rewriteCostUsd, sessionSavings, uncachedCostUsd } from "./economics.ts";
 import { activeToolDefinitions, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
 import { restoreBranchRecords } from "./ledger.ts";
 import {
@@ -31,7 +26,7 @@ import {
   resolveCacheLineage,
   restoreLineageSnapshots,
 } from "./lineage.ts";
-import { renderBreakingLine, renderHeldLine, renderMissLine, renderRunSummary } from "./render.ts";
+import { renderBreakingLine, renderHeldLine, renderLedgerEvent, renderMissLine, renderRunSummary } from "./render.ts";
 import {
   confirmedWindow,
   inferAnthropicTtlMs,
@@ -41,10 +36,16 @@ import {
   type RetentionMatch,
   windowLabel,
 } from "./retention.ts";
-import { thinkingChangeInvalidatesCache, type ThinkingRoute } from "./thinking.ts";
+import {
+  recordBilledThinking,
+  rememberBilledEfforts,
+  thinkingChangeInvalidatesCache,
+  thinkingChangesPreserveCache,
+  type ThinkingEvidenceLedger,
+  thinkingRoute,
+} from "./thinking.ts";
 import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
-  BreakPrediction,
   CacheLineageSnapshot,
   CacheWindow,
   CachemireConfig,
@@ -54,7 +55,6 @@ import type {
   ModelRates,
   RequestFingerprint,
   RunAggregate,
-  UsageLike,
 } from "./types.ts";
 
 export type {
@@ -101,109 +101,9 @@ const DEFAULT_CONFIG: CachemireConfig = {
   missWarnTokens: 20_000,
 };
 
-function thinkingRoute(model: ExtensionContext["model"]): ThinkingRoute | undefined {
-  if (!model) return undefined;
-  return {
-    provider: model.provider,
-    model: model.id,
-    api: model.api,
-    supportsMidConvoEffort:
-      isJsonObject(model.compat) && model.compat.supportsMidConvoEffort === true,
-  };
-}
-
 // Glyphs and ink come from the family style (_lib/style.ts, design language §§1–3):
 // ◍ opens every loop-economics line, ○ ● ◑ ◌ are the status scale, and all colour
 // is theme-derived through ink() with raw-ANSI fallbacks before a Theme handle exists.
-
-// --- break prediction (at request time, before usage exists) ---------------------------
-// Almost every break cause is knowable when the request is sent: the idle gap vs TTL,
-// pi's compact events, and the payload fingerprint diff. Predicting at send time lets the
-// notice sit between the user's action and the response — where the causality lives —
-// and the resolved actuals replace it in place when usage arrives.
-
-function predictBreak(args: {
-  isFirst: boolean;
-  inCompaction: boolean;
-  compacted: boolean;
-  gapMs?: number;
-  window?: CacheWindow;
-  expectedRead: number;
-  fingerprintCause?: CallCause;
-  rates?: ModelRates;
-  /** Target-currency estimate while a model switch is pending (issue #57). */
-  switchForecast?: Pick<SwitchForecast, "estTokens" | "basis" | "targetProvider"> & { priorMayBeWarm: boolean };
-}): BreakPrediction | undefined {
-  // Cold starts are healthy and the compaction summarizer call is labelled, not warned.
-  if (args.isFirst || args.inCompaction || args.expectedRead <= 0) return undefined;
-  if (args.compacted) {
-    // The old prefix is gone; the new one's size is unknowable until usage arrives.
-    return { cause: { kind: "compaction", detail: "history compacted" } };
-  }
-  const sized = (cause: CallCause): BreakPrediction => ({
-    cause,
-    expectedRewriteTokens: args.expectedRead,
-    expectedUsd: rewriteCostUsd(args.expectedRead, args.rates),
-  });
-  if (args.fingerprintCause) {
-    // Model switches break the cache vs the *last* call for certain (caches are
-    // per-model on every provider), but the stored size is denominated in the old
-    // model's tokenizer — never show that number. When the shared heuristics produced
-    // a target-currency estimate, claim that instead, marked est. When the target
-    // model's own prior cache entry may still be warm (A→B→A), stay silent: the
-    // resolved line reports the truth when usage arrives.
-    if (args.fingerprintCause.kind === "model") {
-      const forecast = args.switchForecast;
-      if (forecast?.priorMayBeWarm) return undefined;
-      if (forecast?.estTokens === undefined) return { cause: args.fingerprintCause };
-      return {
-        cause: args.fingerprintCause,
-        estimatedRewriteTokens: forecast.estTokens,
-        estimatedUsd: rewriteCostUsd(forecast.estTokens, args.rates),
-        estimateBasis: forecast.basis,
-        targetProvider: forecast.targetProvider,
-      };
-    }
-    if (args.fingerprintCause.kind === "compaction") return { cause: args.fingerprintCause };
-    if (args.fingerprintCause.kind === "thinking") {
-      // Only an Anthropic contract window earns an in-flight claim. The affected share
-      // of expectedRead is unknowable, so the prediction stays unsized.
-      return args.window?.kind === "contract" ? { cause: args.fingerprintCause } : undefined;
-    }
-    return sized(args.fingerprintCause);
-  }
-  // Only a definite contract expiry or reached maximum earns an in-flight line.
-  if (pastWindow(args.window, args.gapMs)) {
-    return sized(expiryCause(args.window, args.gapMs)!);
-  }
-  return undefined;
-}
-
-// --- economics -------------------------------------------------------------------------
-
-function uncachedCostUsd(usage: UsageLike, rates?: ModelRates): number | undefined {
-  if (!rates) return undefined;
-  const inputTokens = usage.input + usage.cacheRead + usage.cacheWrite;
-  return (inputTokens * rates.input + usage.output * rates.output) / 1_000_000;
-}
-
-function rewriteCostUsd(tokens: number, rates?: ModelRates): number | undefined {
-  if (!rates) return undefined;
-  // Request-wide pricing tiers: the highest matching threshold prices the whole request.
-  const tier = (rates.tiers ?? [])
-    .filter((candidate) => tokens > candidate.inputTokensAbove)
-    .sort((a, b) => b.inputTokensAbove - a.inputTokensAbove)[0] ?? rates;
-  return (tokens * (tier.cacheWrite || tier.input)) / 1_000_000;
-}
-
-function sessionSavings(records: CallRecord[]): { actual: number; uncached: number; saved: number; pct: number } | undefined {
-  const usable = records.filter((record) => record.costUsd !== undefined && record.uncachedUsd !== undefined);
-  if (usable.length === 0) return undefined;
-  const actual = usable.reduce((sum, record) => sum + (record.costUsd ?? 0), 0);
-  const uncached = usable.reduce((sum, record) => sum + (record.uncachedUsd ?? 0), 0);
-  if (uncached <= 0) return undefined;
-  return { actual, uncached, saved: uncached - actual, pct: (1 - actual / uncached) * 100 };
-}
 
 // --- ledger lines ----------------------------------------------------------------------
 
@@ -237,17 +137,12 @@ function renderLedger(
   );
   for (const record of records) {
     const { usage } = record;
-    const eventText = record.classification.kind === "hit"
-      ? "hit"
-      : record.classification.kind === "cold"
-        ? "cold start"
-        : `${record.classification.kind} \u2014 ${record.classification.cause?.detail ?? "unknown"}`;
     lines.push(
       `  ${col(String(record.index), 4)} ${col(record.gapMs !== undefined ? formatDuration(record.gapMs) : "\u2014", 7)}` +
       ` ${col(compactCount(usage.input), 8)} ${col(compactCount(usage.cacheRead), 8)}` +
       ` ${col(compactCount(usage.cacheWrite), 8)} ${col(compactCount(usage.output), 7)}` +
       ` ${col(record.costUsd !== undefined ? formatUsd(record.costUsd) : "\u2014", 7)}` +
-      `  ${EVENT_GLYPHS[record.classification.kind]} ${eventText}${record.restored ? " (restored)" : ""}`,
+      `  ${EVENT_GLYPHS[record.classification.kind]} ${renderLedgerEvent(record)}${record.restored ? " (restored)" : ""}`,
     );
   }
   const totals = records.reduce(
@@ -341,6 +236,8 @@ interface CachemireState {
   lastCallThinkingLevel?: string;
   currentThinkingLevel?: string;
   thinkingChanged: boolean;
+  /** Billed effort-change verdicts per route; outlives sessions (see thinking.ts). */
+  thinkingEvidence: ThinkingEvidenceLedger;
   expectedRead: number;
   rates?: ModelRates;
   modelLabel?: string;
@@ -377,6 +274,7 @@ function state(): CachemireState {
       window: UNKNOWN_WINDOW,
       modelSwitched: false,
       thinkingChanged: false,
+      thinkingEvidence: new Map(),
       expectedRead: 0,
       compacted: false,
       inCompaction: false,
@@ -477,6 +375,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // current one); the forecast must exist before the first widget render.
     refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
     s.lastCallThinkingLevel = s.currentThinkingLevel = pi.getThinkingLevel();
+    // Route evidence belongs to the process (provider and extension stack), not the
+    // session; a resumed session still tells which efforts may hold a warm entry.
+    // SAFETY: a reload re-imports this file over the global state of the version it replaces.
+    if (event.reason === "startup" || !s.thinkingEvidence) s.thinkingEvidence = new Map();
+    rememberBilledEfforts(s.thinkingEvidence, entries, ctx.sessionManager.getLeafId(), model, Date.now());
     s.compacted = false;
     s.inCompaction = false;
     s.pendingFingerprint = undefined;
@@ -550,6 +453,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         window: s.pendingPreviousWindow ?? s.window,
         expectedRead: s.expectedRead,
         fingerprintCause: s.pendingFingerprintCause,
+        thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx.model), s.thinkingEvidence),
         rates: s.rates,
         switchForecast: s.switchForecast === undefined ? undefined : {
           ...s.switchForecast,
@@ -599,14 +503,14 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.currentThinkingLevel = event.level;
     // Material only when something was billed at the old level AND the new level changes
     // the wire params for this model; cycling back before the next call revives the
-    // cache. Cache-safe mid-conversation effort protocols stay neutral here and in the
-    // send-time fingerprint diff.
+    // cache. Routes whose contract or billed evidence keeps the prefix stay neutral.
     s.thinkingChanged = s.records.length > 0 && ctx.model?.reasoning === true &&
       thinkingChangeInvalidatesCache(
         thinkingRoute(ctx.model),
         ctx.model.thinkingLevelMap,
         s.lastCallThinkingLevel,
         event.level,
+        s.thinkingEvidence,
       );
     updateWidget();
   });
@@ -652,7 +556,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     updateWidget();
   });
 
-  pi.on("message_end", async (event) => {
+  pi.on("message_end", async (event, ctx) => {
     if (!ownsState()) return;
     const message = event.message;
     if (message.role !== "assistant") return;
@@ -677,6 +581,21 @@ export default function piCachemire(pi: ExtensionAPI): void {
       fingerprintCause,
     });
     const activeWindow = confirmedWindow(s.pendingRetention, usage) ?? UNKNOWN_WINDOW;
+    // The billed verdict on an effort change, whatever the payload looked like at
+    // Cachemire's hook: a later extension or provider may have transformed it.
+    const thinkingBreakExpected = s.thinkingChanged;
+    const route = thinkingRoute(ctx.model);
+    const thinkingChange = route && recordBilledThinking(s.thinkingEvidence, route, {
+      map: ctx.model?.thinkingLevelMap,
+      lastCallLevel: s.lastCallThinkingLevel,
+      currentLevel: s.currentThinkingLevel,
+      incomparable: s.modelSwitched || s.compacted || s.inCompaction,
+      classification,
+      thinkingNamedAtSend: fingerprintCause?.kind === "thinking",
+      windowExpired: pastWindow(s.pendingPreviousWindow ?? s.window, cacheGapMs),
+      usage,
+      expectedRead: s.expectedRead,
+    });
     const record: CallRecord = {
       index: s.records.length + 1,
       at: now,
@@ -688,6 +607,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
       switched: s.modelSwitched ? true : undefined,
       postCompaction: s.compacted ? { modelSwitched: s.modelSwitched } : undefined,
+      thinkingChange,
       costUsd: usage.cost.total,
       uncachedUsd: uncachedCostUsd(usage, s.rates),
     };
@@ -751,6 +671,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     ) {
       // Append an unpredicted break once provider usage proves it.
       appendChatLine(econLine("warning", renderMissLine(record)));
+    } else if (s.config.missWarnings && thinkingBreakExpected && thinkingChange?.held) {
+      // An expected break that held: say so once; the evidence keeps later ones quiet.
+      appendChatLine(econLine("success", renderHeldLine(record)));
     }
     updateWidget(now);
   });

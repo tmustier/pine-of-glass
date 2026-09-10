@@ -119,6 +119,52 @@ implementations, so Cachemire continues to classify that observed difference as 
 thinking mutation. A later Pi implementation of the append-only protocol will compare
 as ordinary prefix growth without a model-name exception.
 
+### The bill outranks the payload
+
+Cachemire reads each request at its own `before_provider_request` position. Pi runs
+that hook per extension in load order and threads a replacement payload only into
+later handlers, and an extension-registered provider transforms the request after every
+hook. A later-loaded extension that rewrites Astra's effort change into an append-only
+`configuration_update` is therefore invisible to Cachemire, and so is any other
+transformation of that kind. The payload Cachemire saw is not proof of what reached the
+wire; the billed usage is.
+
+Cachemire therefore treats every billed effort-to-effort change as a verdict on its
+route (provider, API and model), for the rest of the Pi process:
+
+- a hit on an effort the route has never billed before records that the route keeps
+  its prefix. The stale clock and the in-flight `cache breaking` claim stay silent
+  for later effort changes on that route
+- a hit on an effort billed earlier in the process proves nothing. Providers keep a
+  cache entry per effort, so returning to a level within retention reads that level's
+  own entry back: stock Pi on Astra missed on `low → high` and `high → medium`, then
+  hit on `medium → high` because the `high` entry was still warm. Cachemire counts
+  the hit and leaves the verdict alone
+- a miss or partial that the payload diff attributed to thinking, with no closed
+  retention window to blame, records that the route breaks, and reinstates both
+- a miss with another named cause, or after a closed window, proves nothing about
+  effort and leaves the verdict alone
+
+The first hit that contradicts an expected break says so once:
+
+```
+◍ cache held · read 29.8k of 30.0k expected · effort low → high kept the prefix warm on this route
+```
+
+An expected hit earns no line, and the `/cache` ledger row reads
+`hit — effort low → high kept the prefix`. Evidence never softens turning thinking on <!-- agent-lint-disable-line POG007 -->
+or off, which stays a distinct mutation. The payload diff still names the wire change
+when a miss follows, so a route that stops holding (for example after the rewriting
+extension is disabled) corrects itself on the next billed change rather than staying
+quietly wrong.
+
+Verdicts live in the process, not the session: the behaviour belongs to the provider
+and extension stack, so `/new`, `/resume` and `/reload` keep them and a fresh `pi`
+starts without any. A resumed session still tells which efforts its history billed on
+the active path within the longest known retention (24 hours, OpenAI extended), read
+from Pi's persisted thinking-level entries, so a return to one of them in the new
+process is not mistaken for fresh evidence.
+
 Unknown routes get no retention-based prediction. If billed usage later proves a miss,
 Cachemire can report an observed payload mutation. A miss without such evidence keeps an
 unknown cause.

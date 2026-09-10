@@ -92,6 +92,51 @@ Two fresh-session runs used the same stable prefix:
 Captured Pi payloads changed request-level reasoning effort and contained no
 `configuration_update` item.
 
+## Addendum (same day): the hook position is not the wire
+
+The Astra result above describes stock Pi. With `@howaboua/pi-codex-conversion`
+3.0.31 active (its 3.0.26 release keeps request-level effort fixed and appends
+OpenAI's `configuration_update` item on effort changes), the same low-to-high change
+on `openai-codex/gpt-6-astra` kept reading the prior prefix: usage showed cache reads
+above 98% of the prompt. Cachemire nevertheless saw a changed request-level effort
+at its `before_provider_request` hook and warned about a break that never came.
+
+Pi's extension runner (`dist/core/extensions/runner.js`) runs
+`before_provider_request` per extension in load order and threads each replacement
+payload only into later handlers; an extension-registered provider then transforms
+the request after every hook. Whatever Cachemire reads at its hook is therefore the
+payload at that position, not proof of the wire form. Inspecting further down the
+chain is not available to an extension, and pinning Cachemire to another extension's
+internals would tie it to one setup.
+
+Cachemire now lets the bill outrank the payload. The static contract (Pi's
+`supportsMidConvoEffort` flag or the verified direct Fable 5.1 route) sets the
+expectation until an effort-to-effort change on a route is billed; from then on the
+most recent billed verdict on that exact provider, API and model decides, for the
+rest of the process. A hit on an effort the route has never billed records that the
+route keeps its prefix; a miss the payload attributed to thinking, with no closed
+retention window to blame, records that it breaks. Both directions stay observable:
+the first hit against an expected break says so once, and a miss still names the wire
+change. The contract suite pins the runner's hook order so a change there surfaces as
+a failing test.
+
+Live acceptance, same day, real `pi` 0.85.1 TUI in an isolated HOME with real tool
+calls on `openai-codex/gpt-6-astra` and a ~10.5k-token prompt:
+
+- Cachemire loaded before `pi-codex-conversion` (the live order): `low → high` hit,
+  `cache held · read 10.4k of 10.5k expected · effort low → high kept the prefix warm
+  on this route` printed once; `high → medium` hit silently; the `/cache` rows name
+  both changes
+- Cachemire loaded after it: same result on one run. On another run `high → medium`
+  billed a genuine 100% miss which Cachemire reported as `cause: unknown` (its hook
+  saw an append-only `configuration_update`, so thinking was not attributable) and
+  left the held verdict alone; a repeat of that order hit throughout
+- stock Pi, no conversion extension: `low → high` and `high → medium` each missed
+  and were named `thinking changed`; `medium → high` then read 10.6k of 10.8k back.
+  That hit is the `high` entry from two calls earlier, still within retention, not
+  effort neutrality: it is why a hit counts as evidence only on an effort the route
+  has never billed before
+
 ## Sources
 
 - OpenAI, [Reasoning models](https://developers.openai.com/api/docs/guides/reasoning),

@@ -144,6 +144,27 @@ test("Pi 0.85.1 changes Astra request-level effort instead of appending an updat
   assert.doesNotMatch(codex, /configuration_update/);
 });
 
+// Cachemire reads the request at its own hook position. Pi runs before_provider_request
+// per extension in load order and threads each replacement payload into later handlers
+// only, so a later-loaded rewrite (for example an append-only configuration_update for
+// Astra) is invisible to Cachemire: the billed usage, not the payload, is the verdict.
+test("Pi threads before_provider_request replacements through later extensions in load order", () => {
+  const runner = readFileSync(join(piRoot, "dist", "core", "extensions", "runner.js"), "utf8");
+  const emit = runner.match(/async emitBeforeProviderRequest\(payload\) \{[\s\S]*?\n {4}\}\n/)?.[0];
+  assert.ok(emit, "emitBeforeProviderRequest moved: re-verify Cachemire's evidence model against the new hook order");
+  assert.match(emit, /for \(const ext of this\.extensions\) \{\s*const handlers = ext\.handlers\.get\("before_provider_request"\)/);
+  assert.match(emit, /payload: currentPayload,/);
+  assert.match(emit, /if \(handlerResult !== undefined\) \{\s*currentPayload = handlerResult;/);
+});
+
+// A resumed session seeds the route's billed efforts from Pi's persisted level changes.
+test("Pi persists thinking level changes as session entries Cachemire can replay", () => {
+  const declarations = readFileSync(join(piRoot, "dist", "core", "session-manager.d.ts"), "utf8");
+  assert.match(declarations, /interface SessionEntryBase \{\s*type: string;\s*id: string;\s*parentId: string \| null;\s*timestamp: string;/);
+  assert.match(declarations, /interface ThinkingLevelChangeEntry extends SessionEntryBase \{\s*type: "thinking_level_change";\s*thinkingLevel: string;/);
+  assert.match(declarations, /appendThinkingLevelChange\(thinkingLevel: string\): string;/);
+});
+
 test("installed provider records keep Cachemire's new routes exact", () => {
   for (const [file, api, model, provider] of [
     ["minimax.json", "anthropic-messages", "MiniMax-M2.7", "minimax"],

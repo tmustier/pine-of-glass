@@ -85,10 +85,28 @@ export function renderMissLine(record: CallRecord): string {
   return `${what} \u00b7 cause: ${record.classification.cause?.detail ?? "unknown"}`;
 }
 
+/** The `event` cell of a `/cache` ledger row. */
+export function renderLedgerEvent(record: CallRecord): string {
+  const { kind, cause } = record.classification;
+  if (kind === "hit") {
+    const change = record.thinkingChange;
+    return change ? `hit \u2014 effort ${change.from} \u2192 ${change.to} kept the prefix` : "hit";
+  }
+  if (kind === "cold") return "cold start";
+  return `${kind} \u2014 ${cause?.detail ?? "unknown"}`;
+}
+
 // A predicted break that resolved into a hit: good news, and a small lesson about
-// shared-prefix warmth (another session with the same harness prefix kept it alive).
+// shared-prefix warmth (another session with the same harness prefix kept it alive)
+// or about the route: an effort change that read the prior prefix back is billed
+// proof that this route keeps it, whatever the payload looked like at Cachemire's hook.
 export function renderHeldLine(record: CallRecord): string {
   if (isPostCompaction(record)) return renderCompactionLine(record);
+  const change = record.thinkingChange;
+  if (change?.held) {
+    return `cache held \u00b7 read ${compactCount(record.usage.cacheRead)} of ${compactCount(record.expectedRead)} expected` +
+      ` \u00b7 effort ${change.from} \u2192 ${change.to} kept the prefix warm on this route`;
+  }
   if (record.switched) {
     // The old expectation is denominated in the previous model's tokenizer, so it is
     // never composed with this read. Warmth this session did not write (a twin session's

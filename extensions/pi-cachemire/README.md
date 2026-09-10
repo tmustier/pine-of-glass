@@ -68,7 +68,18 @@ default threshold is $0.05 or 20k re-written tokens.
 Changing thinking effort on direct Anthropic Claude Fable 5.1 also stays quiet because
 the model preserves the cached prefix. GPT-6 Astra needs an append-only
 `configuration_update` for the same result; Pi 0.85.1 changes request-level effort, so
-Cachemire still treats that payload change as material.
+Cachemire expects that payload change to break the cache until the bill says otherwise.
+
+The bill outranks the payload. A later-loaded extension can rewrite the request after
+Cachemire has read it, so the billed effort changes on a route decide what Cachemire
+expects from that route for the rest of the process. A hit on an effort the route has
+never billed before says so once and silences later warnings on that route; a miss that
+the payload attributed to thinking reinstates them. Returning to an effort billed
+earlier proves nothing either way, because providers keep a warm entry per effort:
+
+```
+◍ cache held · read 29.8k of 30.0k expected · effort low → high kept the prefix warm on this route
+```
 
 ```
 ◍ cache breaking · re-writing ~138.2k (~$2.59) · cause: 5m TTL reached after 9h50m idle   (in flight)
