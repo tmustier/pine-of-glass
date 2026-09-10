@@ -85,8 +85,6 @@ test("agent lint fails when the baseline keeps stale signatures", () => {
   assert.match(failed.stderr, /stale baseline/);
 });
 
-// The oxlint ledger: findings from the vendored anti-slop rules join the same baseline
-// under their rule id, ratchet the same way, and report oxlint's own message.
 function oxlintFixtureRepo(): string {
   const dir = fixtureRepo();
   symlinkSync(join(repoRoot.pathname, "tools"), join(dir, "tools"), "dir");
@@ -127,7 +125,7 @@ test("anti-slop findings join the migration ledger under their rule id and ratch
 test("test-only internals exports may shrink but not grow through --update-baseline", () => {
   const dir = fixtureRepo();
   const source = join(dir, "extensions", "demo", "index.ts");
-  writeFileSync(source, "const a = 1;\nconst b = 2;\nexport const internals = {\n  // comment\n  a,\n  b: () => ({ nested: [1, 2] }),\n};\n");
+  writeFileSync(source, "const a = 1;\nexport const internals = { a, b: 2 };\n");
 
   assert.match(runLint(dir).stderr, /internals-entries:2 budget:0/);
   assert.notEqual(runLint(dir, "--update-baseline").status, 0);

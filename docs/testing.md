@@ -17,40 +17,27 @@ likelihood. Anything that does not map to one of these failure modes does not ge
 
 ## Public interfaces: what a test may touch
 
-A test is a specification of a capability. It names something the extension does for a
-user ("enabling meantime makes `/pace` answer with the ledger"), drives that capability
-through the surface a user or Pi would use, and asserts on what a user would see. The
-code behind the capability can change entirely; the test should not have to. A test that
-breaks on a refactor with no behaviour change is a bug in the test.
+A test is a specification of a capability: it names what the extension does for a user
+("enabling meantime makes `/pace` answer with the ledger"), drives it through the surface
+a user or Pi would use, and asserts on what a user would see. A test that breaks on a
+refactor with no behaviour change is a bug in the test.
 
-Use these seams:
-
-1. **Extension behaviour goes through Pi.** Its public interface is the
-   default export loaded by Pi, the config files it reads, the events Pi delivers, the
-   commands it registers, and the UI surface it writes to (notifications, widgets,
-   status, chat lines, terminal input). `tests/harness/extension-host.ts` covers the
-   current notification and widget specifications through Pi's real loader and
-   `ExtensionRunner`. Prefer this seam when it can observe the real behavior.
+1. **Extension behaviour goes through Pi's SDK.** `tests/harness/extension-host.ts`
+   loads the default export with `DefaultResourceLoader` and `createAgentSession`, the
+   same route Pi's own modes use, in a scratch project that owns cwd and HOME. Drive it
+   with config files, `session.prompt("/command")` and `session.extensionRunner.emit`;
+   observe the recorded notifications and widgets.
 2. **Pure logic goes through the named exports of a domain module.** ANSI truncation,
    SGR filtering, token formulas, heuristic precedence and retention policy are contracts
-   whose inputs and outputs are the specification. Test them directly from their module
-   (`extensions/_lib/*.ts` or an extension's own domain module such as
-   `pi-cachemire/retention.ts`), with tables and invariants, not by inspecting how they
-   compute. Choose a stable capability to test before deciding what to export. Do not
-   expose private helpers or split them into a new module just to make them testable.
+   whose inputs and outputs are the specification (`extensions/_lib/*.ts`,
+   `pi-cachemire/retention.ts`). Do not expose private helpers or split a module just to
+   make something testable.
 3. **Privates of `index.ts` are not a test surface.** The three legacy
-   `export const internals` objects are migration debt and may only shrink. Move a
-   capability to a real domain module or test it through Pi; do not create test APIs.
+   `export const internals` objects may only shrink.
 
-What a good test in any tier looks like:
-
-- The name states the capability in user terms, not the function under test.
-- Inputs are the smallest realistic fixture; synthetic duck-typed comps are fine where
-  the contract suite proves the duck type against real Pi.
-- Prefer outputs and visible state over helper call counts or implementation order.
-  Keep focused installed-Pi registration contracts where registration itself is the
-  requirement, such as a disabled extension doing no background work.
-- It fails against the bug it guards or a plausible mutation. Delete tests that cannot.
+A good test names the capability in user terms, uses the smallest realistic fixture,
+asserts on outputs and visible state rather than call order, and fails against the bug it
+guards or a plausible mutation. Delete tests that cannot.
 
 ## Explicit non-goals
 
@@ -81,14 +68,10 @@ Deliberately **not** tested:
   `npm test` is the drift detector.
 - **Testability route:** pure domain logic lives in importable domain modules; see
   "Public interfaces" above. Pi imports only each extension's default entry point, so
-  named exports are runtime-inert. Split files by domain when the code needs it, as
-  cachemire's renderer and meantime's timing/render modules do. The legacy `internals`
-  objects on the three older entry files only shrink.
-- **Extension host:** `tests/harness/extension-host.ts` hosts a default export the way
-  Pi does. Its scratch project owns cwd and HOME until disposal, covering config reads
-  during both factory loading and session events. Its recording UI has no chat container,
-  so chat fallback behavior is observable but chat placement is not. These tests do not
-  replace live terminal acceptance.
+  named exports are runtime-inert.
+- **Extension host:** see "Public interfaces" above. Its recording UI has no chat
+  container, so chat fallback text is observable but chat placement is not. Anything that
+  needs a real terminal goes to the smoke layer.
 - **Scripts:** `npm run lint` (agent coding-standard and generated-doc drift checks),
   `npm run docs:cache` (regenerate Cachemire retention docs),
   `npm run typecheck`, `npm test` (unit + render + contract),
@@ -99,7 +82,7 @@ Layout:
 
 ```
 tests/
-  harness/extension-host.ts          # real Pi loader + runner + recorded UI
+  harness/extension-host.ts          # Pi SDK session + recorded UI
   contract/*.test.ts                 # layer 1: Pi drift and lifecycle contracts
   contextimate/*.test.ts             # layer 2/3
   traceline/*.test.ts                # layer 2
@@ -126,7 +109,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
-| Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
+| Two Pi SDK sessions in one process distinguish headless and interactive through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
 | Native OpenAI Completions accounts top-level `usage.cached_tokens` for Moonshot, Moonshot CN and Together, while preserving detailed-field precedence and cost accounting | cachemire provider usage accounting |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
@@ -176,10 +159,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   families and leave dynamic or unverified aliases on the fallback. Separate cases pin
   Claude family boundaries and tool payload routing by provider and API.
 - **Tool payload shaping**: for one frozen `ToolSummary` fixture, the exact JSON emitted
-  per tool numerator (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`,
-  `raw-schema`), the *aggregated* gemini `functionDeclarations` form, and the
-  unknown-numerator fallback to the OpenAI Responses payload.
-  Consistency invariant: `buildToolDisplayEstimate` counts the same payload that
+  per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`),
+  the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to
+  the OpenAI Responses payload.
+  Consistency invariant: `buildToolDisplayEstimate` counts the same payload shape that
   `buildToolNumerator` counts (per-tool vs aggregate); this is also the invariant the
   issue-#8 checker must preserve.
 - **OpenAI cookbook formula** (`estimateOpenAIFunctionToolTokens`): frozen multi-tool
@@ -291,6 +274,9 @@ model call required:
 - `test:smoke:click` exercises tool and reasoning clicks in fullscreen Pi through raw
   mouse input: independent expansion, tool aggregate reveal/refold, native collapse,
   Drill isolation, global toggles, resize and reload.
+- `test:smoke:nested` runs a headless Pi SDK session that loads Traceline inside the
+  interactive process, the way a subagent child does, then proves the rails survive it
+  and Ctrl+T twice still restores them without Pi's status line.
 - The full startup smoke checks that the `[Contextimate]` block renders, that
   `/contextimate compact` and `expanded` change the rendered mode line, and that `/reload`
   keeps exactly one block. Its project config explicitly enables Meantime, proving the

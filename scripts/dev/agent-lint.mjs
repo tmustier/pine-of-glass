@@ -6,7 +6,6 @@ import { parseSync } from "oxc-parser";
 
 const ROOT = process.cwd();
 const BASELINE_PATH = join(ROOT, "scripts", "dev", "agent-lint-baseline.json");
-const OXLINT_BIN = join(ROOT, "node_modules", ".bin", "oxlint");
 const DEFAULT_TS_MAX_LINES = 350;
 const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012"]);
 
@@ -66,15 +65,6 @@ const RULE_MESSAGES = {
     "Move the logic into a domain module and import it directly, or test it through the harness; do not add another entry to the grab bag.",
   ],
 };
-
-// Oxlint findings (anti-slop plus oxlint's defaults, configured in .oxlintrc.json) join
-// the same migration ledger under their own rule ids, e.g. `anti-slop(no-unknown-returns)`.
-// Each such finding carries oxlint's own message, so the baseline and the failure output
-// speak the rule's language rather than a paraphrase.
-const OXLINT_HELP = [
-  "Rule policy: .oxlintrc.json (inline reasons) and docs/agent-coding-standard.md (\"Slop lint\").",
-  "See the full diagnostic with `npm run lint:slop`.",
-];
 
 function usage() {
   console.log(`Usage: node scripts/dev/agent-lint.mjs [--update-baseline] [--show-baseline]\n\nDeterministic source checks for the pine-of-glass agent coding standard.`);
@@ -237,17 +227,12 @@ function scanFileBudgets(files, baseline, findings) {
   }
 }
 
-// Runs oxlint over the repo (its .oxlintrc.json owns the targets and ignores) and
-// converts every diagnostic into a ledger finding keyed by the source line, the same
-// signature scheme the POG rules use, so line-number drift never invalidates the baseline.
-// A repo without an oxlint config has nothing to run.
+// Oxlint diagnostics (rules in .oxlintrc.json) join the ledger under their own rule id,
+// e.g. `anti-slop(no-unknown-returns)`, keyed by source line like the POG findings.
 function scanWithOxlint(findings) {
   if (!existsSync(join(ROOT, ".oxlintrc.json"))) return;
-  if (!existsSync(OXLINT_BIN)) {
-    console.error("agent-lint: oxlint is not installed; run `npm install` then `npm run link-pi`.");
-    process.exit(1);
-  }
-  const result = spawnSync(OXLINT_BIN, [".", "--format", "json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const oxlint = join(ROOT, "node_modules", ".bin", "oxlint");
+  const result = spawnSync(oxlint, [".", "--format", "json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (result.error) throw result.error;
   // oxlint exits 1 when it reports findings; anything else is a tooling failure.
   if (result.status !== 0 && result.status !== 1) {
@@ -259,10 +244,15 @@ function scanWithOxlint(findings) {
   const sources = new Map();
   for (const diagnostic of report.diagnostics) {
     const file = diagnostic.filename.split(sep).join("/");
-    const line = diagnostic.labels?.[0]?.span?.line ?? 1;
+    const line = diagnostic.labels[0].span.line;
     if (!sources.has(file)) sources.set(file, readText(join(ROOT, file)).split(/\r?\n/));
     const lineText = sources.get(file)[line - 1] ?? "";
-    const message = [diagnostic.message, ...(diagnostic.help ? [diagnostic.help] : []), ...OXLINT_HELP].join("\n");
+    const message = [
+      diagnostic.message,
+      ...(diagnostic.help ? [diagnostic.help] : []),
+      "Rule policy: .oxlintrc.json (inline reasons) and docs/agent-coding-standard.md (\"Slop lint\").",
+      "See the full diagnostic with `npm run lint:slop`.",
+    ].join("\n");
     findings.push(makeFinding(diagnostic.code, file, line, lineText, message));
   }
 }
@@ -306,8 +296,7 @@ function scanInternalsBudgets(files, baseline, findings) {
   }
 }
 
-// Baseline updates only retain or lower budgets already admitted by hand. New files are
-// never added, and deleted or fully-shrunk entries disappear.
+// Budgets already in the baseline may only shrink; new files are never added.
 function buildInternalsBudgets(files, previous) {
   const sources = new Map(files.map((path) => [rel(path), path]));
   const budgets = {};
@@ -367,16 +356,15 @@ function buildKnownFindings(findings) {
 }
 
 function buildLineBudgets(files, previous) {
-  const defaultTsMax = Math.min(previous.defaultTsMax ?? DEFAULT_TS_MAX_LINES, DEFAULT_TS_MAX_LINES);
   const sources = new Map(files.map((path) => [rel(path), path]));
   const budgets = {};
   for (const [file, oldBudget] of Object.entries(previous.files ?? {})) {
     const absPath = sources.get(file);
     if (!absPath) continue;
     const lineCount = readText(absPath).split(/\r?\n/).length;
-    if (lineCount > defaultTsMax) budgets[file] = Math.min(lineCount, oldBudget);
+    if (lineCount > DEFAULT_TS_MAX_LINES) budgets[file] = Math.min(lineCount, oldBudget);
   }
-  return { defaultTsMax, files: sortObjectDeep(budgets) };
+  return { defaultTsMax: DEFAULT_TS_MAX_LINES, files: sortObjectDeep(budgets) };
 }
 
 function sortObjectDeep(value) {
@@ -447,10 +435,7 @@ function main() {
 
   const { known, fresh, stale } = partitionFindings(findings, baseline);
   if (args.has("--update-baseline")) {
-    // Updating is a debt ratchet, never an admission mechanism. POG011 findings are the
-    // expected signals that an existing budget can shrink; every other fresh finding,
-    // including one in a new file or growth above a reviewed budget, must be fixed or
-    // admitted by a deliberate hand edit before this command may rewrite the file.
+    // Only stale entries (POG011) may be pruned; every other fresh finding needs a fix or a hand edit.
     const unreviewed = fresh.filter((finding) => finding.code !== "POG011");
     if (unreviewed.length > 0) {
       console.error(`agent-lint refused to update the baseline with ${unreviewed.length} unreviewed finding(s):\n`);

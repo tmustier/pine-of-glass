@@ -1,39 +1,32 @@
-// Loads an extension through Pi's real loader and runner, with a recording UI.
-// See docs/testing.md, "Public interfaces".
+// Hosts an extension through Pi's SDK with a recording UI. See docs/testing.md, "Public interfaces".
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import * as pi from "@earendil-works/pi-coding-agent";
+import {
+  type AgentSession,
+  createAgentSession,
+  DefaultResourceLoader,
+  type ExtensionFactory,
+  type ExtensionUIContext,
+  SessionManager,
+  type SessionStartEvent,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
 
 import type { JsonObject } from "../../extensions/_lib/boundary.ts";
 
-type ExtensionFactory = (api: ExtensionAPI) => void | Promise<void>;
-type PiExtension = ConstructorParameters<typeof pi.ExtensionRunner>[0][number];
-type FactoryLoader = {
-  loadExtensionFromFactory: (
-    factory: ExtensionFactory,
-    cwd: string,
-    eventBus: ReturnType<typeof pi.createEventBus>,
-    runtime: ReturnType<typeof pi.createExtensionRuntime>,
-    extensionPath?: string,
-  ) => Promise<PiExtension>;
-};
 type WidgetFactory = (tui: TUI, theme: Theme) => Component;
 
-const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
-
-// Pi spreads the UI context, so these methods must be own properties.
+// Pi spreads the UI context, so these members must be own properties.
 export class RecordedUi {
-  readonly notifications: Array<{ text: string; type: "info" | "warning" | "error" }> = [];
+  readonly notifications: string[] = [];
   readonly widgets = new Map<string, string[] | Component>();
   readonly theme = undefined;
   readonly tui = { requestRender(): void {} };
 
-  readonly notify = (text: string, type: "info" | "warning" | "error" = "info"): void => {
-    this.notifications.push({ text, type });
+  readonly notify = (text: string): void => {
+    this.notifications.push(text);
   };
 
   readonly setWidget = (key: string, content: string[] | WidgetFactory | undefined): void => {
@@ -42,8 +35,7 @@ export class RecordedUi {
     } else if (Array.isArray(content)) {
       this.widgets.set(key, content);
     } else {
-      // SAFETY: these extensions only call requestRender on the captured TUI. The
-      // installed-Pi lifecycle specs exercise this stand-in.
+      // SAFETY: the family only calls requestRender on the captured TUI and renders without a theme.
       this.widgets.set(key, content(this.tui as unknown as TUI, undefined as unknown as Theme));
     }
   };
@@ -53,17 +45,14 @@ export class RecordedUi {
     if (widget === undefined) return undefined;
     return Array.isArray(widget) ? widget : widget.render(width);
   }
-
-  get notificationTexts(): string[] {
-    return this.notifications.map((entry) => entry.text);
-  }
 }
 
+/** A scratch project that owns cwd and HOME until disposed, so every config read stays inside it. */
 export class IsolatedProject {
   readonly dir: string;
   readonly home: string;
-  readonly #previousCwd: string;
-  readonly #previousHome: string | undefined;
+  readonly #previousCwd = process.cwd();
+  readonly #previousHome = process.env.HOME;
 
   constructor() {
     const root = mkdtempSync(join(tmpdir(), "pine-of-glass-host-"));
@@ -71,8 +60,6 @@ export class IsolatedProject {
     this.home = join(root, "home");
     mkdirSync(this.dir, { recursive: true });
     mkdirSync(this.home, { recursive: true });
-    this.#previousCwd = process.cwd();
-    this.#previousHome = process.env.HOME;
     process.chdir(this.dir);
     process.env.HOME = this.home;
   }
@@ -90,84 +77,47 @@ export class IsolatedProject {
   }
 }
 
-export type HostOptions = {
-  project: IsolatedProject;
-  interactive?: boolean;
+export type HostedExtension = {
+  session: AgentSession;
+  ui: RecordedUi;
+  /** Ends the session and fails if Pi caught an error from any handler. */
+  dispose(): Promise<void>;
 };
 
-export class HostedExtension {
-  readonly runner: pi.ExtensionRunner;
-  readonly ui: RecordedUi;
-  readonly #errors: string[];
+export async function hostExtension(
+  factory: ExtensionFactory,
+  options: { project: IsolatedProject; interactive?: boolean; reason?: SessionStartEvent["reason"] },
+): Promise<HostedExtension> {
+  const { project, interactive = true, reason = "startup" } = options;
+  const cwd = project.dir;
+  const agentDir = join(project.home, ".pi", "agent");
+  const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
+  await loader.reload();
+  const loadErrors = loader.getExtensions().errors;
+  if (loadErrors.length > 0) throw new Error(loadErrors.map((entry) => entry.error).join("\n"));
 
-  constructor(runner: pi.ExtensionRunner, ui: RecordedUi, errors: string[]) {
-    this.runner = runner;
-    this.ui = ui;
-    this.#errors = errors;
-  }
-
-  hasCommand(name: string): boolean {
-    return this.runner.getCommand(name) !== undefined;
-  }
-
-  async runCommand(name: string, args = ""): Promise<void> {
-    const command = this.runner.getCommand(name);
-    if (!command) throw new Error(`the extension did not register /${name}`);
-    await command.handler(args, this.runner.createCommandContext());
-  }
-
-  async start(reason: "startup" | "new" | "resume" | "fork" = "startup"): Promise<void> {
-    await this.runner.emit({ type: "session_start", reason });
-  }
-
-  async dispose(): Promise<void> {
-    await this.runner.emit({ type: "session_shutdown", reason: "quit" });
-    if (this.#errors.length > 0) {
-      throw new Error(`extension runner caught errors:\n${this.#errors.join("\n")}`);
-    }
-  }
-}
-
-export async function hostExtension(factory: ExtensionFactory, options: HostOptions): Promise<HostedExtension> {
-  const cwd = options.project.dir;
-  const runtime = pi.createExtensionRuntime();
-  const loader = await import(pathToFileURL(join(piRoot, "dist/core/extensions/loader.js")).href) as FactoryLoader;
-  if (typeof loader.loadExtensionFromFactory !== "function") {
-    throw new Error("Pi's factory loader moved: update tests/harness/extension-host.ts");
-  }
-  const extension = await loader.loadExtensionFromFactory(
-    factory,
+  const { session } = await createAgentSession({
     cwd,
-    pi.createEventBus(),
-    runtime,
-    "pine-of-glass-hosted-extension",
-  );
-  const modelRegistry = {
-    registerProvider(): void {},
-    unregisterProvider(): void {},
-    getRegisteredNativeProvider: () => undefined,
-    getRegisteredProviderConfig: () => undefined,
-  };
-  const runner = new pi.ExtensionRunner([extension], runtime, cwd, pi.SessionManager.inMemory(cwd), modelRegistry as never);
-  runner.bindCore({ getThinkingLevel: (): "off" => "off" } as never, {
-    getModel: () => undefined,
-    getScopedModels: () => [],
-    isIdle: () => true,
-    isProjectTrusted: () => true,
-    getSignal: () => undefined,
-    abort: () => {},
-    hasPendingMessages: () => false,
-    shutdown: () => {},
-    getContextUsage: () => undefined,
-    compact: () => {},
-    getSystemPrompt: () => "",
+    agentDir,
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(cwd),
+    noTools: "all",
+    sessionStartEvent: { type: "session_start", reason },
   });
-
   const ui = new RecordedUi();
-  if (options.interactive ?? true) {
-    runner.setUIContext(ui as unknown as ExtensionUIContext, "tui");
-  }
   const errors: string[] = [];
-  runner.onError((error) => errors.push(`${error.event}: ${error.error}`));
-  return new HostedExtension(runner, ui, errors);
+  const onError = (error: { event: string; error: string }) => errors.push(`${error.event}: ${error.error}`);
+  await session.bindExtensions(
+    interactive ? { uiContext: ui as unknown as ExtensionUIContext, mode: "tui", onError } : { mode: "print", onError },
+  );
+
+  return {
+    session,
+    ui,
+    async dispose() {
+      await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+      session.dispose();
+      if (errors.length > 0) throw new Error(`Pi caught extension errors:\n${errors.join("\n")}`);
+    },
+  };
 }

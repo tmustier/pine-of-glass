@@ -48,8 +48,8 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   and are enforced by `scripts/dev/agent-lint.mjs` and `.oxlintrc.json`. Parse external
   data at its boundary, pass typed values inward, and document real escape hatches with
   `SAFETY:` comments. The baseline and legacy `internals` exports only shrink.
-- Tests specify capabilities through Pi or stable domain-module APIs. Do not expose
-  private helpers for tests. See [`docs/testing.md`](./docs/testing.md).
+- Tests specify capabilities through Pi's SDK or stable domain-module APIs; do not
+  expose private helpers for tests. See [`docs/testing.md`](./docs/testing.md).
 
 ## Style
 

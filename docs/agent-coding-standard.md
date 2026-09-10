@@ -27,18 +27,13 @@ vendored at `tools/oxlint/anti-slop/` (provenance in `tools/oxlint/UPSTREAM.md`)
 enabled rules reject low-evidence TypeScript. `npm run lint:slop` prints their full
 diagnostics; `npm run lint` adds them to the existing migration ledger.
 
-Validate external data before passing it into calculations and rendering. Keep ordinary
-type narrowing. A named guard is useful only when it proves its predicate. Keep `unknown`
-at config, provider and Pi boundaries, refine what the consumer needs, and pass typed
-values inward. Do not extract a helper merely to satisfy a syntax rule.
+Ordinary type narrowing stays. Do not extract a helper merely to satisfy a syntax rule.
+A baseline entry is debt with an intended fix; correct code that a rule rejects gets a
+rule-level decision in `.oxlintrc.json` with its reason, or an inline
+`oxlint-disable-next-line` with a justification, not a baseline entry.
 
-A baseline entry is debt with an intended fix. If a finding is correct code that should
-stay, the right move is a rule-level decision in `.oxlintrc.json` with its reason, or
-an inline `oxlint-disable-next-line` with a justification, not a baseline entry.
-
-The Oxlint packages are pinned because their plugin APIs move together. `oxc-parser`
-counts `internals` properties. After `npm install`, run `npm run link-pi` to restore the
-Pi runtime symlinks.
+The Oxlint packages are pinned because their plugin APIs move together. After
+`npm install`, run `npm run link-pi` to restore the Pi runtime symlinks.
 
 ## Boundary typing
 
@@ -135,10 +130,9 @@ When touching a baselined area:
 3. Add `SAFETY:` only for real Pi or runtime boundary seams.
 4. If a file is over its line budget, split by domain before adding unrelated logic.
 5. If an `internals` entry is in reach, move its logic to a domain module and delete it.
-6. Prune the baseline after fixes. `--update-baseline` refuses new findings and larger
-   budgets without rewriting the file, including for new files. It only removes
-   signatures or lowers existing budgets. Exceptional admissions require an explicit
-   hand edit with the reason reviewed in the PR; there is no bulk admission command.
+6. Prune the baseline after fixes. `--update-baseline` only removes signatures or lowers
+   existing budgets; it refuses new findings. Exceptional admissions are a hand edit
+   with the reason reviewed in the PR.
 
 To inspect the migration ledger:
 

@@ -5,16 +5,13 @@
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.
-  Typed union narrowing remains allowed. Reviewed pure modules reject explicit
-  `unknown` parameters; input parsers keep honest types for unvalidated fields.
-  Baseline updates only remove debt and refuse new findings or larger budgets.
-  `oxlint`, `@oxlint/plugins` and `oxc-parser` are development-only dependencies.
-  `npm run preflight` reminds you to re-run
-  `npm run link-pi` after `npm install`.
-- Development: tests specify behaviour through public interfaces. A new
-  `tests/harness/extension-host.ts` hosts an extension through Pi's real loader and
-  runner with a recorded UI; Meantime's opt-in specs and Cachemire's nested-runner
-  contract use it. The test-only `internals` exports may no longer grow (POG012).
+  `--update-baseline` only prunes. `oxlint`, `@oxlint/plugins` and `oxc-parser` are
+  development-only dependencies; run `npm run link-pi` after `npm install`.
+- Development: tests specify behaviour through public interfaces.
+  `tests/harness/extension-host.ts` hosts an extension through Pi's SDK with a recorded
+  UI; Meantime's opt-in specs and Cachemire's nested-session contract use it.
+  Traceline's nested-session ownership is a real-terminal smoke (`test:smoke:nested`).
+  The test-only `internals` exports may no longer grow (POG012).
 - Traceline keeps continuation lines from native tool-call renderers in compact
   summaries. A `Ran` header followed by a command now shows `Ran · command`,
   without tool-specific adapters. Expanded calls and results stay native.

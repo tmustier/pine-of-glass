@@ -8,7 +8,6 @@ import type {
   ResolvedCacheLineage,
 } from "./types.ts";
 
-/** Only the entry id is validated here. Each consumer checks the fields it needs. */
 type PersistedEntry = JsonFields & { id: string };
 
 function isPersistedEntry(entry: unknown): entry is PersistedEntry {

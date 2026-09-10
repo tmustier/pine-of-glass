@@ -1,6 +1,4 @@
-// Installed-Pi lifecycle contract for Cachemire's process-global state: two real
-// ExtensionRunner instances share one process (issue #44), and only the one with a UI
-// may own the interactive ledger.
+// Two Pi sessions share one process (issue #44): only the one with a UI owns the ledger.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -10,8 +8,9 @@ import { assistantMessage } from "../helpers.ts";
 
 test("a headless child does not appear in the interactive Cachemire ledger", async () => {
   const project = new IsolatedProject();
+  // The headless session starts first, so nothing but the UI check keeps it from claiming the ledger.
+  const headless = await hostExtension(piCachemire, { project, interactive: false });
   const interactive = await hostExtension(piCachemire, { project });
-  const headless = await hostExtension(piCachemire, { interactive: false, project });
   const billedMessage = (model: string, input: number) => assistantMessage([], {
     model,
     usage: {
@@ -25,25 +24,20 @@ test("a headless child does not appear in the interactive Cachemire ledger", asy
   });
 
   try {
-    await headless.start();
-    await interactive.start();
-    await headless.runner.emitBeforeProviderRequest({ model: "headless", messages: [] });
-    await headless.runner.emitMessageEnd({ type: "message_end", message: billedMessage("headless", 32_800) });
-    await interactive.runCommand("cache");
+    await headless.session.extensionRunner.emitBeforeProviderRequest({ model: "headless", messages: [] });
+    await headless.session.extensionRunner.emitMessageEnd({ type: "message_end", message: billedMessage("headless", 32_800) });
+    await interactive.session.prompt("/cache");
 
-    await interactive.runner.emitBeforeProviderRequest({ model: "interactive", messages: [] });
-    await interactive.runner.emitMessageEnd({ type: "message_end", message: billedMessage("interactive", 1_000) });
-    await interactive.runCommand("cache");
+    await interactive.session.extensionRunner.emitBeforeProviderRequest({ model: "interactive", messages: [] });
+    await interactive.session.extensionRunner.emitMessageEnd({ type: "message_end", message: billedMessage("interactive", 1_000) });
+    await interactive.session.prompt("/cache");
   } finally {
-    try {
-      await headless.dispose();
-      await interactive.dispose();
-    } finally {
-      project.dispose();
-    }
+    await headless.dispose();
+    await interactive.dispose();
+    project.dispose();
   }
 
-  const ledgers = interactive.ui.notificationTexts;
+  const ledgers = interactive.ui.notifications;
   assert.equal(ledgers.length, 2, "each /cache invocation should reach the interactive UI once");
   assert.match(ledgers[0]!, /no model calls yet/, "the headless call leaked into the interactive ledger");
   assert.match(ledgers[1]!, /\b1\.0k\b/, "the interactive ledger did not record its own call");

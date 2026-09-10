@@ -122,8 +122,7 @@ export function detectPayloadKind(payload: unknown): PayloadKind | undefined {
 
 export function parsePayloadFile(text: string): { kind: PayloadKind; payload: JsonObject } {
   const trimmed = text.trim();
-  // SAFETY: these values come directly from JSON.parse without a reviver. That proves
-  // JSON compatibility, not a provider contract; detectPayloadKind checks that below.
+  // JSON.parse output is JSON by construction; detectPayloadKind checks the provider contract.
   const candidates: JsonValue[] = trimmed.startsWith("{") && !trimmed.includes("\n{")
     ? [JSON.parse(trimmed)]
     : trimmed.split("\n").filter(Boolean).map((line) => JSON.parse(line));
