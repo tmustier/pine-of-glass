@@ -36,21 +36,28 @@
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error",
 
-    // `typeof` also narrows already-typed unions. Banning its syntax rewards wrapper
-    // functions, not validation. TypeScript still checks every runtime source file.
-    "anti-slop/no-runtime-typeof": "off",
-    // Unknown is honest at an input boundary. Apply this check to the reviewed pure
-    // modules below, not files that also parse config, provider data or Pi internals.
-    "anti-slop/no-unknown-parameters": "off"
+    // Unknown and typeof are honest at an input boundary. Apply these checks to the
+    // reviewed pure modules below, not files that also parse config, provider data or
+    // Pi internals.
+    "anti-slop/no-unknown-parameters": "off",
+    "anti-slop/no-runtime-typeof": "off"
   },
   "overrides": [
     {
       // These modules format typed values or calculate timing. Review this list when
       // extracting another pure module. This syntactic check is a backstop, not proof
       // that all incoming data has been validated (aliases and predicates need review).
-      "files": ["extensions/_lib/fmt.ts", "extensions/_lib/ansi.ts", "extensions/pi-meantime/timing.ts", "extensions/pi-meantime/render.ts"],
+      "files": [
+        "extensions/_lib/ansi.ts",
+        "extensions/_lib/fmt.ts",
+        "extensions/_lib/forecast.ts",
+        "extensions/_lib/heuristics.ts",
+        "extensions/pi-meantime/timing.ts",
+        "extensions/pi-meantime/render.ts"
+      ],
       "rules": {
-        "anti-slop/no-unknown-parameters": "error"
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/no-runtime-typeof": "error"
       }
     },
     {

@@ -10,7 +10,6 @@ import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import {
   builtInHeuristicPatchForModel,
-  cleanDenominator,
   estimateCharsAsTokens,
   fallbackHeuristicNumbers,
   type ModelSummary,
@@ -551,22 +550,13 @@ function defaultHeuristic(): ResolvedHeuristic {
 }
 
 function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | Partial<ResolvedHeuristic>, source: string): ResolvedHeuristic {
-  const next = {
-    label: patch.label,
-    textDenominator: patch.textDenominator,
-    sessionDenominator: patch.sessionDenominator,
-    toolDenominator: patch.toolDenominator,
-    toolNumerator: patch.toolNumerator,
-  };
   return {
-    ...base,
-    ...next,
-    label: next.label ?? base.label,
+    label: patch.label ?? base.label,
     source,
-    textDenominator: cleanDenominator(next.textDenominator, base.textDenominator),
-    sessionDenominator: cleanDenominator(next.sessionDenominator, base.sessionDenominator),
-    toolDenominator: cleanDenominator(next.toolDenominator, base.toolDenominator),
-    toolNumerator: next.toolNumerator ?? base.toolNumerator,
+    textDenominator: patch.textDenominator ?? base.textDenominator,
+    sessionDenominator: patch.sessionDenominator ?? base.sessionDenominator,
+    toolDenominator: patch.toolDenominator ?? base.toolDenominator,
+    toolNumerator: patch.toolNumerator ?? base.toolNumerator,
   };
 }
 
@@ -1429,7 +1419,6 @@ export const internals = {
   buildSkillsSection,
   // heuristic resolution
   parseContextimateConfig,
-  cleanDenominator,
   resolveHeuristic,
   // provider payload formats
   buildToolNumerator,

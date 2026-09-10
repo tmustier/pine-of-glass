@@ -12,6 +12,11 @@
   UI; Meantime's opt-in specs and Cachemire's nested-session contract use it.
   Traceline's nested-session ownership is a real-terminal smoke (`test:smoke:nested`).
   The test-only `internals` exports may no longer grow (POG012).
+- Development: `no-shape-in-symbol-names` is on; tool payload builders are named for
+  their role (`ToolDefinition`, `toolPayload(tool, format)`). `no-runtime-typeof`
+  guards the reviewed pure modules, now including `_lib/forecast.ts` and
+  `_lib/heuristics.ts`; forecast messages carry a declared content type and config
+  denominators are validated once, at parse time.
 - Traceline keeps continuation lines from native tool-call renderers in compact
   summaries. A `Ran` header followed by a command now shows `Ran · command`,
   without tool-specific adapters. Expanded calls and results stay native.

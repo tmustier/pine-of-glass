@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   forecastHistoryForTarget,
   forecastTargetPrompt,
+  type ForecastBlock,
   type ForecastMessage,
   type TargetModel,
 } from "../../extensions/_lib/forecast.ts";
@@ -25,7 +26,7 @@ const opus: TargetModel = {
   input: ["text", "image"],
 };
 
-function solTurn(content: unknown[], overrides: Partial<ForecastMessage> = {}): ForecastMessage {
+function solTurn(content: ForecastBlock[], overrides: Partial<ForecastMessage> = {}): ForecastMessage {
   return {
     role: "assistant",
     content,
@@ -93,7 +94,7 @@ test("aborted and error assistant turns contribute nothing", () => {
 
 test("images: pi's flat char convention for vision targets, placeholder for non-vision", () => {
   const history: ForecastMessage[] = [
-    { role: "user", content: [{ type: "image", data: "aGk=", mimeType: "image/png" }] },
+    { role: "user", content: [{ type: "image" }] },
   ];
   const vision = forecastHistoryForTarget(history, luna);
   assert.equal(vision.imageChars, 4800, "matches pi's compaction image estimate");
