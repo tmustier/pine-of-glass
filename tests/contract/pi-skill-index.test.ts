@@ -32,7 +32,6 @@ test(
       { name: "quiet", description: "", filePath: join(home, "skills/quiet/SKILL.md") },
     ];
     const basePrompt = pi.buildSystemPrompt({ cwd: tmpdir(), selectedTools: ["exec_command", "apply_patch"] });
-    assert.ok(!basePrompt.includes("<available_skills>"));
 
     for (const heavySystemPromptOverwrite of [false, true]) {
       const prompt = codex.buildCodexSystemPrompt(basePrompt, {

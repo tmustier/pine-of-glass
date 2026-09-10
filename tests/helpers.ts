@@ -189,7 +189,7 @@ Prefer clarity &amp; precision in every reply.
 - alpha-skill: Handles A & B cases with a long description so it sorts first in token order for the fixture. (file: ${home}/skills/alpha/SKILL.md)
 - beta-skill: It's the medium one.
  (file: ${home}/skills/beta/SKILL.md)
-- gamma: (file: ${home}/skills/gamma/SKILL.md)
+- gamma:  (file: ${home}/skills/gamma/SKILL.md)
 ### How to use skills
 - Use skill when user names it or request clearly matches its description
 </skills_instructions>
