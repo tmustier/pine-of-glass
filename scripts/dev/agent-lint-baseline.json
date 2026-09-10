@@ -1,15 +1,341 @@
 {
   "version": 1,
   "generatedBy": "node scripts/dev/agent-lint.mjs --update-baseline",
-  "knownFindings": {},
+  "knownFindings": {
+    "anti-slop(no-chained-type-assertions)": {
+      "extensions/_lib/chat.ts": {
+        "if (predicate(children)) return node as unknown as ContainerLike;": 1
+      },
+      "extensions/pi-cachemire/forecast.ts": {
+        "history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];": 1
+      },
+      "extensions/pi-cachemire/index.ts": {
+        "s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);": 1
+      },
+      "extensions/pi-traceline/thinking-preview.ts": {
+        ".map((region) => region as unknown as ThinkingRegion);": 1
+      },
+      "scripts/cachemire/model-switch-forecast-probe.ts": {
+        "const history = convertToLlm(": 1
+      },
+      "scripts/dev/bench-trace-cache.ts": {
+        "const rowSeam = (row: ToolExecutionComponent) => row as unknown as ToolRowLike;": 1,
+        "trace.patchAssistantRowPrototype(AssistantMessageComponent.prototype as unknown as AssistantRowPrototypeLike);": 1,
+        "trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);": 1
+      }
+    },
+    "anti-slop(no-known-value-widening)": {
+      "extensions/_lib/chatline.ts": {
+        "if (key !== undefined) return { anchorKey: key, gap };": 1,
+        "return { gap };": 1
+      },
+      "extensions/_lib/style.ts": {
+        "if (target <= column) return { plainIndex: index, column };": 1,
+        "return { plainIndex: text.length, column };": 1
+      },
+      "extensions/_lib/tool-payloads.ts": {
+        "return {": 5,
+        "return { name: tool.name, description: tool.description, input_schema: tool.schema };": 1,
+        "return { name: tool.name, description: tool.description, parameters: tool.schema };": 1,
+        "return { name: tool.name, description: tool.description, parametersJsonSchema: tool.schema };": 1
+      },
+      "extensions/pi-cachemire/classify.ts": {
+        "return out;": 1
+      },
+      "extensions/pi-cachemire/lineage.ts": {
+        "return {": 1
+      },
+      "extensions/pi-contextimate/index.ts": {
+        "const cache: { value?: PrefixSnapshot; builtAt: number; dirty: boolean } = { builtAt: 0, dirty: true };": 1,
+        "if (!match) return { skills: [] };": 1,
+        "if (tools.length === 0) return { tools };": 1,
+        "return {": 2
+      },
+      "extensions/pi-meantime/timing.ts": {
+        "const SEGMENT_OF: Record<string, SegmentKind | undefined> = {": 1,
+        "if (intervals.length === 0) return { unionMs: 0, overlapMs: 0 };": 1,
+        "return { unionMs, overlapMs: Math.max(0, summedMs - unionMs) };": 1
+      },
+      "extensions/pi-traceline/drill.ts": {
+        "if (!/^[0-9]$/.test(ch)) return { digits };": 1,
+        "return [`${numberCell(theme, n, st.rows[st.selected] === comp)} ${bulletInk}`, ...lines.slice(1)];": 1,
+        "return { digits: \"\" };": 1
+      },
+      "scripts/contextimate/provider-token-counts.ts": {
+        "export const PROVIDERS: Record<string, Provider> = {": 1,
+        "if (apiKey) return { \"x-api-key\": apiKey, \"anthropic-version\": \"2023-06-01\" };": 1,
+        "if (kind && isJsonObject(candidate)) return { kind, payload: candidate };": 1,
+        "return {": 1,
+        "return { authorization: `Bearer ${entry.access}`, \"anthropic-version\": \"2023-06-01\", \"anthropic-beta\": \"oauth-2025-04-20\" };": 1
+      },
+      "scripts/dev/bash-corpus/report.ts": {
+        "const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };": 1
+      },
+      "tests/cachemire/economics-and-render.test.ts": {
+        "const fable = { xhigh: \"xhigh\" } as Record<string, string | null>;": 1
+      },
+      "tests/cachemire/lineage-events.test.ts": {
+        "return { handlers, commands };": 1
+      },
+      "tests/cachemire/model-switch-events.test.ts": {
+        "return { handlers };": 1
+      },
+      "tests/cachemire/session-isolation.test.ts": {
+        "return {": 1,
+        "return { pi, handlers, commands };": 1
+      },
+      "tests/contract/pi-chatline-compat.test.ts": {
+        "assert.equal((assistant as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock, hidden);": 1
+      },
+      "tests/contract/pi-internals.test.ts": {
+        "assert.equal((comp as unknown as { toolCallId?: unknown }).toolCallId, \"tool-1\", \"toolCallId no longer mirrors the call ID\");": 1,
+        "const callComp = (comp as unknown as { callRendererComponent?: { render?: (w: number) => string[] } }).callRendererComponent;": 1,
+        "const peek = comp as unknown as { expanded?: boolean };": 1,
+        "const peek = component as unknown as {": 1
+      },
+      "tests/traceline/compact-reads.test.ts": {
+        "const CODES: Record<string, number> = { dim: 245, text: 255, success: 41, warning: 220, accent: 214 };": 1
+      },
+      "tests/traceline/one-line.test.ts": {
+        "const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };": 1
+      }
+    },
+    "anti-slop(no-object-parameters)": {
+      "extensions/pi-traceline/cache-hooks.ts": {
+        "export function objectCacheKey(value: object | undefined): string {": 1
+      },
+      "extensions/pi-traceline/drill-pager-content.ts": {
+        "export function foreignBlockLine(theme: Theme | undefined, block: object): string {": 1
+      },
+      "extensions/pi-traceline/render-cache.ts": {
+        "memo<T>(owner: object, key: string, compute: () => T): T {": 1,
+        "private compute<T>(owner: object, key: string, compute: () => T, output: boolean): T {": 1,
+        "value<T>(owner: object, key: string, compute: () => T): T {": 1
+      },
+      "scripts/cachemire/model-switch-forecast-probe.ts": {
+        "function append(type: string, data: object): void {": 1
+      },
+      "tests/traceline/drill-pager.test.ts": {
+        "const row = (toolName: string, args: object) => ({ ...imageRow(), toolName, args }) as ToolRowLike;": 1
+      }
+    },
+    "anti-slop(no-unknown-returns)": {
+      "extensions/_lib/chat.ts": {
+        "__tracelineOriginalAssistantRender?: (width: number) => unknown;": 1,
+        "__tracelineOriginalRender?: (width: number) => unknown;": 1,
+        "__tracelineOriginalUpdateContent?: (...args: unknown[]) => unknown;": 1,
+        "__tracelineOriginalUpdateDisplay?: (...args: unknown[]) => unknown;": 1,
+        "addChild?: (child: unknown) => unknown;": 1,
+        "clear?: () => unknown;": 1,
+        "removeChild?: (child: unknown) => unknown;": 1,
+        "render: (width: number) => unknown;": 1,
+        "render?: (width: number) => unknown;": 2,
+        "setExpanded: (...args: unknown[]) => unknown;": 1,
+        "setHideThinkingBlock: (...args: unknown[]) => unknown;": 1,
+        "updateContent: (...args: unknown[]) => unknown;": 1,
+        "updateDisplay: (...args: unknown[]) => unknown;": 1
+      },
+      "extensions/_lib/chatline.ts": {
+        "clear?: () => unknown;": 1,
+        "const original = (chat[originalKey] as (() => unknown) | undefined) ?? chat.clear.bind(chat);": 1
+      },
+      "extensions/_lib/tool-payloads.ts": {
+        "export function aggregateToolPayloadForShape(tools: Array<ToolShape & { promptGuidelines?: string[] }>, shape: string): unknown {": 1,
+        "export function arrayItemsSchema(property: unknown): unknown {": 1,
+        "export function openAIResponsesToolPayload(tool: ToolShape): unknown {": 1,
+        "export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: string[] }, shape: string): unknown {": 1
+      },
+      "extensions/pi-cachemire/classify.ts": {
+        "function stripCacheMarkers(value: unknown): unknown {": 1
+      },
+      "extensions/pi-traceline/click.ts": {
+        "decorateNative: (row: ToolRowLike, lines: unknown) => unknown;": 1
+      },
+      "extensions/pi-traceline/drill.ts": {
+        "export function drillDecorateNativeRow(theme: Theme | undefined, comp: unknown, lines: unknown, bulletInk: string): unknown {": 1
+      },
+      "scripts/contextimate/provider-token-counts.ts": {
+        "CountTokensCommand: new (input: JsonObject) => unknown;": 1,
+        "async function postJson(url: string, body: JsonObject, headers: Record<string, string>): Promise<unknown> {": 1
+      },
+      "tests/cachemire/lineage-events.test.ts": {
+        "type Handler = (...args: unknown[]) => unknown;": 1
+      },
+      "tests/cachemire/model-switch-events.test.ts": {
+        "type Handler = (...args: unknown[]) => unknown;": 1
+      },
+      "tests/cachemire/session-isolation.test.ts": {
+        "function sessionContext(id: string, notifications?: string[]): unknown {": 1,
+        "type Handler = (...args: unknown[]) => unknown;": 1
+      },
+      "tests/contract/pi-internals.test.ts": {
+        "withBuiltInRenderers: (toolName: string, definition: undefined) => unknown;": 1
+      },
+      "tests/traceline/drill.test.ts": {
+        "factory: (tui: unknown, theme: unknown, kb: unknown, done: (result: T) => void) => unknown,": 1
+      }
+    },
+    "anti-slop(no-unsafe-dictionary-type)": {
+      "extensions/_lib/chat.ts": {
+        "[key: string]: unknown;": 2
+      },
+      "extensions/_lib/chatline.ts": {
+        "type HookableChatContainer = ContainerLike & {": 1
+      },
+      "extensions/_lib/tool-payloads.ts": {
+        "export function getSchemaProperties(schema: unknown): Record<string, unknown> {": 1,
+        "export function schemaArrayItemProperties(property: unknown): Record<string, unknown> {": 1
+      },
+      "extensions/pi-cachemire/classify.ts": {
+        "const out: Record<string, unknown> = {};": 1,
+        "function findTtlMs(payload: Record<string, unknown>): number | undefined {": 1
+      },
+      "extensions/pi-cachemire/index.ts": {
+        "restoreFromMessages: (messages: Array<Record<string, unknown>>) => restoreBranchRecords(messages, classifyCall),": 1,
+        "s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);": 1
+      },
+      "extensions/pi-cachemire/ledger.ts": {
+        "function stringField(message: Record<string, unknown>, key: string): string | undefined {": 1,
+        "messages: Array<Record<string, unknown>>,": 1
+      },
+      "extensions/pi-traceline/drill-pager-content.ts": {
+        "const entries = Object.entries(args as Record<string, unknown>);": 1,
+        "const meta: Record<string, unknown> = {};": 1
+      },
+      "tests/contextimate/session-and-labels.test.ts": {
+        "const heuristic = (patch: Record<string, unknown>) => ({": 1
+      },
+      "tests/contract/pi-cache-retention-seams.test.ts": {
+        "async function accountCompletionUsage(provider: string, usage: Record<string, unknown>) {": 1,
+        "function modelRecord(name: string, api: string, model: string): Record<string, unknown> {": 1
+      },
+      "tests/contract/pi-internals.test.ts": {
+        "buildSystemPrompt: (options: Record<string, unknown>) => string;": 1
+      },
+      "tests/traceline/runtime-fixtures.ts": {
+        "type AssistantContentBlock = { type: string; [key: string]: unknown };": 1
+      }
+    },
+    "anti-slop(require-safety-comment-for-type-assertion)": {
+      "extensions/_lib/chat.ts": {
+        "const c = component as { constructor?: { name?: string }; render?: unknown; setExpanded?: unknown };": 1,
+        "const c = component as { render?: (width: number) => string[]; children?: unknown };": 1,
+        "const c = component as { setHideThinkingBlock?: unknown; hideThinkingBlock?: unknown };": 1,
+        "const childChildren = (child as { children?: unknown[] }).children;": 1,
+        "const children = (node as { children?: unknown[] }).children;": 2,
+        "const nextChildren = (next as { children?: unknown[] }).children;": 1,
+        "const textBlock = block as { type?: unknown; text?: unknown };": 1,
+        "if (predicate(children)) return node as unknown as ContainerLike;": 2,
+        "return next as ContainerLike;": 1
+      },
+      "extensions/_lib/chatline.ts": {
+        "const c = child as { toolCallId?: unknown; lastMessage?: { role?: unknown; timestamp?: unknown } } | undefined;": 1
+      },
+      "extensions/pi-cachemire/classify.ts": {
+        "const control = (block as { cache_control?: { type?: string; ttl?: string } })?.cache_control;": 1,
+        "const effort = (outputConfig as { effort?: string } | undefined)?.effort;": 1,
+        "const t = thinking as { type?: string; budget_tokens?: number } | undefined;": 1,
+        "const t = tool as { name?: string; function?: { name?: string } };": 1,
+        "const value = tool as { name?: string; toolSpec?: { name?: string } };": 1,
+        "for (const message of messages as Array<{ content?: unknown }>) {": 1,
+        "messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheMarkers(message))),": 1,
+        "thinking: `effort ${(body.reasoning as { effort?: string } | undefined)?.effort ?? \"default\"}`,": 1
+      },
+      "extensions/pi-cachemire/forecast.ts": {
+        "history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];": 2
+      },
+      "extensions/pi-cachemire/index.ts": {
+        "const g = globalThis as CachemireGlobal;": 1,
+        "s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);": 2
+      },
+      "extensions/pi-cachemire/ledger.ts": {
+        "const usage = message.usage as UsageLike | undefined;": 1,
+        "return typeof message[key] === \"string\" ? message[key] as string : undefined;": 1
+      },
+      "extensions/pi-contextimate/index.ts": {
+        "const g = globalThis as ContextimateGlobal;": 1,
+        "const requested = args.trim().toLowerCase() as ViewMode | \"\";": 1,
+        "if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;": 1,
+        "return !!component && typeof component === \"object\" && (component as { __piContextimateBlock?: boolean }).__piContextimateBlock === true;": 1,
+        "return [] as string[];": 1
+      },
+      "extensions/pi-contextimate/session-accounting.ts": {
+        "const encryptedContent = (item as { encrypted_content?: unknown }).encrypted_content;": 1,
+        "const toolCall = block as { id?: string; name?: string; arguments?: unknown };": 1,
+        "const typed = block as { type?: string; text?: string; data?: string; mimeType?: string };": 1
+      },
+      "extensions/pi-meantime/index.ts": {
+        "const g = globalThis as MeantimeGlobal;": 1
+      },
+      "extensions/pi-traceline/drill-pager-content.ts": {
+        "const args = call.args as { path?: unknown; offset?: unknown; command?: unknown } | undefined;": 1,
+        "const entries = Object.entries(args as Record<string, unknown>);": 1,
+        "const typed = block as { type?: unknown };": 1,
+        "const typed = value as { data?: unknown; mimeType?: unknown };": 1
+      },
+      "extensions/pi-traceline/drill-pager.ts": {
+        "const typed = block as { type?: unknown; text?: unknown };": 1,
+        "if (matchesKey(data, String(d) as KeyId)) {": 1,
+        "this.pushImage(call, callIndex, imageIndex++, block as ImageBlockLike, theme, width, contentWidth, viewport, lines, images);": 1,
+        "this.tui = tui as TerminalSizeLike;": 1
+      },
+      "extensions/pi-traceline/drill.ts": {
+        "const g = globalThis as DrillGlobal;": 1,
+        "for (let d = 0; d <= 9; d++) if (matchesKey(data, String(d) as KeyId)) return String(d);": 1,
+        "numbers: new Map(rows.map((row, i) => [row as unknown, i + 1])),": 1
+      },
+      "extensions/pi-traceline/image-fact.ts": {
+        "!!block && typeof block === \"object\" && (block as { type?: unknown }).type === \"image\",": 1
+      },
+      "extensions/pi-traceline/index.ts": {
+        "const g = globalThis as TracelineGlobal;": 1,
+        "const row = comp as { lines?: unknown; setLines?: unknown };": 1,
+        "const row = comp as { text?: unknown; setText?: unknown };": 1
+      },
+      "extensions/pi-traceline/repetition-fold.ts": {
+        "const call = block && typeof block === \"object\" ? block as { type?: unknown; id?: unknown } : undefined;": 1
+      },
+      "extensions/pi-traceline/thinking-preview.ts": {
+        "const preview = previewForBlock(block as { type?: unknown; thinking?: unknown });": 1,
+        "if (block && typeof block === \"object\" && (block as { type?: unknown }).type === \"thinking\") {": 1
+      },
+      "extensions/pi-traceline/topology.ts": {
+        "const b = block as { type?: unknown; text?: unknown; thinking?: unknown };": 1
+      },
+      "extensions/pi-traceline/tui-owner.ts": {
+        "const g = globalThis as TracelineTuiOwnerGlobal;": 1
+      },
+      "extensions/pi-traceline/write-diff.ts": {
+        "let snapshot = comp.__tracelineWriteSnapshot as WriteSnapshot | undefined;": 1
+      },
+      "scripts/cachemire/model-switch-forecast-probe.ts": {
+        "const history = convertToLlm(": 2
+      },
+      "scripts/contextimate/provider-token-counts.ts": {
+        "const sdk = requireFromPi(\"@aws-sdk/client-bedrock-runtime\") as {": 1
+      },
+      "scripts/dev/bench-trace-cache.ts": {
+        "const rowSeam = (row: ToolExecutionComponent) => row as unknown as ToolRowLike;": 2,
+        "trace.patchAssistantRowPrototype(AssistantMessageComponent.prototype as unknown as AssistantRowPrototypeLike);": 2,
+        "trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);": 2,
+        "trace.setTracelineChat(container as never);": 1,
+        "}, { requestRender() {} } as never, \"/tmp\");": 1
+      }
+    }
+  },
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
       "extensions/pi-cachemire/index.ts": 852,
       "extensions/pi-contextimate/index.ts": 1568,
-      "extensions/pi-traceline/index.ts": 1680,
+      "extensions/pi-traceline/index.ts": 1677,
       "tests/contract/pi-internals.test.ts": 355,
-      "tests/traceline/one-line.test.ts": 774
+      "tests/traceline/one-line.test.ts": 772
     }
+  },
+  "internalsBudgets": {
+    "extensions/pi-cachemire/index.ts": 34,
+    "extensions/pi-contextimate/index.ts": 33,
+    "extensions/pi-traceline/index.ts": 55
   }
 }

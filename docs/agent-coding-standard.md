@@ -12,13 +12,28 @@ npm run lint
 npm run check
 ```
 
-`npm run lint` runs `scripts/dev/agent-lint.mjs`, a zero-dependency source lint
-for repo-specific invariants, then checks generated Cachemire retention docs. Existing
-source violations are recorded in
-`scripts/dev/agent-lint-baseline.json` so the rule can prevent regressions while the
+`npm run lint` runs `scripts/dev/agent-lint.mjs`, which applies the repo-specific `POG`
+rules below, runs Oxlint with the vendored anti-slop plugin (next section), and then
+checks generated Cachemire retention docs. Existing violations of every rule are recorded
+in `scripts/dev/agent-lint-baseline.json` so each rule prevents regressions while the
 codebase is migrated deliberately. Do not grow the baseline as a way to dodge the
 standard. Fix the code, add a precise `SAFETY:` comment for a real seam, or update a
 reviewed migration plan.
+
+## Slop lint
+
+`.oxlintrc.json` runs Oxlint with [anti-slop](https://github.com/dmmulroy/anti-slop),
+vendored at `tools/oxlint/anti-slop/` (provenance in `tools/oxlint/UPSTREAM.md`). The
+enabled rules reject low-evidence TypeScript. `npm run lint:slop` prints their full
+diagnostics; `npm run lint` adds them to the existing migration ledger.
+
+Ordinary type narrowing stays. Do not extract a helper merely to satisfy a syntax rule.
+A baseline entry is debt with an intended fix; correct code that a rule rejects gets a
+rule-level decision in `.oxlintrc.json` with its reason, or an inline
+`oxlint-disable-next-line` with a justification, not a baseline entry.
+
+The Oxlint packages are pinned because their plugin APIs move together. After
+`npm install`, run `npm run link-pi` to restore the Pi runtime symlinks.
 
 ## Boundary typing
 
@@ -101,6 +116,7 @@ The lint also protects existing repo rules:
   exemption.
 - TypeScript files should stay context-sized. Existing oversized files have temporary
   budgets in the baseline and should be split over time rather than grown.
+- The three legacy `export const internals` objects do not grow (POG012).
 
 ## Baseline policy
 
@@ -113,8 +129,10 @@ When touching a baselined area:
 2. Do not add generic record guards.
 3. Add `SAFETY:` only for real Pi or runtime boundary seams.
 4. If a file is over its line budget, split by domain before adding unrelated logic.
-5. Regenerate the baseline only after review when current violations were intentionally
-   fixed, moved, or reclassified.
+5. If an `internals` entry is in reach, move its logic to a domain module and delete it.
+6. Prune the baseline after fixes. `--update-baseline` only removes signatures or lowers
+   existing budgets; it refuses new findings. Exceptional admissions are a hand edit
+   with the reason reviewed in the PR.
 
 To inspect the migration ledger:
 
@@ -122,7 +140,7 @@ To inspect the migration ledger:
 npm run lint -- --show-baseline
 ```
 
-To regenerate after reviewed fixes:
+To prune after reviewed fixes:
 
 ```bash
 node scripts/dev/agent-lint.mjs --update-baseline

@@ -162,3 +162,21 @@ the same four baseline contract failures; lint and typecheck pass. Verified actu
 installed Codex-conversion renderers and reviewed screenshots at 100 and 50 columns.
 All real-Pi smoke suites passed, including fullscreen clicks, Drill, pager fidelity,
 reasoning and startup/reload. No PR comments posted.
+
+## 2026-09-09: anti-slop adoption quality review
+
+Simplified PR #115 after reviewing it for lint-driven code and implementation-coupled
+tests. Restored provider "shape" terminology, readable filter/map pipelines and direct
+test fixtures; disabled the generic rules that opposed those forms. Removed unused
+boundary and harness APIs, speculative environment ownership, and repeated commentary.
+
+The remaining hosted tests describe Meantime's config, command and widget behavior and
+Cachemire's interactive/headless isolation. Removed seven tests for harness internals,
+type-system tautologies and contrived syntax. Also removed the Traceline nested-runner
+test after a plausible ownership regression did not make it fail; that behavior needs a
+live TUI test. Meantime's enabled/widget guards and Cachemire's UI-owner guard each failed
+their focused mutation checks.
+
+The scratch project now owns cwd and HOME until disposal because Cachemire reads config
+during `session_start`. A direct probe confirmed isolated `widget: false` config and cwd
+restoration. The full check passes with 366 tests and 175 known baseline findings.

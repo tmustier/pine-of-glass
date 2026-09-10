@@ -122,7 +122,8 @@ export function detectPayloadKind(payload: unknown): PayloadKind | undefined {
 
 export function parsePayloadFile(text: string): { kind: PayloadKind; payload: JsonObject } {
   const trimmed = text.trim();
-  const candidates: unknown[] = trimmed.startsWith("{") && !trimmed.includes("\n{")
+  // JSON.parse output is JSON by construction; detectPayloadKind checks the provider contract.
+  const candidates: JsonValue[] = trimmed.startsWith("{") && !trimmed.includes("\n{")
     ? [JSON.parse(trimmed)]
     : trimmed.split("\n").filter(Boolean).map((line) => JSON.parse(line));
   for (const candidate of candidates) {

@@ -438,8 +438,8 @@ function mergeContextimateConfig(base: ContextimateConfig, next?: ContextimateCo
   return {
     ...base,
     ...next,
-    defaults: { ...(base.defaults ?? {}), ...(next.defaults ?? {}) },
-    profiles: { ...(base.profiles ?? {}), ...(next.profiles ?? {}) },
+    defaults: { ...base.defaults, ...next.defaults },
+    profiles: { ...base.profiles, ...next.profiles },
     rules: [...(base.rules ?? []), ...(Array.isArray(next.rules) ? next.rules : [])],
   };
 }

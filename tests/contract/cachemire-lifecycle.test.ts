@@ -1,99 +1,16 @@
-// Installed-Pi lifecycle contract for Cachemire's process-global state. The extension
-// loader and both ExtensionRunner instances are real; core actions and UI output are
-// inert boundary adapters because their behaviour is not under test.
+// Two Pi sessions share one process (issue #44): only the one with a UI owns the ledger.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-import * as pi from "@earendil-works/pi-coding-agent";
 
 import piCachemire from "../../extensions/pi-cachemire/index.ts";
+import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
 import { assistantMessage } from "../helpers.ts";
 
-const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
-
-type PiExtension = ConstructorParameters<typeof pi.ExtensionRunner>[0][number];
-type MinimalUi = {
-  theme: undefined;
-  setWidget: (key: string, widget: unknown) => void;
-  notify: (text: string) => void;
-};
-
-test("real ExtensionRunner keeps a headless child out of Cachemire's interactive state", async () => {
-  const loader = await import(pathToFileURL(join(piRoot, "dist/core/extensions/loader.js")).href) as {
-    loadExtensionFromFactory: (
-      factory: typeof piCachemire,
-      cwd: string,
-      eventBus: ReturnType<typeof pi.createEventBus>,
-      runtime: ReturnType<typeof pi.createExtensionRuntime>,
-      extensionPath?: string,
-    ) => Promise<PiExtension>;
-  };
-  assert.equal(
-    typeof loader.loadExtensionFromFactory,
-    "function",
-    "Pi's factory loader moved; Cachemire's nested-runner lifecycle contract needs a new seam",
-  );
-
-  const cwd = tmpdir();
-  const makeRunner = async (ui?: MinimalUi) => {
-    const runtime = pi.createExtensionRuntime();
-    const extension = await loader.loadExtensionFromFactory(
-      piCachemire,
-      cwd,
-      pi.createEventBus(),
-      runtime,
-      "pi-cachemire-contract",
-    );
-    const modelRegistry = {
-      registerProvider(): void {},
-      unregisterProvider(): void {},
-      getRegisteredNativeProvider: () => undefined,
-      getRegisteredProviderConfig: () => undefined,
-    };
-    const runner = new pi.ExtensionRunner(
-      [extension],
-      runtime,
-      cwd,
-      pi.SessionManager.inMemory(cwd),
-      modelRegistry as never,
-    );
-    runner.bindCore(
-      { getThinkingLevel: (): "off" => "off" } as never,
-      {
-        getModel: () => undefined,
-        getScopedModels: () => [],
-        isIdle: () => true,
-        isProjectTrusted: () => true,
-        getSignal: () => undefined,
-        abort: () => {},
-        hasPendingMessages: () => false,
-        shutdown: () => {},
-        getContextUsage: () => undefined,
-        compact: () => {},
-        getSystemPrompt: () => "",
-      },
-    );
-    if (ui) runner.setUIContext(ui as never, "tui");
-    const errors: string[] = [];
-    runner.onError((error) => errors.push(`${error.event}: ${error.error}`));
-    return { runner, errors };
-  };
-
-  const notifications: string[] = [];
-  const rootUi: MinimalUi = {
-    theme: undefined,
-    setWidget(_key, widget): void {
-      if (typeof widget === "function") widget({ requestRender: () => {} });
-    },
-    notify(text): void {
-      notifications.push(text);
-    },
-  };
-  const root = await makeRunner(rootUi);
-  const child = await makeRunner();
+test("a headless child does not appear in the interactive Cachemire ledger", async () => {
+  const project = new IsolatedProject();
+  // The headless session starts first, so nothing but the UI check keeps it from claiming the ledger.
+  const headless = await hostExtension(piCachemire, { project, interactive: false });
+  const interactive = await hostExtension(piCachemire, { project });
   const billedMessage = (model: string, input: number) => assistantMessage([], {
     model,
     usage: {
@@ -105,42 +22,24 @@ test("real ExtensionRunner keeps a headless child out of Cachemire's interactive
       cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     },
   });
-  const showRootLedger = async () => {
-    const command = root.runner.getCommand("cache");
-    assert.ok(command, "real Pi loader did not register Cachemire's /cache command");
-    await command.handler("", root.runner.createCommandContext());
-  };
-
-  assert.equal(child.runner.hasUI(), false, "Pi no longer marks the SDK-style runner headless");
-  assert.equal(root.runner.hasUI(), true, "Pi no longer marks the interactive runner as UI-owning");
 
   try {
-    // Production seam from issue #44: two real Pi extension instances share one process,
-    // but only the runner with a UI may own Cachemire's process-global state.
-    await child.runner.emit({ type: "session_start", reason: "startup" });
-    await root.runner.emit({ type: "session_start", reason: "startup" });
-    await child.runner.emitBeforeProviderRequest({ model: "child", messages: [] });
-    await child.runner.emitMessageEnd({
-      type: "message_end",
-      message: billedMessage("child", 32_800),
-    });
-    await showRootLedger();
+    await headless.session.extensionRunner.emitBeforeProviderRequest({ model: "headless", messages: [] });
+    await headless.session.extensionRunner.emitMessageEnd({ type: "message_end", message: billedMessage("headless", 32_800) });
+    await interactive.session.prompt("/cache");
 
-    await root.runner.emitBeforeProviderRequest({ model: "root", messages: [] });
-    await root.runner.emitMessageEnd({
-      type: "message_end",
-      message: billedMessage("root", 1_000),
-    });
-    await showRootLedger();
+    await interactive.session.extensionRunner.emitBeforeProviderRequest({ model: "interactive", messages: [] });
+    await interactive.session.extensionRunner.emitMessageEnd({ type: "message_end", message: billedMessage("interactive", 1_000) });
+    await interactive.session.prompt("/cache");
   } finally {
-    await child.runner.emit({ type: "session_shutdown", reason: "quit" });
-    await root.runner.emit({ type: "session_shutdown", reason: "quit" });
+    await headless.dispose();
+    await interactive.dispose();
+    project.dispose();
   }
 
-  assert.deepEqual(child.errors, [], "headless child lifecycle raised a real-runner error");
-  assert.deepEqual(root.errors, [], "interactive root lifecycle raised a real-runner error");
-  assert.equal(notifications.length, 2, "each /cache invocation should reach the root UI once");
-  assert.match(notifications[0]!, /no model calls yet/, "the child call leaked into the root ledger");
-  assert.match(notifications[1]!, /\b1\.0k\b/, "the root no longer records its own call");
-  assert.doesNotMatch(notifications[1]!, /32\.8k/, "the child call contaminated the root ledger");
+  const ledgers = interactive.ui.notifications;
+  assert.equal(ledgers.length, 2, "each /cache invocation should reach the interactive UI once");
+  assert.match(ledgers[0]!, /no model calls yet/, "the headless call leaked into the interactive ledger");
+  assert.match(ledgers[1]!, /\b1\.0k\b/, "the interactive ledger did not record its own call");
+  assert.doesNotMatch(ledgers[1]!, /32\.8k/, "the headless call contaminated the interactive ledger");
 });

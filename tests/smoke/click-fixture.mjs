@@ -6,11 +6,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const extension = process.env.TRACELINE_TEST_EXTENSION ?? join(root, "extensions/pi-traceline/index.ts");
 const quote = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-export function createClickFixture(name) {
+export function createClickFixture(name, { extension = join(root, "extensions/pi-traceline/index.ts") } = {}) {
   const home = mkdtempSync(join(tmpdir(), `pog-${name}-home-`));
   const cwd = join(home, "project"), agent = join(home, ".pi/agent");
   const artifacts = mkdtempSync(join(tmpdir(), `pog-${name}-captures-`));
