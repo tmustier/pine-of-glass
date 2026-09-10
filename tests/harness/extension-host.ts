@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import {
   type AgentSession,
+  type CreateAgentSessionOptions,
   createAgentSession,
   DefaultResourceLoader,
   type ExtensionFactory,
@@ -86,9 +87,15 @@ export type HostedExtension = {
 
 export async function hostExtension(
   factory: ExtensionFactory,
-  options: { project: IsolatedProject; interactive?: boolean; reason?: SessionStartEvent["reason"] },
+  options: {
+    project: IsolatedProject;
+    interactive?: boolean;
+    reason?: SessionStartEvent["reason"];
+    model?: CreateAgentSessionOptions["model"];
+    thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
+  },
 ): Promise<HostedExtension> {
-  const { project, interactive = true, reason = "startup" } = options;
+  const { project, interactive = true, reason = "startup", model, thinkingLevel } = options;
   const cwd = project.dir;
   const agentDir = join(project.home, ".pi", "agent");
   const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
@@ -101,6 +108,8 @@ export async function hostExtension(
     agentDir,
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(cwd),
+    model,
+    thinkingLevel,
     noTools: "all",
     sessionStartEvent: { type: "session_start", reason },
   });

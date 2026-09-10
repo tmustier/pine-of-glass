@@ -7,6 +7,11 @@
   `<skills_instructions>` list that `pi-codex-conversion` injects per turn is now
   parsed into the usual `Skill frontmatter` row. Pinned by a contract test against
   the installed adapter.
+- Cachemire no longer marks direct Anthropic Claude Fable 5.1 cache state stale when
+  its thinking effort changes. Live Pi 0.85.1 calls retained the full prior prefix, and
+  Pi's built-in model record declares its mid-conversation effort protocol. GPT-6 Astra
+  remains a real mutation in Pi 0.85.1 because Pi changes request-level effort instead
+  of appending OpenAI's cache-safe `configuration_update` item.
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.

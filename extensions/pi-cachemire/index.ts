@@ -41,6 +41,7 @@ import {
   type RetentionMatch,
   windowLabel,
 } from "./retention.ts";
+import { thinkingChangeInvalidatesCache, type ThinkingRoute } from "./thinking.ts";
 import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
   BreakPrediction,
@@ -100,38 +101,15 @@ const DEFAULT_CONFIG: CachemireConfig = {
   missWarnTokens: 20_000,
 };
 
-/**
- * What a pi thinking level becomes on the anthropic wire — mirrors pi-ai's
- * mapThinkingLevelToEffort (model map override first, then minimal/low→low,
- * medium→medium, high→high, anything else→high) plus the off→disabled case.
- */
-function wireThinkingEffort(
-  map: Partial<Record<string, string | null>> | undefined,
-  level: string,
-): string {
-  if (level === "off") return "off";
-  const mapped = map?.[level];
-  if (typeof mapped === "string") return mapped;
-  if (level === "minimal" || level === "low") return "low";
-  if (level === "medium" || level === "high") return level;
-  return "high";
-}
-
-/**
- * Whether switching pi thinking levels changes what actually goes on the wire. Two
- * levels mapping to the same effort are a wire no-op: live-verified on claude-fable-5,
- * where minimal→low (both effort "low") produced a byte-identical payload and a 100%
- * cache hit — a naive "any level change breaks cache" flip would have lied. This is the
- * effort-based (adaptive) view; budget models can differ where efforts collide, which
- * under-flips the widget — the send-time fingerprint diff still catches those exactly.
- */
-function thinkingLevelsDiffer(
-  map: Partial<Record<string, string | null>> | undefined,
-  a: string | undefined,
-  b: string | undefined,
-): boolean {
-  if (a === undefined || b === undefined) return false;
-  return wireThinkingEffort(map, a) !== wireThinkingEffort(map, b);
+function thinkingRoute(model: ExtensionContext["model"]): ThinkingRoute | undefined {
+  if (!model) return undefined;
+  return {
+    provider: model.provider,
+    model: model.id,
+    api: model.api,
+    supportsMidConvoEffort:
+      isJsonObject(model.compat) && model.compat.supportsMidConvoEffort === true,
+  };
 }
 
 // Glyphs and ink come from the family style (_lib/style.ts, design language §§1–3):
@@ -524,7 +502,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("before_provider_request", async (event, ctx) => {
     if (!ownsState()) return;
     const firstAttempt = s.pendingRequestAt === undefined;
-    s.pendingFingerprint = fingerprintPayload(event.payload);
+    s.pendingFingerprint = fingerprintPayload(event.payload, thinkingRoute(ctx.model));
     const requestAt = Date.now();
     const entries = ctx.sessionManager.getEntries();
     hydrateLineageResponseIds(s.lineages, entries);
@@ -620,10 +598,16 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.lastCallThinkingLevel ??= event.previousLevel;
     s.currentThinkingLevel = event.level;
     // Material only when something was billed at the old level AND the new level changes
-    // the wire params for this model (see thinkingLevelsDiffer); cycling back before the
-    // next call revives the cache. The send-time fingerprint diff remains the authority.
+    // the wire params for this model; cycling back before the next call revives the
+    // cache. Cache-safe mid-conversation effort protocols stay neutral here and in the
+    // send-time fingerprint diff.
     s.thinkingChanged = s.records.length > 0 && ctx.model?.reasoning === true &&
-      thinkingLevelsDiffer(ctx.model.thinkingLevelMap, s.lastCallThinkingLevel, event.level);
+      thinkingChangeInvalidatesCache(
+        thinkingRoute(ctx.model),
+        ctx.model.thinkingLevelMap,
+        s.lastCallThinkingLevel,
+        event.level,
+      );
     updateWidget();
   });
 
@@ -816,8 +800,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
 export const internals = {
   fingerprintPayload,
   inferAnthropicTtlMs,
-  wireThinkingEffort,
-  thinkingLevelsDiffer,
   windowLabel,
   pastWindow,
   OPENAI_EXTENDED_WINDOW,

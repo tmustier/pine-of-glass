@@ -65,6 +65,11 @@ expectation. Past-tense wording shows exact actuals.
 Healthy caches stay quiet. Notices appear only above a materiality threshold. The
 default threshold is $0.05 or 20k re-written tokens.
 
+Changing thinking effort on direct Anthropic Claude Fable 5.1 also stays quiet because
+the model preserves the cached prefix. GPT-6 Astra needs an append-only
+`configuration_update` for the same result; Pi 0.85.1 changes request-level effort, so
+Cachemire still treats that payload change as material.
+
 ```
 ◍ cache breaking · re-writing ~138.2k (~$2.59) · cause: 5m TTL reached after 9h50m idle   (in flight)
 ◍ cache after compaction · reused 34.9k of the last pre-compaction 72.5k prompt (48%) · processed 39.1k uncached
@@ -185,7 +190,9 @@ Cachemire uses 4 rules:
   prompt count is a baseline, not the whole next prompt.
 
 Read the [retention audit](../../docs/cache-retention-audit-2026-08-04.md) for policy
-evidence and [`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for lifecycle semantics.
+evidence, the [thinking-change audit](../../docs/cache-thinking-change-audit-2026-09-10.md)
+for the Fable and Astra probes, and
+[`docs/pi-cachemire.md`](../../docs/pi-cachemire.md) for lifecycle semantics.
 
 ## Compare Cachemire with the other extensions
 

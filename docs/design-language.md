@@ -235,7 +235,14 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   usage
 - status one-liners are lowercase; Title Case only for panel headers and row labels
 - state causes from observed evidence (payload diffs, usage), never inference,
-  and say `unknown` when unknown
+  and say `unknown` when unknown. A thinking-effort change is a cause only when
+  the active model and wire protocol make it cache-key material. Direct Anthropic
+  Claude Fable 5.1 and models declaring Pi's mid-conversation effort capability
+  keep the prior prefix warm, so the keystroke alone must not produce a stale clock
+  or break notice. Enabling or disabling thinking remains a distinct mutation.
+  GPT-6 Astra is neutral only when the request appends an OpenAI `configuration_update`
+  while leaving request-level effort unchanged; a changed request-level effort remains
+  a cache mutation
 
 ## 8. Panels
 
