@@ -180,3 +180,13 @@ their focused mutation checks.
 The scratch project now owns cwd and HOME until disposal because Cachemire reads config
 during `session_start`. A direct probe confirmed isolated `widget: false` config and cwd
 restoration. The full check passes with 366 tests and 175 known baseline findings.
+
+## PR #116: Codex skill index
+
+Added compact skill-index parsing alongside Pi XML parsing, without a launch footnote.
+Reviewed the parser and removed a vacuous contract assertion. Fixtures now use synthetic
+`.pi/agent/skills` paths; reviewed regenerated goldens for the longer paths. Reconciled
+main's lint changes with inferred section types and precise builder input contracts.
+Final lint, typecheck and all 369 tests pass, including the installed adapter contract.
+Earlier live GPT verification showed all 18 skills after a turn; the final changes are
+test data and type-only cleanup, with no additional live-model run.

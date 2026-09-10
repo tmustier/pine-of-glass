@@ -46,7 +46,7 @@ How to read the numbers:
 - the method follows the active model, so switching models re-estimates immediately; concrete Claude, Kimi, GLM, Cohere and Grok model IDs keep their measured raw-text profile through supported relays, while dynamic aliases stay unknown until routing selects a model
 - until the first post-switch response, `Total request` names its old currency (`pre-switch usage · <model> tokens`) and withholds only that total's context bar and window share
 - the first row says `Runtime system prompt` because Pi assembles that prompt at runtime from its base prompt plus tool and extension contributions; expanded view attributes the part it can verify
-- `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand
+- `Skill frontmatter` counts the always-loaded skill index only, not skill bodies, which load on demand; it reads both Pi's `<available_skills>` index and the compact `<skills_instructions>` list that `pi-codex-conversion` injects per turn (Pi itself omits the index while `read` and `bash` are swapped out, so that row appears after the first turn)
 - each expanded tool header shows where the tool came from: its config scope and defining file, or `builtin`
 - `Reasoning context` sums provider-reported exact counts for signed reasoning retained by the response anchoring Pi's total; it follows Claude and OpenAI's model-specific retention defaults
 - Pi's exact prompt total, including cache reads and writes, rejects historical attribution that cannot fit; summaries not covered by exact counts remain estimated separately as `Thinking summaries`

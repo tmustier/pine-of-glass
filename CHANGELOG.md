@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Contextimate shows the skill index again in Codex-dialect sessions: Pi omits
+  `<available_skills>` once `read`/`bash` are swapped out, and the compact
+  `<skills_instructions>` list that `pi-codex-conversion` injects per turn is now
+  parsed into the usual `Skill frontmatter` row. Pinned by a contract test against
+  the installed adapter.
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.
