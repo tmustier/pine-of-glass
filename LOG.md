@@ -162,3 +162,31 @@ the same four baseline contract failures; lint and typecheck pass. Verified actu
 installed Codex-conversion renderers and reviewed screenshots at 100 and 50 columns.
 All real-Pi smoke suites passed, including fullscreen clicks, Drill, pager fidelity,
 reasoning and startup/reload. No PR comments posted.
+
+## 2026-09-09: anti-slop adoption quality review
+
+Simplified PR #115 after reviewing it for lint-driven code and implementation-coupled
+tests. Restored provider "shape" terminology, readable filter/map pipelines and direct
+test fixtures; disabled the generic rules that opposed those forms. Removed unused
+boundary and harness APIs, speculative environment ownership, and repeated commentary.
+
+The remaining hosted tests describe Meantime's config, command and widget behavior and
+Cachemire's interactive/headless isolation. Removed seven tests for harness internals,
+type-system tautologies and contrived syntax. Also removed the Traceline nested-runner
+test after a plausible ownership regression did not make it fail; that behavior needs a
+live TUI test. Meantime's enabled/widget guards and Cachemire's UI-owner guard each failed
+their focused mutation checks.
+
+The scratch project now owns cwd and HOME until disposal because Cachemire reads config
+during `session_start`. A direct probe confirmed isolated `widget: false` config and cwd
+restoration. The full check passes with 366 tests and 175 known baseline findings.
+
+## PR #116: Codex skill index
+
+Added compact skill-index parsing alongside Pi XML parsing, without a launch footnote.
+Reviewed the parser and removed a vacuous contract assertion. Fixtures now use synthetic
+`.pi/agent/skills` paths; reviewed regenerated goldens for the longer paths. Reconciled
+main's lint changes with inferred section types and precise builder input contracts.
+Final lint, typecheck and all 369 tests pass, including the installed adapter contract.
+Earlier live GPT verification showed all 18 skills after a turn; the final changes are
+test data and type-only cleanup, with no additional live-model run.

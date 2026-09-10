@@ -21,18 +21,21 @@
   "scripts": {
     "link-pi": "scripts/dev/link-pi-runtime.sh",
     "link-extensions": "scripts/dev/link-extensions.sh",
+    "preflight": "node scripts/dev/preflight.mjs",
     "docs:cache": "node scripts/dev/cache-retention-docs.mjs",
     "docs:cache:check": "node scripts/dev/cache-retention-docs.mjs --check",
-    "lint": "node scripts/dev/agent-lint.mjs && npm run docs:cache:check",
+    "lint": "npm run preflight && node scripts/dev/agent-lint.mjs && npm run docs:cache:check",
     "lint:agent": "node scripts/dev/agent-lint.mjs",
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test 'tests/**/*.test.ts'",
+    "lint:slop": "oxlint .",
+    "typecheck": "npm run preflight && tsc -p tsconfig.json",
+    "test": "npm run preflight && node --test \"tests/**/*.test.ts\"",
     "check": "npm run lint && npm run typecheck && npm test",
     "test:smoke:click": "node tests/smoke/traceline-click-smoke.mjs && node tests/smoke/traceline-reasoning-click-smoke.mjs",
     "test:smoke:traceline": "node tests/smoke/traceline-empty-thinking-smoke.mjs",
     "test:smoke:drill": "node tests/smoke/traceline-drill-smoke.mjs",
     "test:smoke:pager": "node tests/smoke/traceline-pager-fidelity-smoke.mjs",
-    "test:smoke": "npm run test:smoke:click && npm run test:smoke:traceline && npm run test:smoke:drill && npm run test:smoke:pager && node tests/smoke/startup-smoke.mjs"
+    "test:smoke:nested": "node tests/smoke/traceline-nested-session-smoke.mjs",
+    "test:smoke": "npm run test:smoke:click && npm run test:smoke:traceline && npm run test:smoke:drill && npm run test:smoke:pager && npm run test:smoke:nested && node tests/smoke/startup-smoke.mjs"
   },
   "pi": {
     "extensions": [
@@ -83,5 +86,10 @@
     "pi-contextimate-check-gemini-tokenizers": "scripts/contextimate/check-gemini-tokenizers.py",
     "pi-contextimate-check-relay-tokenizer-routes": "scripts/contextimate/check-relay-tokenizer-routes.py",
     "pi-contextimate-check-xai-tokenizers": "scripts/contextimate/check-xai-tokenizers.py"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.82.0",
+    "oxc-parser": "0.149.0",
+    "oxlint": "1.82.0"
   }
 }

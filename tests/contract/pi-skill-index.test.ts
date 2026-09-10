@@ -19,17 +19,21 @@ test(
   { skip: !existsSync(codexConversionBuilder) && "pi-codex-conversion not installed" },
   async () => {
     const pi = await import(pathToFileURL(join(piRoot, "dist/core/system-prompt.js")).href) as {
-      buildSystemPrompt: (options: Record<string, unknown>) => string;
+      buildSystemPrompt: (options: { cwd: string; selectedTools: string[] }) => string;
     };
     const codex = await import(pathToFileURL(codexConversionBuilder).href) as {
-      buildCodexSystemPrompt: (basePrompt: string, options: Record<string, unknown>) => string;
+      buildCodexSystemPrompt: (basePrompt: string, options: {
+        skills: { name: string; description: string; filePath: string }[];
+        heavySystemPromptOverwrite: boolean;
+        systemPromptOptions: { cwd: string; selectedTools: string[] };
+      }) => string;
     };
     assert.equal(typeof codex.buildCodexSystemPrompt, "function", "pi-codex-conversion builder moved — update this deep import");
 
     const home = homedir();
     const skills = [
-      { name: "demo", description: "Does a demo & more", filePath: join(home, "skills/demo/SKILL.md") },
-      { name: "quiet", description: "", filePath: join(home, "skills/quiet/SKILL.md") },
+      { name: "demo", description: "Does a demo & more", filePath: join(home, ".pi/agent/skills/demo/SKILL.md") },
+      { name: "quiet", description: "", filePath: join(home, ".pi/agent/skills/quiet/SKILL.md") },
     ];
     const basePrompt = pi.buildSystemPrompt({ cwd: tmpdir(), selectedTools: ["exec_command", "apply_patch"] });
 
@@ -45,8 +49,8 @@ test(
       assert.deepEqual(
         block!.skills.map(({ name, description, location }) => ({ name, description, location })),
         [
-          { name: "demo", description: "Does a demo & more", location: join(home, "skills/demo/SKILL.md") },
-          { name: "quiet", description: "", location: join(home, "skills/quiet/SKILL.md") },
+          { name: "demo", description: "Does a demo & more", location: join(home, ".pi/agent/skills/demo/SKILL.md") },
+          { name: "quiet", description: "", location: join(home, ".pi/agent/skills/quiet/SKILL.md") },
         ],
         `${label}: adapter entry grammar drifted — COMPACT_SKILL_RE`,
       );

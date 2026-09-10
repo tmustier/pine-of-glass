@@ -15,6 +15,30 @@ likelihood. Anything that does not map to one of these failure modes does not ge
    These change as a side effect of unrelated edits (e.g. the Total-row reorder) and are
    only verifiable today by eyeballing a live TUI.
 
+## Public interfaces: what a test may touch
+
+A test is a specification of a capability: it names what the extension does for a user
+("enabling meantime makes `/pace` answer with the ledger"), drives it through the surface
+a user or Pi would use, and asserts on what a user would see. A test that breaks on a
+refactor with no behaviour change is a bug in the test.
+
+1. **Extension behaviour goes through Pi's SDK.** `tests/harness/extension-host.ts`
+   loads the default export with `DefaultResourceLoader` and `createAgentSession`, the
+   same route Pi's own modes use, in a scratch project that owns cwd and HOME. Drive it
+   with config files, `session.prompt("/command")` and `session.extensionRunner.emit`;
+   observe the recorded notifications and widgets.
+2. **Pure logic goes through the named exports of a domain module.** ANSI truncation,
+   SGR filtering, token formulas, heuristic precedence and retention policy are contracts
+   whose inputs and outputs are the specification (`extensions/_lib/*.ts`,
+   `pi-cachemire/retention.ts`). Do not expose private helpers or split a module just to
+   make something testable.
+3. **Privates of `index.ts` are not a test surface.** The three legacy
+   `export const internals` objects may only shrink.
+
+A good test names the capability in user terms, uses the smallest realistic fixture,
+asserts on outputs and visible state rather than call order, and fails against the bug it
+guards or a plausible mutation. Delete tests that cannot.
+
 ## Explicit non-goals
 
 Deliberately **not** tested:
@@ -35,16 +59,19 @@ Deliberately **not** tested:
 ## Infrastructure
 
 - **Runner:** `node:test` + `node:assert/strict`, native TypeScript type stripping
-  (Node ≥ 22.6; this repo develops on 26). **Zero new dependencies.**
+  (Node ≥ 22.6; this repo develops on 26). Lint fixture tests also use the pinned
+  development toolchain; the shipped extensions still have no runtime dependencies.
 - **Pi runtime linkage:** `scripts/dev/link-pi-runtime.sh` symlinks the globally installed
   Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) into the repo's
   gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
   runtime. Pi 0.85.1 is the minimum supported version, so a `pi update` followed by
   `npm test` is the drift detector.
-- **Testability route:** pure domain logic lives in importable modules or an exported
-  `internals` object consumed by tests. Pi imports only each extension's default entry
-  point, so named test surfaces are runtime-inert. Split files by domain when the code
-  needs it, as cachemire's renderer and meantime's timing/render modules do.
+- **Testability route:** pure domain logic lives in importable domain modules; see
+  "Public interfaces" above. Pi imports only each extension's default entry point, so
+  named exports are runtime-inert.
+- **Extension host:** see "Public interfaces" above. Its recording UI has no chat
+  container, so chat fallback text is observable but chat placement is not. Anything that
+  needs a real terminal goes to the smoke layer.
 - **Scripts:** `npm run lint` (agent coding-standard and generated-doc drift checks),
   `npm run docs:cache` (regenerate Cachemire retention docs),
   `npm run typecheck`, `npm test` (unit + render + contract),
@@ -55,6 +82,7 @@ Layout:
 
 ```
 tests/
+  harness/extension-host.ts          # Pi SDK session + recorded UI
   contract/*.test.ts                 # layer 1: Pi drift and lifecycle contracts
   contextimate/*.test.ts             # layer 2/3
   traceline/*.test.ts                # layer 2
@@ -81,8 +109,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
-| Two extensions loaded through Pi's real factory loader and `ExtensionRunner` distinguish headless and interactive sessions through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
-| The same two-runner setup keeps a headless child's `session_start` and `session_shutdown` from dropping the interactive Traceline TUI handle or Ctrl+T listener | traceline process-global TUI ownership |
+| Two Pi SDK sessions in one process distinguish headless and interactive through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
 | Native OpenAI Completions accounts top-level `usage.cached_tokens` for Moonshot, Moonshot CN and Together, while preserving detailed-field precedence and cost accounting | cachemire provider usage accounting |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
@@ -198,8 +225,10 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   calibration skips calls without a usable reasoning split.
 - **Session totals and config parsing**: open idle time contributes to idle, active is
   the watched span minus idle, and malformed boundary values are ignored.
-- **Feature-flag registration**: the default config registers no hooks or command;
-  explicit `enabled: true` registers the full event surface and `/pace`.
+- **Opt-in through config**: a project without
+  `.pi/pi-meantime.json` has no `/pace` and no widget; `enabled: true` answers `/pace`
+  with the ledger and shows the waiting clock once a provider request is in flight;
+  `widget: false` keeps `/pace` and suppresses the widget.
 
 ## Layer 3: render goldens
 
@@ -245,6 +274,9 @@ model call required:
 - `test:smoke:click` exercises tool and reasoning clicks in fullscreen Pi through raw
   mouse input: independent expansion, tool aggregate reveal/refold, native collapse,
   Drill isolation, global toggles, resize and reload.
+- `test:smoke:nested` runs a headless Pi SDK session that loads Traceline inside the
+  interactive process, the way a subagent child does, then proves the rails survive it
+  and Ctrl+T twice still restores them without Pi's status line.
 - The full startup smoke checks that the `[Contextimate]` block renders, that
   `/contextimate compact` and `expanded` change the rendered mode line, and that `/reload`
   keeps exactly one block. Its project config explicitly enables Meantime, proving the

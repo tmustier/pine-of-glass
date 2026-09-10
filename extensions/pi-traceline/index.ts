@@ -7,12 +7,9 @@ import {
   findChatContainer,
   isAssistantRow,
   isToolRow,
-  type AssistantRowDataLike,
-  type AssistantRowLike,
   type AssistantRowPrototypeLike,
   type ContainerLike,
   resultTextCharCount as rawResultTextCharCount,
-  type ToolArgsLike,
   type ToolRowDataLike,
   type ToolRowLike,
 } from "../_lib/chat.ts";
@@ -256,11 +253,11 @@ function parseTracelineConfig(value: unknown): TracelineConfig {
   const sizeWarningChars = positiveNumberValue(value.sizeWarningChars);
   const sizeErrorChars = positiveNumberValue(value.sizeErrorChars);
   const drillKey = stringValue(value.drillKey);
-  return {
-    ...(sizeWarningChars !== undefined ? { sizeWarningChars: Math.floor(sizeWarningChars) } : {}),
-    ...(sizeErrorChars !== undefined ? { sizeErrorChars: Math.floor(sizeErrorChars) } : {}),
-    ...(drillKey !== undefined && drillKey.length > 0 ? { drillKey } : {}),
-  };
+  const config: TracelineConfig = {};
+  if (sizeWarningChars !== undefined) config.sizeWarningChars = Math.floor(sizeWarningChars);
+  if (sizeErrorChars !== undefined) config.sizeErrorChars = Math.floor(sizeErrorChars);
+  if (drillKey !== undefined && drillKey.length > 0) config.drillKey = drillKey;
+  return config;
 }
 
 function configureSizeThresholds(config: TracelineConfig | undefined): void {

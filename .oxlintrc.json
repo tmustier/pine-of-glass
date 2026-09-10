@@ -1,0 +1,69 @@
+{
+  // Oxlint + the vendored anti-slop plugin (tools/oxlint/anti-slop, see UPSTREAM.md).
+  // Policy lives in docs/agent-coding-standard.md ("Slop lint"). Rules that are off
+  // here are off on purpose, with the reason inline; do not baseline them instead.
+  // Debt on the enabled rules ratchets down through scripts/dev/agent-lint-baseline.json.
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": [
+    ".pi/**",
+    ".worktrees/**",
+    "node_modules/**",
+    "tools/oxlint/anti-slop/**",
+    "scripts/dev/bash-corpus/out/**"
+  ],
+  "jsPlugins": [
+    { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }
+  ],
+  "rules": {
+    // ANSI escape parsing is this repo's domain; \x1b in regexes is the job, not a bug.
+    "eslint/no-control-regex": "off",
+
+    "oxc/no-accumulating-spread": "error",
+    // A filter followed by a map is often clearer than flatMap with singleton arrays.
+    "anti-slop/no-array-filter-map": "off",
+    "anti-slop/no-reduce-accumulator-copy": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    // Shape is precise domain language for provider payload formats in this repo.
+    "anti-slop/no-shape-in-symbol-names": "off",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+
+    // `typeof` also narrows already-typed unions. Banning its syntax rewards wrapper
+    // functions, not validation. TypeScript still checks every runtime source file.
+    "anti-slop/no-runtime-typeof": "off",
+    // Unknown is honest at an input boundary. Apply this check to the reviewed pure
+    // modules below, not files that also parse config, provider data or Pi internals.
+    "anti-slop/no-unknown-parameters": "off"
+  },
+  "overrides": [
+    {
+      // These modules format typed values or calculate timing. Review this list when
+      // extracting another pure module. This syntactic check is a backstop, not proof
+      // that all incoming data has been validated (aliases and predicates need review).
+      "files": ["extensions/_lib/fmt.ts", "extensions/_lib/ansi.ts", "extensions/pi-meantime/timing.ts", "extensions/pi-meantime/render.ts"],
+      "rules": {
+        "anti-slop/no-unknown-parameters": "error"
+      }
+    },
+    {
+      // Synthetic duck-typed fixtures (`as ToolRowLike`, `as unknown as Theme`) are the
+      // documented stand-in pattern for unit tests (docs/testing.md); the contract suite
+      // proves the duck types against real Pi. A SAFETY comment on each would be noise.
+      "files": ["tests/**"],
+      "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "off",
+        "anti-slop/require-safety-comment-for-type-assertion": "off",
+        "anti-slop/no-chained-type-assertions": "off"
+      }
+    }
+  ]
+}

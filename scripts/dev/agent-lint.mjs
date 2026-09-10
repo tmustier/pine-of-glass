@@ -1,11 +1,13 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { parseSync } from "oxc-parser";
 
 const ROOT = process.cwd();
 const BASELINE_PATH = join(ROOT, "scripts", "dev", "agent-lint-baseline.json");
 const DEFAULT_TS_MAX_LINES = 350;
-const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011"]);
+const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012"]);
 
 const RULE_MESSAGES = {
   POG001: [
@@ -57,6 +59,11 @@ const RULE_MESSAGES = {
     "agent lint baseline is stale.",
     "Prune fixed findings or lower shrunk line budgets instead of leaving old allowance behind.",
   ],
+  POG012: [
+    "test-only `internals` export grew.",
+    "Tests reach behaviour through public interfaces (docs/testing.md): the extension's default export via the test harness, or named exports of a domain module.",
+    "Move the logic into a domain module and import it directly, or test it through the harness; do not add another entry to the grab bag.",
+  ],
 };
 
 function usage() {
@@ -97,8 +104,8 @@ function messageFor(code) {
   return RULE_MESSAGES[code].join("\n");
 }
 
-function makeFinding(code, file, line, lineText) {
-  return { code, file, line, lineText, message: messageFor(code) };
+function makeFinding(code, file, line, lineText, message = messageFor(code)) {
+  return { code, file, line, lineText, message };
 }
 
 function signature(finding) {
@@ -110,7 +117,7 @@ function isTsLike(path) {
 }
 
 function isMarkdown(path) {
-  return /\.md$/.test(path);
+  return path.endsWith(".md");
 }
 
 function inPath(path, prefix) {
@@ -200,7 +207,7 @@ function scanFileBudgets(files, baseline, findings) {
   const seenBudgetFiles = new Set();
   for (const absPath of files) {
     const file = rel(absPath);
-    if (!/\.ts$/.test(file)) continue;
+    if (!file.endsWith(".ts")) continue;
     if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
     const lineCount = readText(absPath).split(/\r?\n/).length;
     const storedBudget = fileBudgets[file];
@@ -220,6 +227,88 @@ function scanFileBudgets(files, baseline, findings) {
   }
 }
 
+// Oxlint diagnostics (rules in .oxlintrc.json) join the ledger under their own rule id,
+// e.g. `anti-slop(no-unknown-returns)`, keyed by source line like the POG findings.
+function scanWithOxlint(findings) {
+  if (!existsSync(join(ROOT, ".oxlintrc.json"))) return;
+  const oxlint = join(ROOT, "node_modules", ".bin", "oxlint");
+  const result = spawnSync(oxlint, [".", "--format", "json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) throw result.error;
+  // oxlint exits 1 when it reports findings; anything else is a tooling failure.
+  if (result.status !== 0 && result.status !== 1) {
+    console.error(result.stderr || result.stdout);
+    console.error(`agent-lint: oxlint exited with ${result.status}`);
+    process.exit(1);
+  }
+  const report = JSON.parse(result.stdout);
+  const sources = new Map();
+  for (const diagnostic of report.diagnostics) {
+    const file = diagnostic.filename.split(sep).join("/");
+    const line = diagnostic.labels[0].span.line;
+    if (!sources.has(file)) sources.set(file, readText(join(ROOT, file)).split(/\r?\n/));
+    const lineText = sources.get(file)[line - 1] ?? "";
+    const message = [
+      diagnostic.message,
+      ...(diagnostic.help ? [diagnostic.help] : []),
+      "Rule policy: .oxlintrc.json (inline reasons) and docs/agent-coding-standard.md (\"Slop lint\").",
+      "See the full diagnostic with `npm run lint:slop`.",
+    ].join("\n");
+    findings.push(makeFinding(diagnostic.code, file, line, lineText, message));
+  }
+}
+
+function internalsEntryCount(file, text) {
+  const { program, errors } = parseSync(file, text);
+  if (errors.length > 0) throw new Error(`Could not parse ${file} while counting internals: ${errors[0].message}`);
+
+  let entries = 0;
+  for (const statement of program.body) {
+    if (statement.type !== "ExportNamedDeclaration") continue;
+    const declaration = statement.declaration;
+    if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
+    for (const item of declaration.declarations) {
+      if (item.id.type === "Identifier" && item.id.name === "internals" && item.init?.type === "ObjectExpression") {
+        entries += item.init.properties.length;
+      }
+    }
+  }
+  return entries;
+}
+
+function scanInternalsBudgets(files, baseline, findings) {
+  const budgets = baseline.internalsBudgets ?? {};
+  const seen = new Set();
+  for (const absPath of files) {
+    const file = rel(absPath);
+    if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
+    const count = internalsEntryCount(file, readText(absPath));
+    const budget = budgets[file];
+    if (budget !== undefined) seen.add(file);
+    if (count > (budget ?? 0)) {
+      findings.push(makeFinding("POG012", file, 1, `internals-entries:${count} budget:${budget ?? 0}`));
+    }
+    if (budget !== undefined && count < budget) {
+      findings.push(makeFinding("POG011", file, 1, `internals-entries:${count} stale-budget:${budget}`));
+    }
+  }
+  for (const budgetFile of Object.keys(budgets)) {
+    if (!seen.has(budgetFile)) findings.push(makeFinding("POG011", budgetFile, 1, "missing file still has an internals budget"));
+  }
+}
+
+// Budgets already in the baseline may only shrink; new files are never added.
+function buildInternalsBudgets(files, previous) {
+  const sources = new Map(files.map((path) => [rel(path), path]));
+  const budgets = {};
+  for (const [file, oldBudget] of Object.entries(previous)) {
+    const absPath = sources.get(file);
+    if (!absPath) continue;
+    const count = internalsEntryCount(file, readText(absPath));
+    if (count > 0) budgets[file] = Math.min(count, oldBudget);
+  }
+  return sortObjectDeep(budgets);
+}
+
 function scanStructural(findings) {
   if (existsSync(join(ROOT, "extensions", "_lib", "index.ts"))) {
     findings.push(makeFinding("POG008", "extensions/_lib/index.ts", 1, "extensions/_lib/index.ts"));
@@ -236,7 +325,9 @@ function scanStructural(findings) {
 }
 
 function loadBaseline() {
-  if (!existsSync(BASELINE_PATH)) return { version: 1, knownFindings: {}, lineBudgets: { defaultTsMax: DEFAULT_TS_MAX_LINES, files: {} } };
+  if (!existsSync(BASELINE_PATH)) {
+    return { version: 1, knownFindings: {}, lineBudgets: { defaultTsMax: DEFAULT_TS_MAX_LINES, files: {} }, internalsBudgets: {} };
+  }
   return JSON.parse(readText(BASELINE_PATH));
 }
 
@@ -264,14 +355,14 @@ function buildKnownFindings(findings) {
   return sortObjectDeep(knownFindings);
 }
 
-function buildLineBudgets(files) {
+function buildLineBudgets(files, previous) {
+  const sources = new Map(files.map((path) => [rel(path), path]));
   const budgets = {};
-  for (const absPath of files) {
-    const file = rel(absPath);
-    if (!/\.ts$/.test(file)) continue;
-    if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
+  for (const [file, oldBudget] of Object.entries(previous.files ?? {})) {
+    const absPath = sources.get(file);
+    if (!absPath) continue;
     const lineCount = readText(absPath).split(/\r?\n/).length;
-    if (lineCount > DEFAULT_TS_MAX_LINES) budgets[file] = lineCount;
+    if (lineCount > DEFAULT_TS_MAX_LINES) budgets[file] = Math.min(lineCount, oldBudget);
   }
   return { defaultTsMax: DEFAULT_TS_MAX_LINES, files: sortObjectDeep(budgets) };
 }
@@ -311,6 +402,8 @@ function collectFiles() {
   return walk(ROOT).filter((path) => {
     const file = rel(path);
     if (file.startsWith("scripts/dev/bash-corpus/out/")) return false;
+    // Other git worktrees and vendored lint plugins are not this checkout's source.
+    if (file.startsWith(".worktrees/") || file.startsWith("tools/oxlint/")) return false;
     return isTsLike(file) || isMarkdown(file) || file === "package.json";
   });
 }
@@ -323,7 +416,9 @@ function collectFindings(files, baseline) {
     if (isMarkdown(file)) scanMarkdownFile(absPath, findings);
   }
   scanFileBudgets(files, baseline, findings);
+  scanInternalsBudgets(files, baseline, findings);
   scanStructural(findings);
+  scanWithOxlint(findings);
   return findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.code.localeCompare(b.code));
 }
 
@@ -338,19 +433,29 @@ function main() {
   const baseline = loadBaseline();
   const findings = collectFindings(files, baseline);
 
+  const { known, fresh, stale } = partitionFindings(findings, baseline);
   if (args.has("--update-baseline")) {
+    // Only stale entries (POG011) may be pruned; every other fresh finding needs a fix or a hand edit.
+    const unreviewed = fresh.filter((finding) => finding.code !== "POG011");
+    if (unreviewed.length > 0) {
+      console.error(`agent-lint refused to update the baseline with ${unreviewed.length} unreviewed finding(s):\n`);
+      for (const finding of unreviewed) console.error(`${formatFinding(finding)}\n`);
+      console.error("Fix the findings or admit them with a reviewed hand edit of scripts/dev/agent-lint-baseline.json.");
+      process.exitCode = 1;
+      return;
+    }
     const next = {
       version: 1,
       generatedBy: "node scripts/dev/agent-lint.mjs --update-baseline",
-      knownFindings: buildKnownFindings(findings),
-      lineBudgets: buildLineBudgets(files),
+      knownFindings: buildKnownFindings(known),
+      lineBudgets: buildLineBudgets(files, baseline.lineBudgets ?? {}),
+      internalsBudgets: buildInternalsBudgets(files, baseline.internalsBudgets ?? {}),
     };
     writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
-    console.log(`Updated ${relative(ROOT, BASELINE_PATH)} with ${findings.length} current findings and line budgets.`);
+    console.log(`Pruned ${relative(ROOT, BASELINE_PATH)}; no new findings or budget growth were admitted.`);
     return;
   }
 
-  const { known, fresh, stale } = partitionFindings(findings, baseline);
   if (args.has("--show-baseline")) {
     for (const finding of known) console.log(`${formatFinding(finding)}\n`);
     console.log(`Known baseline findings: ${known.length}`);
@@ -370,7 +475,7 @@ function main() {
         console.error(`${file} ${code} stale baseline entry (${count}):\n  > ${lineText}\n`);
       }
     }
-    console.error("Fix the issue, add a SAFETY comment for a real boundary seam, or update the reviewed baseline after deliberate fixes.");
+    console.error("Fix the issue, add a SAFETY comment for a real boundary seam, or update the reviewed baseline after deliberate fixes (node scripts/dev/agent-lint.mjs --update-baseline).");
     process.exitCode = 1;
     return;
   }

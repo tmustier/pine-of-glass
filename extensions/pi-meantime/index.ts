@@ -104,7 +104,7 @@ function resetState(now: number): void {
 
 function loadConfig(cwd: string): MeantimeConfig {
   return configPaths("pi-meantime", cwd).reduce(
-    (config, filePath) => ({ ...config, ...readJsonConfig(filePath, parseMeantimeConfig) }),
+    (config, filePath) => Object.assign(config, readJsonConfig(filePath, parseMeantimeConfig)),
     { ...DEFAULT_CONFIG },
   );
 }

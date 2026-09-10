@@ -147,17 +147,17 @@ Use the read tool to load a skill when the task matches its description.
   <skill>
     <name>alpha-skill</name>
     <description>Handles A &amp; B cases with a long description so it sorts first in token order for the fixture.</description>
-    <location>${home}/skills/alpha/SKILL.md</location>
+    <location>${home}/.pi/agent/skills/alpha/SKILL.md</location>
   </skill>
   <skill>
     <name>beta-skill</name>
     <description>It&apos;s the medium one.</description>
-    <location>${home}/skills/beta/SKILL.md</location>
+    <location>${home}/.pi/agent/skills/beta/SKILL.md</location>
   </skill>
   <skill>
     <name>gamma</name>
     <description>Tiny.</description>
-    <location>${home}/skills/gamma/SKILL.md</location>
+    <location>${home}/.pi/agent/skills/gamma/SKILL.md</location>
   </skill>
 </available_skills>
 Current date: 2026-06-09`;
@@ -186,10 +186,10 @@ Prefer clarity &amp; precision in every reply.
 <skills_instructions>
 ## Skills
 ### Available skills
-- alpha-skill: Handles A & B cases with a long description so it sorts first in token order for the fixture. (file: ${home}/skills/alpha/SKILL.md)
+- alpha-skill: Handles A & B cases with a long description so it sorts first in token order for the fixture. (file: ${home}/.pi/agent/skills/alpha/SKILL.md)
 - beta-skill: It's the medium one.
- (file: ${home}/skills/beta/SKILL.md)
-- gamma:  (file: ${home}/skills/gamma/SKILL.md)
+ (file: ${home}/.pi/agent/skills/beta/SKILL.md)
+- gamma:  (file: ${home}/.pi/agent/skills/gamma/SKILL.md)
 ### How to use skills
 - Use skill when user names it or request clearly matches its description
 </skills_instructions>

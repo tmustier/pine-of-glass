@@ -38,7 +38,6 @@ import {
   parseSkillsBlock,
   PROJECT_INSTRUCTIONS_RE,
   type RuntimeAdditions,
-  type SkillSummary,
 } from "./prompt-parsing.ts";
 import {
   buildSessionBreakdown,
@@ -308,7 +307,7 @@ function runtimeAdditionsAttribution(additions: RuntimeAdditions, denominator: n
   return `of which tool/extension instructions: ~${compactCount(tokens)} tokens (${parts.join(", ")}) · already counted in this row`;
 }
 
-function buildSkillsSection(systemPrompt: string, denominator: number): { section?: PrefixSection; skills: SkillSummary[] } {
+function buildSkillsSection(systemPrompt: string, denominator: number) {
   const block = parseSkillsBlock(systemPrompt, denominator);
   if (!block) return { skills: [] };
   const { content, skills } = block;
@@ -328,7 +327,7 @@ function buildSkillsSection(systemPrompt: string, denominator: number): { sectio
       detail: ratioDetail(denominator),
       compactRows: scanRows,
       expanded: { kind: "skills", note: wrapperNote, rows: scanRows },
-    },
+    } satisfies PrefixSection,
   };
 }
 
@@ -369,8 +368,8 @@ function mergeContextimateConfig(base: ContextimateConfig, next?: ContextimateCo
   return {
     ...base,
     ...next,
-    defaults: { ...(base.defaults ?? {}), ...(next.defaults ?? {}) },
-    profiles: { ...(base.profiles ?? {}), ...(next.profiles ?? {}) },
+    defaults: { ...base.defaults, ...next.defaults },
+    profiles: { ...base.profiles, ...next.profiles },
     rules: [...(base.rules ?? []), ...(Array.isArray(next.rules) ? next.rules : [])],
   };
 }

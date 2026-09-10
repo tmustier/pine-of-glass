@@ -39,8 +39,6 @@ const {
   inkBashBody,
   dimUnstyledSpans,
   flattenInvocationLines,
-  renderTraceRow,
-  readRun,
   setTracelineChat,
   setTracelineThemeGetter,
 } = internals;

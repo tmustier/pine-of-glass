@@ -6,12 +6,14 @@ language. TypeScript, zero runtime dependencies, tests on `node:test`.
 ## Commands
 
 ```bash
-npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests); run first on a fresh clone
+npm install             # pinned lint tooling; prunes the Pi symlinks, so:
+npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests); run after every npm install
 npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
 npm run docs:cache      # regenerate Cachemire retention docs
-npm run lint            # coding-standard and generated-doc drift checks
+npm run lint            # POG rules + oxlint/anti-slop (baselined) + generated-doc drift checks
+npm run lint:slop       # oxlint alone, full diagnostics
 npm run typecheck       # tsc against the real installed pi
-npm test                # unit + golden + pi contract tests (zero deps, node:test)
+npm test                # unit + golden + pi contract tests (node:test)
 npm run check           # lint + typecheck + tests
 npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)
 ```
@@ -43,10 +45,11 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   tmux/HOME; see its README for the recipe. The `cachemire` scenario makes live model
   calls (costs cents).
 - Agent coding standards live in [`docs/agent-coding-standard.md`](./docs/agent-coding-standard.md)
-  and are enforced by `scripts/dev/agent-lint.mjs`. Boundary uncertainty belongs at
-  Pi, JSON, config, provider-payload, and catch seams only. Do not add generic
-  `isRecord` or `isObject` helpers. Parse or refine at the edge, pass typed values
-  inward, and document real escape hatches with `SAFETY:` comments.
+  and are enforced by `scripts/dev/agent-lint.mjs` and `.oxlintrc.json`. Parse external
+  data at its boundary, pass typed values inward, and document real escape hatches with
+  `SAFETY:` comments. The baseline and legacy `internals` exports only shrink.
+- Tests specify capabilities through Pi's SDK or stable domain-module APIs; do not
+  expose private helpers for tests. See [`docs/testing.md`](./docs/testing.md).
 
 ## Style
 

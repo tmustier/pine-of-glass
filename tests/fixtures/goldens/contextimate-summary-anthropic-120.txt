@@ -7,7 +7,7 @@
   ▸ ~/projects/demo/AGENTS.md                ~0.0k tokens (0.1k ch)
   ▸ Skill frontmatter (3)                    ~0.3k tokens (0.7k ch)
   ▸ Tools (3/4 active)                       ~0.5k tokens (1.2k ch)
-  Total harness                              ~0.9k tokens (2.2k ch · <1% ctx)
+  Total harness                              ~0.9k tokens (2.3k ch · <1% ctx)
 
   Tool outputs                              ~20.1k tokens (52.3k ch)
   Messages                                   ~3.1k tokens (8.1k ch)

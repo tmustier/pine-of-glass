@@ -33,7 +33,7 @@ test("skills parse with XML entities unescaped and stable ordering by tokens", (
   const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
   assert.equal(byName["alpha-skill"]!.description, "Handles A & B cases with a long description so it sorts first in token order for the fixture.");
   assert.equal(byName["beta-skill"]!.description, "It's the medium one.");
-  assert.equal(byName["gamma"]!.location, `${homedir()}/skills/gamma/SKILL.md`);
+  assert.equal(byName["gamma"]!.location, `${homedir()}/.pi/agent/skills/gamma/SKILL.md`);
   // Token estimate covers the full skill XML span at the given denominator.
   for (const skill of skills) {
     assert.equal(skill.tokens, Math.ceil(skill.chars / 4));
@@ -111,7 +111,7 @@ test("compact <skills_instructions> list parses into the same skills row as the 
   const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
   assert.equal(byName["beta-skill"]!.description, "It's the medium one.", "description with a trailing newline");
   assert.equal(byName["gamma"]!.description, "", "empty description");
-  assert.equal(byName["gamma"]!.location, `${homedir()}/skills/gamma/SKILL.md`);
+  assert.equal(byName["gamma"]!.location, `${homedir()}/.pi/agent/skills/gamma/SKILL.md`);
 
   const remainder = getPromptRemainder(prompt);
   assert.ok(!remainder.includes("<skills_instructions>"));

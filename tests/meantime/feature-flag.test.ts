@@ -1,49 +1,54 @@
-// Meantime is shipped in the package before its experimental UX is ready for every
-// user. This test pins the registration boundary: disabled means no runtime surface,
-// while the explicit opt-in wires the complete extension.
+// Meantime is opt-in until its UX is ready for every user.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { registerMeantime } from "../../extensions/pi-meantime/index.ts";
-import { DEFAULT_CONFIG } from "../../extensions/pi-meantime/timing.ts";
+import type { JsonObject } from "../../extensions/_lib/boundary.ts";
+import piMeantime from "../../extensions/pi-meantime/index.ts";
+import { hostExtension, IsolatedProject, type HostedExtension } from "../harness/extension-host.ts";
 
-function registrationProbe(): { pi: ExtensionAPI; events: string[]; commands: string[] } {
-  const events: string[] = [];
-  const commands: string[] = [];
-  const pi = {
-    on(event: string, _handler: unknown): void {
-      events.push(event);
-    },
-    registerCommand(name: string, _options: unknown): void {
-      commands.push(name);
-    },
-  } as unknown as ExtensionAPI;
-  return { pi, events, commands };
+async function withProject(config: JsonObject | undefined, run: (host: HostedExtension) => Promise<void>) {
+  const project = new IsolatedProject();
+  if (config) project.writeProjectConfig("pi-meantime", config);
+  // Reason "new" resets meantime's process-global state, so specs are order-independent.
+  const host = await hostExtension(piMeantime, { project, reason: "new" });
+  try {
+    await run(host);
+  } finally {
+    await host.dispose();
+    project.dispose();
+  }
 }
 
-test("feature flag: disabled registers no hooks, timer path, UI, or command", () => {
-  const probe = registrationProbe();
-  registerMeantime(probe.pi, DEFAULT_CONFIG);
-  assert.deepEqual(probe.events, []);
-  assert.deepEqual(probe.commands, []);
+test("a project without meantime config gets no /pace command and no widget", async () => {
+  await withProject(undefined, async ({ session, ui }) => {
+    assert.equal(session.extensionRunner.getCommand("pace"), undefined);
+    assert.equal(ui.widgets.size, 0, "meantime must not draw a widget while disabled");
+  });
 });
 
-test("feature flag: explicit opt-in registers the runtime and /pace", () => {
-  const probe = registrationProbe();
-  registerMeantime(probe.pi, { ...DEFAULT_CONFIG, enabled: true });
-  assert.deepEqual(probe.events, [
-    "session_start",
-    "session_shutdown",
-    "model_select",
-    "agent_start",
-    "before_provider_request",
-    "message_update",
-    "message_end",
-    "tool_execution_start",
-    "tool_execution_end",
-    "agent_end",
-    "agent_settled",
-  ]);
-  assert.deepEqual(probe.commands, ["pace"]);
+test("enabling meantime in .pi/pi-meantime.json makes /pace answer with the tempo ledger", async () => {
+  await withProject({ enabled: true }, async ({ session, ui }) => {
+    await session.prompt("/pace");
+    assert.equal(ui.notifications.length, 1, "/pace should print one ledger");
+    assert.match(ui.notifications[0]!, /no timed model calls yet/);
+  });
+});
+
+test("enabling meantime shows a waiting clock while a provider request is in flight", async () => {
+  await withProject({ enabled: true }, async ({ session, ui }) => {
+    assert.equal(ui.widgets.has("pi-meantime"), false, "idle sessions draw nothing");
+    await session.extensionRunner.emit({ type: "agent_start" });
+    await session.extensionRunner.emitBeforeProviderRequest({ model: "fixture", messages: [] });
+    assert.match(ui.widgetLines("pi-meantime")?.join("\n") ?? "", /waiting/);
+  });
+});
+
+test("widget: false keeps the widget away even mid-request, and still answers /pace", async () => {
+  await withProject({ enabled: true, widget: false }, async ({ session, ui }) => {
+    await session.extensionRunner.emit({ type: "agent_start" });
+    await session.extensionRunner.emitBeforeProviderRequest({ model: "fixture", messages: [] });
+    assert.equal(ui.widgets.has("pi-meantime"), false, "the widget is off by config, not by idleness");
+    await session.prompt("/pace");
+    assert.match(ui.notifications[0]!, /no timed model calls yet/);
+  });
 });

@@ -21,7 +21,7 @@ import {
   summarizeCounts,
   vertexCountRequest,
 } from "../../scripts/contextimate/provider-token-counts.ts";
-import { isJsonObject } from "../../extensions/_lib/boundary.ts";
+import { isJsonObject, type JsonObject } from "../../extensions/_lib/boundary.ts";
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, fakePi, fixtureSystemPrompt } from "../helpers.ts";
 
@@ -32,7 +32,7 @@ function capturedAnthropicPayload() {
   const tools = snapshot.tools.slice(0, 3).map((tool) => {
     const payload = toolPayloadForShape(tool, "anthropic");
     assert.ok(isJsonObject(payload));
-    return payload;
+    return payload as JsonObject;
   });
   return {
     model: "claude-opus-4-8",
