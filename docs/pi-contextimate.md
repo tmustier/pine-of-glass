@@ -145,7 +145,7 @@ Later files override scalar fields, `profiles` merge by name, and `rules` append
 
 `match` values take exact strings, `*`/`?` globs, or regex strings like `"/claude.*4-8/i"`. Built-in rules cannot be disabled, but a later matching custom rule shadows their values.
 
-`toolNumerator` picks the payload shape to count:
+`toolNumerator` picks the payload format to count:
 
 - `openai-cookbook`: the local formula above (the OpenAI-Codex default; the name is kept for config compatibility)
 - `openai-responses` / `openai-codex-responses`: Responses-style function objects
@@ -155,12 +155,12 @@ Later files override scalar fields, `profiles` merge by name, and `rules` append
 - `bedrock`: `{ toolSpec: ... }`
 - `raw-schema`: the unshaped schema, as a fallback
 
-Unknown names fall back to the Responses shape. Custom `toolShapes` templates and the legacy `prefix-inspector.json` config paths were removed in 0.4.0: a configurable approximation cannot beat measuring the real payload.
+Unknown names fall back to the Responses format. Custom `toolShapes` templates and the legacy `prefix-inspector.json` config paths were removed in 0.4.0: a configurable approximation cannot beat measuring the real payload.
 
 ## Recalibrating for a new provider or model
 
 1. Capture what Pi actually sends: `pi-contextimate-probe-prefix`.
 2. Get provider counts and suggested divisors from the captured payload: `pi-contextimate-check-provider-tokens`.
-3. Paste the suggested values into a `rules` entry, with the closest built-in `toolNumerator` shape.
+3. Paste the suggested values into a `rules` entry, with the closest built-in `toolNumerator` format.
 
 If the provider has no count endpoint, run controlled live probes instead: hold everything else constant, vary one section, and subtract a minimal baseline from the recorded usage. Record chars per token separately for prose and for tool schemas; they usually differ. [`scripts/contextimate/README.md`](../scripts/contextimate/README.md) documents the scripts, credentials and safety notes (captured payloads can contain sensitive prompt data; keep them local).

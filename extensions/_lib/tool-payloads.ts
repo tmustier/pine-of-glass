@@ -1,11 +1,11 @@
-// Provider-shaped tool payloads and token estimators shared by the family.
+// Provider tool payload formats and token estimators shared by the family.
 
 import { isJsonObject, type JsonValue } from "./boundary.ts";
 import { estimateCharsAsTokens, type HeuristicNumbers } from "./heuristics.ts";
 
 /** The slice of a tool definition the estimators need; contextimate's ToolSummary
  * satisfies it structurally. */
-export type ToolShape = {
+export type ToolDefinition = {
   name: string;
   description: string;
   schema: unknown;
@@ -68,9 +68,9 @@ export function safeMinifiedJson(value: unknown): string {
   }
 }
 
-// --- provider tool payload shapes ---------------------------------------------------------
+// --- provider tool payload formats ---------------------------------------------------------
 
-export function openAIResponsesToolPayload(tool: ToolShape): unknown {
+export function openAIResponsesToolPayload(tool: ToolDefinition): unknown {
   return {
     type: "function",
     name: tool.name,
@@ -80,8 +80,10 @@ export function openAIResponsesToolPayload(tool: ToolShape): unknown {
   };
 }
 
-export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: string[] }, shape: string): unknown {
-  switch (shape) {
+/** `format` is a `toolNumerator` name; `openai-cookbook` and unknown names take the
+ * OpenAI Responses payload. */
+export function toolPayload(tool: ToolDefinition & { promptGuidelines?: string[] }, format: string): unknown {
+  switch (format) {
     case "openai-chat":
     case "openai-completions":
     case "mistral":
@@ -122,8 +124,8 @@ export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: strin
   }
 }
 
-export function aggregateToolPayloadForShape(tools: Array<ToolShape & { promptGuidelines?: string[] }>, shape: string): unknown {
-  if (shape === "gemini" || shape === "google" || shape === "vertex") {
+export function aggregateToolPayload(tools: Array<ToolDefinition & { promptGuidelines?: string[] }>, format: string): unknown {
+  if (format === "gemini" || format === "google" || format === "vertex") {
     return {
       functionDeclarations: tools.map((tool) => ({
         name: tool.name,
@@ -132,11 +134,11 @@ export function aggregateToolPayloadForShape(tools: Array<ToolShape & { promptGu
       })),
     };
   }
-  return tools.map((tool) => toolPayloadForShape(tool, shape));
+  return tools.map((tool) => toolPayload(tool, format));
 }
 
-export function toolPayloadLabel(shape: string): string {
-  switch (shape) {
+export function toolPayloadLabel(format: string): string {
+  switch (format) {
     case "openai-responses":
     case "openai-codex-responses":
       return "OpenAI Responses tool payload";
@@ -157,7 +159,7 @@ export function toolPayloadLabel(shape: string): string {
     case "raw-schema":
       return "Raw tool schema payload";
     default:
-      return `Unknown tool shape ${shape}; OpenAI Responses fallback`;
+      return `Unknown tool payload format ${format}; OpenAI Responses fallback`;
   }
 }
 
@@ -167,7 +169,7 @@ function estimateOpenAIToolTextTokens(text: string): number {
   return estimateCharsAsTokens(text.length, OPENAI_TOOL_TEXT_FRAGMENT_DENOMINATOR);
 }
 
-export function estimateOpenAIToolDefinitionTokens(tool: ToolShape): number {
+export function estimateOpenAIToolDefinitionTokens(tool: ToolDefinition): number {
   let tokens = 7;
   tokens += estimateOpenAIToolTextTokens(`${tool.name}:${trimFinalPeriod(tool.description)}`);
   const propertyEntries = Object.entries(getSchemaProperties(tool.schema));
@@ -205,7 +207,7 @@ function estimateOpenAIPropertyTokens(propertyName: string, property: unknown): 
   return tokens;
 }
 
-export function estimateOpenAIFunctionToolTokens(tools: ToolShape[]): number {
+export function estimateOpenAIFunctionToolTokens(tools: ToolDefinition[]): number {
   // OpenAI's public token-counting docs say exact tool counts need the Responses
   // input-token endpoint. For no-API-call startup estimates, use the older
   // cookbook/tiktoken-style schema-summary formula: model-specific constants plus
@@ -221,13 +223,13 @@ export function estimateOpenAIFunctionToolTokens(tools: ToolShape[]): number {
 }
 
 /** Total estimated tokens for a tool list under a family heuristic: the cookbook
- * formula where it applies, the shaped-payload char ratio everywhere else. */
+ * formula where it applies, the payload char ratio everywhere else. */
 export function estimateToolListTokens(
-  tools: Array<ToolShape & { promptGuidelines?: string[] }>,
+  tools: Array<ToolDefinition & { promptGuidelines?: string[] }>,
   heuristic: Pick<HeuristicNumbers, "toolNumerator" | "toolDenominator">,
 ): number {
   if (tools.length === 0) return 0;
   if (heuristic.toolNumerator === "openai-cookbook") return estimateOpenAIFunctionToolTokens(tools);
-  const content = safeMinifiedJson(aggregateToolPayloadForShape(tools, heuristic.toolNumerator));
+  const content = safeMinifiedJson(aggregateToolPayload(tools, heuristic.toolNumerator));
   return estimateCharsAsTokens(content.length, heuristic.toolDenominator);
 }

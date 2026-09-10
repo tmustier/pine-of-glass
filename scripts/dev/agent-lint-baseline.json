@@ -140,10 +140,10 @@
         "const original = (chat[originalKey] as (() => unknown) | undefined) ?? chat.clear.bind(chat);": 1
       },
       "extensions/_lib/tool-payloads.ts": {
-        "export function aggregateToolPayloadForShape(tools: Array<ToolShape & { promptGuidelines?: string[] }>, shape: string): unknown {": 1,
+        "export function aggregateToolPayload(tools: Array<ToolDefinition & { promptGuidelines?: string[] }>, format: string): unknown {": 1,
         "export function arrayItemsSchema(property: unknown): unknown {": 1,
-        "export function openAIResponsesToolPayload(tool: ToolShape): unknown {": 1,
-        "export function toolPayloadForShape(tool: ToolShape & { promptGuidelines?: string[] }, shape: string): unknown {": 1
+        "export function openAIResponsesToolPayload(tool: ToolDefinition): unknown {": 1,
+        "export function toolPayload(tool: ToolDefinition & { promptGuidelines?: string[] }, format: string): unknown {": 1
       },
       "extensions/pi-cachemire/classify.ts": {
         "function stripCacheMarkers(value: unknown): unknown {": 1
@@ -327,7 +327,7 @@
     "defaultTsMax": 350,
     "files": {
       "extensions/pi-cachemire/index.ts": 852,
-      "extensions/pi-contextimate/index.ts": 1568,
+      "extensions/pi-contextimate/index.ts": 1566,
       "extensions/pi-traceline/index.ts": 1677,
       "tests/contract/pi-internals.test.ts": 355,
       "tests/traceline/one-line.test.ts": 772
@@ -335,7 +335,7 @@
   },
   "internalsBudgets": {
     "extensions/pi-cachemire/index.ts": 34,
-    "extensions/pi-contextimate/index.ts": 33,
+    "extensions/pi-contextimate/index.ts": 31,
     "extensions/pi-traceline/index.ts": 55
   }
 }

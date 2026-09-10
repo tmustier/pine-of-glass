@@ -36,15 +36,15 @@ export function installAssistantCacheHook(
 ): void {
   const original = (proto.__tracelineOriginalAssistantRender ?? proto.render)!;
   proto.__tracelineOriginalAssistantRender = original;
-  const shapes = new WeakMap<AssistantRowDataLike, string>();
+  const fingerprints = new WeakMap<AssistantRowDataLike, string>();
   const changed = (row: AssistantRowDataLike) => {
     const content = row.lastMessage?.content;
     const ids = Array.isArray(content) ? content.filter((block) => block?.type === "toolCall").map((block) => block.id) : [];
-    const shape = JSON.stringify([row.hideThinkingBlock, isEmptyConnector(row), isCollapsedThinkingRow(row), ids]);
-    if (shapes.get(row) !== shape) { shapes.set(row, shape); dirty(row); }
+    const fingerprint = JSON.stringify([row.hideThinkingBlock, isEmptyConnector(row), isCollapsedThinkingRow(row), ids]);
+    if (fingerprints.get(row) !== fingerprint) { fingerprints.set(row, fingerprint); dirty(row); }
   };
   proto.render = function (this: AssistantRowDataLike, width: number) {
-    if (!shapes.has(this)) changed(this);
+    if (!fingerprints.has(this)) changed(this);
     beforeRender(this); return original.call(this, width);
   };
   const update = proto.__tracelineOriginalUpdateContent ?? proto.updateContent;

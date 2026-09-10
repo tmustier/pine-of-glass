@@ -1,15 +1,14 @@
-// Provider payload shaping + the OpenAI cookbook-style formula. The displayed token
-// number is only as honest as these shapes; the formula constants are pinned against
+// Provider payload formats + the OpenAI cookbook-style formula. The displayed token
+// number is only as honest as these payloads; the formula constants are pinned against
 // hand-computed expectations so "harmless" refactors cannot drift them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { aggregateToolPayload, toolPayload } from "../../extensions/_lib/tool-payloads.ts";
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import type { ToolSummary } from "../../extensions/pi-contextimate/index.ts";
 
 const {
-  toolPayloadForShape,
-  aggregateToolPayloadForShape,
   buildToolNumerator,
   buildToolDisplayEstimate,
   estimateOpenAIToolDefinitionTokens,
@@ -40,33 +39,33 @@ const mode: ToolSummary = {
   promptGuidelines: [],
 };
 
-test("per-provider payload shapes are exact", () => {
-  assert.deepEqual(toolPayloadForShape(ping, "anthropic"), {
+test("per-provider payload formats are exact", () => {
+  assert.deepEqual(toolPayload(ping, "anthropic"), {
     name: "ping",
     description: "Send a ping.",
     input_schema: ping.schema,
   });
-  assert.deepEqual(toolPayloadForShape(ping, "openai-responses"), {
+  assert.deepEqual(toolPayload(ping, "openai-responses"), {
     type: "function",
     name: "ping",
     description: "Send a ping.",
     parameters: ping.schema,
     strict: null,
   });
-  assert.deepEqual(toolPayloadForShape(ping, "openai-chat"), {
+  assert.deepEqual(toolPayload(ping, "openai-chat"), {
     type: "function",
     function: { name: "ping", description: "Send a ping.", parameters: ping.schema, strict: null },
   });
-  assert.deepEqual(toolPayloadForShape(ping, "bedrock"), {
+  assert.deepEqual(toolPayload(ping, "bedrock"), {
     toolSpec: { name: "ping", description: "Send a ping.", inputSchema: { json: ping.schema } },
   });
-  assert.deepEqual(toolPayloadForShape(ping, "pi-messages"), {
+  assert.deepEqual(toolPayload(ping, "pi-messages"), {
     name: "ping",
     description: "Send a ping.",
     parameters: ping.schema,
   });
   // Gemini aggregates into one functionDeclarations wrapper.
-  assert.deepEqual(aggregateToolPayloadForShape([ping, mode], "gemini"), {
+  assert.deepEqual(aggregateToolPayload([ping, mode], "gemini"), {
     functionDeclarations: [
       { name: "ping", description: "Send a ping.", parametersJsonSchema: ping.schema },
       { name: "mode", description: "Pick a mode", parametersJsonSchema: mode.schema },
@@ -74,8 +73,8 @@ test("per-provider payload shapes are exact", () => {
   });
 });
 
-test("unknown shapes fall back to the OpenAI Responses payload", () => {
-  assert.deepEqual(toolPayloadForShape(ping, "some-future-shape"), toolPayloadForShape(ping, "openai-responses"));
+test("unknown formats fall back to the OpenAI Responses payload", () => {
+  assert.deepEqual(toolPayload(ping, "some-future-format"), toolPayload(ping, "openai-responses"));
 });
 
 test("OpenAI cookbook formula matches hand-computed expectations", () => {
@@ -91,19 +90,19 @@ test("OpenAI cookbook formula matches hand-computed expectations", () => {
 });
 
 test("displayed per-tool estimates count the same payload the section total counts", () => {
-  // Anthropic shape: the aggregate content must be exactly the JSON array of the
+  // Anthropic format: the aggregate content must be exactly the JSON array of the
   // per-tool payloads that buildToolDisplayEstimate measures.
   const heuristic = resolveHeuristic({ provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages" }, {});
   const numerator = buildToolNumerator([ping, mode], heuristic);
-  const perTool = [ping, mode].map((tool) => JSON.stringify(toolPayloadForShape(tool, "anthropic")));
+  const perTool = [ping, mode].map((tool) => JSON.stringify(toolPayload(tool, "anthropic")));
   assert.equal(numerator.content, `[${perTool.join(",")}]`);
   for (const tool of [ping, mode]) {
     const estimate = buildToolDisplayEstimate(tool, heuristic);
-    assert.equal(estimate.chars, JSON.stringify(toolPayloadForShape(tool, "anthropic")).length);
+    assert.equal(estimate.chars, JSON.stringify(toolPayload(tool, "anthropic")).length);
     assert.equal(estimate.tokens, Math.ceil(estimate.chars / heuristic.toolDenominator));
   }
 
-  // Cookbook shape: per-tool display uses the per-tool formula; the section total is the
+  // Cookbook formula: per-tool display uses the per-tool formula; the section total is the
   // sum of per-tool formulas + the once-per-request constant.
   const codexHeuristic = resolveHeuristic({ provider: "openai-codex", id: "gpt-5.5", api: "openai-codex-responses" }, {});
   const codexNumerator = buildToolNumerator([ping, mode], codexHeuristic);
