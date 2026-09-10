@@ -180,7 +180,7 @@ test("event flow: the same model over a different wire API is a switch", async (
     await fire(probe, "message_end", { message: {
       role: "assistant", content: [], provider: "anthropic", api: "bedrock-anthropic", model: "claude-opus-4-8",
       stopReason: "stop", timestamp: Date.now(), usage: usage(80_000, 0, 0),
-    } });
+    } }, ctx);
     assert.doesNotMatch(widgets.at(-1)!, /model switched/, "fresh usage must re-baseline the currency");
   } finally {
     await fire(probe, "session_shutdown", {});

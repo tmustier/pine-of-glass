@@ -40,6 +40,16 @@ export interface CallClassification {
   cause?: CallCause;
 }
 
+/** Billed verdict on one effort-to-effort change: the usage, not the keystroke, decides. */
+export interface ThinkingEvidence {
+  /** Wire efforts at the previous billed call and at this one. */
+  from: string;
+  to: string;
+  held: boolean;
+  cacheRead: number;
+  expectedRead: number;
+}
+
 export interface CallRecord {
   index: number;
   at: number;
@@ -55,6 +65,8 @@ export interface CallRecord {
    * composed with this call's counts (design language §7). */
   switched?: boolean;
   postCompaction?: { modelSwitched: boolean };
+  /** This call billed an effort change on the same route as the previous one. */
+  thinkingChange?: ThinkingEvidence;
   costUsd?: number;
   uncachedUsd?: number;
   restored?: boolean;

@@ -107,7 +107,7 @@ test("first request after hot reload diagnoses a changed tool schema", async () 
 
   await fire(oldRuntime, "session_start", { reason: "startup" }, oldContext);
   await fire(oldRuntime, "before_provider_request", { payload: payload(["before reload"], [oldTool]) }, oldContext);
-  await fire(oldRuntime, "message_end", { message: oldAssistant });
+  await fire(oldRuntime, "message_end", { message: oldAssistant }, oldContext);
   entries.push({
     type: "message",
     id: "assistant-1",
@@ -170,7 +170,7 @@ test("session_tree rebases classification to the selected provider-known prompt"
     assert.equal(notifications.length, 0, "branching must not price the abandoned 200k leaf");
     await fire(runtime, "message_end", {
       message: { ...assistant(now, 100_000), usage: usage(0, 90_000, 10_000) },
-    });
+    }, ctx);
 
     await fire(runtime, "before_provider_request", {
       payload: payload(["base", "new branch", "aborted suffix"]),

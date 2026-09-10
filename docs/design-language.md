@@ -243,6 +243,20 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   GPT-6 Astra is neutral only when the request appends an OpenAI `configuration_update`
   while leaving request-level effort unchanged; a changed request-level effort remains
   a cache mutation
+- the bill outranks the payload. Cachemire reads a request at its own hook position;
+  a later-loaded extension or an extension-registered provider may transform it
+  afterwards, so the payload Cachemire saw is not proof of what reached the wire.
+  Once an effort-to-effort change on a route has been billed, that verdict decides
+  the route's expectation for the rest of the process: a hit on an effort the route
+  has never billed before silences the stale clock and the in-flight claim for later
+  changes on the exact provider, API and model; a miss the payload attributed to
+  thinking, with no closed window to blame, reinstates them. A hit on an effort
+  billed earlier proves nothing: providers keep an entry per effort, and a return
+  within retention reads that entry back. The first hit that contradicts an expected
+  break says so once (`cache held · … · effort low → high kept the prefix warm on
+  this route`); an expected hit earns no line. Evidence never softens an on/off
+  toggle, and the payload diff still names the wire change when a miss follows, so
+  nothing is learned silently
 
 ## 8. Panels
 

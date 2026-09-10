@@ -12,6 +12,19 @@
   Pi's built-in model record declares its mid-conversation effort protocol. GPT-6 Astra
   remains a real mutation in Pi 0.85.1 because Pi changes request-level effort instead
   of appending OpenAI's cache-safe `configuration_update` item.
+- Cachemire lets the bill outrank the payload for thinking-effort changes. A
+  later-loaded extension (for example `pi-codex-conversion`'s append-only
+  `configuration_update` for GPT-6 Astra) can rewrite a request after Cachemire has
+  read it, so billed effort-to-effort changes on a route now decide what Cachemire
+  expects from that route for the rest of the process: a hit on an effort the route
+  has never billed silences the stale clock and in-flight claim for later changes
+  there, and says so once (`cache held · … · effort low → high kept the prefix warm on
+  this route`); a miss the payload attributed to thinking reinstates them. A hit on a
+  previously billed effort proves nothing (providers keep a warm entry per effort),
+  and a resumed session seeds those efforts from Pi's persisted level changes within
+  the last 24 hours. On/off toggles stay material.
+  The `/cache` ledger names the change on hit rows. `predictBreak` and the session
+  economics helpers moved to `extensions/pi-cachemire/economics.ts`.
 - Development: the repo now lints with Oxlint and a vendored copy of
   [anti-slop](https://github.com/dmmulroy/anti-slop) (`tools/oxlint/anti-slop`,
   `.oxlintrc.json`), fed into the existing agent-lint baseline as shrink-only debt.
