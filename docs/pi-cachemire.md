@@ -140,10 +140,14 @@ route (provider, API and model), for the rest of the Pi process:
   own entry back: stock Pi on Astra missed on `low → high` and `high → medium`, then
   hit on `medium → high` because the `high` entry was still warm. Cachemire counts
   the hit and leaves the verdict alone
-- a miss or partial that the payload diff attributed to thinking, with no closed
-  retention window to blame, records that the route breaks, and reinstates both
-- a miss with another named cause, or after a closed window, proves nothing about
-  effort and leaves the verdict alone
+- a miss or partial that the payload diff attributed to thinking, while the previous
+  window still promised a warm entry (an Anthropic TTL not yet reached, an OpenAI
+  30-minute minimum not yet passed), records that the route breaks, and reinstates both
+- a miss with another named cause, or once the window stopped vouching for warmth,
+  proves nothing about effort and leaves the verdict alone. A maximum never vouches,
+  and neither does an unknown window: ordinary eviction explains such a miss as well
+  as the effort change does, and the resolved cause says so
+  (`thinking changed (effort high → effort medium) (also 30m minimum passed)`)
 
 The first hit that contradicts an expected break says so once:
 
@@ -153,17 +157,24 @@ The first hit that contradicts an expected break says so once:
 
 An expected hit earns no line, and the `/cache` ledger row reads
 `hit — effort low → high kept the prefix`. Evidence never softens turning thinking on <!-- agent-lint-disable-line POG007 -->
-or off, which stays a distinct mutation. The payload diff still names the wire change
-when a miss follows, so a route that stops holding (for example after the rewriting
-extension is disabled) corrects itself on the next billed change rather than staying
-quietly wrong.
+or off, which stays a distinct mutation. The wire change is always named when a miss
+follows, so a route that stops holding (for example after the rewriting extension is
+disabled) corrects itself on the next billed change rather than staying quietly wrong.
+On a contract-neutral route the cache-key diff withholds the effort change, so that
+lineage keeps treating requests at different efforts as one prefix and the in-flight
+claim stays silent; the resolved cause still names it, and a billed miss charges it.
 
 Verdicts live in the process, not the session: the behaviour belongs to the provider
 and extension stack, so `/new`, `/resume` and `/reload` keep them and a fresh `pi`
-starts without any. A resumed session still tells which efforts its history billed on
-the active path within the longest known retention (24 hours, OpenAI extended), read
-from Pi's persisted thinking-level entries, so a return to one of them in the new
-process is not mistaken for fresh evidence.
+starts without any. The active path still says two things a process cannot know on its
+own, read from Pi's persisted thinking-level entries whenever the path changes (start,
+resume, and every branch switch, since Pi restores neither on a switch): which efforts
+were billed there within the longest known retention (24 hours, OpenAI extended), so a
+return to one of them is not mistaken for fresh evidence, and the level its last call
+was billed at, which the next change is measured from. The level Pi is holding can
+differ from that after a late change before quitting, a `--thinking` flag on resume, or
+a branch switch. A hit served by another session's identical prefix remains
+indistinguishable from this session's own and is accepted as such.
 
 Unknown routes get no retention-based prediction. If billed usage later proves a miss,
 Cachemire can report an observed payload mutation. A miss without such evidence keeps an

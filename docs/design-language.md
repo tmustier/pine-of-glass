@@ -250,13 +250,18 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   the route's expectation for the rest of the process: a hit on an effort the route
   has never billed before silences the stale clock and the in-flight claim for later
   changes on the exact provider, API and model; a miss the payload attributed to
-  thinking, with no closed window to blame, reinstates them. A hit on an effort
-  billed earlier proves nothing: providers keep an entry per effort, and a return
-  within retention reads that entry back. The first hit that contradicts an expected
-  break says so once (`cache held · … · effort low → high kept the prefix warm on
-  this route`); an expected hit earns no line. Evidence never softens an on/off
-  toggle, and the payload diff still names the wire change when a miss follows, so
-  nothing is learned silently
+  thinking, while the previous window still promised a warm entry, reinstates them.
+  A hit on an effort billed earlier proves nothing: providers keep an entry per
+  effort, and a return within retention reads that entry back. A miss after the
+  window stopped vouching (a reached TTL, a passed minimum, any maximum or unknown)
+  proves nothing either: eviction explains it as well. Measure the change from the
+  level the active path's last call was billed at, and count the efforts that path
+  billed, on every path change, since Pi restores neither on a branch switch. The
+  first hit that contradicts an expected break says so once (`cache held · … ·
+  effort low → high kept the prefix warm on this route`); an expected hit earns no
+  line. Evidence never softens an on/off toggle, and the wire change is always
+  named when a miss follows, even where the contract withheld it from the cache-key
+  diff, so nothing is learned silently
 
 ## 8. Panels
 

@@ -93,6 +93,8 @@ export async function hostExtension(
     reason?: SessionStartEvent["reason"];
     model?: CreateAgentSessionOptions["model"];
     thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
+    /** A pre-populated session to resume, as Pi does from a session file. */
+    sessionManager?: SessionManager;
   },
 ): Promise<HostedExtension> {
   const { project, interactive = true, reason = "startup", model, thinkingLevel } = options;
@@ -107,7 +109,7 @@ export async function hostExtension(
     cwd,
     agentDir,
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(cwd),
+    sessionManager: options.sessionManager ?? SessionManager.inMemory(cwd),
     model,
     thinkingLevel,
     noTools: "all",

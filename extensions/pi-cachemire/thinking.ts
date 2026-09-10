@@ -115,8 +115,9 @@ export interface BilledThinkingChange {
 	classification: CallClassification;
 	/** Send-time forensics named the thinking wire change as the first divergence. */
 	thinkingNamedAtSend: boolean;
-	/** A retention window also closed, so a miss proves nothing about effort. */
-	windowExpired: boolean;
+	/** The previous window still promised a warm entry at request time; without that
+	 * promise a miss may be ordinary expiry and proves nothing about effort. */
+	warmPromised: boolean;
 	usage: UsageLike;
 	expectedRead: number;
 }
@@ -126,9 +127,9 @@ export interface BilledThinkingChange {
  * on an effort the route has never billed before is evidence that the route keeps its
  * prefix: a hit on a previously billed effort proves nothing, because providers keep a
  * cache entry per effort and a return within retention reads that entry back. A miss
- * counts against the route only when the payload showed the effort change and nothing
- * else (expiry, another named mutation) explains it. Turning thinking on or off stays
- * a distinct mutation and never produces evidence.
+ * counts against the route only when the payload showed the effort change, nothing
+ * else was named, and the window still promised a warm entry. Turning thinking on or
+ * off stays a distinct mutation and never produces evidence.
  */
 export function recordBilledThinking(
 	ledger: ThinkingEvidenceLedger,
@@ -150,18 +151,20 @@ export function recordBilledThinking(
 export const EFFORT_MEMORY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Seeds the active route with the efforts a resumed session billed recently, walking
- * Pi's persisted `thinking_level_change` entries along the active path, so a return to
- * one of them in this process is not mistaken for fresh evidence.
+ * Replays the active path's persisted `thinking_level_change` entries: seeds the route
+ * with the efforts billed there recently, so a return to one of them in this process is
+ * not mistaken for fresh evidence, and returns the level the path's last billed call
+ * used, which is what the next call's effort change is measured from. Pi restores
+ * neither on a branch switch, so this runs on every path change, not only at start.
  */
-export function rememberBilledEfforts(
+export function restoreBilledThinking(
 	ledger: ThinkingEvidenceLedger,
 	entries: readonly unknown[],
 	leafId: string | null,
 	model: ExtensionContext["model"],
 	now: number,
-): void {
-	if (!model || leafId === null) return;
+): string | undefined {
+	if (!model || leafId === null) return undefined;
 	const route = routeOf(model);
 	const byId = new Map<string, JsonFields>();
 	for (const entry of entries) {
@@ -175,18 +178,21 @@ export function rememberBilledEfforts(
 	}
 	const record = routeRecord(ledger, route);
 	let level: string | undefined;
+	let lastBilledLevel: string | undefined;
 	for (const entry of path.reverse()) {
 		if (entry.type === "thinking_level_change") {
 			level = stringValue(entry.thinkingLevel);
 			continue;
 		}
 		if (entry.type !== "message" || !isJsonObject(entry.message) || entry.message.role !== "assistant") continue;
+		lastBilledLevel = level;
 		const { message } = entry;
 		if (message.provider !== route.provider || message.api !== route.api || message.model !== route.model) continue;
 		const at = nonNegativeNumberValue(message.timestamp);
 		if (level === undefined || at === undefined || now - at > EFFORT_MEMORY_MS) continue;
 		record.billedEfforts.add(wireThinkingEffort(model.thinkingLevelMap, level));
 	}
+	return lastBilledLevel;
 }
 
 function thinkingVerdict(
@@ -202,5 +208,5 @@ function thinkingVerdict(
 	const verdict = { from, to, cacheRead: change.usage.cacheRead, expectedRead: change.expectedRead };
 	if (change.classification.kind === "hit") return billedEfforts.has(to) ? undefined : { ...verdict, held: true };
 	if (change.classification.kind === "cold") return undefined;
-	return change.thinkingNamedAtSend && !change.windowExpired ? { ...verdict, held: false } : undefined;
+	return change.thinkingNamedAtSend && change.warmPromised ? { ...verdict, held: false } : undefined;
 }

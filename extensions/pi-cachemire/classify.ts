@@ -26,6 +26,16 @@ export function pastWindow(window: CacheWindow | undefined, gapMs: number | unde
   return false;
 }
 
+/** The window still promised a warm entry after this idle gap: a contract inside its
+ * TTL, or a minimum (or bounded) retention inside its floor. A maximum promises nothing
+ * before it, and an unknown window nothing at all. */
+export function withinWarmPromise(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
+  if (!window || gapMs === undefined) return false;
+  if (window.kind === "contract") return gapMs < window.ttlMs;
+  if (window.kind === "minimum" || window.kind === "bounded") return gapMs < window.minMs;
+  return false;
+}
+
 // Shared cause wording for predictions and resolved classifications.
 export function expiryCause(window: CacheWindow | undefined, gapMs: number | undefined): CallCause | undefined {
   if (!window || gapMs === undefined) return undefined;
@@ -150,6 +160,24 @@ function isEffortThinking(value: string | undefined): boolean {
   return value?.startsWith("thinking effort ") === true;
 }
 
+function thinkingCause(prev: RequestFingerprint, cur: RequestFingerprint): CallCause {
+  return { kind: "thinking", detail: `thinking changed (${prev.thinking ?? "?"} \u2192 ${cur.thinking ?? "?"})` };
+}
+
+/**
+ * The effort change the cache-key diff withheld because the route's contract calls it
+ * neutral. Lineage keeps treating such requests as one prefix; the resolved cause must
+ * still name the change, or a miss on that route could never charge it and the bill
+ * would never outrank the contract.
+ */
+export function withheldThinkingCause(
+  prev: RequestFingerprint | undefined,
+  cur: RequestFingerprint,
+): CallCause | undefined {
+  if (!prev || prev.thinking === cur.thinking || cur.thinkingCacheNeutral !== true) return undefined;
+  return isEffortThinking(prev.thinking) && isEffortThinking(cur.thinking) ? thinkingCause(prev, cur) : undefined;
+}
+
 // --- forensics: name the first divergent prefix segment --------------------------------
 
 export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerprint): CallCause | undefined {
@@ -180,9 +208,7 @@ export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerpri
   // drags along (e.g. thinking blocks stripped on disable) is a side effect.
   const cacheSafeEffortChange = cur.thinkingCacheNeutral === true &&
     isEffortThinking(prev.thinking) && isEffortThinking(cur.thinking);
-  if (prev.thinking !== cur.thinking && !cacheSafeEffortChange) {
-    return { kind: "thinking", detail: `thinking changed (${prev.thinking ?? "?"} \u2192 ${cur.thinking ?? "?"})` };
-  }
+  if (prev.thinking !== cur.thinking && !cacheSafeEffortChange) return thinkingCause(prev, cur);
   // History: the previous request's messages must be a prefix of the current ones.
   const checkable = Math.min(prev.messageHashes.length, cur.messageHashes.length);
   for (let i = 0; i < checkable; i++) {
@@ -232,12 +258,16 @@ export function classifyCall(args: ClassifyInput): CallClassification {
   if (args.compacted) {
     cause = { kind: "compaction", detail: "compaction rewrote history" };
   } else if (args.fingerprintCause) {
-    const expiry = args.window?.kind === "maximum" || args.window?.kind === "bounded"
-      ? "retention maximum reached"
-      : "TTL reached";
-    cause = pastWindow(args.window, args.gapMs)
-      ? { ...args.fingerprintCause, detail: `${args.fingerprintCause.detail} (also ${expiry})` }
-      : args.fingerprintCause;
+    // A window that no longer vouches for warmth shares the blame: a reached contract
+    // or maximum, or a minimum floor passed (which proves nothing either way).
+    const lapse = pastWindow(args.window, args.gapMs)
+      ? args.window?.kind === "maximum" || args.window?.kind === "bounded" ? "retention maximum reached" : "TTL reached"
+      : (args.window?.kind === "minimum" || args.window?.kind === "bounded") && !withinWarmPromise(args.window, args.gapMs)
+        ? `${formatDuration(args.window.minMs)} minimum passed`
+        : undefined;
+    cause = lapse === undefined
+      ? args.fingerprintCause
+      : { ...args.fingerprintCause, detail: `${args.fingerprintCause.detail} (also ${lapse})` };
   } else if (idleCause) {
     cause = idleCause;
   } else {

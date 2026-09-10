@@ -14,7 +14,14 @@ import {
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
 import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
-import { classifyCall, diffFingerprints, fingerprintPayload, pastWindow } from "./classify.ts";
+import {
+  classifyCall,
+  diffFingerprints,
+  fingerprintPayload,
+  pastWindow,
+  withheldThinkingCause,
+  withinWarmPromise,
+} from "./classify.ts";
 import { UNKNOWN_WINDOW, cacheClock, nextClockUpdateMs, withinWarmHorizon } from "./clock.ts";
 import { predictBreak, rewriteCostUsd, sessionSavings, uncachedCostUsd } from "./economics.ts";
 import { activeToolDefinitions, computeSwitchForecast, type SwitchForecast, type SwitchTarget } from "./forecast.ts";
@@ -38,7 +45,7 @@ import {
 } from "./retention.ts";
 import {
   recordBilledThinking,
-  rememberBilledEfforts,
+  restoreBilledThinking,
   thinkingChangeInvalidatesCache,
   thinkingChangesPreserveCache,
   type ThinkingEvidenceLedger,
@@ -350,6 +357,31 @@ export default function piCachemire(pi: ExtensionAPI): void {
   const ownerToken = Symbol("pi-cachemire-owner");
   const ownsState = () => g.__piCachemireOwner === ownerToken;
 
+  // Material only when a warm prefix exists to break AND the current level changes the
+  // wire params for this model against the level its last call was billed at; cycling
+  // back before the next call revives the cache. Routes whose contract or billed
+  // evidence keeps the prefix stay neutral.
+  const markThinkingChange = (model: ExtensionContext["model"]) => {
+    s.thinkingChanged = s.expectedRead > 0 && model?.reasoning === true &&
+      thinkingChangeInvalidatesCache(
+        thinkingRoute(model),
+        model.thinkingLevelMap,
+        s.lastCallThinkingLevel,
+        s.currentThinkingLevel,
+        s.thinkingEvidence,
+      );
+  };
+
+  // The active path decides what the next effort change is measured from: the level
+  // its last billed call used, not the level Pi is holding now, which differs after a
+  // late change before quitting, a --thinking flag on resume, or a branch switch.
+  const restoreThinkingForPath = (ctx: ExtensionContext, entries: readonly unknown[], leafId: string | null) => {
+    const lastBilledLevel = restoreBilledThinking(s.thinkingEvidence, entries, leafId, ctx.model, Date.now());
+    s.currentThinkingLevel = pi.getThinkingLevel();
+    s.lastCallThinkingLevel = lastBilledLevel ?? s.currentThinkingLevel;
+    markThinkingChange(ctx.model);
+  };
+
   pi.on("session_start", async (event, ctx) => {
     if (!ctx.hasUI) return;
     if (g.__piCachemireOwner !== undefined && !ownsState()) return;
@@ -374,12 +406,12 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // A restored branch can already be mid-switch (billed by a different model than the
     // current one); the forecast must exist before the first widget render.
     refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
-    s.lastCallThinkingLevel = s.currentThinkingLevel = pi.getThinkingLevel();
     // Route evidence belongs to the process (provider and extension stack), not the
-    // session; a resumed session still tells which efforts may hold a warm entry.
+    // session; a resumed path still tells which efforts may hold a warm entry and what
+    // its last call was billed at.
     // SAFETY: a reload re-imports this file over the global state of the version it replaces.
     if (event.reason === "startup" || !s.thinkingEvidence) s.thinkingEvidence = new Map();
-    rememberBilledEfforts(s.thinkingEvidence, entries, ctx.sessionManager.getLeafId(), model, Date.now());
+    restoreThinkingForPath(ctx, entries, ctx.sessionManager.getLeafId());
     s.compacted = false;
     s.inCompaction = false;
     s.pendingFingerprint = undefined;
@@ -423,7 +455,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
       resolution,
       { provider: ctx.model?.provider, model: ctx.model?.id ?? s.pendingFingerprint.model, api: ctx.model?.api },
     ));
-    s.pendingFingerprintCause = resolution.cause;
+    s.pendingFingerprintCause = resolution.cause ??
+      withheldThinkingCause(resolution.baseline?.fingerprint, s.pendingFingerprint);
     s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
     if (firstAttempt) {
       s.pendingPreviousRequestAt = s.lastRequestAt;
@@ -501,17 +534,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // call so far used — a baseline that needs no session_start timing assumptions.
     s.lastCallThinkingLevel ??= event.previousLevel;
     s.currentThinkingLevel = event.level;
-    // Material only when something was billed at the old level AND the new level changes
-    // the wire params for this model; cycling back before the next call revives the
-    // cache. Routes whose contract or billed evidence keeps the prefix stay neutral.
-    s.thinkingChanged = s.records.length > 0 && ctx.model?.reasoning === true &&
-      thinkingChangeInvalidatesCache(
-        thinkingRoute(ctx.model),
-        ctx.model.thinkingLevelMap,
-        s.lastCallThinkingLevel,
-        event.level,
-        s.thinkingEvidence,
-      );
+    markThinkingChange(ctx.model);
     updateWidget();
   });
 
@@ -541,6 +564,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     ));
     // Checking out a branch billed by another model is a switch in lineage terms.
     refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
+    restoreThinkingForPath(ctx, entries, event.newLeafId);
     updateWidget();
   });
 
@@ -592,7 +616,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       incomparable: s.modelSwitched || s.compacted || s.inCompaction,
       classification,
       thinkingNamedAtSend: fingerprintCause?.kind === "thinking",
-      windowExpired: pastWindow(s.pendingPreviousWindow ?? s.window, cacheGapMs),
+      warmPromised: withinWarmPromise(s.pendingPreviousWindow ?? s.window, cacheGapMs),
       usage,
       expectedRead: s.expectedRead,
     });

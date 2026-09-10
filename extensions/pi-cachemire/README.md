@@ -74,8 +74,12 @@ The bill outranks the payload. A later-loaded extension can rewrite the request 
 Cachemire has read it, so the billed effort changes on a route decide what Cachemire
 expects from that route for the rest of the process. A hit on an effort the route has
 never billed before says so once and silences later warnings on that route; a miss that
-the payload attributed to thinking reinstates them. Returning to an effort billed
-earlier proves nothing either way, because providers keep a warm entry per effort:
+the payload attributed to thinking, while the window still promised a warm entry,
+reinstates them. Returning to an effort billed earlier proves nothing either way,
+because providers keep a warm entry per effort, and a miss after the window stopped
+vouching proves nothing either, because eviction explains it just as well. The path
+Cachemire is on decides what a change is measured from, at start and on every branch
+switch:
 
 ```
 ◍ cache held · read 29.8k of 30.0k expected · effort low → high kept the prefix warm on this route
