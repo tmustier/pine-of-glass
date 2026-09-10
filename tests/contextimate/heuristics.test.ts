@@ -12,7 +12,7 @@ import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-conte
 import { anthropicModel, codexModel } from "../helpers.ts";
 import { tokenizerFamilies } from "./heuristic-family-fixtures.ts";
 
-const { parseContextimateConfig, resolveHeuristic, cleanDenominator } = internals;
+const { parseContextimateConfig, resolveHeuristic } = internals;
 
 function model(provider: string, id: string, api: string): ModelSummary {
   return { provider, id, api };
@@ -241,15 +241,6 @@ test("unknown provider keeps a defined label (regression: renderHeader crash)", 
     rules: [{ match: { provider: "anthropic" }, profile: "quiet" }],
   });
   assert.equal(profiled.label, "Claude 4.7+ heuristic", "label survives a label-less profile patch");
-});
-
-test("cleanDenominator rejects non-finite/non-positive values", () => {
-  assert.equal(cleanDenominator(0), 4);
-  assert.equal(cleanDenominator(-2), 4);
-  assert.equal(cleanDenominator(Number.NaN), 4);
-  assert.equal(cleanDenominator("3"), 4);
-  assert.equal(cleanDenominator(undefined, 2.6), 2.6);
-  assert.equal(cleanDenominator(3.3, 2.6), 3.3);
 });
 
 test("runtime config parsing drops invalid denominators before heuristic resolution", () => {

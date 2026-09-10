@@ -22,15 +22,16 @@ import {
   vertexCountRequest,
 } from "../../scripts/contextimate/provider-token-counts.ts";
 import { isJsonObject, type JsonObject } from "../../extensions/_lib/boundary.ts";
+import { toolPayload } from "../../extensions/_lib/tool-payloads.ts";
 import { internals } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, fakePi, fixtureSystemPrompt } from "../helpers.ts";
 
-const { buildSnapshot, toolPayloadForShape } = internals;
+const { buildSnapshot } = internals;
 
 function capturedAnthropicPayload() {
   const snapshot = buildSnapshot(fakePi(), () => fixtureSystemPrompt(), undefined, () => undefined, () => anthropicModel, {});
   const tools = snapshot.tools.slice(0, 3).map((tool) => {
-    const payload = toolPayloadForShape(tool, "anthropic");
+    const payload = toolPayload(tool, "anthropic");
     assert.ok(isJsonObject(payload));
     return payload as JsonObject;
   });
@@ -50,7 +51,7 @@ function rowsById<T extends { id: string }>(rows: T[]): Record<string, T> {
   return Object.fromEntries(rows.map((row) => [row.id, row]));
 }
 
-test("captured Pi payloads resolve to their wire shape", () => {
+test("captured Pi payloads resolve to their wire format", () => {
   assert.equal(detectPayloadKind(capturedAnthropicPayload()), "anthropic");
   assert.equal(detectPayloadKind({ model: "gpt-5.6", input: [{ role: "developer", content: "system" }] }), "openai-responses");
   assert.equal(detectPayloadKind({ model: "glm-4.7", messages: [], stream: true }), "openai-chat");

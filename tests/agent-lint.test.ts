@@ -171,20 +171,25 @@ test("line budgets for existing files ratchet down while new oversized files are
   assert.equal(readFileSync(baselinePath, "utf8"), before);
 });
 
-test("the repo policy allows typed union narrowing and boundary parsing but rejects untyped core input", () => {
+test("the repo policy allows boundary parsing but rejects untyped or typeof-probed core input", () => {
   const dir = oxlintFixtureRepo();
   writeFileSync(join(dir, ".oxlintrc.json"), readFileSync(new URL(".oxlintrc.json", repoRoot), "utf8"));
   const coreDir = join(dir, "extensions", "pi-meantime");
   mkdirSync(coreDir, { recursive: true });
   const core = join(coreDir, "render.ts");
   const boundary = join(coreDir, "config.ts");
-  writeFileSync(core, 'export function label(value: string | number): string { return typeof value === "string" ? value : String(value); }\n');
+  writeFileSync(core, 'export function label(value: string | number): string { return String(value); }\n');
   writeFileSync(boundary, 'export function parseLabel(value: unknown): string { return typeof value === "string" ? value : ""; }\n');
   const allowed = runLint(dir);
   assert.equal(allowed.status, 0, allowed.stderr);
 
-  writeFileSync(core, 'export function label(value: unknown): string { return typeof value === "string" ? value : ""; }\n');
-  const rejected = runLint(dir);
-  assert.notEqual(rejected.status, 0);
-  assert.match(rejected.stderr, /render.ts:1 anti-slop\(no-unknown-parameters\)/);
+  writeFileSync(core, 'export function label(value: string | number): string { return typeof value === "string" ? value : String(value); }\n');
+  const probed = runLint(dir);
+  assert.notEqual(probed.status, 0);
+  assert.match(probed.stderr, /render.ts:1 anti-slop\(no-runtime-typeof\)/);
+
+  writeFileSync(core, 'export function label(value: unknown): string { return value === undefined ? "" : String(value); }\n');
+  const untyped = runLint(dir);
+  assert.notEqual(untyped.status, 0);
+  assert.match(untyped.stderr, /render.ts:1 anti-slop\(no-unknown-parameters\)/);
 });

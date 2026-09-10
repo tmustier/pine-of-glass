@@ -4,7 +4,7 @@
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
-import type { ToolShape } from "../_lib/tool-payloads.ts";
+import type { ToolDefinition } from "../_lib/tool-payloads.ts";
 import { findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
 
@@ -15,7 +15,7 @@ export type SwitchTarget = {
   input?: readonly string[];
 };
 
-export function activeToolShapes(pi: Pick<ExtensionAPI, "getActiveTools" | "getAllTools">): ToolShape[] {
+export function activeToolDefinitions(pi: Pick<ExtensionAPI, "getActiveTools" | "getAllTools">): ToolDefinition[] {
   const active = new Set(pi.getActiveTools());
   return pi.getAllTools()
     .filter((tool) => active.has(tool.name))
@@ -38,7 +38,7 @@ export function computeSwitchForecast(args: {
   entries: SessionEntry[];
   activeLeafId: string | null;
   systemPromptChars: number;
-  tools: ToolShape[];
+  tools: ToolDefinition[];
   snapshots: readonly CacheLineageSnapshot[];
 }): SwitchForecast {
   const forecast: SwitchForecast = {

@@ -34,11 +34,7 @@ type TokenizerProfile = Omit<HeuristicNumbers, "toolDenominator" | "toolNumerato
 type ToolProfile = Pick<HeuristicNumbers, "toolDenominator" | "toolNumerator">;
 type BuiltInHeuristic = Partial<HeuristicNumbers> & Pick<HeuristicNumbers, "label">;
 
-export function cleanDenominator(value: unknown, fallback = 4): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-// Denominators are sanitized once, at heuristic resolution; by the time one reaches a
+// Denominators are validated once, when config is parsed; by the time one reaches a
 // count it is a trusted positive number.
 export function estimateCharsAsTokens(chars: number, denominator: number): number {
   return Math.ceil(chars / denominator);

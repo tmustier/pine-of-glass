@@ -28,6 +28,9 @@ enabled rules reject low-evidence TypeScript. `npm run lint:slop` prints their f
 diagnostics; `npm run lint` adds them to the existing migration ledger.
 
 Ordinary type narrowing stays. Do not extract a helper merely to satisfy a syntax rule.
+The reviewed pure modules listed in `.oxlintrc.json` `overrides` are the exception:
+there, `unknown` parameters and `typeof` checks are rejected outright, because a value
+that still needs its representation probed has not been decoded at its boundary.
 A baseline entry is debt with an intended fix; correct code that a rule rejects gets a
 rule-level decision in `.oxlintrc.json` with its reason, or an inline
 `oxlint-disable-next-line` with a justification, not a baseline entry.

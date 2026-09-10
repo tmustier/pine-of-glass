@@ -21,7 +21,7 @@ import {
   type ForecastMessage,
   type TargetModel,
 } from "../../extensions/_lib/forecast.ts";
-import { activeToolShapes } from "../../extensions/pi-cachemire/forecast.ts";
+import { activeToolDefinitions } from "../../extensions/pi-cachemire/forecast.ts";
 
 const outputPath = process.env.PI_CACHEMIRE_FORECAST_CAPTURE ?? "/tmp/pi-cachemire-model-switch-forecast.jsonl";
 const runId = randomUUID();
@@ -73,7 +73,7 @@ function canonicalCounts(
     const history = convertToLlm(
       buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages,
     ) as unknown as ForecastMessage[];
-    const tools = activeToolShapes(pi);
+    const tools = activeToolDefinitions(pi);
     const systemPromptChars = ctx.getSystemPrompt().length;
     const historyCounts = forecastHistoryForTarget(history, target);
     const system = forecastTargetPrompt({ history: [], systemPromptChars, tools: [], target });
