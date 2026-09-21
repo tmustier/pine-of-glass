@@ -34,6 +34,11 @@ async function fire(probe: ReturnType<typeof extensionProbe>, event: string, ...
   for (const handler of probe.handlers.get(event) ?? []) await handler(...args);
 }
 
+async function request(probe: ReturnType<typeof extensionProbe>, event: unknown, ctx: unknown): Promise<void> {
+  await fire(probe, "context", { type: "context", messages: [] }, ctx);
+  await fire(probe, "before_provider_request", event, ctx);
+}
+
 function billedAssistant(model: string, api: string, prompt: number, userChars: number) {
   return [
     { type: "message", id: "u1", parentId: null, timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: "q".repeat(userChars), timestamp: 1_000 } },
@@ -69,6 +74,7 @@ function probeContext(entries: unknown[], api: string, notifications: string[], 
     },
     sessionManager: {
       getEntries: () => entries,
+      getBranch: () => entries,
       getLeafId: () => {
         const last = entries.at(-1);
         return typeof last === "object" && last !== null && "id" in last && typeof last.id === "string" ? last.id : null;
@@ -92,9 +98,9 @@ test("event flow: a healthy first send and an abort both stay silent", async () 
 
   await fire(probe, "session_start", {}, ctx);
   try {
-    await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
+    await request(probe, { payload: ANTHROPIC_PAYLOAD }, ctx);
     assert.equal(widgets.at(-1), "", "a healthy cache must not show ambient status");
-    await fire(probe, "agent_end");
+    await fire(probe, "agent_end", {}, ctx);
     assert.equal(widgets.at(-1), "", "an abort without usage must not leave a fictitious warning");
   } finally {
     await fire(probe, "session_shutdown", {});
@@ -145,7 +151,7 @@ test("event flow: an Anthropic-shaped gateway payload keeps retention unknown", 
   t.after(async () => fire(probe, "session_shutdown", {}, ctx));
 
   await fire(probe, "session_start", {}, ctx);
-  await fire(probe, "before_provider_request", { payload }, ctx);
+  await request(probe, { payload }, ctx);
   const firstMessage = {
     role: "assistant", content: [], provider: "radius", api: "pi-messages", model: "claude-fable-5",
     stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 0, 100_000),
@@ -154,7 +160,7 @@ test("event flow: an Anthropic-shaped gateway payload keeps retention unknown", 
   entries.push({ type: "message", id: "a1", parentId: "u1", message: firstMessage });
 
   now += 5 * 60_000;
-  await fire(probe, "before_provider_request", { payload }, ctx);
+  await request(probe, { payload }, ctx);
   assert.equal(notifications.length, 0, "gateway payload shape must not create an Anthropic TTL");
   assert.equal(widgets.at(-1), "", "unknown gateway retention stays silent");
 });
@@ -172,7 +178,7 @@ test("event flow: the same model over a different wire API is a switch", async (
     assert.match(widgets.at(-1)!, /model switched/, "an API-only switch must flip the clock at session_start");
     assert.match(widgets.at(-1)!, /\(est\)/, "the forecast must be marked as an estimate");
 
-    await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
+    await request(probe, { payload: ANTHROPIC_PAYLOAD }, ctx);
     assert.equal(notifications.length, 0, "an immaterial estimated re-write must not post a notice");
     assert.match(widgets.at(-1)!, /model switched/);
 
@@ -203,7 +209,7 @@ test("event flow: the model-switch forecast remains stable through send", async 
       type: "message", id: "u2", parentId: "a1", timestamp: "2026-07-01T10:01:00.000Z",
       message: { role: "user", content: next, timestamp: 6_000 },
     });
-    await fire(probe, "before_provider_request", { payload: {
+    await request(probe, { payload: {
       ...ANTHROPIC_PAYLOAD,
       messages: [
         { role: "user", content: [{ type: "text", text: "q".repeat(200_000) }] },
@@ -234,7 +240,7 @@ test("event flow: classification uses the previous policy and abort restores it"
   const probe = extensionProbe();
   t.after(async () => fire(probe, "session_shutdown", {}, ctx));
   await fire(probe, "session_start", {}, ctx);
-  await fire(probe, "before_provider_request", {
+  await request(probe, {
     payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" },
   }, ctx);
   const firstMessage = {
@@ -246,7 +252,7 @@ test("event flow: classification uses the previous policy and abort restores it"
 
   now += 24 * 60 * 60_000;
   notifications.length = 0;
-  await fire(probe, "before_provider_request", {
+  await request(probe, {
     payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }] },
   }, ctx);
   assert.equal(notifications.length, 1, "the prior 24h policy classifies the exact-boundary expiry");
@@ -275,7 +281,7 @@ test("event flow: switching back before an OpenAI maximum stays unknown", async 
   t.after(async () => fire(probe, "session_shutdown", {}, ctx));
 
   await fire(probe, "session_start", {}, ctx);
-  await fire(probe, "before_provider_request", {
+  await request(probe, {
     payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" },
   }, ctx);
   const openaiMessage = {
@@ -291,7 +297,7 @@ test("event flow: switching back before an OpenAI maximum stays unknown", async 
     cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
   };
   await fire(probe, "model_select", { model: ctx.model }, ctx);
-  await fire(probe, "before_provider_request", { payload: ANTHROPIC_PAYLOAD }, ctx);
+  await request(probe, { payload: ANTHROPIC_PAYLOAD }, ctx);
   const anthropicMessage = {
     role: "assistant", content: [], provider: "anthropic", api: "anthropic-messages", model: "claude-opus-4-8",
     stopReason: "stop", timestamp: now + 3_000, usage: usage(0, 0, 100_000),
@@ -304,7 +310,7 @@ test("event flow: switching back before an OpenAI maximum stays unknown", async 
   ctx.model = openaiModel;
   await fire(probe, "model_select", { model: openaiModel }, ctx);
   assert.match(widgets.at(-1)!, /cache state unknown · model switched/);
-  await fire(probe, "before_provider_request", {
+  await request(probe, {
     payload: { model: "gpt-5.4", input: [{ role: "user", content: "third" }], prompt_cache_retention: "24h" },
   }, ctx);
   assert.equal(notifications.length, 0, "a maximum cannot make a pre-maximum switch-back cold");

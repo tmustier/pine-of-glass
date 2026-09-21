@@ -12,7 +12,6 @@ export type SegmentKind = "thinking" | "writing";
 
 export interface LiveCall {
   index: number;
-  /** before_provider_request time: the wait clock starts here. */
   requestAt: number;
   /** First typed content stream activity; TTFT = firstTokenAt - requestAt. */
   firstTokenAt?: number;

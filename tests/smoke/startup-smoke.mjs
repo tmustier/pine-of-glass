@@ -7,14 +7,16 @@
 //   4. traceline announces itself (extension loaded without crashing the TUI),
 //   5. the explicit Meantime feature flag enables /pace through real Pi,
 //   6. /pace and /cache render, and both survive the Ctrl+T visibility update.
-// Local-only: needs tmux + an installed pi on PATH. Exits non-zero on any failure.
+// Local-only: needs tmux and the linked Pi runtime. Exits non-zero on failure.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { linkedPiLaunch } from "./pi-launch.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const pi = linkedPiLaunch(repoRoot);
 const session = `pog-smoke-${process.pid}`;
 const failures = [];
 
@@ -61,8 +63,8 @@ if (run(["tmux", "-V"]).status !== 0) {
   console.error("tmux not available — smoke test requires a local tmux");
   process.exit(2);
 }
-if (run(["pi", "--version"]).status !== 0) {
-  console.error("pi not on PATH — smoke test requires an installed pi");
+if (run([...pi.argv, "--version"]).status !== 0) {
+  console.error("linked Pi runtime failed to start");
   process.exit(2);
 }
 
@@ -124,7 +126,7 @@ let pane = "";
 try {
   const launch = run([
     "tmux", "new-session", "-d", "-s", session, "-x", "120", "-y", "45",
-    `cd ${JSON.stringify(fixtureDir)} && HOME=${JSON.stringify(fixtureHome)} pi --no-session`,
+    `cd ${JSON.stringify(fixtureDir)} && HOME=${JSON.stringify(fixtureHome)} ${pi.shell} --no-session`,
   ]);
   if (launch.status !== 0) {
     console.error(`tmux session failed to start: ${launch.stderr}`);

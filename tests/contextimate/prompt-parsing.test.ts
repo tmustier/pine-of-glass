@@ -56,6 +56,7 @@ test("prompt remainder strips project context and skills blocks entirely", () =>
   const remainder = getPromptRemainder(fixtureSystemPrompt());
   assert.ok(!remainder.includes("<project_instructions"));
   assert.ok(!remainder.includes("<available_skills>"));
+  assert.ok(!remainder.includes("<skills>"));
   assert.ok(!remainder.includes("alpha-skill"));
   assert.ok(remainder.includes("You are a fixture harness"));
   assert.ok(remainder.includes("Current date: 2026-06-09"));
@@ -102,7 +103,7 @@ test("system section: title renamed for #9 but id stays 'system' (config/signatu
   assert.ok(expanded.attribution!.includes("tool/extension instructions"));
 });
 
-test("compact <skills_instructions> list parses into the same skills row as the XML index", () => {
+test("compact <codex_skills> list parses into the same skills row as the XML index", () => {
   const prompt = fixtureCodexSystemPrompt();
   const { skills, section } = buildSkillsSection(prompt, 4);
   assert.ok(section);
@@ -114,7 +115,7 @@ test("compact <skills_instructions> list parses into the same skills row as the 
   assert.equal(byName["gamma"]!.location, `${homedir()}/.pi/agent/skills/gamma/SKILL.md`);
 
   const remainder = getPromptRemainder(prompt);
-  assert.ok(!remainder.includes("<skills_instructions>"));
+  assert.ok(!remainder.includes("<codex_skills>"));
   assert.ok(remainder.includes("Current working directory"));
 });
 

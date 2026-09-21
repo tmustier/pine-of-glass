@@ -9,9 +9,6 @@
       "extensions/pi-cachemire/forecast.ts": {
         "history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];": 1
       },
-      "extensions/pi-cachemire/index.ts": {
-        "s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);": 1
-      },
       "extensions/pi-traceline/thinking-preview.ts": {
         ".map((region) => region as unknown as ThinkingRegion);": 1
       },
@@ -75,10 +72,6 @@
       },
       "tests/cachemire/model-switch-events.test.ts": {
         "return { handlers };": 1
-      },
-      "tests/cachemire/session-isolation.test.ts": {
-        "return {": 1,
-        "return { pi, handlers, commands };": 1
       },
       "tests/contract/pi-chatline-compat.test.ts": {
         "assert.equal((assistant as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock, hidden);": 1
@@ -160,10 +153,6 @@
       "tests/cachemire/model-switch-events.test.ts": {
         "type Handler = (...args: unknown[]) => unknown;": 1
       },
-      "tests/cachemire/session-isolation.test.ts": {
-        "function sessionContext(id: string, notifications?: string[]): unknown {": 1,
-        "type Handler = (...args: unknown[]) => unknown;": 1
-      },
       "tests/contract/pi-internals.test.ts": {
         "withBuiltInRenderers: (toolName: string, definition: undefined) => unknown;": 1
       },
@@ -185,14 +174,6 @@
       "extensions/pi-cachemire/classify.ts": {
         "const out: Record<string, unknown> = {};": 1,
         "function findTtlMs(payload: Record<string, unknown>): number | undefined {": 1
-      },
-      "extensions/pi-cachemire/index.ts": {
-        "restoreFromMessages: (messages: Array<Record<string, unknown>>) => restoreBranchRecords(messages, classifyCall),": 1,
-        "s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);": 1
-      },
-      "extensions/pi-cachemire/ledger.ts": {
-        "function stringField(message: Record<string, unknown>, key: string): string | undefined {": 1,
-        "messages: Array<Record<string, unknown>>,": 1
       },
       "extensions/pi-traceline/drill-pager-content.ts": {
         "const entries = Object.entries(args as Record<string, unknown>);": 1,
@@ -241,12 +222,7 @@
         "history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];": 2
       },
       "extensions/pi-cachemire/index.ts": {
-        "const g = globalThis as CachemireGlobal;": 1,
-        "s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);": 2
-      },
-      "extensions/pi-cachemire/ledger.ts": {
-        "const usage = message.usage as UsageLike | undefined;": 1,
-        "return typeof message[key] === \"string\" ? message[key] as string : undefined;": 1
+        "const g = globalThis as CachemireGlobal;": 1
       },
       "extensions/pi-contextimate/index.ts": {
         "const g = globalThis as ContextimateGlobal;": 1,
@@ -266,8 +242,7 @@
       "extensions/pi-traceline/drill-pager-content.ts": {
         "const args = call.args as { path?: unknown; offset?: unknown; command?: unknown } | undefined;": 1,
         "const entries = Object.entries(args as Record<string, unknown>);": 1,
-        "const typed = block as { type?: unknown };": 1,
-        "const typed = value as { data?: unknown; mimeType?: unknown };": 1
+        "const typed = block as { type?: unknown };": 1
       },
       "extensions/pi-traceline/drill-pager.ts": {
         "const typed = block as { type?: unknown; text?: unknown };": 1,
@@ -322,7 +297,7 @@
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
-      "extensions/pi-cachemire/index.ts": 781,
+      "extensions/pi-cachemire/index.ts": 715,
       "extensions/pi-contextimate/index.ts": 1483,
       "extensions/pi-traceline/index.ts": 1677,
       "tests/contract/pi-internals.test.ts": 355,
@@ -330,7 +305,7 @@
     }
   },
   "internalsBudgets": {
-    "extensions/pi-cachemire/index.ts": 32,
+    "extensions/pi-cachemire/index.ts": 31,
     "extensions/pi-contextimate/index.ts": 28,
     "extensions/pi-traceline/index.ts": 55
   }

@@ -124,7 +124,6 @@ Guidelines:
 - Prefer rg over grep for searching.
 
 <project_context>
-
 Project-specific instructions and guidelines:
 
 <project_instructions path="${home}/.pi/agent/AGENTS.md">
@@ -136,12 +135,12 @@ Prefer clarity &amp; precision in every reply.
 # Demo project
 Run the demo suite before committing.
 </project_instructions>
-
 </project_context>
 
-
+<skills>
 The following skills provide specialized instructions for specific tasks.
-Use the read tool to load a skill when the task matches its description.
+Use the read tool to load a skill's file when the task matches its description.
+When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.
 
 <available_skills>
   <skill>
@@ -160,11 +159,12 @@ Use the read tool to load a skill when the task matches its description.
     <location>${home}/.pi/agent/skills/gamma/SKILL.md</location>
   </skill>
 </available_skills>
+</skills>
+
 Current date: 2026-06-09`;
 }
 
-// The same three skills as fixtureSystemPrompt, in the compact <skills_instructions>
-// form pi-codex-conversion injects per turn (pinned by tests/contract/pi-skill-index).
+// The same three skills as fixtureSystemPrompt, in pi-codex-conversion's compact form.
 export function fixtureCodexSystemPrompt(): string {
   const home = homedir();
   return `You are a fixture harness for pine-of-glass tests.
@@ -183,7 +183,7 @@ Prefer clarity &amp; precision in every reply.
 
 </project_context>
 
-<skills_instructions>
+<codex_skills>
 ## Skills
 ### Available skills
 - alpha-skill: Handles A & B cases with a long description so it sorts first in token order for the fixture. (file: ${home}/.pi/agent/skills/alpha/SKILL.md)
@@ -192,7 +192,7 @@ Prefer clarity &amp; precision in every reply.
 - gamma:  (file: ${home}/.pi/agent/skills/gamma/SKILL.md)
 ### How to use skills
 - Use skill when user names it or request clearly matches its description
-</skills_instructions>
+</codex_skills>
 
 Current working directory: ${home}/projects/demo`;
 }

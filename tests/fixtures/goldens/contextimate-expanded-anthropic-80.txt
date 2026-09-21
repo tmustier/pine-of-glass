@@ -1,16 +1,16 @@
 
 [Contextimate] summary → compact → expanded
   <expand-key>: cycle view · model anthropic/claude-opus-4-8 · counts ch ÷ 2.6 (Claude 4.7+ heuristic)
-  Total harness                              ~0.9k tokens (2.3k ch · <1% ctx)
+  Total harness                              ~0.9k tokens (2.5k ch · <1% ctx)
 
   Tool outputs                              ~20.1k tokens (52.3k ch)
   Messages                                   ~3.1k tokens (8.1k ch)
   Thinking summaries                         ~0.5k tokens (1.2k ch)
   Reasoning context                          12.0k tokens (provider)
   Unattributed                              ~27.7k tokens (accounting gap)
-  Total session                             ~63.5k tokens (~32% ctx · Pi-based)
+  Total session                             ~63.4k tokens (~32% ctx · Pi-based)
   Total request                              64.3k tokens (32.2% / 200k ctx)
-  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.9k · session ~63.5k · free 135.7k
+  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.9k · session ~63.4k · free 135.7k
 
   Runtime system prompt  ~0.1k tokens                              0.2k ch ÷ 2.6
     assembled at runtime: pi base prompt + tool/extension instructions · preview only
@@ -35,8 +35,8 @@
     # Demo project
     Run the demo suite before committing.
 
-  Skill frontmatter (3)  ~0.3k tokens                              0.7k ch ÷ 2.6
-    list wrapper/markup  ~0.1k tokens (0.2k ch ÷ 2.6)
+  Skill frontmatter (3)  ~0.4k tokens                              0.9k ch ÷ 2.6
+    list wrapper/markup  ~0.2k tokens (0.4k ch ÷ 2.6)
 
     alpha-skill  ~0.1k  Handles A & B cases with a long description so it sorts…
     beta-skill   ~0.1k  It's the medium one.

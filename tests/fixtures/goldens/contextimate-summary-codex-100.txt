@@ -5,15 +5,15 @@
   ▸ Runtime system prompt                    ~0.1k tokens (0.2k ch)
   ▸ Global AGENTS.md                         ~0.0k tokens (0.1k ch)
   ▸ ~/projects/demo/AGENTS.md                ~0.0k tokens (0.1k ch)
-  ▸ Skill frontmatter (3)                    ~0.2k tokens (0.7k ch)
+  ▸ Skill frontmatter (3)                    ~0.2k tokens (0.9k ch)
   ▸ Tools (3/4 active)                       ~0.2k tokens (1.3k ch)
-  Total harness                              ~0.4k tokens (2.3k ch · <1% ctx)
+  Total harness                              ~0.5k tokens (2.5k ch · <1% ctx)
 
   Tool outputs                              ~13.1k tokens (52.3k ch)
   Messages                                   ~2.0k tokens (8.1k ch)
   Thinking summaries                         ~0.3k tokens (1.2k ch)
   Reasoning context                          12.0k tokens (provider)
-  Unattributed                              ~36.5k tokens (accounting gap)
-  Total session                             ~63.9k tokens (~32% ctx · Pi-based)
+  Unattributed                              ~36.4k tokens (accounting gap)
+  Total session                             ~63.8k tokens (~32% ctx · Pi-based)
   Total request                              64.3k tokens (32.2% / 200k ctx)
-  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.4k · session ~63.9k · free 135.7k
+  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.5k · session ~63.8k · free 135.7k

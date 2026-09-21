@@ -8,6 +8,7 @@
 import { getLanguageFromPath, highlightCode, type Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getImageDimensions, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../_lib/ansi.ts";
+import { isJsonObject } from "../_lib/boundary.ts";
 import { resultTextCharCount, type ToolRowLike } from "../_lib/chat.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { SEP, ink, type Tone } from "../_lib/style.ts";
@@ -42,7 +43,17 @@ export function argumentLines(theme: Theme | undefined, args: unknown, width: nu
   const bodyWidth = Math.max(10, width - keyWidth - 2);
   const out: string[] = [];
   for (const [key, value] of entries) {
-    const text = argumentText(value).replace(/\r\n?/g, "\n").replace(/\t/g, "    ");
+    let text: string;
+    if (typeof value === "string") {
+      text = value;
+    } else {
+      try {
+        text = JSON.stringify(value, null, 2) ?? String(value);
+      } catch {
+        text = String(value);
+      }
+    }
+    text = text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ");
     // An overlong key takes its own line; its value rows all hang at the value column,
     // so the column stays one straight edge (vertical alignment is load-bearing).
     let first = true;
@@ -59,15 +70,6 @@ export function argumentLines(theme: Theme | undefined, args: unknown, width: nu
     }
   }
   return out;
-}
-
-function argumentText(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value);
-  } catch {
-    return String(value);
-  }
 }
 
 export function resultLabel(theme: Theme | undefined, tone: Tone, call: ToolRowLike, language?: string): string {
@@ -93,9 +95,13 @@ export function codeContextFor(call: ToolRowLike): CodeContext | undefined {
     const offset = typeof args.offset === "number" && args.offset >= 1 ? Math.floor(args.offset) : 1;
     return { language, nextLine: offset };
   }
-  if (call.toolName === "bash" && typeof args?.command === "string") {
-    const language = printedCodeLanguage(args.command);
-    if (language) return { language, nextLine: undefined };
+  if (call.toolName === "bash" && typeof args?.command === "string" && !/[|&;<>`$(){}\n\\]/.test(args.command)) {
+    const words = args.command.trim().split(/\s+/);
+    if (CODE_PRINTERS.has(words[0] ?? "")) {
+      const operands = words.slice(1).filter((word) => !word.startsWith("-"));
+      const language = languageOf(operands.at(-1) ?? "");
+      if (language) return { language, nextLine: undefined };
+    }
   }
   return undefined;
 }
@@ -106,15 +112,6 @@ function languageOf(path: string): string | undefined {
   } catch {
     return undefined; // Pi seam: no language means no code claim; the text stays plain.
   }
-}
-
-function printedCodeLanguage(command: string): string | undefined {
-  if (/[|&;<>`$(){}\n\\]/.test(command)) return undefined; // one plain command, provable
-  const words = command.trim().split(/\s+/);
-  if (!CODE_PRINTERS.has(words[0] ?? "")) return undefined;
-  const operands = words.slice(1).filter((word) => !word.startsWith("-"));
-  const target = operands[operands.length - 1]; // sed's script operand precedes the file
-  return target ? languageOf(target) : undefined;
 }
 
 /** One text block's content lines, unindented. Plain text wraps at the content width;
@@ -131,7 +128,13 @@ export function textBlockLines(theme: Theme | undefined, text: string, width: nu
     }
     return out;
   }
-  const source = highlightedLines(clean, code.language);
+  let source: string[];
+  try {
+    const highlighted = highlightCode(clean, code.language);
+    source = Array.isArray(highlighted) ? highlighted.map(String) : clean.split("\n");
+  } catch {
+    source = clean.split("\n");
+  }
   const gutterWidth = code.nextLine === undefined ? 0 : String(code.nextLine + source.length - 1).length;
   const pad = gutterWidth === 0 ? "" : " ".repeat(gutterWidth + 2);
   const bodyWidth = Math.max(20, width - pad.length);
@@ -153,16 +156,6 @@ export function textBlockLines(theme: Theme | undefined, text: string, width: nu
     }
   }
   return out;
-}
-
-function highlightedLines(text: string, language: string): string[] {
-  try {
-    const lines = highlightCode(text, language);
-    if (Array.isArray(lines)) return lines.map((line) => String(line));
-  } catch {
-    // Pi seam: highlighting is ink only, never content; fall through to plain lines.
-  }
-  return text.split("\n");
 }
 
 /** The image fact line (§9.13, §4 grammar: what, then how big): always rendered,
@@ -212,21 +205,19 @@ export function imagePixelSource(
   if (call.showImages === false) return undefined;
   const caps = getCapabilities();
   if (!caps.images) return undefined;
-  const converted = convertedImage(call, imageIndex);
-  const data = converted?.data ?? (typeof block.data === "string" ? block.data : undefined);
-  const mimeType = converted?.mimeType ?? (typeof block.mimeType === "string" ? block.mimeType : undefined);
+  const sourceData = typeof block.data === "string" ? block.data : undefined;
+  const sourceMimeType = typeof block.mimeType === "string" ? block.mimeType : undefined;
+  const cached: unknown = call.convertedImages instanceof Map
+    ? call.convertedImages.get(imageIndex)
+    : undefined;
+  const converted = sourceData !== undefined && sourceMimeType !== undefined && isJsonObject(cached) &&
+    cached.sourceData === sourceData && cached.sourceMimeType === sourceMimeType &&
+    typeof cached.data === "string" && typeof cached.mimeType === "string"
+    ? { data: cached.data, mimeType: cached.mimeType }
+    : undefined;
+  const data = converted?.data ?? sourceData;
+  const mimeType = converted?.mimeType ?? sourceMimeType;
   if (!data || !mimeType) return undefined;
   if (caps.images === "kitty" && mimeType !== "image/png") return undefined;
   return { data, mimeType };
-}
-
-function convertedImage(call: ToolRowLike, imageIndex: number): { data: string; mimeType: string } | undefined {
-  const map = call.convertedImages;
-  if (!(map instanceof Map)) return undefined;
-  const value: unknown = map.get(imageIndex);
-  if (!value || typeof value !== "object") return undefined;
-  const typed = value as { data?: unknown; mimeType?: unknown };
-  return typeof typed.data === "string" && typeof typed.mimeType === "string"
-    ? { data: typed.data, mimeType: typed.mimeType }
-    : undefined;
 }

@@ -10,53 +10,52 @@ export type SkillSummary = {
   tokens: number;
 };
 
-const PROJECT_CONTEXT_RE = /\n?<project_context>\n\n[\s\S]*?\n<\/project_context>\n?/;
+const PROJECT_CONTEXT_RE = /\n*<project_context>\n[\s\S]*?\n<\/project_context>\n*/;
 export const PROJECT_INSTRUCTIONS_RE = /<project_instructions path="([^"]*)">\n([\s\S]*?)\n<\/project_instructions>/g;
-export const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>/;
+export const AVAILABLE_SKILLS_RE = /\n*<skills>\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>\n<\/skills>\n*/;
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 // Pi emits <available_skills> only while read or bash is active. Codex-dialect adapters
 // (pi-codex-conversion) swap those tools out and re-inject the index per turn in upstream
 // Codex's compact form: `- name: description (file: path)`, description possibly empty
 // or spanning lines.
-export const SKILLS_INSTRUCTIONS_RE = /\n*<skills_instructions>\n[\s\S]*?<\/skills_instructions>/;
+export const CODEX_SKILLS_RE = /\n*<codex_skills>\n[\s\S]*?<\/codex_skills>/;
 const COMPACT_SKILL_RE = /^- (.+?): ([\s\S]*?) ?\(file: (.+?)\)$/gm;
 
 const SKILL_FORMATS = [
-  { block: AVAILABLE_SKILLS_RE, entry: SKILL_RE, decode: unescapeXml },
-  { block: SKILLS_INSTRUCTIONS_RE, entry: COMPACT_SKILL_RE, decode: (text: string) => text },
+  { block: AVAILABLE_SKILLS_RE, entry: SKILL_RE, xml: true },
+  { block: CODEX_SKILLS_RE, entry: COMPACT_SKILL_RE, xml: false },
 ];
-
-function unescapeXml(value: string): string {
-  return value
-    .replace(/&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, ">")
-    .replace(/&lt;/g, "<")
-    .replace(/&amp;/g, "&");
-}
 
 export function getPromptRemainder(systemPrompt: string): string {
   return systemPrompt
     .replace(PROJECT_CONTEXT_RE, "\n")
     .replace(AVAILABLE_SKILLS_RE, "\n")
-    .replace(SKILLS_INSTRUCTIONS_RE, "\n")
+    .replace(CODEX_SKILLS_RE, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 /** The skill index block in whichever format the prompt carries, with its parsed entries. */
 export function parseSkillsBlock(systemPrompt: string, denominator: number): { content: string; skills: SkillSummary[] } | undefined {
-  for (const { block, entry, decode } of SKILL_FORMATS) {
+  for (const { block, entry, xml } of SKILL_FORMATS) {
     const match = systemPrompt.match(block);
     if (!match) continue;
     const content = match[0].trim();
-    const skills = [...content.matchAll(entry)].map((m) => ({
-      name: decode(m[1]!.trim()),
-      description: decode(m[2]!.trim()),
-      location: decode(m[3]!.trim()),
-      chars: m[0].length,
-      tokens: estimateCharsAsTokens(m[0].length, denominator),
-    }));
+    const skills = [...content.matchAll(entry)].map((m) => {
+      const [name, description, location] = m.slice(1, 4).map((field) => {
+        const text = field!.trim();
+        return xml
+          ? text.replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&")
+          : text;
+      });
+      return {
+        name: name!,
+        description: description!,
+        location: location!,
+        chars: m[0].length,
+        tokens: estimateCharsAsTokens(m[0].length, denominator),
+      };
+    });
     return { content, skills };
   }
   return undefined;

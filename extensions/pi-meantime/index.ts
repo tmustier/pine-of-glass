@@ -38,6 +38,7 @@ interface MeantimeState {
   toolIntervals: Interval[];
   /** The span between a resolved call and the next request: its tools + harness gap. */
   pendingPhase?: { callIndex: number; startedAt: number };
+  requestArmed: boolean;
   runActive: boolean;
   /** Accumulated out-of-run time (agent settled → next agent start). */
   idleMs: number;
@@ -69,6 +70,7 @@ function state(): MeantimeState {
       calls: [],
       openTools: new Map(),
       toolIntervals: [],
+      requestArmed: false,
       runActive: false,
       idleMs: 0,
       idleSince: now,
@@ -77,36 +79,6 @@ function state(): MeantimeState {
     };
   }
   return g.__piMeantime;
-}
-
-/** Session replacement (/new, /resume, /fork): the watched loop is a different session,
- * so timings restart. /reload keeps everything (same session, same process). */
-function resetState(now: number): void {
-  const s = state();
-  s.calls = [];
-  s.live = undefined;
-  s.openTools = new Map();
-  s.toolIntervals = [];
-  s.pendingPhase = undefined;
-  s.runActive = false;
-  s.idleMs = 0;
-  s.idleSince = now;
-  s.startedAt = now;
-  s.currentModel = undefined;
-  s.anchored = [];
-  s.chat = undefined;
-  s.notifyFallback = undefined;
-  s.theme = undefined;
-  s.ui = undefined;
-  s.tui = undefined;
-  s.lastWidgetText = undefined;
-}
-
-function loadConfig(cwd: string): MeantimeConfig {
-  return configPaths("pi-meantime", cwd).reduce(
-    (config, filePath) => Object.assign(config, readJsonConfig(filePath, parseMeantimeConfig)),
-    { ...DEFAULT_CONFIG },
-  );
 }
 
 // One-line tempo facts share cachemire's loop-economics voice (design language §1, §10).
@@ -137,13 +109,6 @@ function finalizePendingPhase(endAt: number, endedByRequest: boolean): void {
   }
   s.toolIntervals = [];
   s.pendingPhase = undefined;
-}
-
-function closeIdle(now: number): void {
-  const s = state();
-  if (s.idleSince === undefined) return;
-  s.idleMs += Math.max(0, now - s.idleSince);
-  s.idleSince = undefined;
 }
 
 // --- widget ---------------------------------------------------------------------------------
@@ -183,16 +148,39 @@ function updateWidget(now = Date.now()): void {
 
 // --- extension entry --------------------------------------------------------------------------
 
-/** Register the runtime only after the explicit config opt-in. Keeping this boundary
- * outside every hook makes the disabled state inert: no events, command, timer, or UI. */
-export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void {
+export default function piMeantime(pi: ExtensionAPI): void {
+  const config = configPaths("pi-meantime", process.cwd()).reduce(
+    (current, filePath) => Object.assign(current, readJsonConfig(filePath, parseMeantimeConfig)),
+    { ...DEFAULT_CONFIG },
+  );
   if (!config.enabled) return;
   const s = state();
   s.config = config;
 
   pi.on("session_start", async (event, ctx) => {
     const now = Date.now();
-    if (event.reason === "new" || event.reason === "resume" || event.reason === "fork") resetState(now);
+    if (event.reason !== "reload" && event.reason !== "startup") {
+      Object.assign(s, {
+        calls: [],
+        live: undefined,
+        openTools: new Map(),
+        toolIntervals: [],
+        pendingPhase: undefined,
+        requestArmed: false,
+        runActive: false,
+        idleMs: 0,
+        idleSince: now,
+        startedAt: now,
+        currentModel: undefined,
+        anchored: [],
+        chat: undefined,
+        notifyFallback: undefined,
+        theme: undefined,
+        ui: undefined,
+        tui: undefined,
+        lastWidgetText: undefined,
+      });
+    }
     s.config = config;
     if (ctx.model) s.currentModel = `${ctx.model.provider}/${ctx.model.id}`;
     if (!ctx.hasUI) return;
@@ -219,16 +207,23 @@ export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void
 
   pi.on("agent_start", async () => {
     const now = Date.now();
-    closeIdle(now);
+    if (s.idleSince !== undefined) {
+      s.idleMs += Math.max(0, now - s.idleSince);
+      s.idleSince = undefined;
+    }
     s.runActive = true;
     updateWidget(now);
   });
 
+  pi.on("context", async () => {
+    s.requestArmed = true;
+  });
+
   pi.on("before_provider_request", async () => {
+    if (!s.requestArmed) return;
+    s.requestArmed = false;
     const now = Date.now();
     finalizePendingPhase(now, true);
-    // A provider retry re-fires this event: the wait clock honestly restarts with the
-    // attempt actually in flight.
     s.live = newLiveCall(s.calls.length + 1, now);
     updateWidget(now);
   });
@@ -285,6 +280,7 @@ export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void
   pi.on("agent_end", async () => {
     const now = Date.now();
     // A send that never produced usage (abort/error) must not linger as a phantom call.
+    s.requestArmed = false;
     s.live = undefined;
     finalizePendingPhase(now, false);
     s.runActive = false;
@@ -314,8 +310,4 @@ export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void
       appendChatLine(lines.join("\n"));
     },
   });
-}
-
-export default function piMeantime(pi: ExtensionAPI): void {
-  registerMeantime(pi, loadConfig(process.cwd()));
 }

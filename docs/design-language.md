@@ -234,6 +234,13 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   Never infer eviction, routing, replica identity or cache entry identity from provider
   usage
 - status one-liners are lowercase; Title Case only for panel headers and row labels
+- Pi cache warming is a background provider call, not an agent-loop call. Cachemire
+  accepts request fingerprints only after Pi's `context` event, so a warming replay
+  cannot replace the pending user-call evidence or create an in-flight notice. A
+  persisted warm usage entry still belongs in `/cache`: its event cell starts
+  `warm ·`, its provider-reported tokens and cost count in the totals, and it refreshes
+  the cache clock when Cachemire next observes the entry. Warm calls stay out of turn
+  summaries because the user did not initiate another loop step
 - state causes from observed evidence (payload diffs, usage), never inference,
   and say `unknown` when unknown. A thinking-effort change is a cause only when
   the active model and wire protocol make it cache-key material. Direct Anthropic
@@ -792,6 +799,10 @@ surface users feel most and can verify least.
   typed content event) and bundles network, queue, and prefill. It is one number on
   purpose: the split is not observable, so no split is claimed. Prefill work is
   still nameable as a cause from usage evidence (uncached prompt tokens)
+- the request boundary is the first provider attempt after Pi's `context` event.
+  Background cache-warming requests have no `context` event and are ignored. Retries
+  inside the provider stream stay within that timed call; a Pi retry cycle emits a new
+  `context` event and becomes a new call
 - rates wear the §4 grammar: live writing rate is estimated from streamed chars and
   wears `~`; thinking has no live rate because its text is not reliable token evidence
   across providers. Resolved rate is exact provider output over the observed stream

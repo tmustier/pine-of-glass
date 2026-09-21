@@ -187,13 +187,26 @@ test("showImages false suppresses pixels; kitty draws only PNG, reusing pi's con
 
   const converted = imageRow({
     result: { content: [jpeg], isError: false },
-    convertedImages: new Map([[0, { data: pngBase64(100, 4000), mimeType: "image/png" }]]),
+    convertedImages: new Map([[0, {
+      sourceData: jpeg.data,
+      sourceMimeType: jpeg.mimeType,
+      data: pngBase64(100, 4000),
+      mimeType: "image/png",
+    }]]),
   });
   const pager = pagerFor([converted]);
   pager.render(80);
   pager.scrollBy(Number.MAX_SAFE_INTEGER);
   const settled = pager.render(80);
   assert.ok(settled.some((line) => line.includes("\x1b_G")), "pi's converted PNG renders through kitty");
+
+  const replacement = { ...jpeg, data: pngBase64(120, 4000) };
+  const stale = imageRow({
+    result: { content: [replacement], isError: false },
+    convertedImages: converted.convertedImages,
+  });
+  const staleText = pagerFor([stale]).render(80).map((line) => stripAnsi(line)).join("\n");
+  assert.ok(!staleText.includes("scroll to view"), "a same-index replacement must not reuse the old conversion");
 
   // Dispose deletes every kitty id the pager allocated (§9.13 bounded lifecycle).
   const writes: string[] = [];

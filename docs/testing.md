@@ -64,7 +64,7 @@ Deliberately **not** tested:
 - **Pi runtime linkage:** `scripts/dev/link-pi-runtime.sh` symlinks the globally installed
   Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) into the repo's
   gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
-  runtime. Pi 0.85.1 is the minimum supported version, so a `pi update` followed by
+  runtime. Pi 0.86.0 is the minimum supported version, so a `pi update` followed by
   `npm test` is the drift detector.
 - **Testability route:** pure domain logic lives in importable domain modules; see
   "Public interfaces" above. Pi imports only each extension's default entry point, so
@@ -262,8 +262,10 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 
 ## Layer 4: startup smoke (tmux, local-only)
 
-`npm run test:smoke` launches real `pi` processes in isolated tmux sessions with no
-model call required:
+`npm run test:smoke` launches the installed Pi runtime linked by `npm run link-pi` in
+isolated tmux sessions with no model call required. The harness invokes the linked CLI
+directly: an isolated fixture `HOME` must not change how a user shell wrapper locates
+Node or Pi itself.
 
 - `test:smoke:traceline` resumes a crafted session with adjacent collapsed thinking
   blocks, standalone strong-emphasis summary paragraphs, and empty or whitespace-only

@@ -19,7 +19,6 @@ import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
 import { assistantMessage } from "../helpers.ts";
 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
-
 // ---------------------------------------------------------------------------------------
 // Module exports contextimate imports at load time.
 
@@ -105,6 +104,7 @@ test("contextimate regexes parse the system prompt Pi actually builds", async ()
   const remainder = contextimate.getPromptRemainder(prompt);
   assert.ok(!remainder.includes("<project_instructions"), "PROJECT_CONTEXT_RE no longer strips the context block");
   assert.ok(!remainder.includes("<available_skills>"), "AVAILABLE_SKILLS_RE no longer strips the skills block");
+  assert.ok(!remainder.includes("<skills>"), "Pi's outer skills wrapper leaked into the runtime prompt row");
 });
 
 test("startup resource list still renders [Section] headers contextimate anchors on", () => {

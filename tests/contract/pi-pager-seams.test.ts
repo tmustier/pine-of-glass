@@ -45,8 +45,14 @@ test("ToolExecutionComponent seams the pager piggybacks on", () => {
     "image blocks no longer filtered by type — convertedImages indexing drifted",
   );
   assert.ok(
-    source.includes("this.convertedImages.set(index, converted)"),
-    "convertedImages no longer keyed by image-block index — the pager's kitty reuse drifted",
+    source.includes("this.convertedImages.set(index, {") &&
+      source.includes("sourceData,") && source.includes("sourceMimeType,") &&
+      source.includes("...converted,"),
+    "convertedImages no longer records source identity with the converted pixels — the pager's kitty reuse drifted",
+  );
+  assert.ok(
+    source.includes("cached?.sourceData === img.data && cached.sourceMimeType === img.mimeType"),
+    "native image rendering no longer validates conversion source identity — re-check the pager's stale-image guard",
   );
   assert.ok(
     /caps\.images === "kitty" && imageMimeType !== "image\/png"/.test(source),

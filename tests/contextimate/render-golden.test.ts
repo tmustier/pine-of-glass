@@ -68,9 +68,9 @@ test("compact view goldens at 80 and 120 columns", () => {
   expectGolden("contextimate-compact-codex-100.txt", rendered(renderCompact(fixtureSnapshot(codexModel), plainTheme, 100)));
 });
 
-test("compact view golden for an adapter-injected <skills_instructions> list", () => {
+test("compact view golden for an adapter-injected <codex_skills> list", () => {
   const snapshot = fixtureSnapshot(codexModel, { activeTools: ["search"], prompt: () => fixtureCodexSystemPrompt() });
-  expectGolden("contextimate-compact-codex-skills-instructions-100.txt", rendered(renderCompact(snapshot, plainTheme, 100)));
+  expectGolden("contextimate-compact-codex-skills-100.txt", rendered(renderCompact(snapshot, plainTheme, 100)));
 });
 
 // The golden normalizes the trailing newline away, so the panel tail spacer
