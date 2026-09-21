@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.12.1 (2026-09-21)
+
+- Require Pi 0.86.0 or later and support its revised extension lifecycle and prompt
+  structure. [#123](https://github.com/tmustier/pine-of-glass/pull/123).
+  Contextimate reads Pi's structured project context and skill wrappers, including
+  the Codex skill index.
+- Cachemire and Meantime distinguish user-initiated agent calls from Pi's background
+  cache warming. Cachemire restores persisted `cache_warm` usage into its ledger and
+  lineage, labels warm calls separately, preserves compaction boundaries, and keeps
+  cache fingerprints and observed retention windows when rebuilding a session.
+- Traceline reuses Pi's converted image only when its source data and MIME type still
+  match the current image block, avoiding stale pixels during streaming replacement.
+- Development: installed-Pi contracts follow the Pi 0.86 APIs, and real-Pi smoke tests
+  invoke the linked CLI directly so an isolated test home cannot break a user shell
+  wrapper's runtime path.
+
 ## 0.12.0 (2026-09-10)
 
 - Cachemire lets the bill outrank the payload for thinking-effort changes.
