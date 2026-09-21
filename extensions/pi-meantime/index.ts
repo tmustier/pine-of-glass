@@ -38,6 +38,9 @@ interface MeantimeState {
   toolIntervals: Interval[];
   /** The span between a resolved call and the next request: its tools + harness gap. */
   pendingPhase?: { callIndex: number; startedAt: number };
+  /** Pi's context event arms exactly one logical agent call. Background provider
+   * traffic such as cache warming bypasses it and must not own timing state. */
+  requestArmed: boolean;
   runActive: boolean;
   /** Accumulated out-of-run time (agent settled → next agent start). */
   idleMs: number;
@@ -69,6 +72,7 @@ function state(): MeantimeState {
       calls: [],
       openTools: new Map(),
       toolIntervals: [],
+      requestArmed: false,
       runActive: false,
       idleMs: 0,
       idleSince: now,
@@ -88,6 +92,7 @@ function resetState(now: number): void {
   s.openTools = new Map();
   s.toolIntervals = [];
   s.pendingPhase = undefined;
+  s.requestArmed = false;
   s.runActive = false;
   s.idleMs = 0;
   s.idleSince = now;
@@ -224,11 +229,17 @@ export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void
     updateWidget(now);
   });
 
+  pi.on("context", async () => {
+    s.requestArmed = true;
+  });
+
   pi.on("before_provider_request", async () => {
+    if (!s.requestArmed) return;
+    s.requestArmed = false;
     const now = Date.now();
     finalizePendingPhase(now, true);
-    // A provider retry re-fires this event: the wait clock honestly restarts with the
-    // attempt actually in flight.
+    // Provider-library retries stay inside this stream. A later background
+    // cache-warming hook cannot replace the live measurement.
     s.live = newLiveCall(s.calls.length + 1, now);
     updateWidget(now);
   });
@@ -285,6 +296,7 @@ export function registerMeantime(pi: ExtensionAPI, config: MeantimeConfig): void
   pi.on("agent_end", async () => {
     const now = Date.now();
     // A send that never produced usage (abort/error) must not linger as a phantom call.
+    s.requestArmed = false;
     s.live = undefined;
     finalizePendingPhase(now, false);
     s.runActive = false;

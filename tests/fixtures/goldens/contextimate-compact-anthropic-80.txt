@@ -8,7 +8,7 @@
 
   ▸ ~/projects/demo/AGENTS.md  ~0.0k tokens (0.1k ch)
 
-  ▸ Skill frontmatter (3)      ~0.3k tokens (0.7k ch)
+  ▸ Skill frontmatter (3)      ~0.4k tokens (0.9k ch)
     alpha-skill                ~0.1k  Handles A & B cases with a long descripti…
     beta-skill                 ~0.1k  It's the medium one.
     gamma                      ~0.1k  Tiny.
@@ -19,13 +19,13 @@
     bash                       ~0.1k  Execute a bash command in the current wor…
     write                       -     (inactive) Write content to a file.
 
-  Total harness                ~0.9k tokens (2.3k ch · <1% ctx)
+  Total harness                ~0.9k tokens (2.5k ch · <1% ctx)
 
   Tool outputs                              ~20.1k tokens (52.3k ch)
   Messages                                   ~3.1k tokens (8.1k ch)
   Thinking summaries                         ~0.5k tokens (1.2k ch)
   Reasoning context                          12.0k tokens (provider)
   Unattributed                              ~27.7k tokens (accounting gap)
-  Total session                             ~63.5k tokens (~32% ctx · Pi-based)
+  Total session                             ~63.4k tokens (~32% ctx · Pi-based)
   Total request                              64.3k tokens (32.2% / 200k ctx)
-  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.9k · session ~63.5k · free 135.7k
+  █████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  harness ~0.9k · session ~63.4k · free 135.7k

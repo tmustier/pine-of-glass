@@ -112,6 +112,31 @@ test("links a live request snapshot after Pi persists its assistant response", (
   assert.ok(live.fingerprint);
 });
 
+test("cache warming usage is transparent to the request parent and becomes the freshness baseline", () => {
+  const entries = [
+    { type: "message", id: "user", parentId: null, timestamp: new Date(1_000).toISOString(), message: { role: "user", content: "hello", timestamp: 1_000 } },
+    {
+      type: "usage", id: "warm", parentId: "user", timestamp: new Date(270_000).toISOString(),
+      kind: "cache_warm", provider: "anthropic", model: "claude-opus-4-8",
+      usage: usage(100, 99_900, 0, 1),
+    },
+    {
+      type: "message", id: "assistant", parentId: "warm", timestamp: new Date(280_000).toISOString(),
+      message: assistant(280_000, 100_000),
+    },
+  ];
+  const snapshots = restoreLineageSnapshots(entries);
+  const response = snapshotById(snapshots, "assistant");
+  const warm = snapshotById(snapshots, "warm");
+  assert.equal(response.requestLeafId, "user", "non-context usage cannot become the assistant request leaf");
+  assert.equal(warm.api, "anthropic-messages", "the replay inherits the exact route it refreshed");
+  assert.equal(findBranchBaseline(entries, "assistant", snapshots), warm);
+
+  const live = { ...response, responseEntryId: undefined, fingerprint: fingerprintPayload(payload(["hello"])) };
+  hydrateLineageResponseIds([live], entries);
+  assert.equal(live.responseEntryId, "assistant", "a warm entry inserted mid-stream must not break live response linking");
+});
+
 test("returning to a warm branch uses its compatible descendants, not a sibling", () => {
   const entries = branchedEntries(30_000);
   const snapshots = restoreLineageSnapshots(entries);

@@ -13,8 +13,10 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSy
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { linkedPiLaunch } from "./pi-launch.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const pi = linkedPiLaunch(repoRoot);
 const session = `pog-smoke-${process.pid}`;
 const failures = [];
 
@@ -61,8 +63,8 @@ if (run(["tmux", "-V"]).status !== 0) {
   console.error("tmux not available — smoke test requires a local tmux");
   process.exit(2);
 }
-if (run(["pi", "--version"]).status !== 0) {
-  console.error("pi not on PATH — smoke test requires an installed pi");
+if (run([...pi.argv, "--version"]).status !== 0) {
+  console.error("linked Pi runtime failed to start");
   process.exit(2);
 }
 
@@ -124,7 +126,7 @@ let pane = "";
 try {
   const launch = run([
     "tmux", "new-session", "-d", "-s", session, "-x", "120", "-y", "45",
-    `cd ${JSON.stringify(fixtureDir)} && HOME=${JSON.stringify(fixtureHome)} pi --no-session`,
+    `cd ${JSON.stringify(fixtureDir)} && HOME=${JSON.stringify(fixtureHome)} ${pi.shell} --no-session`,
   ]);
   if (launch.status !== 0) {
     console.error(`tmux session failed to start: ${launch.stderr}`);

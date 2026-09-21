@@ -1,3 +1,4 @@
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { CallCause, CallClassification, CallRecord, UsageLike } from "./types.ts";
 
 type RestoreClassifier = (args: {
@@ -6,6 +7,7 @@ type RestoreClassifier = (args: {
   usage: UsageLike;
   expectedRead: number;
   modelSwitched?: boolean;
+  compacted?: boolean;
   fingerprintCause?: CallCause;
 }) => CallClassification;
 
@@ -13,27 +15,72 @@ function identityChanged(a: string | undefined, b: string | undefined): boolean 
   return a !== undefined && b !== undefined && a !== b;
 }
 
-function stringField(message: Record<string, unknown>, key: string): string | undefined {
-  return typeof message[key] === "string" ? message[key] as string : undefined;
+type PersistedCall = {
+  at: number;
+  usage: UsageLike;
+  provider?: string;
+  model?: string;
+  api?: string;
+  warm: boolean;
+};
+
+function callFromEntry(entry: SessionEntry): PersistedCall | undefined {
+  if (entry.type === "usage" && entry.kind === "cache_warm") {
+    const parsedAt = Date.parse(entry.timestamp);
+    if (!Number.isFinite(parsedAt)) return undefined;
+    return {
+      at: parsedAt,
+      usage: entry.usage,
+      provider: entry.provider,
+      model: entry.model,
+      warm: true,
+    };
+  }
+  if (entry.type !== "message" || entry.message.role !== "assistant") return undefined;
+  const message = entry.message;
+  const entryAt = Date.parse(entry.timestamp);
+  return {
+    at: message.timestamp ?? (Number.isFinite(entryAt) ? entryAt : 0),
+    usage: message.usage,
+    provider: message.provider,
+    model: message.model,
+    api: message.api,
+    warm: false,
+  };
 }
 
-/** Rebuild active-branch ledger rows without inventing request-time causes. */
+/** Rebuild active-branch ledger rows, including Pi cache warming usage, without
+ * inventing request-time causes. */
 export function restoreBranchRecords(
-  messages: Array<Record<string, unknown>>,
+  entries: readonly SessionEntry[],
   classify: RestoreClassifier,
 ): CallRecord[] {
   const records: CallRecord[] = [];
   let previousAt: number | undefined;
   let previousIdentity: { provider?: string; model?: string; api?: string } | undefined;
   let expectedRead = 0;
-  for (const message of messages) {
-    if (message.role !== "assistant") continue;
-    const usage = message.usage as UsageLike | undefined;
+  let compacted = false;
+  for (const entry of entries) {
+    if (entry.type === "compaction") {
+      compacted = true;
+      continue;
+    }
+    const call = callFromEntry(entry);
+    if (!call) continue;
+    const { usage } = call;
     if (!usage || (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0)) continue;
-    const at = typeof message.timestamp === "number" ? message.timestamp : 0;
+    const at = call.at;
     // A model-identity change between persisted calls is in the data, not invented:
     // the previous expectation is old-currency and the switch itself names the cause.
-    const identity = { provider: stringField(message, "provider"), model: stringField(message, "model"), api: stringField(message, "api") };
+    const inheritedApi = call.warm && previousIdentity !== undefined &&
+      previousIdentity.provider === call.provider && previousIdentity.model === call.model
+      ? previousIdentity.api
+      : undefined;
+    const identity = {
+      provider: call.provider,
+      model: call.model,
+      api: call.api ?? inheritedApi,
+    };
     const switched = previousIdentity !== undefined && (
       identityChanged(previousIdentity.provider, identity.provider) ||
       identityChanged(previousIdentity.model, identity.model) ||
@@ -45,13 +92,14 @@ export function restoreBranchRecords(
       usage,
       expectedRead,
       modelSwitched: switched,
+      compacted,
       fingerprintCause: switched
         ? { kind: "model", detail: `model switched ${previousIdentity?.model ?? "previous model"} \u2192 ${identity.model ?? "current model"}` }
         : undefined,
     });
     if (
       classification.cause && classification.kind !== "cold" && classification.kind !== "hit" &&
-      classification.cause.kind !== "model"
+      classification.cause.kind !== "model" && classification.cause.kind !== "compaction"
     ) {
       classification.cause = { kind: "restored", detail: "restored session (cause unknown)" };
     }
@@ -64,12 +112,15 @@ export function restoreBranchRecords(
       classification,
       rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
       switched: switched ? true : undefined,
+      postCompaction: compacted ? { modelSwitched: switched } : undefined,
       costUsd: usage.cost?.total,
+      warm: call.warm ? true : undefined,
       restored: true,
     });
     previousAt = at;
     previousIdentity = identity;
     expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
+    compacted = false;
   }
   return records;
 }

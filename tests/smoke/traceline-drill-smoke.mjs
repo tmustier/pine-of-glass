@@ -12,8 +12,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { linkedPiLaunch } from "./pi-launch.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const pi = linkedPiLaunch(repoRoot);
 const extensionPath = join(repoRoot, "extensions", "pi-traceline", "index.ts");
 const tmuxSession = `pog-drill-${process.pid}`;
 const readySentinel = "DRILL_SMOKE_READY";
@@ -201,8 +203,8 @@ if (run(["tmux", "-V"]).status !== 0) {
   console.error("tmux not available: real-Pi drill smoke requires tmux");
   process.exit(2);
 }
-if (run(["pi", "--version"]).status !== 0) {
-  console.error("pi not on PATH: real-Pi drill smoke requires an installed Pi");
+if (run([...pi.argv, "--version"]).status !== 0) {
+  console.error("linked Pi runtime failed to start: real-Pi drill smoke cannot run");
   process.exit(2);
 }
 
@@ -221,7 +223,7 @@ try {
   const command = [
     "exec env",
     `HOME=${shellQuote(fixtureHome)}`,
-    "pi",
+    pi.shell,
     "--no-extensions",
     "--no-skills",
     "--no-prompt-templates",

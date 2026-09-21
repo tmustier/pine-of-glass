@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Context, FetchFunction, Model } from "@earendil-works/pi-ai";
+import { normalizeContext, type Context, type FetchFunction, type Model } from "@earendil-works/pi-ai";
 import { streamSimple as streamOpenAICompletions } from "@earendil-works/pi-ai/api/openai-completions";
 
 import { isJsonObject } from "../../extensions/_lib/boundary.ts";
@@ -49,7 +49,7 @@ async function accountCompletionUsage(provider: string, usage: Record<string, un
     `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
     { headers: { "content-type": "text/event-stream" } },
   );
-  return streamOpenAICompletions(model, CONTEXT, { apiKey: "test", fetch }).result();
+  return streamOpenAICompletions(model, normalizeContext(CONTEXT), { apiKey: "test", fetch }).result();
 }
 
 test("native OpenAI Completions accounts top-level cached_tokens for affected providers", async () => {
@@ -152,7 +152,7 @@ test("Pi threads before_provider_request replacements through later extensions i
   const runner = readFileSync(join(piRoot, "dist", "core", "extensions", "runner.js"), "utf8");
   const emit = runner.match(/async emitBeforeProviderRequest\(payload\) \{[\s\S]*?\n {4}\}\n/)?.[0];
   assert.ok(emit, "emitBeforeProviderRequest moved: re-verify Cachemire's evidence model against the new hook order");
-  assert.match(emit, /for \(const ext of this\.extensions\) \{\s*const handlers = ext\.handlers\.get\("before_provider_request"\)/);
+  assert.match(emit, /snapshotEventHandlers\(this\.extensions, "before_provider_request"\)/);
   assert.match(emit, /payload: currentPayload,/);
   assert.match(emit, /if \(handlerResult !== undefined\) \{\s*currentPayload = handlerResult;/);
 });

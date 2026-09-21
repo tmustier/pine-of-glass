@@ -56,9 +56,23 @@ test("prompt remainder strips project context and skills blocks entirely", () =>
   const remainder = getPromptRemainder(fixtureSystemPrompt());
   assert.ok(!remainder.includes("<project_instructions"));
   assert.ok(!remainder.includes("<available_skills>"));
+  assert.ok(!remainder.includes("<skills>"));
   assert.ok(!remainder.includes("alpha-skill"));
   assert.ok(remainder.includes("You are a fixture harness"));
   assert.ok(remainder.includes("Current date: 2026-06-09"));
+});
+
+test("legacy unwrapped skill and blank-padded project blocks still parse", () => {
+  const prompt = fixtureSystemPrompt()
+    .replace("<project_context>\n", "<project_context>\n\n")
+    .replace("\n</project_context>", "\n\n</project_context>")
+    .replace("<skills>\n", "")
+    .replace("\n</skills>", "");
+  assert.equal(parseContextSections(prompt, 4).length, 2);
+  assert.equal(parseSkillsBlock(prompt, 4)?.skills.length, 3);
+  const remainder = getPromptRemainder(prompt);
+  assert.ok(!remainder.includes("<project_instructions"));
+  assert.ok(!remainder.includes("<available_skills>"));
 });
 
 test("runtime-addition attribution counts only verified, deduplicated prompt text (#9)", () => {
@@ -116,6 +130,15 @@ test("compact <skills_instructions> list parses into the same skills row as the 
   const remainder = getPromptRemainder(prompt);
   assert.ok(!remainder.includes("<skills_instructions>"));
   assert.ok(remainder.includes("Current working directory"));
+});
+
+test("structured <codex_skills> list uses the same compact grammar", () => {
+  const prompt = fixtureCodexSystemPrompt()
+    .replace("<skills_instructions>", "<codex_skills>")
+    .replace("</skills_instructions>", "</codex_skills>");
+  const { skills } = buildSkillsSection(prompt, 4);
+  assert.deepEqual(skills.map((skill) => skill.name), ["alpha-skill", "beta-skill", "gamma"]);
+  assert.ok(!getPromptRemainder(prompt).includes("<codex_skills>"));
 });
 
 test("prompt without context/skills blocks degrades to remainder-only", () => {

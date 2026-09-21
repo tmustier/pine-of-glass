@@ -8,6 +8,7 @@
 import { getLanguageFromPath, highlightCode, type Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getImageDimensions, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../_lib/ansi.ts";
+import { isJsonObject } from "../_lib/boundary.ts";
 import { resultTextCharCount, type ToolRowLike } from "../_lib/chat.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { SEP, ink, type Tone } from "../_lib/style.ts";
@@ -212,7 +213,7 @@ export function imagePixelSource(
   if (call.showImages === false) return undefined;
   const caps = getCapabilities();
   if (!caps.images) return undefined;
-  const converted = convertedImage(call, imageIndex);
+  const converted = convertedImage(call, imageIndex, block);
   const data = converted?.data ?? (typeof block.data === "string" ? block.data : undefined);
   const mimeType = converted?.mimeType ?? (typeof block.mimeType === "string" ? block.mimeType : undefined);
   if (!data || !mimeType) return undefined;
@@ -220,13 +221,18 @@ export function imagePixelSource(
   return { data, mimeType };
 }
 
-function convertedImage(call: ToolRowLike, imageIndex: number): { data: string; mimeType: string } | undefined {
+function convertedImage(
+  call: ToolRowLike,
+  imageIndex: number,
+  block: ImageBlockLike,
+): { data: string; mimeType: string } | undefined {
   const map = call.convertedImages;
   if (!(map instanceof Map)) return undefined;
   const value: unknown = map.get(imageIndex);
-  if (!value || typeof value !== "object") return undefined;
-  const typed = value as { data?: unknown; mimeType?: unknown };
-  return typeof typed.data === "string" && typeof typed.mimeType === "string"
-    ? { data: typed.data, mimeType: typed.mimeType }
+  if (!isJsonObject(value)) return undefined;
+  const sourceMatches = typeof block.data === "string" && typeof block.mimeType === "string" &&
+    value.sourceData === block.data && value.sourceMimeType === block.mimeType;
+  return sourceMatches && typeof value.data === "string" && typeof value.mimeType === "string"
+    ? { data: value.data, mimeType: value.mimeType }
     : undefined;
 }

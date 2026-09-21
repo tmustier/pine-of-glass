@@ -46,6 +46,7 @@ function sessionContext(id: string, notifications?: string[]): unknown {
     sessionManager: {
       getSessionId: () => id,
       getEntries: () => [],
+      getBranch: () => [],
       getLeafId: () => undefined,
     },
     modelRegistry: {

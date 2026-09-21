@@ -124,7 +124,6 @@ Guidelines:
 - Prefer rg over grep for searching.
 
 <project_context>
-
 Project-specific instructions and guidelines:
 
 <project_instructions path="${home}/.pi/agent/AGENTS.md">
@@ -136,12 +135,12 @@ Prefer clarity &amp; precision in every reply.
 # Demo project
 Run the demo suite before committing.
 </project_instructions>
-
 </project_context>
 
-
+<skills>
 The following skills provide specialized instructions for specific tasks.
-Use the read tool to load a skill when the task matches its description.
+Use the read tool to load a skill's file when the task matches its description.
+When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.
 
 <available_skills>
   <skill>
@@ -160,6 +159,8 @@ Use the read tool to load a skill when the task matches its description.
     <location>${home}/.pi/agent/skills/gamma/SKILL.md</location>
   </skill>
 </available_skills>
+</skills>
+
 Current date: 2026-06-09`;
 }
 

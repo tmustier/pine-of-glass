@@ -1,6 +1,10 @@
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
-import { SEP } from "../_lib/style.ts";
-import type { BreakPrediction, CallRecord, RunAggregate, UsageLike } from "./types.ts";
+import { SCALE, SEP, panelHeader } from "../_lib/style.ts";
+import { UNKNOWN_WINDOW } from "./clock.ts";
+import { sessionSavings } from "./economics.ts";
+import { windowLabel } from "./retention.ts";
+import type { BreakPrediction, CacheWindow, CallRecord, RunAggregate, UsageLike } from "./types.ts";
 
 export function promptTokens(usage: UsageLike): number {
   return usage.input + usage.cacheRead + usage.cacheWrite;
@@ -88,12 +92,70 @@ export function renderMissLine(record: CallRecord): string {
 /** The `event` cell of a `/cache` ledger row. */
 export function renderLedgerEvent(record: CallRecord): string {
   const { kind, cause } = record.classification;
+  const prefix = record.warm ? "warm \u00b7 " : "";
   if (kind === "hit") {
     const change = record.thinkingChange;
-    return change ? `hit \u2014 effort ${change.from} \u2192 ${change.to} kept the prefix` : "hit";
+    return prefix + (change ? `hit \u2014 effort ${change.from} \u2192 ${change.to} kept the prefix` : "hit");
   }
-  if (kind === "cold") return "cold start";
-  return `${kind} \u2014 ${cause?.detail ?? "unknown"}`;
+  if (kind === "cold") return `${prefix}cold start`;
+  return `${prefix}${kind} \u2014 ${cause?.detail ?? "unknown"}`;
+}
+
+const EVENT_GLYPHS: Record<CallRecord["classification"]["kind"], string> = {
+  cold: SCALE.cold,
+  hit: SCALE.hit,
+  partial: SCALE.partial,
+  miss: SCALE.miss,
+};
+
+/** Aligned `/cache` call ledger (design language §§4, 8). */
+export function renderLedger(
+  records: CallRecord[],
+  options: { providerLabel?: string; window?: CacheWindow; modelLabel?: string; theme?: Theme } = {},
+): string[] {
+  const profile: string[] = ["cache & loop ledger"];
+  if (options.providerLabel) profile.push(options.providerLabel);
+  profile.push(windowLabel(options.window ?? UNKNOWN_WINDOW));
+  if (options.modelLabel) profile.push(options.modelLabel);
+  const lines: string[] = panelHeader(options.theme, "Cachemire", { hint: profile.join(SEP) }).slice(1);
+  if (records.length === 0) return [...lines, "  no model calls yet"];
+  const col = (value: string, width: number) => value.padStart(width);
+  lines.push(
+    `  ${col("call", 4)} ${col("gap", 7)} ${col("input", 8)} ${col("read", 8)} ${col("wrote", 8)} ${col("out", 7)} ${col("cost", 7)}  event`,
+  );
+  for (const record of records) {
+    const { usage } = record;
+    lines.push(
+      `  ${col(String(record.index), 4)} ${col(record.gapMs !== undefined ? formatDuration(record.gapMs) : "\u2014", 7)}` +
+      ` ${col(compactCount(usage.input), 8)} ${col(compactCount(usage.cacheRead), 8)}` +
+      ` ${col(compactCount(usage.cacheWrite), 8)} ${col(compactCount(usage.output), 7)}` +
+      ` ${col(record.costUsd !== undefined ? formatUsd(record.costUsd) : "\u2014", 7)}` +
+      `  ${EVENT_GLYPHS[record.classification.kind]} ${renderLedgerEvent(record)}${record.restored ? " (restored)" : ""}`,
+    );
+  }
+  const totals = records.reduce(
+    (sum, record) => ({
+      calls: sum.calls + 1,
+      input: sum.input + record.usage.input,
+      read: sum.read + record.usage.cacheRead,
+      wrote: sum.wrote + record.usage.cacheWrite,
+      out: sum.out + record.usage.output,
+      cost: sum.cost + (record.costUsd ?? 0),
+    }),
+    { calls: 0, input: 0, read: 0, wrote: 0, out: 0, cost: 0 },
+  );
+  lines.push(
+    `  totals: ${totals.calls} calls \u00b7 input ${compactCount(totals.input)} \u00b7 read ${compactCount(totals.read)}` +
+    ` \u00b7 wrote ${compactCount(totals.wrote)} \u00b7 out ${compactCount(totals.out)} \u00b7 ${formatUsd(totals.cost)}`,
+  );
+  const savings = sessionSavings(records);
+  if (savings && savings.saved > 0.001) {
+    lines.push(
+      `  caching saved ~${formatUsd(savings.saved)} vs uncached ${formatUsd(savings.uncached)}` +
+      ` (\u2212${savings.pct.toFixed(0)}%) \u00b7 API-priced; notional on subscription`,
+    );
+  }
+  return lines;
 }
 
 // A predicted break that resolved into a hit: good news, and a small lesson about

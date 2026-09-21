@@ -86,6 +86,7 @@ const assistant = billed(fable, { input: 2, cacheRead: 0, cacheWrite: 100_000 })
 async function call(host: Awaited<ReturnType<typeof hostExtension>>, payload: unknown, message: AssistantMessage) {
 	const runner = host.session.extensionRunner;
 	host.session.sessionManager.appendMessage({ role: "user", content: String(host.session.sessionManager.getEntries().length), timestamp: Date.now() });
+	await runner.emitContext([]);
 	await runner.emitBeforeProviderRequest(payload);
 	await runner.emitMessageEnd({ type: "message_end", message });
 	host.session.sessionManager.appendMessage(message);
@@ -95,6 +96,7 @@ test("thinking_level_select keeps direct Claude Fable 5.1 cache UI silent", asyn
 	const project = new IsolatedProject();
 	const host = await hostExtension(piCachemire, { project, model: fable, thinkingLevel: "low" });
 	try {
+		await host.session.extensionRunner.emitContext([]);
 		await host.session.extensionRunner.emitBeforeProviderRequest(anthropicPayload(fable, "low", ["first"]));
 		await host.session.extensionRunner.emitMessageEnd({ type: "message_end", message: assistant });
 		assert.equal(host.ui.widgetLines("pi-cachemire"), undefined, "a healthy cache is silent");
@@ -127,6 +129,7 @@ test("a billed hit after an effort change silences a route the contract expects 
 		await runner.emit({ type: "thinking_level_select", previousLevel: "low", level: "high" });
 		assert.match(host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "", /thinking level changed/);
 		host.session.sessionManager.appendMessage({ role: "user", content: "second", timestamp: Date.now() });
+		await runner.emitContext([]);
 		await runner.emitBeforeProviderRequest(anthropicPayload(fableFive, "high", ["first", "second"]));
 		assert.equal(notices.length, 1);
 		assert.match(notices[0]!, /cache breaking .* cause: thinking changed \(thinking effort low \u2192 thinking effort high\)/);
@@ -145,6 +148,7 @@ test("a billed hit after an effort change silences a route the contract expects 
 		await runner.emit({ type: "thinking_level_select", previousLevel: "high", level: "low" });
 		assert.equal(host.ui.widgetLines("pi-cachemire"), undefined, "evidence must silence the stale clock");
 		host.session.sessionManager.appendMessage({ role: "user", content: "third", timestamp: Date.now() });
+		await runner.emitContext([]);
 		await runner.emitBeforeProviderRequest(anthropicPayload(fableFive, "low", ["first", "second", "third"]));
 		assert.equal(notices.length, 2, "evidence must silence the in-flight prediction");
 		const quiet = billed(fableFive, { input: 200, cacheRead: 100_300, cacheWrite: 300 });
@@ -249,6 +253,7 @@ test("a billed miss on a contract-neutral route names the effort change and char
 		host.session.setThinkingLevel("low");
 		assert.match(host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "", /thinking level changed/, "a billed miss overrides the contract");
 		host.session.sessionManager.appendMessage({ role: "user", content: "third", timestamp: Date.now() });
+		await runner.emitContext([]);
 		await runner.emitBeforeProviderRequest(anthropicPayload(fable, "low", ["first", "second", "third"]));
 		assert.equal(notices.length, 2);
 		assert.match(notices[1]!, /^\u25cd cache breaking .* cause: thinking changed \(thinking effort high \u2192 thinking effort low\)$/);

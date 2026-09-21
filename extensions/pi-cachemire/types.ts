@@ -69,6 +69,8 @@ export interface CallRecord {
   thinkingChange?: ThinkingEvidence;
   costUsd?: number;
   uncachedUsd?: number;
+  /** Pi's persisted background cache refresh rather than an agent-loop response. */
+  warm?: true;
   restored?: boolean;
 }
 

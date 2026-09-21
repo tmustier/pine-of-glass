@@ -11,13 +11,34 @@ if [[ -z "$pi_bin" ]]; then
   exit 1
 fi
 
-# Resolve the installed package dir from the pi launcher symlink.
+# Launchers may be a package symlink or a shell wrapper that invokes Pi from a path
+# containing $HOME. Inspect both without executing the wrapper under a substituted HOME.
 pi_real="$(readlink -f "$pi_bin")"
-pi_pkg="$pi_real"
-while [[ "$pi_pkg" != "/" && "$(basename "$pi_pkg")" != "pi-coding-agent" ]]; do
-  pi_pkg="$(dirname "$pi_pkg")"
+candidates=("$pi_real")
+while IFS= read -r candidate; do
+  candidate="${candidate/#\$HOME/$HOME}"
+  candidate="${candidate/#\$\{HOME\}/$HOME}"
+  candidate="${candidate/#\~/$HOME}"
+  [[ -n "$candidate" ]] && candidates+=("$candidate")
+done < <(grep -Eo '(\$HOME|\$\{HOME\}|~|/)[^"[:space:]]*node_modules/@earendil-works/pi-coding-agent' "$pi_real" || true)
+npm_root="$(npm root -g 2>/dev/null || true)"
+if [[ -n "$npm_root" ]]; then
+  candidates+=("$npm_root/@earendil-works/pi-coding-agent")
+fi
+candidates+=("$HOME/.local/lib/node_modules/@earendil-works/pi-coding-agent")
+
+pi_pkg=""
+for candidate in "${candidates[@]}"; do
+  probe="$candidate"
+  while [[ "$probe" != "/" && "$(basename "$probe")" != "pi-coding-agent" ]]; do
+    probe="$(dirname "$probe")"
+  done
+  if [[ -f "$probe/package.json" ]]; then
+    pi_pkg="$probe"
+    break
+  fi
 done
-if [[ ! -f "$pi_pkg/package.json" ]]; then
+if [[ -z "$pi_pkg" ]]; then
   echo "error: could not locate pi-coding-agent package from $pi_bin" >&2
   exit 1
 fi

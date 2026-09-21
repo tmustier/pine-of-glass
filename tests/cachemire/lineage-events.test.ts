@@ -28,6 +28,11 @@ async function fire(runtime: ReturnType<typeof probe>, event: string, ...args: u
   for (const handler of runtime.handlers.get(event) ?? []) await handler(...args);
 }
 
+async function request(runtime: ReturnType<typeof probe>, event: unknown, ctx: unknown): Promise<void> {
+  await fire(runtime, "context", { type: "context", messages: [] }, ctx);
+  await fire(runtime, "before_provider_request", event, ctx);
+}
+
 function usage(input: number, cacheRead: number, cacheWrite = 0) {
   return {
     input,
@@ -79,6 +84,7 @@ function context(entries: unknown[], leaf: { id: string }, notifications: string
     },
     sessionManager: {
       getEntries: () => entries,
+      getBranch: () => entries,
       getLeafId: () => leaf.id,
     },
     modelRegistry: {
@@ -106,7 +112,7 @@ test("first request after hot reload diagnoses a changed tool schema", async () 
   const oldAssistant = assistant(now - 1_000, 100_000);
 
   await fire(oldRuntime, "session_start", { reason: "startup" }, oldContext);
-  await fire(oldRuntime, "before_provider_request", { payload: payload(["before reload"], [oldTool]) }, oldContext);
+  await request(oldRuntime, { payload: payload(["before reload"], [oldTool]) }, oldContext);
   await fire(oldRuntime, "message_end", { message: oldAssistant }, oldContext);
   entries.push({
     type: "message",
@@ -135,15 +141,14 @@ test("first request after hot reload diagnoses a changed tool schema", async () 
       ...oldTool,
       input_schema: { type: "object", properties: { code: { type: "string" } } },
     };
-    await fire(
+    await request(
       newRuntime,
-      "before_provider_request",
       { payload: payload(["before reload", "after reload"], [changedTool]) },
       newContext,
     );
     assert.match(notifications.at(-1)!, /cause: tools changed \(1 modified\)/);
   } finally {
-    await fire(newRuntime, "agent_end");
+    await fire(newRuntime, "agent_end", {}, newContext);
     await fire(newRuntime, "session_shutdown", { reason: "quit" });
   }
 });
@@ -165,17 +170,17 @@ test("session_tree rebases classification to the selected provider-known prompt"
   try {
     leaf.id = "assistant-base";
     await fire(runtime, "session_tree", { newLeafId: leaf.id, oldLeafId: "assistant-old" }, ctx);
-    await fire(runtime, "before_provider_request", { payload: payload(["base", "new branch"]) }, ctx);
-    await fire(runtime, "before_provider_request", { payload: payload(["base", "new branch"]) }, ctx);
+    await request(runtime, { payload: payload(["base", "new branch"]) }, ctx);
+    await request(runtime, { payload: payload(["base", "new branch"]) }, ctx);
     assert.equal(notifications.length, 0, "branching must not price the abandoned 200k leaf");
     await fire(runtime, "message_end", {
       message: { ...assistant(now, 100_000), usage: usage(0, 90_000, 10_000) },
     }, ctx);
 
-    await fire(runtime, "before_provider_request", {
+    await request(runtime, {
       payload: payload(["base", "new branch", "aborted suffix"]),
     }, ctx);
-    await fire(runtime, "agent_end");
+    await fire(runtime, "agent_end", {}, ctx);
     await runtime.commands.get("cache")?.("", ctx);
     assert.equal(notifications.length, 1);
     assert.match(notifications[0]!, /\s3\s+.*● hit/);

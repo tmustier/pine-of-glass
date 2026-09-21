@@ -10,15 +10,18 @@ export type SkillSummary = {
   tokens: number;
 };
 
-const PROJECT_CONTEXT_RE = /\n?<project_context>\n\n[\s\S]*?\n<\/project_context>\n?/;
+const PROJECT_CONTEXT_RE = /\n*<project_context>\n[\s\S]*?\n<\/project_context>\n*/;
 export const PROJECT_INSTRUCTIONS_RE = /<project_instructions path="([^"]*)">\n([\s\S]*?)\n<\/project_instructions>/g;
-export const AVAILABLE_SKILLS_RE = /\n\nThe following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>/;
+// Pi 0.86 wraps the complete index in <skills>; older Pi releases emitted the same
+// prose and <available_skills> list without the outer element. Consume either whole
+// block so wrapper text cannot leak into the runtime-system-prompt remainder.
+export const AVAILABLE_SKILLS_RE = /\n*(?:<skills>\n)?The following skills provide specialized instructions for specific tasks\.[\s\S]*?<available_skills>[\s\S]*?<\/available_skills>(?:\n<\/skills>)?\n*/;
 const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<location>([\s\S]*?)<\/location>\s*<\/skill>/g;
 // Pi emits <available_skills> only while read or bash is active. Codex-dialect adapters
 // (pi-codex-conversion) swap those tools out and re-inject the index per turn in upstream
 // Codex's compact form: `- name: description (file: path)`, description possibly empty
 // or spanning lines.
-export const SKILLS_INSTRUCTIONS_RE = /\n*<skills_instructions>\n[\s\S]*?<\/skills_instructions>/;
+export const SKILLS_INSTRUCTIONS_RE = /\n*<(skills_instructions|codex_skills)>\n[\s\S]*?<\/\1>/;
 const COMPACT_SKILL_RE = /^- (.+?): ([\s\S]*?) ?\(file: (.+?)\)$/gm;
 
 const SKILL_FORMATS = [

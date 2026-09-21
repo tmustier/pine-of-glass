@@ -190,3 +190,13 @@ main's lint changes with inferred section types and precise builder input contra
 Final lint, typecheck and all 369 tests pass, including the installed adapter contract.
 Earlier live GPT verification showed all 18 skills after a turn; the final changes are
 test data and type-only cleanup, with no additional live-model run.
+
+## 2026-09-21: Pi 0.86 compatibility
+
+Adapted structured prompt parsing, request lifecycle ownership, cache-warming usage
+accounting and converted-image reuse for Pi 0.86.1. Cachemire now restores warm usage
+without duplicating branch history and preserves compaction boundaries; Meantime ignores
+background provider hooks. Updated the real-Pi launcher so isolated fixture homes do not
+break shell wrappers. Lint, typecheck, all 397 tests and every real-Pi smoke pass. A live
+Pi 0.86.1 turn on `openai-codex/gpt-5.6-sol:medium` made one real bash tool call; the
+resulting filesystem state and clean extension lifecycle were verified independently.

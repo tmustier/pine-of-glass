@@ -4,9 +4,11 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { linkedPiLaunch } from "./pi-launch.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const quote = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
+const pi = linkedPiLaunch(root);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 export function createClickFixture(name, { extension = join(root, "extensions/pi-traceline/index.ts") } = {}) {
@@ -69,7 +71,7 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
     const sessionFile = join(cwd, "session.jsonl");
     writeFileSync(sessionFile, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
     tmux("-f", "/dev/null", "new-session", "-d", "-s", session, "-x", String(width), "-y", String(height), "-c", cwd,
-      `exec env HOME=${quote(home)} pi --tui-mode fullscreen --no-extensions --no-skills --no-prompt-templates --no-themes -e ${quote(extension)} --session ${quote(sessionFile)}`);
+      `exec env HOME=${quote(home)} ${pi.shell} --tui-mode fullscreen --no-extensions --no-skills --no-prompt-templates --no-themes -e ${quote(extension)} --session ${quote(sessionFile)}`);
     launched = true;
     console.log(`Monitor: ${monitor}`);
   }
@@ -78,7 +80,9 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
       console.log(`Kept for inspection: ${monitor}\nFixture HOME: ${home}`);
       return;
     }
-    try { if (launched) tmux("kill-session", "-t", session); }
+    try {
+      if (launched) spawnSync("tmux", ["-S", socket, "kill-session", "-t", session], { encoding: "utf8", timeout: 5000 });
+    }
     finally { rmSync(home, { recursive: true, force: true }); }
   }
   return {

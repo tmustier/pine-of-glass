@@ -1,5 +1,10 @@
-import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { buildSessionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionUIContext,
+  SessionEntry,
+  Theme,
+} from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { booleanValue, isJsonObject, positiveNumberValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
@@ -13,7 +18,7 @@ import {
 } from "../_lib/chatline.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
-import { GLYPH, SCALE, SEP, ink, panelHeader, type Tone } from "../_lib/style.ts";
+import { GLYPH, ink, type Tone } from "../_lib/style.ts";
 import {
   classifyCall,
   diffFingerprints,
@@ -33,14 +38,13 @@ import {
   resolveCacheLineage,
   restoreLineageSnapshots,
 } from "./lineage.ts";
-import { renderBreakingLine, renderHeldLine, renderLedgerEvent, renderMissLine, renderRunSummary } from "./render.ts";
+import { renderBreakingLine, renderHeldLine, renderLedger, renderMissLine, renderRunSummary } from "./render.ts";
 import {
   confirmedWindow,
   inferAnthropicTtlMs,
   OPENAI_EXTENDED_WINDOW,
   OPENAI_MINIMUM_WINDOW,
   retentionForRequest,
-  type RetentionMatch,
   windowLabel,
 } from "./retention.ts";
 import {
@@ -51,13 +55,12 @@ import {
   type ThinkingEvidenceLedger,
   thinkingRoute,
 } from "./thinking.ts";
+import { isWarmUsageEntry, syncWarmEntries, type WarmSyncState } from "./warm.ts";
 import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
-  CacheLineageSnapshot,
   CacheWindow,
   CachemireConfig,
   CallCause,
-  CallClassification,
   CallRecord,
   ModelRates,
   RequestFingerprint,
@@ -112,71 +115,6 @@ const DEFAULT_CONFIG: CachemireConfig = {
 // ◍ opens every loop-economics line, ○ ● ◑ ◌ are the status scale, and all colour
 // is theme-derived through ink() with raw-ANSI fallbacks before a Theme handle exists.
 
-// --- ledger lines ----------------------------------------------------------------------
-
-// The family status scale (design language §1): ○ cold · ● hit · ◑ partial · ◌ miss.
-const EVENT_GLYPHS: Record<CallClassification["kind"], string> = {
-  cold: SCALE.cold,
-  hit: SCALE.hit,
-  partial: SCALE.partial,
-  miss: SCALE.miss,
-};
-
-function renderLedger(
-  records: CallRecord[],
-  options: { providerLabel?: string; window?: CacheWindow; modelLabel?: string; theme?: Theme } = {},
-): string[] {
-  // The family panel-header form (design language §8): [Cachemire] brand line, with the
-  // descriptive title and provider profile demoted to the dim hint. The appended chat
-  // line carries its own spacer, so panelHeader's leading blank is dropped.
-  const profile: string[] = ["cache & loop ledger"];
-  if (options.providerLabel) profile.push(options.providerLabel);
-  profile.push(windowLabel(options.window ?? UNKNOWN_WINDOW));
-  if (options.modelLabel) profile.push(options.modelLabel);
-  const lines: string[] = panelHeader(options.theme, "Cachemire", { hint: profile.join(SEP) }).slice(1);
-  if (records.length === 0) {
-    lines.push("  no model calls yet");
-    return lines;
-  }
-  const col = (value: string, width: number) => value.padStart(width);
-  lines.push(
-    `  ${col("call", 4)} ${col("gap", 7)} ${col("input", 8)} ${col("read", 8)} ${col("wrote", 8)} ${col("out", 7)} ${col("cost", 7)}  event`,
-  );
-  for (const record of records) {
-    const { usage } = record;
-    lines.push(
-      `  ${col(String(record.index), 4)} ${col(record.gapMs !== undefined ? formatDuration(record.gapMs) : "\u2014", 7)}` +
-      ` ${col(compactCount(usage.input), 8)} ${col(compactCount(usage.cacheRead), 8)}` +
-      ` ${col(compactCount(usage.cacheWrite), 8)} ${col(compactCount(usage.output), 7)}` +
-      ` ${col(record.costUsd !== undefined ? formatUsd(record.costUsd) : "\u2014", 7)}` +
-      `  ${EVENT_GLYPHS[record.classification.kind]} ${renderLedgerEvent(record)}${record.restored ? " (restored)" : ""}`,
-    );
-  }
-  const totals = records.reduce(
-    (sum, record) => ({
-      calls: sum.calls + 1,
-      input: sum.input + record.usage.input,
-      read: sum.read + record.usage.cacheRead,
-      wrote: sum.wrote + record.usage.cacheWrite,
-      out: sum.out + record.usage.output,
-      cost: sum.cost + (record.costUsd ?? 0),
-    }),
-    { calls: 0, input: 0, read: 0, wrote: 0, out: 0, cost: 0 },
-  );
-  lines.push(
-    `  totals: ${totals.calls} calls \u00b7 input ${compactCount(totals.input)} \u00b7 read ${compactCount(totals.read)}` +
-    ` \u00b7 wrote ${compactCount(totals.wrote)} \u00b7 out ${compactCount(totals.out)} \u00b7 ${formatUsd(totals.cost)}`,
-  );
-  const savings = sessionSavings(records);
-  if (savings && savings.saved > 0.001) {
-    lines.push(
-      `  caching saved ~${formatUsd(savings.saved)} vs uncached ${formatUsd(savings.uncached)}` +
-      ` (\u2212${savings.pct.toFixed(0)}%) \u00b7 API-priced; notional on subscription`,
-    );
-  }
-  return lines;
-}
-
 // --- config ----------------------------------------------------------------------------
 
 function parseCachemireConfig(value: unknown): Partial<CachemireConfig> {
@@ -213,30 +151,23 @@ export type { AnchoredLine } from "../_lib/chatline.ts";
 
 // --- live state ------------------------------------------------------------------------
 
-interface CachemireState {
+interface CachemireState extends WarmSyncState {
   config: CachemireConfig;
   notifyFallback?: (plainText: string) => void;
-  records: CallRecord[];
-  lineages: CacheLineageSnapshot[];
+  /** A real agent request is armed by Pi's context event. Cache warming and
+   * summarization bypass that event and cannot replace pending request evidence. */
+  requestArmed: boolean;
   pendingFingerprint?: RequestFingerprint;
   pendingFingerprintCause?: CallCause;
   pendingRequestLeafId?: string | null;
-  pendingRetention?: RetentionMatch;
   pendingRequestAt?: number;
   pendingPreviousRequestAt?: number;
   pendingPreviousWindow?: CacheWindow;
   pendingCacheGapMs?: number;
-  prevCallRequestAt?: number;
-  lastRequestAt?: number;
-  window: CacheWindow;
   /** Model id at the time of the last billed call, and therefore of expectedRead. */
-  lastCallModelId?: string;
   /** Provider/api that billed the last call: the same id through a different
    * provider or wire api is a different cache (and possibly a different tokenizer). */
-  lastCallProvider?: string;
-  lastCallApi?: string;
   currentModelId?: string;
-  modelSwitched: boolean;
   /** Target-currency forecast while modelSwitched (issue #57); cleared by usage. */
   switchForecast?: SwitchForecast;
   /** Thinking level at the last billed call vs now; mirrors the model-switch pair. */
@@ -245,12 +176,9 @@ interface CachemireState {
   thinkingChanged: boolean;
   /** Billed effort-change verdicts per route; outlives sessions (see thinking.ts). */
   thinkingEvidence: ThinkingEvidenceLedger;
-  expectedRead: number;
   rates?: ModelRates;
   modelLabel?: string;
   providerLabel?: string;
-  compacted: boolean;
-  inCompaction: boolean;
   /** Chat lines cachemire appended, with anchors for re-attachment after pi rebuilds. */
   anchored: AnchoredLine[];
   /** Cached chat container: rebuilds empty it of recognizable rows, but the instance
@@ -278,6 +206,8 @@ function state(): CachemireState {
       config: DEFAULT_CONFIG,
       records: [],
       lineages: [],
+      requestArmed: false,
+      seenWarmEntryIds: new Set(),
       window: UNKNOWN_WINDOW,
       modelSwitched: false,
       thinkingChanged: false,
@@ -388,8 +318,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
     g.__piCachemireOwner = ownerToken;
     s.config = loadConfig(process.cwd());
     const entries = ctx.sessionManager.getEntries();
-    const { messages } = buildSessionContext(entries, ctx.sessionManager.getLeafId());
-    s.records = restoreBranchRecords(messages as unknown as Array<Record<string, unknown>>, classifyCall);
+    const branch = ctx.sessionManager.getBranch();
+    s.records = restoreBranchRecords(branch, classifyCall);
+    s.seenWarmEntryIds = new Set(entries.filter(isWarmUsageEntry).map((entry) => entry.id));
+    s.requestArmed = false;
     s.lineages = restoreLineageSnapshots(entries, event.reason === "reload" ? s.lineages : undefined);
     const baseline = findBranchBaseline(entries, ctx.sessionManager.getLeafId(), s.lineages);
     const model = ctx.model;
@@ -434,9 +366,16 @@ export default function piCachemire(pi: ExtensionAPI): void {
     g.__piCachemireOwner = undefined;
   });
 
+  pi.on("context", async (_event, ctx) => {
+    if (!ownsState()) return;
+    syncWarmEntries(s, ctx);
+    s.requestArmed = true;
+  });
+
   pi.on("before_provider_request", async (event, ctx) => {
     if (!ownsState()) return;
-    const firstAttempt = s.pendingRequestAt === undefined;
+    if (!s.requestArmed) return;
+    s.requestArmed = false;
     s.pendingFingerprint = fingerprintPayload(event.payload, thinkingRoute(ctx.model));
     const requestAt = Date.now();
     const entries = ctx.sessionManager.getEntries();
@@ -458,10 +397,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.pendingFingerprintCause = resolution.cause ??
       withheldThinkingCause(resolution.baseline?.fingerprint, s.pendingFingerprint);
     s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
-    if (firstAttempt) {
-      s.pendingPreviousRequestAt = s.lastRequestAt;
-      s.pendingPreviousWindow = s.window;
-    }
+    s.pendingPreviousRequestAt = s.lastRequestAt;
+    s.pendingPreviousWindow = s.window;
     s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
     s.pendingRetention = retentionForRequest({
       provider: ctx.model?.provider,
@@ -503,7 +440,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       );
       if (material) {
         const text = econLine("warning", renderBreakingLine(prediction));
-        if (s.pendingNotice) s.pendingNotice.setText(text); // provider retry: reuse the line
+        if (s.pendingNotice) s.pendingNotice.setText(text);
         else s.pendingNotice = appendChatLine(text);
       }
     }
@@ -565,6 +502,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // Checking out a branch billed by another model is a switch in lineage terms.
     refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
     restoreThinkingForPath(ctx, entries, event.newLeafId);
+    s.requestArmed = false;
     updateWidget();
   });
 
@@ -585,7 +523,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const message = event.message;
     if (message.role !== "assistant") return;
     const usage = message.usage;
-    if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) return;
+    if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) {
+      updateWidget();
+      return;
+    }
     const now = Date.now();
     // Idle gap between the previous request (which refreshed the TTL) and this one.
     const requestAt = s.pendingRequestAt ?? now;
@@ -705,10 +646,12 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("turn_end", async (_event, ctx) => {
     if (!ownsState()) return;
     hydrateLineageResponseIds(s.lineages, ctx.sessionManager.getEntries());
+    syncWarmEntries(s, ctx);
   });
 
-  pi.on("agent_end", async () => {
+  pi.on("agent_end", async (_event, ctx) => {
     if (!ownsState()) return;
+    s.requestArmed = false;
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
     if (s.pendingRequestAt !== undefined) {
       s.lastRequestAt = s.pendingPreviousRequestAt;
@@ -722,6 +665,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.pendingCacheGapMs = undefined;
       updateWidget();
     }
+    syncWarmEntries(s, ctx);
     const run = s.run;
     s.run = undefined;
     if (!run || !s.config.turnSummary || run.calls < s.config.turnSummaryMinCalls) return;
@@ -732,6 +676,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     description: "Show the cachemire cache & loop ledger",
     handler: async (_args, ctx) => {
       if (!ownsState() || !ctx.hasUI) return;
+      syncWarmEntries(s, ctx);
       const lines = renderLedger(s.records, {
         providerLabel: s.providerLabel,
         window: s.window,
@@ -775,6 +720,6 @@ export const internals = {
   renderRunSummary,
   renderMissLine,
   renderLedger,
-  restoreFromMessages: (messages: Array<Record<string, unknown>>) => restoreBranchRecords(messages, classifyCall),
+  restoreFromMessages: (entries: readonly SessionEntry[]) => restoreBranchRecords(entries, classifyCall),
   DEFAULT_CONFIG,
 };
