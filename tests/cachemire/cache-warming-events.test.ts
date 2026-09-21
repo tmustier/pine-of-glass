@@ -1,9 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-
 import piCachemire from "../../extensions/pi-cachemire/index.ts";
-import { syncWarmEntries, type WarmSyncState } from "../../extensions/pi-cachemire/warm.ts";
 import { assistantMessage } from "../helpers.ts";
 import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
 
@@ -42,32 +39,4 @@ test("a cache-warming payload hook without context cannot replace real-call evid
     await host.dispose();
     project.dispose();
   }
-});
-
-test("warm usage observed after response persistence anchors to the assistant child", () => {
-  const manager = SessionManager.inMemory(process.cwd());
-  const usage = {
-    input: 100,
-    output: 1,
-    cacheRead: 49_900,
-    cacheWrite: 0,
-    totalTokens: 50_001,
-    cost: { total: 0.01, input: 0, output: 0, cacheRead: 0.01, cacheWrite: 0 },
-  };
-  manager.appendMessage({ role: "user", content: "continue", timestamp: Date.now() });
-  manager.appendUsage("cache_warm", "anthropic", "claude-opus-4-8", usage);
-  const assistantId = manager.appendMessage(assistantMessage([], { usage }));
-  const state: WarmSyncState = {
-    records: [],
-    lineages: [],
-    seenWarmEntryIds: new Set(),
-    window: { kind: "contract", ttlMs: 300_000, source: "observed" },
-    modelSwitched: false,
-    expectedRead: 50_000,
-    compacted: false,
-    inCompaction: false,
-  };
-
-  syncWarmEntries(state, { sessionManager: manager, model: undefined });
-  assert.equal(state.lineages.at(-1)?.requestLeafId, assistantId);
 });

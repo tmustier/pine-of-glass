@@ -24,37 +24,28 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
   return parts.join(SEP);
 }
 
-// Tense grammar: in-flight predictions are progressive with ~estimates ("breaking ·
-// re-writing ~77.7k"); resolved lines are past tense with exact usage ("broke · re-wrote
-// 77.7k of 80.1k prompt (97%)").
 export function renderBreakingLine(prediction: BreakPrediction): string {
-  return `cache breaking${breakingSize(prediction)} \u00b7 cause: ${prediction.cause.detail}`;
-}
-
-function breakingSize(p: BreakPrediction): string {
-  if (p.expectedRewriteTokens) {
-    return ` \u00b7 re-writing ~${compactCount(p.expectedRewriteTokens)}${p.expectedUsd !== undefined ? ` (~${formatUsd(p.expectedUsd)})` : ""}`;
-  }
-  if (p.estimatedRewriteTokens !== undefined) {
-    // Model switch sized by the shared heuristics in the target currency, always
-    // wearing est; gateway routes demote the wording.
-    const parens = [
-      p.estimateBasis === "gateway" ? "rough est \u00b7 gateway route" : "est",
-      ...(p.estimatedUsd === undefined ? [] : [`~${formatUsd(p.estimatedUsd)}`]),
+  let size: string;
+  if (prediction.expectedRewriteTokens) {
+    size = ` \u00b7 re-writing ~${compactCount(prediction.expectedRewriteTokens)}` +
+      `${prediction.expectedUsd === undefined ? "" : ` (~${formatUsd(prediction.expectedUsd)})`}`;
+  } else if (prediction.estimatedRewriteTokens !== undefined) {
+    const estimate = [
+      prediction.estimateBasis === "gateway" ? "rough est \u00b7 gateway route" : "est",
+      ...(prediction.estimatedUsd === undefined ? [] : [`~${formatUsd(prediction.estimatedUsd)}`]),
     ].join(SEP);
-    return ` \u00b7 sending ~${compactCount(p.estimatedRewriteTokens)} uncached` +
-      `${p.targetProvider === undefined ? "" : ` to ${p.targetProvider}`} (${parens})`;
-  }
-  if (p.cause.kind === "compaction") return " \u00b7 re-writing changed history";
-  if (p.cause.kind === "thinking") {
-    // Anthropic documents that system/tools survive *budget* changes; for adaptive
-    // effort changes a live test on claude-fable-5 broke 100% of the prompt
-    // (read 0, re-wrote 30.0k of 30.0k), so no survival claim is made there.
-    return p.cause.detail.includes("thinking budget")
+    size = ` \u00b7 sending ~${compactCount(prediction.estimatedRewriteTokens)} uncached` +
+      `${prediction.targetProvider === undefined ? "" : ` to ${prediction.targetProvider}`} (${estimate})`;
+  } else if (prediction.cause.kind === "compaction") {
+    size = " \u00b7 re-writing changed history";
+  } else if (prediction.cause.kind === "thinking") {
+    size = prediction.cause.detail.includes("thinking budget")
       ? " \u00b7 re-writing history (system/tools stay cached)"
       : " \u00b7 re-writing the prompt";
+  } else {
+    size = " \u00b7 re-writing the full prompt";
   }
-  return " \u00b7 re-writing the full prompt"; // unsized model switch: old-tokenizer count withheld
+  return `cache breaking${size} \u00b7 cause: ${prediction.cause.detail}`;
 }
 
 function isPostCompaction(record: CallRecord): boolean {
@@ -89,18 +80,6 @@ export function renderMissLine(record: CallRecord): string {
   return `${what} \u00b7 cause: ${record.classification.cause?.detail ?? "unknown"}`;
 }
 
-/** The `event` cell of a `/cache` ledger row. */
-export function renderLedgerEvent(record: CallRecord): string {
-  const { kind, cause } = record.classification;
-  const prefix = record.warm ? "warm \u00b7 " : "";
-  if (kind === "hit") {
-    const change = record.thinkingChange;
-    return prefix + (change ? `hit \u2014 effort ${change.from} \u2192 ${change.to} kept the prefix` : "hit");
-  }
-  if (kind === "cold") return `${prefix}cold start`;
-  return `${prefix}${kind} \u2014 ${cause?.detail ?? "unknown"}`;
-}
-
 const EVENT_GLYPHS: Record<CallRecord["classification"]["kind"], string> = {
   cold: SCALE.cold,
   hit: SCALE.hit,
@@ -125,12 +104,24 @@ export function renderLedger(
   );
   for (const record of records) {
     const { usage } = record;
+    const { kind, cause } = record.classification;
+    const prefix = record.warm ? "warm \u00b7 " : "";
+    let event: string;
+    if (kind === "hit") {
+      event = prefix + (record.thinkingChange
+        ? `hit \u2014 effort ${record.thinkingChange.from} \u2192 ${record.thinkingChange.to} kept the prefix`
+        : "hit");
+    } else if (kind === "cold") {
+      event = `${prefix}cold start`;
+    } else {
+      event = `${prefix}${kind} \u2014 ${cause?.detail ?? "unknown"}`;
+    }
     lines.push(
       `  ${col(String(record.index), 4)} ${col(record.gapMs !== undefined ? formatDuration(record.gapMs) : "\u2014", 7)}` +
       ` ${col(compactCount(usage.input), 8)} ${col(compactCount(usage.cacheRead), 8)}` +
       ` ${col(compactCount(usage.cacheWrite), 8)} ${col(compactCount(usage.output), 7)}` +
       ` ${col(record.costUsd !== undefined ? formatUsd(record.costUsd) : "\u2014", 7)}` +
-      `  ${EVENT_GLYPHS[record.classification.kind]} ${renderLedgerEvent(record)}${record.restored ? " (restored)" : ""}`,
+      `  ${EVENT_GLYPHS[kind]} ${event}${record.restored ? " (restored)" : ""}`,
     );
   }
   const totals = records.reduce(

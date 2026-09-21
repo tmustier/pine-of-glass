@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { linkedPiLaunch } from "./pi-launch.mjs";
+import { linkedPiLaunch, shellQuote } from "./pi-launch.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const pi = linkedPiLaunch(repoRoot);
@@ -41,10 +41,6 @@ function run(args, options = {}) {
 
 function cleanupRun(args) {
   return spawnSync(args[0], args.slice(1), { encoding: "utf8", timeout: 2_000 });
-}
-
-function shellQuote(value) {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function hasTmuxSession() {

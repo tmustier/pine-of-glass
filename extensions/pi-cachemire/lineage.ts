@@ -1,11 +1,6 @@
-import { stringValue } from "../_lib/boundary.ts";
-import {
-  descendantsOf,
-  findBranchBaseline,
-  isPersistedEntry,
-  type PersistedEntry,
-} from "./lineage-persistence.ts";
-export { findBranchBaseline, hydrateLineageResponseIds, restoreLineageSnapshots } from "./lineage-persistence.ts";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { findBranchBaseline } from "./lineage-persistence.ts";
+export { findBranchBaseline, hydrateLineageResponseIds, requestLeafFor, restoreLineageSnapshots } from "./lineage-persistence.ts";
 import type {
   CacheLineageSnapshot,
   CacheWindow,
@@ -18,65 +13,21 @@ function changed(a: string | undefined, b: string | undefined): boolean {
   return a !== undefined && b !== undefined && a !== b;
 }
 
-function identityCause(
-  baseline: CacheLineageSnapshot,
-  provider: string | undefined,
-  model: string | undefined,
-  api: string | undefined,
-): CallCause | undefined {
-  const providerChanged = changed(baseline.provider, provider);
-  const modelChanged = changed(baseline.model, model);
-  const apiChanged = changed(baseline.api, api);
-  if (!providerChanged && !modelChanged && !apiChanged) return undefined;
-  const before = [baseline.provider, baseline.model].filter(Boolean).join("/") || "previous model";
-  const after = [provider, model].filter(Boolean).join("/") || "current model";
-  // Same provider/model over a different wire API is still a different cache.
-  const detail = providerChanged || modelChanged
-    ? `model switched ${before} → ${after}`
-    : `model switched ${before} (${baseline.api ?? "unknown API"}) → ${after} (${api ?? "unknown API"})`;
-  return { kind: "model", detail };
-}
-
-function hasCompleteIdentity(snapshot: CacheLineageSnapshot): boolean {
-  return snapshot.provider !== undefined && snapshot.model !== undefined && snapshot.api !== undefined;
-}
-
-function sameIdentity(a: CacheLineageSnapshot, b: CacheLineageSnapshot): boolean {
-  return hasCompleteIdentity(a) && hasCompleteIdentity(b) &&
-    a.provider === b.provider && a.model === b.model && a.api === b.api;
-}
-
-function sameWindow(a: CacheWindow | undefined, b: CacheWindow | undefined): boolean {
-  if (!a || !b || a.kind !== b.kind) return false;
-  if (a.kind === "contract" && b.kind === "contract") return a.ttlMs === b.ttlMs;
-  if (a.kind === "minimum" && b.kind === "minimum") return a.minMs === b.minMs;
-  if (a.kind === "maximum" && b.kind === "maximum") return a.maxMs === b.maxMs;
-  if (a.kind === "bounded" && b.kind === "bounded") return a.minMs === b.minMs && a.maxMs === b.maxMs;
-  return a.kind === "unknown" && b.kind === "unknown";
-}
-
 /** Whether a compaction checkpoint sits between the baseline call and the leaf: the
  * prefix that call cached no longer exists, so nothing can revive its entry. */
 export function pathContainsCompaction(
-  entries: readonly unknown[],
+  entries: readonly SessionEntry[],
   leafId: string | null,
   baseline: CacheLineageSnapshot,
 ): boolean {
-  const byId = new Map<string, PersistedEntry>();
-  for (const entry of entries) {
-    if (isPersistedEntry(entry)) byId.set(entry.id, entry);
-  }
-  const stopIds = new Set(
-    [baseline.responseEntryId, baseline.requestLeafId].filter((id): id is string => id !== undefined && id !== null),
-  );
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const stopIds = new Set([baseline.responseEntryId, baseline.requestLeafId]);
   let current = leafId;
-  const seen = new Set<string>();
-  while (current !== null && !stopIds.has(current) && !seen.has(current)) {
-    seen.add(current);
+  while (current !== null && !stopIds.has(current)) {
     const entry = byId.get(current);
     if (!entry) return false;
     if (entry.type === "compaction") return true;
-    current = stringValue(entry.parentId) ?? null;
+    current = entry.parentId;
   }
   return false;
 }
@@ -116,7 +67,7 @@ export function cacheStateForLineage(
  * compatibility is handled by the baseline fingerprint being a prefix of each request.
  */
 export function resolveCacheLineage(args: {
-  entries: readonly unknown[];
+  entries: readonly SessionEntry[];
   activeLeafId: string | null;
   snapshots: readonly CacheLineageSnapshot[];
   currentProvider?: string;
@@ -127,10 +78,22 @@ export function resolveCacheLineage(args: {
 }): ResolvedCacheLineage {
   const baseline = findBranchBaseline(args.entries, args.activeLeafId, args.snapshots);
   if (!baseline) return { compatible: [] };
-  let cause = identityCause(baseline, args.currentProvider, args.currentModel, args.currentApi) ??
-    (baseline.fingerprint && args.currentFingerprint
-      ? args.compareFingerprints(baseline.fingerprint, args.currentFingerprint)
-      : undefined);
+  const providerChanged = changed(baseline.provider, args.currentProvider);
+  const modelChanged = changed(baseline.model, args.currentModel);
+  const apiChanged = changed(baseline.api, args.currentApi);
+  let cause: CallCause | undefined;
+  if (providerChanged || modelChanged || apiChanged) {
+    const before = [baseline.provider, baseline.model].filter(Boolean).join("/") || "previous model";
+    const after = [args.currentProvider, args.currentModel].filter(Boolean).join("/") || "current model";
+    cause = {
+      kind: "model",
+      detail: providerChanged || modelChanged
+        ? `model switched ${before} → ${after}`
+        : `model switched ${before} (${baseline.api ?? "unknown API"}) → ${after} (${args.currentApi ?? "unknown API"})`,
+    };
+  } else if (baseline.fingerprint && args.currentFingerprint) {
+    cause = args.compareFingerprints(baseline.fingerprint, args.currentFingerprint);
+  }
   if (
     cause?.kind === "history" &&
     pathContainsCompaction(args.entries, args.activeLeafId, baseline)
@@ -140,18 +103,49 @@ export function resolveCacheLineage(args: {
   if (cause) return { baseline, refresh: baseline, compatible: [], cause };
   // Missing identity is not positive switch evidence, but it cannot prove warmth or
   // descendant compatibility either. Keep the billed denominator and withhold time.
-  if (!hasCompleteIdentity(baseline) || args.currentProvider === undefined ||
-      args.currentModel === undefined || args.currentApi === undefined) {
+  if (baseline.provider === undefined || baseline.model === undefined || baseline.api === undefined ||
+      args.currentProvider === undefined || args.currentModel === undefined || args.currentApi === undefined) {
     return { baseline, compatible: [] };
   }
 
-  const descendants = baseline.responseEntryId
-    ? descendantsOf(args.entries, baseline.responseEntryId)
-    : new Set<string>();
+  const children = new Map<string, string[]>();
+  for (const entry of args.entries) {
+    if (entry.parentId === null) continue;
+    const siblings = children.get(entry.parentId) ?? [];
+    siblings.push(entry.id);
+    children.set(entry.parentId, siblings);
+  }
+  const descendants = new Set<string>();
+  const pending = baseline.responseEntryId ? [baseline.responseEntryId] : [];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    descendants.add(current);
+    pending.push(...(children.get(current) ?? []));
+  }
   const compatible = args.snapshots.filter((candidate) => {
     if (candidate === baseline) return true;
     if (candidate.requestLeafId === null || !descendants.has(candidate.requestLeafId)) return false;
-    if (!sameIdentity(baseline, candidate) || !sameWindow(baseline.window, candidate.window)) return false;
+    if (candidate.provider !== baseline.provider || candidate.model !== baseline.model || candidate.api !== baseline.api) {
+      return false;
+    }
+    const baselineWindow = baseline.window;
+    const candidateWindow = candidate.window;
+    if (!baselineWindow || !candidateWindow || baselineWindow.kind !== candidateWindow.kind) return false;
+    switch (baselineWindow.kind) {
+      case "contract":
+        if (candidateWindow.kind !== "contract" || baselineWindow.ttlMs !== candidateWindow.ttlMs) return false;
+        break;
+      case "minimum":
+        if (candidateWindow.kind !== "minimum" || baselineWindow.minMs !== candidateWindow.minMs) return false;
+        break;
+      case "maximum":
+        if (candidateWindow.kind !== "maximum" || baselineWindow.maxMs !== candidateWindow.maxMs) return false;
+        break;
+      case "bounded":
+        if (candidateWindow.kind !== "bounded" || baselineWindow.minMs !== candidateWindow.minMs ||
+            baselineWindow.maxMs !== candidateWindow.maxMs) return false;
+        break;
+    }
     if (!baseline.fingerprint || !candidate.fingerprint) return false;
     return args.compareFingerprints(baseline.fingerprint, candidate.fingerprint) === undefined;
   });

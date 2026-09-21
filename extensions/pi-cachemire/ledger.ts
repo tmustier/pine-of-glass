@@ -1,4 +1,7 @@
+import assert from "node:assert/strict";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { Usage } from "@earendil-works/pi-ai";
+import { sessionEntryAt } from "./lineage-persistence.ts";
 import type { CallCause, CallClassification, CallRecord, UsageLike } from "./types.ts";
 
 type RestoreClassifier = (args: {
@@ -17,40 +20,13 @@ function identityChanged(a: string | undefined, b: string | undefined): boolean 
 
 type PersistedCall = {
   at: number;
-  usage: UsageLike;
+  usage: Usage;
   provider?: string;
   model?: string;
   api?: string;
   warm: boolean;
 };
 
-function callFromEntry(entry: SessionEntry): PersistedCall | undefined {
-  if (entry.type === "usage" && entry.kind === "cache_warm") {
-    const parsedAt = Date.parse(entry.timestamp);
-    if (!Number.isFinite(parsedAt)) return undefined;
-    return {
-      at: parsedAt,
-      usage: entry.usage,
-      provider: entry.provider,
-      model: entry.model,
-      warm: true,
-    };
-  }
-  if (entry.type !== "message" || entry.message.role !== "assistant") return undefined;
-  const message = entry.message;
-  const entryAt = Date.parse(entry.timestamp);
-  return {
-    at: message.timestamp ?? (Number.isFinite(entryAt) ? entryAt : 0),
-    usage: message.usage,
-    provider: message.provider,
-    model: message.model,
-    api: message.api,
-    warm: false,
-  };
-}
-
-/** Rebuild active-branch ledger rows, including Pi cache warming usage, without
- * inventing request-time causes. */
 export function restoreBranchRecords(
   entries: readonly SessionEntry[],
   classify: RestoreClassifier,
@@ -65,37 +41,58 @@ export function restoreBranchRecords(
       compacted = true;
       continue;
     }
-    const call = callFromEntry(entry);
-    if (!call) continue;
+
+    let call: PersistedCall;
+    if (entry.type === "usage" && entry.kind === "cache_warm") {
+      call = {
+        at: sessionEntryAt(entry),
+        usage: entry.usage,
+        provider: entry.provider,
+        model: entry.model,
+        warm: true,
+      };
+    } else if (entry.type === "message" && entry.message.role === "assistant") {
+      call = {
+        at: sessionEntryAt(entry),
+        usage: entry.message.usage,
+        provider: entry.message.provider,
+        model: entry.message.model,
+        api: entry.message.api,
+        warm: false,
+      };
+    } else {
+      continue;
+    }
+
     const { usage } = call;
-    if (!usage || (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0)) continue;
-    const at = call.at;
-    // A model-identity change between persisted calls is in the data, not invented:
-    // the previous expectation is old-currency and the switch itself names the cause.
+    if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) continue;
     const inheritedApi = call.warm && previousIdentity !== undefined &&
       previousIdentity.provider === call.provider && previousIdentity.model === call.model
       ? previousIdentity.api
       : undefined;
-    const identity = {
-      provider: call.provider,
-      model: call.model,
-      api: call.api ?? inheritedApi,
-    };
+    const identity = { provider: call.provider, model: call.model, api: call.api ?? inheritedApi };
     const switched = previousIdentity !== undefined && (
       identityChanged(previousIdentity.provider, identity.provider) ||
       identityChanged(previousIdentity.model, identity.model) ||
       identityChanged(previousIdentity.api, identity.api)
     );
+    const gapMs = previousAt === undefined ? undefined : call.at - previousAt;
+    let fingerprintCause: CallCause | undefined;
+    if (switched) {
+      assert(previousIdentity);
+      fingerprintCause = {
+        kind: "model",
+        detail: `model switched ${previousIdentity.model ?? "previous model"} \u2192 ${identity.model ?? "current model"}`,
+      };
+    }
     const classification = classify({
       isFirst: records.length === 0,
-      gapMs: previousAt !== undefined ? at - previousAt : undefined,
+      gapMs,
       usage,
       expectedRead,
       modelSwitched: switched,
       compacted,
-      fingerprintCause: switched
-        ? { kind: "model", detail: `model switched ${previousIdentity?.model ?? "previous model"} \u2192 ${identity.model ?? "current model"}` }
-        : undefined,
+      fingerprintCause,
     });
     if (
       classification.cause && classification.kind !== "cold" && classification.kind !== "hit" &&
@@ -105,19 +102,19 @@ export function restoreBranchRecords(
     }
     records.push({
       index: records.length + 1,
-      at,
-      gapMs: previousAt !== undefined ? at - previousAt : undefined,
+      at: call.at,
+      gapMs,
       usage,
       expectedRead,
       classification,
       rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
       switched: switched ? true : undefined,
       postCompaction: compacted ? { modelSwitched: switched } : undefined,
-      costUsd: usage.cost?.total,
+      costUsd: usage.cost.total,
       warm: call.warm ? true : undefined,
       restored: true,
     });
-    previousAt = at;
+    previousAt = call.at;
     previousIdentity = identity;
     expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
     compacted = false;

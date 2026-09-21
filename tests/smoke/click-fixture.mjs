@@ -4,10 +4,9 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { linkedPiLaunch } from "./pi-launch.mjs";
+import { linkedPiLaunch, shellQuote } from "./pi-launch.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const quote = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
 const pi = linkedPiLaunch(root);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -19,7 +18,7 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
   mkdirSync(socketDir, { recursive: true });
   const socket = join(socketDir, `pog-${name}-${process.pid}.sock`);
   const session = name;
-  const monitor = `tmux -S ${quote(socket)} attach -t ${session}`;
+  const monitor = `tmux -S ${shellQuote(socket)} attach -t ${session}`;
   mkdirSync(cwd, { recursive: true });
   mkdirSync(agent, { recursive: true });
   writeFileSync(join(agent, "settings.json"), JSON.stringify({ hideThinkingBlock: true, defaultProvider: "openai-codex", defaultModel: "gpt-5.6-sol", fullscreenExitOutput: "none" }));
@@ -71,7 +70,7 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
     const sessionFile = join(cwd, "session.jsonl");
     writeFileSync(sessionFile, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
     tmux("-f", "/dev/null", "new-session", "-d", "-s", session, "-x", String(width), "-y", String(height), "-c", cwd,
-      `exec env HOME=${quote(home)} ${pi.shell} --tui-mode fullscreen --no-extensions --no-skills --no-prompt-templates --no-themes -e ${quote(extension)} --session ${quote(sessionFile)}`);
+      `exec env HOME=${shellQuote(home)} ${pi.shell} --tui-mode fullscreen --no-extensions --no-skills --no-prompt-templates --no-themes -e ${shellQuote(extension)} --session ${shellQuote(sessionFile)}`);
     launched = true;
     console.log(`Monitor: ${monitor}`);
   }

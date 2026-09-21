@@ -104,10 +104,12 @@ test("native OpenAI Completions keeps documented cache-field precedence", async 
 
 function modelRecord(name: string, api: string, model: string): Record<string, unknown> {
   const raw: unknown = JSON.parse(readFileSync(join(piAiRoot, "providers", "data", name), "utf8"));
-  if (!isJsonObject(raw) || !isJsonObject(raw[api]) || !isJsonObject(raw[api][model])) {
-    throw new Error(`Installed Pi model record missing: ${name} ${api} ${model}`);
-  }
-  return raw[api][model];
+  assert(isJsonObject(raw), `invalid provider catalogue: ${name}`);
+  const models = raw[api];
+  assert(isJsonObject(models), `missing provider API: ${name} ${api}`);
+  const record = models[model];
+  assert(isJsonObject(record), `missing provider model: ${name} ${api} ${model}`);
+  return record;
 }
 
 test("installed GPT-5.6 and GPT-6 Astra models keep direct API and Codex routes distinct", () => {
@@ -135,7 +137,7 @@ test("installed Claude Fable 5.1 declares Pi's cache-safe effort protocol", () =
   assert.match(anthropic, /providerThinkingLevel/);
 });
 
-test("Pi 0.85.1 changes Astra request-level effort instead of appending an update", () => {
+test("Pi changes Astra request-level effort instead of appending an update", () => {
   const direct = source("openai-responses.js");
   const codex = source("openai-codex-responses.js");
   assert.match(direct, /params\.reasoning = \{\s*effort:/);

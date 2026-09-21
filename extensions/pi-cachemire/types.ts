@@ -130,8 +130,6 @@ export interface CacheLineageSnapshot {
   api?: string;
   fingerprint?: RequestFingerprint;
   window?: CacheWindow;
-  /** Chronological ledger row for live calls; restored all-branch snapshots omit it. */
-  recordIndex?: number;
 }
 
 export interface ResolvedCacheLineage {

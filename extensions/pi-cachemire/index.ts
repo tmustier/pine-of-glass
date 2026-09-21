@@ -2,7 +2,6 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ExtensionUIContext,
-  SessionEntry,
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -35,6 +34,7 @@ import {
   cacheStateForLineage,
   findBranchBaseline,
   hydrateLineageResponseIds,
+  requestLeafFor,
   resolveCacheLineage,
   restoreLineageSnapshots,
 } from "./lineage.ts";
@@ -46,6 +46,7 @@ import {
   OPENAI_MINIMUM_WINDOW,
   retentionForRequest,
   windowLabel,
+  type RetentionMatch,
 } from "./retention.ts";
 import {
   recordBilledThinking,
@@ -115,38 +116,10 @@ const DEFAULT_CONFIG: CachemireConfig = {
 // ◍ opens every loop-economics line, ○ ● ◑ ◌ are the status scale, and all colour
 // is theme-derived through ink() with raw-ANSI fallbacks before a Theme handle exists.
 
-// --- config ----------------------------------------------------------------------------
-
-function parseCachemireConfig(value: unknown): Partial<CachemireConfig> {
-  if (!isJsonObject(value)) return {};
-  const config: Partial<CachemireConfig> = {};
-  const widget = booleanValue(value.widget);
-  const turnSummary = booleanValue(value.turnSummary);
-  const turnSummaryMinCalls = positiveNumberValue(value.turnSummaryMinCalls);
-  const missWarnings = booleanValue(value.missWarnings);
-  const missWarnUsd = positiveNumberValue(value.missWarnUsd);
-  const missWarnTokens = positiveNumberValue(value.missWarnTokens);
-  if (widget !== undefined) config.widget = widget;
-  if (turnSummary !== undefined) config.turnSummary = turnSummary;
-  if (turnSummaryMinCalls !== undefined) config.turnSummaryMinCalls = Math.floor(turnSummaryMinCalls);
-  if (missWarnings !== undefined) config.missWarnings = missWarnings;
-  if (missWarnUsd !== undefined) config.missWarnUsd = missWarnUsd;
-  if (missWarnTokens !== undefined) config.missWarnTokens = Math.floor(missWarnTokens);
-  return config;
-}
-
-function loadConfig(cwd: string): CachemireConfig {
-  return configPaths("pi-cachemire", cwd).reduce(
-    (config, filePath) => Object.assign(config, readJsonConfig(filePath, parseCachemireConfig)),
-    { ...DEFAULT_CONFIG },
-  );
-}
-
 // --- chat scrollback append (display-only; never touches LLM context) -------------------
 // Anchored-line machinery lives in _lib/chatline.ts (shared with pi-meantime): lines
 // are appended straight to pi's chat container and re-attached across pi's chat
 // rebuilds via durable anchors. Cachemire re-exports the shape for its tests.
-
 export type { AnchoredLine } from "../_lib/chatline.ts";
 
 // --- live state ------------------------------------------------------------------------
@@ -154,8 +127,6 @@ export type { AnchoredLine } from "../_lib/chatline.ts";
 interface CachemireState extends WarmSyncState {
   config: CachemireConfig;
   notifyFallback?: (plainText: string) => void;
-  /** A real agent request is armed by Pi's context event. Cache warming and
-   * summarization bypass that event and cannot replace pending request evidence. */
   requestArmed: boolean;
   pendingFingerprint?: RequestFingerprint;
   pendingFingerprintCause?: CallCause;
@@ -163,6 +134,7 @@ interface CachemireState extends WarmSyncState {
   pendingRequestAt?: number;
   pendingPreviousRequestAt?: number;
   pendingPreviousWindow?: CacheWindow;
+  pendingRetention?: RetentionMatch;
   pendingCacheGapMs?: number;
   /** Model id at the time of the last billed call, and therefore of expectedRead. */
   /** Provider/api that billed the last call: the same id through a different
@@ -316,7 +288,26 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (!ctx.hasUI) return;
     if (g.__piCachemireOwner !== undefined && !ownsState()) return;
     g.__piCachemireOwner = ownerToken;
-    s.config = loadConfig(process.cwd());
+    s.config = configPaths("pi-cachemire", process.cwd()).reduce((config, filePath) => {
+      const parsed = readJsonConfig(filePath, (value): Partial<CachemireConfig> => {
+        if (!isJsonObject(value)) return {};
+        const next: Partial<CachemireConfig> = {};
+        const widget = booleanValue(value.widget);
+        const turnSummary = booleanValue(value.turnSummary);
+        const turnSummaryMinCalls = positiveNumberValue(value.turnSummaryMinCalls);
+        const missWarnings = booleanValue(value.missWarnings);
+        const missWarnUsd = positiveNumberValue(value.missWarnUsd);
+        const missWarnTokens = positiveNumberValue(value.missWarnTokens);
+        if (widget !== undefined) next.widget = widget;
+        if (turnSummary !== undefined) next.turnSummary = turnSummary;
+        if (turnSummaryMinCalls !== undefined) next.turnSummaryMinCalls = Math.floor(turnSummaryMinCalls);
+        if (missWarnings !== undefined) next.missWarnings = missWarnings;
+        if (missWarnUsd !== undefined) next.missWarnUsd = missWarnUsd;
+        if (missWarnTokens !== undefined) next.missWarnTokens = Math.floor(missWarnTokens);
+        return next;
+      });
+      return Object.assign(config, parsed);
+    }, { ...DEFAULT_CONFIG });
     const entries = ctx.sessionManager.getEntries();
     const branch = ctx.sessionManager.getBranch();
     s.records = restoreBranchRecords(branch, classifyCall);
@@ -396,7 +387,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     ));
     s.pendingFingerprintCause = resolution.cause ??
       withheldThinkingCause(resolution.baseline?.fingerprint, s.pendingFingerprint);
-    s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
+    s.pendingRequestLeafId = requestLeafFor(new Map(entries.map((entry) => [entry.id, entry])), ctx.sessionManager.getLeafId());
     s.pendingPreviousRequestAt = s.lastRequestAt;
     s.pendingPreviousWindow = s.window;
     s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
@@ -588,7 +579,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
       api: message.api,
       fingerprint: s.pendingFingerprint,
       window: activeWindow,
-      recordIndex: record.index,
     });
     s.compacted = false;
     s.prevCallRequestAt = requestAt;
@@ -720,6 +710,5 @@ export const internals = {
   renderRunSummary,
   renderMissLine,
   renderLedger,
-  restoreFromMessages: (entries: readonly SessionEntry[]) => restoreBranchRecords(entries, classifyCall),
   DEFAULT_CONFIG,
 };

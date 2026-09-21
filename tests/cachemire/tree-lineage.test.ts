@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage, Message, Usage } from "@earendil-works/pi-ai";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 import { cacheStateForLineage } from "../../extensions/pi-cachemire/lineage.ts";
@@ -15,17 +17,18 @@ const {
   restoreLineageSnapshots,
 } = internals;
 
-function usage(input: number, cacheRead: number, cacheWrite: number, output = 10) {
+function usage(input: number, cacheRead: number, cacheWrite: number, output = 10): Usage {
   return {
     input,
     output,
     cacheRead,
     cacheWrite,
+    totalTokens: input + output + cacheRead + cacheWrite,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
 }
 
-function assistant(timestamp: number, prompt: number, model = "claude-opus-4-8") {
+function assistant(timestamp: number, prompt: number, model = "claude-opus-4-8"): AssistantMessage {
   return {
     role: "assistant",
     content: [{ type: "text", text: "answer" }],
@@ -55,21 +58,25 @@ function snapshotById(snapshots: CacheLineageSnapshot[], id: string): CacheLinea
   return snapshots.find((snapshot) => snapshot.responseEntryId === id)!;
 }
 
-function branchedEntries(now = 30_000) {
+function messageEntry(id: string, parentId: string | null, message: Message): SessionEntry {
+  return { type: "message", id, parentId, timestamp: new Date(message.timestamp).toISOString(), message };
+}
+
+function branchedEntries(now = 30_000): SessionEntry[] {
   return [
-    { type: "message", id: "root-user", parentId: null, message: { role: "user", content: "root", timestamp: 500 } },
-    { type: "message", id: "root", parentId: "root-user", message: assistant(1_000, 80_000) },
-    { type: "message", id: "left-user", parentId: "root", message: { role: "user", content: "left", timestamp: 2_000 } },
-    { type: "message", id: "left", parentId: "left-user", message: assistant(3_000, 100_000) },
-    { type: "message", id: "left-next-user", parentId: "left", message: { role: "user", content: "left next", timestamp: 4_000 } },
-    { type: "message", id: "left-next", parentId: "left-next-user", message: assistant(now, 110_000) },
-    { type: "message", id: "right-user", parentId: "root", message: { role: "user", content: "right", timestamp: 5_000 } },
-    { type: "message", id: "right", parentId: "right-user", message: assistant(20_000, 120_000) },
+    messageEntry("root-user", null, { role: "user", content: "root", timestamp: 500 }),
+    messageEntry("root", "root-user", assistant(1_000, 80_000)),
+    messageEntry("left-user", "root", { role: "user", content: "left", timestamp: 2_000 }),
+    messageEntry("left", "left-user", assistant(3_000, 100_000)),
+    messageEntry("left-next-user", "left", { role: "user", content: "left next", timestamp: 4_000 }),
+    messageEntry("left-next", "left-next-user", assistant(now, 110_000)),
+    messageEntry("right-user", "root", { role: "user", content: "right", timestamp: 5_000 }),
+    messageEntry("right", "right-user", assistant(20_000, 120_000)),
   ];
 }
 
 function resolve(
-  entries: unknown[],
+  entries: SessionEntry[],
   snapshots: CacheLineageSnapshot[],
   leaf: string,
   current: ReturnType<typeof fingerprintPayload>,
@@ -106,34 +113,51 @@ test("restores every branch while selecting only the active path baseline", () =
 test("links a live request snapshot after Pi persists its assistant response", () => {
   const entries = branchedEntries();
   const persisted = restoreLineageSnapshots(entries)[0]!;
-  const live = { ...persisted, responseEntryId: undefined, fingerprint: fingerprintPayload(payload(["root"])) };
+  const observedWindow = { kind: "contract", ttlMs: 60 * 60_000, source: "observed" } as const;
+  const live = {
+    ...persisted,
+    responseEntryId: undefined,
+    fingerprint: fingerprintPayload(payload(["root"])),
+    window: observedWindow,
+  };
   hydrateLineageResponseIds([live], entries);
   assert.equal(live.responseEntryId, "root");
-  assert.ok(live.fingerprint);
+  const restored = snapshotById(restoreLineageSnapshots(entries, [live]), "root");
+  assert.ok(restored.fingerprint);
+  assert.deepEqual(restored.window, observedWindow);
 });
 
 test("cache warming usage is transparent to the request parent and becomes the freshness baseline", () => {
-  const entries = [
-    { type: "message", id: "user", parentId: null, timestamp: new Date(1_000).toISOString(), message: { role: "user", content: "hello", timestamp: 1_000 } },
+  const entries: SessionEntry[] = [
+    messageEntry("user", null, { role: "user", content: "hello", timestamp: 1_000 }),
     {
       type: "usage", id: "warm", parentId: "user", timestamp: new Date(270_000).toISOString(),
       kind: "cache_warm", provider: "anthropic", model: "claude-opus-4-8",
       usage: usage(100, 99_900, 0, 1),
     },
-    {
-      type: "message", id: "assistant", parentId: "warm", timestamp: new Date(280_000).toISOString(),
-      message: assistant(280_000, 100_000),
-    },
+    messageEntry("assistant", "warm", assistant(280_000, 100_000)),
   ];
-  const snapshots = restoreLineageSnapshots(entries);
+  const initialResponse = snapshotById(restoreLineageSnapshots(entries), "assistant");
+  const observedWindow = { kind: "contract", ttlMs: 60 * 60_000, source: "observed" } as const;
+  initialResponse.fingerprint = fingerprintPayload(payload(["hello"]));
+  initialResponse.window = observedWindow;
+  const snapshots = restoreLineageSnapshots(entries, [initialResponse]);
   const response = snapshotById(snapshots, "assistant");
   const warm = snapshotById(snapshots, "warm");
   assert.equal(response.requestLeafId, "user", "non-context usage cannot become the assistant request leaf");
   assert.equal(warm.api, "anthropic-messages", "the replay inherits the exact route it refreshed");
+  assert.equal(warm.fingerprint, response.fingerprint);
+  assert.deepEqual(warm.window, observedWindow);
   assert.equal(findBranchBaseline(entries, "assistant", snapshots), warm);
 
-  const live = { ...response, responseEntryId: undefined, fingerprint: fingerprintPayload(payload(["hello"])) };
+  const live = {
+    ...response,
+    requestLeafId: "warm",
+    responseEntryId: undefined,
+    fingerprint: fingerprintPayload(payload(["hello"])),
+  };
   hydrateLineageResponseIds([live], entries);
+  assert.equal(live.requestLeafId, "user");
   assert.equal(live.responseEntryId, "assistant", "a warm entry inserted mid-stream must not break live response linking");
 });
 
@@ -231,9 +255,17 @@ test("suffix divergence is natural, while edited history and model changes still
 });
 
 test("a selected compaction checkpoint stays unsized before provider usage", () => {
-  const entries = [
+  const entries: SessionEntry[] = [
     ...branchedEntries(),
-    { type: "compaction", id: "compact", parentId: "left", summary: "short summary", timestamp: new Date().toISOString() },
+    {
+      type: "compaction",
+      id: "compact",
+      parentId: "left",
+      summary: "short summary",
+      firstKeptEntryId: "left",
+      tokensBefore: 100_000,
+      timestamp: new Date().toISOString(),
+    },
   ];
   const snapshots = restoreLineageSnapshots(entries);
   const left = snapshotById(snapshots, "left");

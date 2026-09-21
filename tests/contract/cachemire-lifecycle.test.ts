@@ -98,10 +98,10 @@ test("switching branches does not ingest an already restored warm entry twice", 
   };
   const root = manager.appendMessage({ role: "user", content: "root", timestamp: Date.now() });
   manager.appendMessage(assistantMessage([], { usage }));
-  const warmA = manager.appendUsage("cache_warm", "test", "model", usage);
+  const warmA = manager.appendUsage("cache_warm", "anthropic", "claude-opus-4-8", usage);
   manager.branch(root);
   manager.appendMessage(assistantMessage([], { usage }));
-  const warmB = manager.appendUsage("cache_warm", "test", "model", usage);
+  const warmB = manager.appendUsage("cache_warm", "anthropic", "claude-opus-4-8", usage);
   const host = await hostExtension(piCachemire, { project, sessionManager: manager });
   try {
     manager.branch(warmA.id);
@@ -110,7 +110,6 @@ test("switching branches does not ingest an already restored warm entry twice", 
       newLeafId: warmA.id,
       oldLeafId: warmB.id,
     });
-    await host.session.extensionRunner.emitContext([]);
     await host.session.prompt("/cache");
     assert.match(host.ui.notifications.at(-1)!, /totals: 2 calls/);
   } finally {

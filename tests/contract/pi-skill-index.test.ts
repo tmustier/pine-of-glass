@@ -56,25 +56,19 @@ test(
       { name: "demo", description: "Does a demo & more", filePath: join(home, ".pi/agent/skills/demo/SKILL.md") },
       { name: "quiet", description: "", filePath: join(home, ".pi/agent/skills/quiet/SKILL.md") },
     ];
-    for (const heavySystemPromptOverwrite of [false, true]) {
-      const options = pi.normalizeBuildSystemPromptOptions({ cwd: tmpdir(), selectedTools: ["exec_command", "apply_patch"] });
-      codex.prepareCodexSystemPrompt(options, {
-        skills,
-        heavySystemPromptOverwrite,
-      });
-      const prompt = pi.buildSystemPrompt(options);
-      const label = heavySystemPromptOverwrite ? "heavy" : "light";
-      const block = contextimate.parseSkillsBlock(prompt, 4);
-      assert.ok(block, `${label}: adapter skills block format drifted — SKILLS_INSTRUCTIONS_RE misses it`);
-      assert.deepEqual(
-        block!.skills.map(({ name, description, location }) => ({ name, description, location })),
-        [
-          { name: "demo", description: "Does a demo & more", location: join(home, ".pi/agent/skills/demo/SKILL.md") },
-          { name: "quiet", description: "", location: join(home, ".pi/agent/skills/quiet/SKILL.md") },
-        ],
-        `${label}: adapter entry grammar drifted — COMPACT_SKILL_RE`,
-      );
-      assert.ok(!contextimate.getPromptRemainder(prompt).includes("<codex_skills>"), `${label}: block not stripped from the runtime prompt row`);
-    }
+    const options = pi.normalizeBuildSystemPromptOptions({ cwd: tmpdir(), selectedTools: ["exec_command", "apply_patch"] });
+    codex.prepareCodexSystemPrompt(options, { skills, heavySystemPromptOverwrite: false });
+    const prompt = pi.buildSystemPrompt(options);
+    const block = contextimate.parseSkillsBlock(prompt, 4);
+    assert.ok(block, "adapter skills block format drifted");
+    assert.deepEqual(
+      block.skills.map(({ name, description, location }) => ({ name, description, location })),
+      [
+        { name: "demo", description: "Does a demo & more", location: join(home, ".pi/agent/skills/demo/SKILL.md") },
+        { name: "quiet", description: "", location: join(home, ".pi/agent/skills/quiet/SKILL.md") },
+      ],
+      "adapter entry grammar drifted",
+    );
+    assert.ok(!contextimate.getPromptRemainder(prompt).includes("<codex_skills>"));
   },
 );

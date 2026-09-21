@@ -73,10 +73,6 @@
       "tests/cachemire/model-switch-events.test.ts": {
         "return { handlers };": 1
       },
-      "tests/cachemire/session-isolation.test.ts": {
-        "return {": 1,
-        "return { pi, handlers, commands };": 1
-      },
       "tests/contract/pi-chatline-compat.test.ts": {
         "assert.equal((assistant as unknown as { hideThinkingBlock: boolean }).hideThinkingBlock, hidden);": 1
       },
@@ -155,10 +151,6 @@
         "type Handler = (...args: unknown[]) => unknown;": 1
       },
       "tests/cachemire/model-switch-events.test.ts": {
-        "type Handler = (...args: unknown[]) => unknown;": 1
-      },
-      "tests/cachemire/session-isolation.test.ts": {
-        "function sessionContext(id: string, notifications?: string[]): unknown {": 1,
         "type Handler = (...args: unknown[]) => unknown;": 1
       },
       "tests/contract/pi-internals.test.ts": {
@@ -305,7 +297,7 @@
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
-      "extensions/pi-cachemire/index.ts": 726,
+      "extensions/pi-cachemire/index.ts": 715,
       "extensions/pi-contextimate/index.ts": 1483,
       "extensions/pi-traceline/index.ts": 1677,
       "tests/contract/pi-internals.test.ts": 355,
@@ -313,7 +305,7 @@
     }
   },
   "internalsBudgets": {
-    "extensions/pi-cachemire/index.ts": 32,
+    "extensions/pi-cachemire/index.ts": 31,
     "extensions/pi-contextimate/index.ts": 28,
     "extensions/pi-traceline/index.ts": 55
   }

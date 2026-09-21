@@ -200,3 +200,26 @@ background provider hooks. Updated the real-Pi launcher so isolated fixture home
 break shell wrappers. Lint, typecheck, all 397 tests and every real-Pi smoke pass. A live
 Pi 0.86.1 turn on `openai-codex/gpt-5.6-sol:medium` made one real bash tool call; the
 resulting filesystem state and clean extension lifecycle were verified independently.
+
+## 2026-09-21: simplify Pi 0.86 compatibility
+
+Reduced the compatibility patch by removing legacy prompt formats, duplicated harnesses,
+one-use helpers, untyped session fixtures and defensive parsing behind Pi's typed session
+API. Cachemire now rebuilds ledgers and all-branch lineage through one typed path while
+preserving live fingerprints and observed retention across warm entries. The typed path
+keeps Pi's entry-time fallback for legacy messages and normalizes warm usage ancestors
+before linking live responses. Agent-lint debt
+fell from 162 to 158 findings; the suite fell from 397 to 394 tests without losing the
+public lifecycle or installed-Pi contracts.
+
+`npm run check` and every real-Pi smoke passed on the working tree based on `cf45143`
+(all runtime changes were present; only this log entry followed). A live Pi 0.86.1 TUI
+turn used `openai-codex/gpt-5.6-sol` at medium thinking with this prompt:
+`Use the bash tool exactly once to run this exact command: printf
+'pi-086-simplify-e2e\\n' > '/tmp/pog-pi086-simplify-final/tool-result.txt' . Do not call
+any other tool. After it succeeds, reply with exactly DONE.` The session contained one
+`bash` call and one result, the independently read file matched, and no extension error
+appeared. Herdr was unavailable in this session, so the test used an isolated tmux
+fallback. The delayed provider cache-warming completion path was not exercised live;
+its persisted-entry behavior is covered against Pi's real `SessionManager` and extension
+host.

@@ -62,19 +62,6 @@ test("prompt remainder strips project context and skills blocks entirely", () =>
   assert.ok(remainder.includes("Current date: 2026-06-09"));
 });
 
-test("legacy unwrapped skill and blank-padded project blocks still parse", () => {
-  const prompt = fixtureSystemPrompt()
-    .replace("<project_context>\n", "<project_context>\n\n")
-    .replace("\n</project_context>", "\n\n</project_context>")
-    .replace("<skills>\n", "")
-    .replace("\n</skills>", "");
-  assert.equal(parseContextSections(prompt, 4).length, 2);
-  assert.equal(parseSkillsBlock(prompt, 4)?.skills.length, 3);
-  const remainder = getPromptRemainder(prompt);
-  assert.ok(!remainder.includes("<project_instructions"));
-  assert.ok(!remainder.includes("<available_skills>"));
-});
-
 test("runtime-addition attribution counts only verified, deduplicated prompt text (#9)", () => {
   const remainder = getPromptRemainder(fixtureSystemPrompt());
   const summarize = (name: string, guidelines: string[]): ToolSummary => ({
@@ -116,7 +103,7 @@ test("system section: title renamed for #9 but id stays 'system' (config/signatu
   assert.ok(expanded.attribution!.includes("tool/extension instructions"));
 });
 
-test("compact <skills_instructions> list parses into the same skills row as the XML index", () => {
+test("compact <codex_skills> list parses into the same skills row as the XML index", () => {
   const prompt = fixtureCodexSystemPrompt();
   const { skills, section } = buildSkillsSection(prompt, 4);
   assert.ok(section);
@@ -128,17 +115,8 @@ test("compact <skills_instructions> list parses into the same skills row as the 
   assert.equal(byName["gamma"]!.location, `${homedir()}/.pi/agent/skills/gamma/SKILL.md`);
 
   const remainder = getPromptRemainder(prompt);
-  assert.ok(!remainder.includes("<skills_instructions>"));
+  assert.ok(!remainder.includes("<codex_skills>"));
   assert.ok(remainder.includes("Current working directory"));
-});
-
-test("structured <codex_skills> list uses the same compact grammar", () => {
-  const prompt = fixtureCodexSystemPrompt()
-    .replace("<skills_instructions>", "<codex_skills>")
-    .replace("</skills_instructions>", "</codex_skills>");
-  const { skills } = buildSkillsSection(prompt, 4);
-  assert.deepEqual(skills.map((skill) => skill.name), ["alpha-skill", "beta-skill", "gamma"]);
-  assert.ok(!getPromptRemainder(prompt).includes("<codex_skills>"));
 });
 
 test("prompt without context/skills blocks degrades to remainder-only", () => {

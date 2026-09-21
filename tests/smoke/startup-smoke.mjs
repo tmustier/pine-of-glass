@@ -7,7 +7,7 @@
 //   4. traceline announces itself (extension loaded without crashing the TUI),
 //   5. the explicit Meantime feature flag enables /pace through real Pi,
 //   6. /pace and /cache render, and both survive the Ctrl+T visibility update.
-// Local-only: needs tmux + an installed pi on PATH. Exits non-zero on any failure.
+// Local-only: needs tmux and the linked Pi runtime. Exits non-zero on failure.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";

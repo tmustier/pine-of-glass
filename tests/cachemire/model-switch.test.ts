@@ -176,27 +176,29 @@ function usage(input: number, cacheRead: number, cacheWrite: number) {
   return { input, output: 10, cacheRead, cacheWrite, totalTokens: input + cacheRead + cacheWrite + 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 }
 
-function solAssistant(timestamp: number, prompt: number) {
-  return {
-    role: "assistant",
-    content: [
-      { type: "thinking", thinking: "r".repeat(2600), thinkingSignature: "S".repeat(2600) },
-      { type: "text", text: "a".repeat(2600) },
-    ],
-    api: "openai-codex-responses",
-    provider: "openai-codex",
-    model: "gpt-5.6-sol",
-    stopReason: "stop",
-    timestamp,
-    usage: usage(2, prompt - 2, 0),
-  };
-}
-
 function entriesFixture(): SessionEntry[] {
   return [
     { type: "message", id: "u1", parentId: null, timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: "b".repeat(2600), timestamp: 1_000 } },
-    { type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-01T10:00:05.000Z", message: solAssistant(5_000, 80_000) },
-  ] as unknown as SessionEntry[];
+    {
+      type: "message",
+      id: "a1",
+      parentId: "u1",
+      timestamp: "2026-07-01T10:00:05.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "r".repeat(2600), thinkingSignature: "S".repeat(2600) },
+          { type: "text", text: "a".repeat(2600) },
+        ],
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        model: "gpt-5.6-sol",
+        stopReason: "stop",
+        timestamp: 5_000,
+        usage: usage(2, 79_998, 0),
+      },
+    },
+  ];
 }
 
 const OPUS: SwitchTarget = { provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages", input: ["text", "image"] };
@@ -226,14 +228,14 @@ test("computeSwitchForecast: estimates from canonical history in the target curr
 });
 
 test("computeSwitchForecast: a source-model bill never rescales the target estimate", () => {
-  const entries = [
+  const entries: SessionEntry[] = [
     { type: "message", id: "u1", parentId: null, timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: "b".repeat(5200), timestamp: 1_000 } },
     { type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-01T10:00:05.000Z", message: {
       role: "assistant", content: [{ type: "text", text: "a".repeat(2600) }],
       api: "openai-codex-responses", provider: "openai-codex", model: "gpt-5.6-sol",
       stopReason: "stop", timestamp: 5_000, usage: usage(2, 2_898, 0),
     } },
-  ] as unknown as SessionEntry[];
+  ];
   const sourceSnapshot = {
     requestLeafId: "u1", responseEntryId: "a1", responseAt: 5_000, requestAt: 1_000,
     promptTokens: 2_925,
@@ -262,10 +264,18 @@ test("computeSwitchForecast: a switch-back prior needs an exact api and an uncom
   assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: "openai-responses" }] }).prior, undefined);
   assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: undefined }] }).prior, undefined);
   // A compaction between the prior call and the leaf rewrote the prefix it cached.
-  const compacted = [
+  const compacted: SessionEntry[] = [
     ...entriesFixture(),
-    { type: "compaction", id: "c1", parentId: "a1", timestamp: "2026-07-01T10:01:00.000Z" },
-  ] as unknown as SessionEntry[];
+    {
+      type: "compaction",
+      id: "c1",
+      parentId: "a1",
+      timestamp: "2026-07-01T10:01:00.000Z",
+      summary: "summary",
+      firstKeptEntryId: "a1",
+      tokensBefore: 80_000,
+    },
+  ];
   assert.equal(
     computeSwitchForecast({ ...base, entries: compacted, activeLeafId: "c1", snapshots: [snapshot] }).prior,
     undefined,
