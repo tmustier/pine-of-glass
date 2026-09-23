@@ -65,8 +65,8 @@ export const RETENTION_EVIDENCE_SOURCES = {
   "openai-docs": {
     label: "OpenAI prompt caching",
     url: "https://developers.openai.com/api/docs/guides/prompt-caching",
-    reviewedOn: "8 September 2026",
-    detail: `GPT-5.${OPENAI_MINIMUM_MINOR}+ and GPT-6 Astra minimum eligibility, plus legacy extended retention`,
+    reviewedOn: "23 September 2026",
+    detail: `GPT-5.${OPENAI_MINIMUM_MINOR}+ and GPT-6 minimum eligibility, plus legacy extended retention`,
   },
   "anthropic-docs": {
     label: "Anthropic prompt caching",
@@ -151,7 +151,7 @@ function gpt5Minor(model: string | undefined): number | undefined {
 function usesMinimumRetention(input: RetentionIdentity): boolean {
   const minor = gpt5Minor(input.model);
   const supportedModel = (minor !== undefined && minor >= OPENAI_MINIMUM_MINOR) ||
-    terminalModelId(input.model) === "gpt-6-astra";
+    /^gpt-6(?:-(?:astra|luna|sol))?$/.test(terminalModelId(input.model));
   const route = onRoute(input, "openai", "openai-responses") ||
     onRoute(input, "openai-codex", "openai-codex-responses");
   return route && supportedModel;
@@ -206,7 +206,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
       : undefined,
   },
   {
-    route: `OpenAI or OpenAI Codex, GPT-5.${OPENAI_MINIMUM_MINOR}+ or GPT-6 Astra`,
+    route: `OpenAI or OpenAI Codex, GPT-5.${OPENAI_MINIMUM_MINOR}+ or GPT-6`,
     evidence: "documented `prompt_cache_options.ttl` default",
     behavior: `after a cache read or write, use the ${formatDuration(OPENAI_MINIMUM_WINDOW.minMs)} minimum; ` +
       "then show that the cache state is unknown",
