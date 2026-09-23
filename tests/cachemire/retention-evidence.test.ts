@@ -30,7 +30,10 @@ test("model retention is limited to documented provider, API and model routes", 
     ["openai", "openai-responses"],
     ["openai-codex", "openai-codex-responses"],
   ] as const) {
-    assert.equal(retentionForModel(provider, "gpt-6-astra", api)?.window, OPENAI_MINIMUM_WINDOW);
+    for (const model of ["gpt-6", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol"]) {
+      assert.equal(retentionForModel(provider, model, api)?.window, OPENAI_MINIMUM_WINDOW);
+    }
+    assert.equal(retentionForModel(provider, "gpt-6-unknown", api), undefined);
   }
   assert.equal(retentionForModel("openai", "gpt-5.5", "openai-responses"), undefined);
   assert.equal(retentionForModel("openai", "gpt-6-astra", "openai-completions"), undefined);
@@ -74,15 +77,17 @@ test("live request evidence resolves the supported retention contracts", () => {
     })?.window,
     OPENAI_MINIMUM_WINDOW,
   );
-  assert.equal(
-    retentionForRequest({
-      provider: "openai-codex",
-      model: "gpt-6-astra",
-      api: "openai-codex-responses",
-      payload: {},
-    })?.window,
-    OPENAI_MINIMUM_WINDOW,
-  );
+  for (const model of ["gpt-6-astra", "gpt-6-luna", "gpt-6-sol"]) {
+    assert.equal(
+      retentionForRequest({
+        provider: "openai-codex",
+        model,
+        api: "openai-codex-responses",
+        payload: {},
+      })?.window,
+      OPENAI_MINIMUM_WINDOW,
+    );
+  }
   assert.equal(
     retentionForRequest({
       provider: "openai-codex",

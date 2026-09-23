@@ -39,7 +39,7 @@ response fixtures. Cache reads alone do not provide retention evidence.
    TTL or minimum, including the minimum phase of a bounded window. Unknown retention
    stays unknown until the next send reports usage.
 3. Retention: Anthropic-compatible, MiniMax, Bedrock and Groq TTLs support countdowns
-   and expiry claims. The GPT-5.6+ and GPT-6 Astra minimum blocks stale claims for 30
+   and expiry claims. The GPT-5.6+ and GPT-6 minimum blocks stale claims for 30
    minutes, then changes to unknown. An OpenAI maximum supports a stale claim only when
    reached. Cerebras's bounded window is warm before 5 minutes, unknown until 1 hour,
    then stale. Healthy
@@ -63,7 +63,8 @@ contains a cache read or write, Cachemire mirrors Pi's ordinary-call default:
 `PI_CACHE_RETENTION=long` means 1 hour, otherwise 5 minutes. The first confirmed live
 payload replaces that inference.
 
-For GPT-5.6+ models and GPT-6 Astra, OpenAI documents a 30-minute minimum. This default
+For GPT-5.6+ and the exact GPT-6, Astra, Luna and Sol model IDs, OpenAI documents a
+30-minute minimum. This default
 applies on direct OpenAI Responses and OpenAI Codex routes. Cachemire stays silent during
 the minimum. At the boundary it reports an unknown cache state because OpenAI may retain
 the prefix longer.
@@ -206,7 +207,7 @@ suffix estimate until provider usage makes the new request exact.
 
 Restored snapshots retain provider usage, model identity and timestamps. Only a
 persisted cache read or supported write activates a recovered window. Exact model and API
-checks recover GPT-5.6+, GPT-6 Astra, Anthropic, MiniMax, Groq and Cerebras policies. Bedrock and
+checks recover GPT-5.6+, GPT-6, Anthropic, MiniMax, Groq and Cerebras policies. Bedrock and
 legacy OpenAI routes lose request-only policy evidence, so their retention becomes
 unknown.
 
