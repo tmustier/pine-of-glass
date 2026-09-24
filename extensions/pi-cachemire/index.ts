@@ -139,7 +139,6 @@ interface CachemireState extends WarmSyncState {
   chat?: ContainerLike;
   /** In-flight break notice placed at request time; resolved in place when usage arrives. */
   pendingNotice?: Text;
-  pendingWarning: boolean;
   run?: RunAggregate;
   /** Theme handle (captured at session_start) — all chat/widget ink flows through ink(). */
   theme?: Theme;
@@ -161,7 +160,6 @@ function state(): CachemireState {
       records: [],
       lineages: [],
       requestArmed: false,
-      pendingWarning: false,
       seenWarmEntryIds: new Set(),
       window: UNKNOWN_WINDOW,
       modelSwitched: false,
@@ -296,7 +294,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.records = restoreBranchRecords(branch, classifyCall);
     s.seenWarmEntryIds = new Set(entries.filter(isWarmUsageEntry).map((entry) => entry.id));
     s.requestArmed = false;
-    s.pendingWarning = false;
     s.lineages = restoreLineageSnapshots(entries, event.reason === "reload" ? s.lineages : undefined);
     const baseline = findBranchBaseline(entries, ctx.sessionManager.getLeafId(), s.lineages);
     const model = ctx.model;
@@ -419,7 +416,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
         else s.pendingNotice = appendChatLine(text);
         if (process.env.DEBUG === "1") {
           pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
-          s.pendingWarning = true;
           s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
         }
       }
@@ -483,7 +479,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
     restoreThinkingForPath(ctx, entries, event.newLeafId);
     s.requestArmed = false;
-    s.pendingWarning = false;
     updateWidget();
   });
 
@@ -558,7 +553,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
       uncachedUsd: uncachedCostUsd(usage, s.rates),
     };
     s.records.push(record);
-    s.pendingWarning = false;
     const promptSize = usage.input + usage.cacheRead + usage.cacheWrite;
     s.lineages.push({
       requestLeafId: s.pendingRequestLeafId ?? null,
@@ -633,8 +627,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("agent_end", async (_event, ctx) => {
     if (!ownsState()) return;
     s.requestArmed = false;
-    if (s.pendingWarning) pi.appendEntry("cachemire-warning-aborted");
-    s.pendingWarning = false;
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
     if (s.pendingRequestAt !== undefined) {
       s.lastRequestAt = s.pendingPreviousRequestAt;

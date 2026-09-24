@@ -249,16 +249,13 @@ an old-model count as the denominator.
 
 ## Warning markers stay out of model context
 
-Working state and rendered output live in the extension process. With `DEBUG=1` in
-Pi's environment, an in-flight `cache breaking` notice also appends a non-context
-`custom` session entry with `customType: "cachemire-warning"` and
-`data: { cause: <kind> }` before the billed assistant response. Without that flag,
-notices still appear but no Cachemire markers are saved. A Pi `cache_warm` usage entry can appear between them;
-follow the marker's branch to the assistant response and use that response's usage,
-not the refresh's usage, to check the warning. If the send ends without usage,
-`cachemire-warning-aborted` marks that warning as unverified. Cachemire does not
-persist widget appearances, post-bill notices or prompt content. Pi normalizes and
-persists provider usage through its normal session lifecycle.
+With `DEBUG=1`, each displayed in-flight break warning writes a non-context
+`cachemire-warning` entry containing only the cause kind. Compare it with the first
+assistant response on that branch, skipping any intervening `cache_warm` usage. If
+that response has no usage, or the send ends without one, the outcome is unknown;
+do not match a later turn. Without `DEBUG=1`,
+notices still appear but no markers are saved. Cachemire does not persist widget
+appearances or post-bill notices. Pi persists provider usage as usual.
 
 On hot reload, Cachemire reattaches the process-live payload fingerprints to their
 persisted provider calls. Tool-schema and other prefix changes introduced by the reload
