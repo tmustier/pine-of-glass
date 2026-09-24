@@ -247,11 +247,15 @@ The first billed call after a switch is classified against its own prompt. If it
 cached prefix, the resolved line can report that observed result. Cachemire does not use
 an old-model count as the denominator.
 
-## State stays UI-only
+## Warning markers stay out of model context
 
-Working state and rendered output live in the extension process. Cachemire adds no custom
-session entries or exports. Pi normalizes and persists provider usage through its
-normal session lifecycle.
+With `"debug": true` in `~/.pi/agent/pi-cachemire.json`, each displayed in-flight
+break warning writes a non-context `cachemire-warning` entry containing only the
+cause kind. Compare it with the first assistant response on that branch, skipping
+any intervening `cache_warm` usage. If that response has no usage, or the send ends
+without one, the outcome is unknown; do not match a later turn. With debug disabled,
+notices still appear but no markers are saved. Cachemire does not persist widget
+appearances or post-bill notices. Pi persists provider usage as usual.
 
 On hot reload, Cachemire reattaches the process-live payload fingerprints to their
 persisted provider calls. Tool-schema and other prefix changes introduced by the reload

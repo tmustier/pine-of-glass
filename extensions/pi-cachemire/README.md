@@ -158,9 +158,12 @@ to print the per-call ledger table.
 
 Config lives at `~/.pi/agent/pi-cachemire.json` or `<project>/.pi/pi-cachemire.json`.
 Set `turnSummaryMinCalls` higher if you only want a ledger line for multi-call turns.
+Set `"debug": true` in the user-level file to keep warning markers enabled on every
+Pi launch.
 
 ```json
 {
+  "debug": false,
   "widget": true,
   "turnSummary": true,
   "turnSummaryMinCalls": 1,
@@ -178,8 +181,11 @@ Cachemire follows these rules:
   Pi 0.85.1 normalizes Moonshot and Together cache-read counts natively.
 - The model-switch forecast is the only estimate and is always labelled `est`.
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
-- Everything Cachemire draws is UI-only and does not enter LLM context. Provider usage
-  follows Pi's normal session persistence; Cachemire adds no custom session entries.
+- Cachemire's UI lines do not enter LLM context. With `"debug": true`, each
+  displayed in-flight break warning writes a non-context `cachemire-warning`
+  entry (cause kind only). Compare it with the first assistant response on that
+  branch, skipping cache-warming usage. No response or zero usage means the outcome
+  is unknown, not a match to a later turn. Otherwise no markers are saved.
 - Freshness wording follows the generated policy table above. Unknown retention stays
   silent. Under subscription auth, Cachemire marks savings as notional.
 - Hot reloads reattach process-live payload fingerprints to the same persisted calls,

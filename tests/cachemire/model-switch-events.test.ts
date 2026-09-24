@@ -22,6 +22,7 @@ function extensionProbe(): { handlers: Map<string, Handler[]> } {
     registerCommand(): void {},
     registerProvider(): void {},
     unregisterProvider(): void {},
+    appendEntry(): void {},
     getThinkingLevel: () => "off",
     getActiveTools: () => [],
     getAllTools: () => [],

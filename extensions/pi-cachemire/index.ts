@@ -82,28 +82,10 @@ export type {
   UsageLike,
 } from "./types.ts";
 
-/**
- * pi-cachemire — explains the cache and loop economics of a pi session.
- *
- * pi's footer already *counts* (input/output/cache read/write/cost); cachemire *explains*:
- *   1. "Am I past TTL?"            → a warning above the editor shortly before a known
- *      cache window closes, with the possible re-write bill once stale.
- *   2. "Why did the cache break?"  → forensics: every provider request is fingerprinted
- *      (system / tools / history segments, cache_control stripped); on a miss the diff
- *      names supported causes such as retention expiry, compaction, model switch,
- *      system prompt edits, tool-list changes, or history mutations, and otherwise
- *      reports the cause as unknown.
- *   3. "Am I using too many calls?"→ a one-line ledger entry per user turn (auto-shown for
- *      multi-call turns) and a /cache command with the full per-call table plus actual vs
- *      counterfactual-uncached spend ("caching saved $X").
- *
- * Numbers are provider-exact (assistant-message usage), except after a model switch:
- * the exact counts on hand are old-model currency, so the prompt is forecast in the
- * target tokenizer and marked est (issue #57). Display is UI-only: nothing cachemire
- * renders enters LLM context, session entries, or exports.
- */
+// Cachemire explains Pi's provider-reported cache usage and loop cost.
 
 const DEFAULT_CONFIG: CachemireConfig = {
+  debug: false, // agent-default (not a user rule): 2026-09-24
   widget: true,
   turnSummary: true,
   turnSummaryMinCalls: 1, // every turn: a single-call turn omitting the line felt inconsistent
@@ -111,10 +93,6 @@ const DEFAULT_CONFIG: CachemireConfig = {
   missWarnUsd: 0.05,
   missWarnTokens: 20_000,
 };
-
-// Glyphs and ink come from the family style (_lib/style.ts, design language §§1–3):
-// ◍ opens every loop-economics line, ○ ● ◑ ◌ are the status scale, and all colour
-// is theme-derived through ink() with raw-ANSI fallbacks before a Theme handle exists.
 
 // --- chat scrollback append (display-only; never touches LLM context) -------------------
 // Anchored-line machinery lives in _lib/chatline.ts (shared with pi-meantime): lines
@@ -292,12 +270,14 @@ export default function piCachemire(pi: ExtensionAPI): void {
       const parsed = readJsonConfig(filePath, (value): Partial<CachemireConfig> => {
         if (!isJsonObject(value)) return {};
         const next: Partial<CachemireConfig> = {};
+        const debug = booleanValue(value.debug);
         const widget = booleanValue(value.widget);
         const turnSummary = booleanValue(value.turnSummary);
         const turnSummaryMinCalls = positiveNumberValue(value.turnSummaryMinCalls);
         const missWarnings = booleanValue(value.missWarnings);
         const missWarnUsd = positiveNumberValue(value.missWarnUsd);
         const missWarnTokens = positiveNumberValue(value.missWarnTokens);
+        if (debug !== undefined) next.debug = debug;
         if (widget !== undefined) next.widget = widget;
         if (turnSummary !== undefined) next.turnSummary = turnSummary;
         if (turnSummaryMinCalls !== undefined) next.turnSummaryMinCalls = Math.floor(turnSummaryMinCalls);
@@ -433,6 +413,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
         const text = econLine("warning", renderBreakingLine(prediction));
         if (s.pendingNotice) s.pendingNotice.setText(text);
         else s.pendingNotice = appendChatLine(text);
+        if (s.config.debug) {
+          pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
+          s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
+        }
       }
     }
     updateWidget();

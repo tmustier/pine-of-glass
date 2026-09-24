@@ -18,6 +18,7 @@ function probe(): { handlers: Map<string, Handler[]>; commands: Map<string, Hand
     },
     registerProvider(): void {},
     unregisterProvider(): void {},
+    appendEntry(): void {},
     getThinkingLevel: () => "off",
   } as unknown as ExtensionAPI;
   piCachemire(pi);
