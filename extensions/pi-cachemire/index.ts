@@ -83,24 +83,10 @@ export type {
 } from "./types.ts";
 
 /**
- * pi-cachemire — explains the cache and loop economics of a pi session.
- *
- * pi's footer already *counts* (input/output/cache read/write/cost); cachemire *explains*:
- *   1. "Am I past TTL?"            → a warning above the editor shortly before a known
- *      cache window closes, with the possible re-write bill once stale.
- *   2. "Why did the cache break?"  → forensics: every provider request is fingerprinted
- *      (system / tools / history segments, cache_control stripped); on a miss the diff
- *      names supported causes such as retention expiry, compaction, model switch,
- *      system prompt edits, tool-list changes, or history mutations, and otherwise
- *      reports the cause as unknown.
- *   3. "Am I using too many calls?"→ a one-line ledger entry per user turn (auto-shown for
- *      multi-call turns) and a /cache command with the full per-call table plus actual vs
- *      counterfactual-uncached spend ("caching saved $X").
- *
- * Numbers are provider-exact (assistant-message usage), except after a model switch:
- * the exact counts on hand are old-model currency, so the prompt is forecast in the
- * target tokenizer and marked est (issue #57). Display is UI-only: nothing cachemire
- * renders enters LLM context, session entries, or exports.
+ * Pi's footer counts cache usage; Cachemire explains retention, breaks and loop cost.
+ * Billed usage stays provider-exact; cross-model forecasts are marked estimates.
+ * UI lines stay out of model context, while warning markers are persisted as custom
+ * entries for later comparison with the billed assistant response.
  */
 
 const DEFAULT_CONFIG: CachemireConfig = {
@@ -158,6 +144,7 @@ interface CachemireState extends WarmSyncState {
   chat?: ContainerLike;
   /** In-flight break notice placed at request time; resolved in place when usage arrives. */
   pendingNotice?: Text;
+  pendingWarning: boolean;
   run?: RunAggregate;
   /** Theme handle (captured at session_start) — all chat/widget ink flows through ink(). */
   theme?: Theme;
@@ -179,6 +166,7 @@ function state(): CachemireState {
       records: [],
       lineages: [],
       requestArmed: false,
+      pendingWarning: false,
       seenWarmEntryIds: new Set(),
       window: UNKNOWN_WINDOW,
       modelSwitched: false,
@@ -313,6 +301,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.records = restoreBranchRecords(branch, classifyCall);
     s.seenWarmEntryIds = new Set(entries.filter(isWarmUsageEntry).map((entry) => entry.id));
     s.requestArmed = false;
+    s.pendingWarning = false;
     s.lineages = restoreLineageSnapshots(entries, event.reason === "reload" ? s.lineages : undefined);
     const baseline = findBranchBaseline(entries, ctx.sessionManager.getLeafId(), s.lineages);
     const model = ctx.model;
@@ -433,6 +422,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
         const text = econLine("warning", renderBreakingLine(prediction));
         if (s.pendingNotice) s.pendingNotice.setText(text);
         else s.pendingNotice = appendChatLine(text);
+        pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
+        s.pendingWarning = true;
+        s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
       }
     }
     updateWidget();
@@ -494,6 +486,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
     restoreThinkingForPath(ctx, entries, event.newLeafId);
     s.requestArmed = false;
+    s.pendingWarning = false;
     updateWidget();
   });
 
@@ -568,6 +561,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       uncachedUsd: uncachedCostUsd(usage, s.rates),
     };
     s.records.push(record);
+    s.pendingWarning = false;
     const promptSize = usage.input + usage.cacheRead + usage.cacheWrite;
     s.lineages.push({
       requestLeafId: s.pendingRequestLeafId ?? null,
@@ -642,6 +636,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("agent_end", async (_event, ctx) => {
     if (!ownsState()) return;
     s.requestArmed = false;
+    if (s.pendingWarning) pi.appendEntry("cachemire-warning-aborted");
+    s.pendingWarning = false;
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
     if (s.pendingRequestAt !== undefined) {
       s.lastRequestAt = s.pendingPreviousRequestAt;
