@@ -252,8 +252,9 @@ an old-model count as the denominator.
 Working state and rendered output live in the extension process. When an in-flight
 `cache breaking` notice is displayed, Cachemire appends a non-context `custom` session
 entry with `customType: "cachemire-warning"` and `data: { cause: <kind> }` before the
-billed assistant response. The session tree links the marker to that response, whose
-ordinary persisted usage provides the cache result. If the send ends without usage,
+billed assistant response. A Pi `cache_warm` usage entry can appear between them;
+follow the marker's branch to the assistant response and use that response's usage,
+not the refresh's usage, to check the warning. If the send ends without usage,
 `cachemire-warning-aborted` marks that warning as unverified. Cachemire does not
 persist widget appearances, post-bill notices or prompt content. Pi normalizes and
 persists provider usage through its normal session lifecycle.
