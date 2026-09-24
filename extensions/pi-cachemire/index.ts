@@ -413,7 +413,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         const text = econLine("warning", renderBreakingLine(prediction));
         if (s.pendingNotice) s.pendingNotice.setText(text);
         else s.pendingNotice = appendChatLine(text);
-        if (s.config.debug || process.env.DEBUG === "1") {
+        if (s.config.debug) {
           pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
           s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
         }
