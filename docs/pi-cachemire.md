@@ -249,10 +249,11 @@ an old-model count as the denominator.
 
 ## Warning markers stay out of model context
 
-Working state and rendered output live in the extension process. When an in-flight
-`cache breaking` notice is displayed, Cachemire appends a non-context `custom` session
-entry with `customType: "cachemire-warning"` and `data: { cause: <kind> }` before the
-billed assistant response. A Pi `cache_warm` usage entry can appear between them;
+Working state and rendered output live in the extension process. With `DEBUG=1` in
+Pi's environment, an in-flight `cache breaking` notice also appends a non-context
+`custom` session entry with `customType: "cachemire-warning"` and
+`data: { cause: <kind> }` before the billed assistant response. Without that flag,
+notices still appear but no Cachemire markers are saved. A Pi `cache_warm` usage entry can appear between them;
 follow the marker's branch to the assistant response and use that response's usage,
 not the refresh's usage, to check the warning. If the send ends without usage,
 `cachemire-warning-aborted` marks that warning as unverified. Cachemire does not

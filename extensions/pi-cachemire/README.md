@@ -178,10 +178,11 @@ Cachemire follows these rules:
   Pi 0.85.1 normalizes Moonshot and Together cache-read counts natively.
 - The model-switch forecast is the only estimate and is always labelled `est`.
   Forensic causes come from observed payload diffs. Cachemire does not infer them.
-- Cachemire's UI lines do not enter LLM context. Each displayed in-flight break warning
-  leaves a non-context `cachemire-warning` session marker (cause kind only) before the
-  billed response, so its prediction can later be compared with persisted provider
-  usage. Sends without usage get a `cachemire-warning-aborted` marker.
+- Cachemire's UI lines do not enter LLM context. Run Pi with `DEBUG=1` to record a
+  non-context `cachemire-warning` session marker (cause kind only) for each displayed
+  in-flight break warning. Compare it with the billed response's persisted usage;
+  sends without usage get a `cachemire-warning-aborted` marker. Without the flag,
+  Cachemire shows the same notices but saves no markers.
 - Freshness wording follows the generated policy table above. Unknown retention stays
   silent. Under subscription auth, Cachemire marks savings as notional.
 - Hot reloads reattach process-live payload fingerprints to the same persisted calls,

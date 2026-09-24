@@ -82,12 +82,7 @@ export type {
   UsageLike,
 } from "./types.ts";
 
-/**
- * Pi's footer counts cache usage; Cachemire explains retention, breaks and loop cost.
- * Billed usage stays provider-exact; cross-model forecasts are marked estimates.
- * UI lines stay out of model context, while warning markers are persisted as custom
- * entries for later comparison with the billed assistant response.
- */
+// Cachemire explains Pi's provider-reported cache usage and loop cost.
 
 const DEFAULT_CONFIG: CachemireConfig = {
   widget: true,
@@ -422,9 +417,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
         const text = econLine("warning", renderBreakingLine(prediction));
         if (s.pendingNotice) s.pendingNotice.setText(text);
         else s.pendingNotice = appendChatLine(text);
-        pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
-        s.pendingWarning = true;
-        s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
+        if (process.env.DEBUG === "1") {
+          pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
+          s.pendingWarning = true;
+          s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
+        }
       }
     }
     updateWidget();

@@ -34,7 +34,9 @@ function payload(system: string, messages: string[]) {
   };
 }
 
-test("Pi links a displayed warning to its billed result even when cache warming runs in between", async () => {
+test("DEBUG=1 links a displayed warning to its billed result even when cache warming runs in between", async () => {
+  const previousDebug = process.env.DEBUG;
+  process.env.DEBUG = "1";
   const project = new IsolatedProject();
   const manager = SessionManager.inMemory(project.dir);
   const host = await hostExtension(piCachemire, { project, model, sessionManager: manager });
@@ -88,5 +90,35 @@ test("Pi links a displayed warning to its billed result even when cache warming 
   } finally {
     await host.dispose();
     project.dispose();
+    if (previousDebug === undefined) delete process.env.DEBUG;
+    else process.env.DEBUG = previousDebug;
+  }
+});
+
+test("without DEBUG=1 a displayed warning does not add session markers", async () => {
+  const previousDebug = process.env.DEBUG;
+  delete process.env.DEBUG;
+  const project = new IsolatedProject();
+  const manager = SessionManager.inMemory(project.dir);
+  const host = await hostExtension(piCachemire, { project, model, sessionManager: manager });
+  const runner = host.session.extensionRunner;
+  try {
+    manager.appendMessage({ role: "user", content: "first", timestamp: Date.now() });
+    await runner.emitContext([]);
+    await runner.emitBeforeProviderRequest(payload("initial", ["first"]));
+    await runner.emitMessageEnd({ type: "message_end", message: billed(0, 0, 100_000) });
+    manager.appendMessage(billed(0, 0, 100_000));
+
+    manager.appendMessage({ role: "user", content: "second", timestamp: Date.now() });
+    await runner.emitContext([]);
+    await runner.emitBeforeProviderRequest(payload("changed", ["first", "second"]));
+    assert.match(host.ui.notifications.at(-1)!, /cache breaking.*system prompt changed/);
+    await runner.emit({ type: "agent_end", messages: [] });
+    assert.equal(manager.getEntries().filter((entry) => entry.type === "custom" && entry.customType.startsWith("cachemire-warning")).length, 0);
+  } finally {
+    await host.dispose();
+    project.dispose();
+    if (previousDebug === undefined) delete process.env.DEBUG;
+    else process.env.DEBUG = previousDebug;
   }
 });
