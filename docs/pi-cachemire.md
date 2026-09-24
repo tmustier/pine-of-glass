@@ -249,12 +249,13 @@ an old-model count as the denominator.
 
 ## Warning markers stay out of model context
 
-With `DEBUG=1`, each displayed in-flight break warning writes a non-context
+With `"debug": true` in `~/.pi/agent/pi-cachemire.json` (or `DEBUG=1` in Pi's
+environment), each displayed in-flight break warning writes a non-context
 `cachemire-warning` entry containing only the cause kind. Compare it with the first
 assistant response on that branch, skipping any intervening `cache_warm` usage. If
 that response has no usage, or the send ends without one, the outcome is unknown;
-do not match a later turn. Without `DEBUG=1`,
-notices still appear but no markers are saved. Cachemire does not persist widget
+do not match a later turn. Without either setting, notices still appear but no
+markers are saved. Cachemire does not persist widget
 appearances or post-bill notices. Pi persists provider usage as usual.
 
 On hot reload, Cachemire reattaches the process-live payload fingerprints to their

@@ -85,6 +85,7 @@ export type {
 // Cachemire explains Pi's provider-reported cache usage and loop cost.
 
 const DEFAULT_CONFIG: CachemireConfig = {
+  debug: false, // agent-default (not a user rule): 2026-09-24
   widget: true,
   turnSummary: true,
   turnSummaryMinCalls: 1, // every turn: a single-call turn omitting the line felt inconsistent
@@ -92,10 +93,6 @@ const DEFAULT_CONFIG: CachemireConfig = {
   missWarnUsd: 0.05,
   missWarnTokens: 20_000,
 };
-
-// Glyphs and ink come from the family style (_lib/style.ts, design language §§1–3):
-// ◍ opens every loop-economics line, ○ ● ◑ ◌ are the status scale, and all colour
-// is theme-derived through ink() with raw-ANSI fallbacks before a Theme handle exists.
 
 // --- chat scrollback append (display-only; never touches LLM context) -------------------
 // Anchored-line machinery lives in _lib/chatline.ts (shared with pi-meantime): lines
@@ -273,12 +270,14 @@ export default function piCachemire(pi: ExtensionAPI): void {
       const parsed = readJsonConfig(filePath, (value): Partial<CachemireConfig> => {
         if (!isJsonObject(value)) return {};
         const next: Partial<CachemireConfig> = {};
+        const debug = booleanValue(value.debug);
         const widget = booleanValue(value.widget);
         const turnSummary = booleanValue(value.turnSummary);
         const turnSummaryMinCalls = positiveNumberValue(value.turnSummaryMinCalls);
         const missWarnings = booleanValue(value.missWarnings);
         const missWarnUsd = positiveNumberValue(value.missWarnUsd);
         const missWarnTokens = positiveNumberValue(value.missWarnTokens);
+        if (debug !== undefined) next.debug = debug;
         if (widget !== undefined) next.widget = widget;
         if (turnSummary !== undefined) next.turnSummary = turnSummary;
         if (turnSummaryMinCalls !== undefined) next.turnSummaryMinCalls = Math.floor(turnSummaryMinCalls);
@@ -414,7 +413,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         const text = econLine("warning", renderBreakingLine(prediction));
         if (s.pendingNotice) s.pendingNotice.setText(text);
         else s.pendingNotice = appendChatLine(text);
-        if (process.env.DEBUG === "1") {
+        if (s.config.debug || process.env.DEBUG === "1") {
           pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
           s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
         }

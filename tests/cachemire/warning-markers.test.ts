@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
@@ -34,13 +36,18 @@ function payload(system: string, messages: string[]) {
   };
 }
 
-test("only DEBUG=1 records a break warning, even when cache warming precedes its response", async () => {
+test("debug config or DEBUG=1 records a warning across cache warming, but normal mode does not", async () => {
   const previousDebug = process.env.DEBUG;
   try {
-    for (const debug of ["1", undefined]) {
-      if (debug === undefined) delete process.env.DEBUG;
-      else process.env.DEBUG = debug;
+    for (const mode of ["env", "config", "off"] as const) {
+      if (mode === "env") process.env.DEBUG = "1";
+      else delete process.env.DEBUG;
       const project = new IsolatedProject();
+      if (mode === "config") {
+        const agentDir = join(project.home, ".pi", "agent");
+        mkdirSync(agentDir, { recursive: true });
+        writeFileSync(join(agentDir, "pi-cachemire.json"), JSON.stringify({ debug: true }));
+      }
       const manager = SessionManager.inMemory(project.dir);
       const host = await hostExtension(piCachemire, { project, model, sessionManager: manager });
       const runner = host.session.extensionRunner;
@@ -57,14 +64,14 @@ test("only DEBUG=1 records a break warning, even when cache warming precedes its
         await runner.emitBeforeProviderRequest(payload("changed", ["first", "second"]));
         assert.match(host.ui.notifications.at(-1)!, /cache breaking.*system prompt changed/);
         const warnings = manager.getEntries().filter((entry) => entry.type === "custom" && entry.customType === "cachemire-warning");
-        assert.equal(warnings.length, debug === "1" ? 1 : 0);
+        assert.equal(warnings.length, mode === "off" ? 0 : 1);
         const warm = manager.appendUsage("cache_warm", model.provider, model.id, billed(99_900, 0).usage);
         const second = billed(100_000, 300);
         await runner.emitMessageEnd({ type: "message_end", message: second });
         const resultId = manager.appendMessage(second);
         const result = manager.getEntry(resultId);
         assert.equal(result?.parentId, warm.id);
-        if (debug === "1") {
+        if (mode !== "off") {
           const warning = warnings[0];
           assert.ok(warning && warning.type === "custom");
           assert.deepEqual(warning.data, { cause: "system" });
@@ -80,7 +87,7 @@ test("only DEBUG=1 records a break warning, even when cache warming precedes its
         await runner.emitBeforeProviderRequest(payload("changed again", ["first", "second", "third"]));
         assert.match(host.ui.notifications.at(-1)!, /cache breaking.*system prompt changed/);
         assert.equal(manager.getEntries().filter((entry) => entry.type === "custom" && entry.customType === "cachemire-warning").length,
-          debug === "1" ? 2 : 0);
+          mode === "off" ? 0 : 2);
       } finally {
         await host.dispose();
         project.dispose();

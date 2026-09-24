@@ -85,6 +85,7 @@ export interface RunAggregate {
 }
 
 export interface CachemireConfig {
+  debug: boolean;
   widget: boolean;
   turnSummary: boolean;
   turnSummaryMinCalls: number;
