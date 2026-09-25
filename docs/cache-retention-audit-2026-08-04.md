@@ -11,6 +11,13 @@ Updated on 23 September 2026 to include GPT-6 Sol and Luna alongside Astra on th
 exact direct OpenAI and Codex routes. OpenAI's GPT-5.6-and-later 30-minute minimum
 applies to these models; it is not a guaranteed expiry.
 
+Updated on 26 September 2026 after live probes showed direct Anthropic 5-minute and
+1-hour entries serving reads until 10s past their TTL, timed from the response start.
+Cachemire adds that grace to both contracts and anchors live clocks at the response
+start. The
+[Anthropic TTL audit](./cache-anthropic-ttl-audit-2026-09-26.md) records the method and
+limits.
+
 ## Outcome
 
 The generated evidence matrix and runtime resolution use the same typed registry.
@@ -20,6 +27,7 @@ The generated evidence matrix and runtime resolution use the same typed registry
 <!-- BEGIN GENERATED CACHE RETENTION: evidence-sources -->
 - [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), reviewed 23 September 2026: GPT-5.6+ and GPT-6 minimum eligibility, plus legacy extended retention
 - [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), reviewed 4 August 2026: ephemeral cache TTL contracts
+- [Cachemire Anthropic TTL boundary probe](https://github.com/tmustier/pine-of-glass/blob/main/docs/cache-anthropic-ttl-audit-2026-09-26.md), reviewed 26 September 2026: live 5-minute and 1-hour entries serve reads until 10s past the TTL, timed from the response start
 - [MiniMax Anthropic-compatible caching](https://platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache.md), reviewed 5 August 2026: M2.7 explicit 5-minute cache entries
 - [Amazon Bedrock prompt caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html), reviewed 5 August 2026: Claude cache points, model support and TTLs
 - [Groq prompt caching](https://console.groq.com/docs/prompt-caching), reviewed 5 August 2026: GPT-OSS cache support and 2-hour inactivity expiry
@@ -39,7 +47,7 @@ Codex request shape.
 <!-- BEGIN GENERATED CACHE RETENTION: policy-table -->
 | Route | Retention evidence | Cachemire behaviour | Evidence source |
 |---|---|---|---|
-| Direct Anthropic | live `cache_control`, or Pi's restored-session retention default | activate the observed or inferred TTL after a cache read or write | [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), Installed Pi request builders and model records |
+| Direct Anthropic | live `cache_control`, or Pi's restored-session retention default | activate the observed or inferred TTL after a cache read or write; the entry expires 10s after its TTL | [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), [Cachemire Anthropic TTL boundary probe](https://github.com/tmustier/pine-of-glass/blob/main/docs/cache-anthropic-ttl-audit-2026-09-26.md), Installed Pi request builders and model records |
 | OpenAI or OpenAI Codex, GPT-5.6+ or GPT-6 | documented `prompt_cache_options.ttl` default | after a cache read or write, use the 30m minimum; then show that the cache state is unknown | [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), Installed Pi request builders and model records |
 | Direct official OpenAI API, GPT-5 below GPT-5.6 | outgoing payload contains `prompt_cache_retention: "24h"` | after a cache read, record a 24h maximum with no warmth claim before it | [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), Installed Pi request builders and model records |
 | MiniMax M2.7, global and China routes | outgoing 5-minute `cache_control` on an M2.7 model | activate the 5-minute TTL after a cache read or write | [MiniMax Anthropic-compatible caching](https://platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache.md), Installed Pi request builders and model records |

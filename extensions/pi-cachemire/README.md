@@ -21,7 +21,7 @@ such as compaction or a model switch puts the next send at risk.
 <!-- BEGIN GENERATED CACHE RETENTION: policy-table -->
 | Route | Retention evidence | Cachemire behaviour | Evidence source |
 |---|---|---|---|
-| Direct Anthropic | live `cache_control`, or Pi's restored-session retention default | activate the observed or inferred TTL after a cache read or write | [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), Installed Pi request builders and model records |
+| Direct Anthropic | live `cache_control`, or Pi's restored-session retention default | activate the observed or inferred TTL after a cache read or write; the entry expires 10s after its TTL | [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), [Cachemire Anthropic TTL boundary probe](https://github.com/tmustier/pine-of-glass/blob/main/docs/cache-anthropic-ttl-audit-2026-09-26.md), Installed Pi request builders and model records |
 | OpenAI or OpenAI Codex, GPT-5.6+ or GPT-6 | documented `prompt_cache_options.ttl` default | after a cache read or write, use the 30m minimum; then show that the cache state is unknown | [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), Installed Pi request builders and model records |
 | Direct official OpenAI API, GPT-5 below GPT-5.6 | outgoing payload contains `prompt_cache_retention: "24h"` | after a cache read, record a 24h maximum with no warmth claim before it | [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), Installed Pi request builders and model records |
 | MiniMax M2.7, global and China routes | outgoing 5-minute `cache_control` on an M2.7 model | activate the 5-minute TTL after a cache read or write | [MiniMax Anthropic-compatible caching](https://platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache.md), Installed Pi request builders and model records |
@@ -33,6 +33,13 @@ such as compaction or a model switch puts the next send at risk.
 The table is generated from Cachemire's runtime policy registry. A minimum is not an
 expiry, and unknown retention never earns an elapsed-time claim. Cachemire does not use
 `in_memory` or an undocumented 5-minute to 1-hour OpenAI band as retention evidence.
+
+Providers refresh a cache entry while they read the prompt, so each clock runs from
+the moment the provider started responding. After Pi restarts or resumes a session,
+Cachemire uses the request time instead because Pi does not save the response start. The
+[Anthropic TTL audit](../../docs/cache-anthropic-ttl-audit-2026-09-26.md) found that
+Anthropic entries still serve reads for 10s after their TTL, so the clock includes that
+grace.
 
 The `~` re-write count starts from the prior billed prompt-side usage. It is not the
 whole next prompt, which adds your new message and other suffix content. After a model

@@ -6,11 +6,11 @@ import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 import { computeSwitchForecast, type SwitchTarget } from "../../extensions/pi-cachemire/forecast.ts";
-import { CEREBRAS_BOUNDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
+import { CEREBRAS_BOUNDED_WINDOW, OPENAI_MINIMUM_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 const {
-  cacheClock, nextClockUpdateMs, OPENAI_MINIMUM_WINDOW, predictBreak, renderBreakingLine,
+  cacheClock, nextClockUpdateMs, predictBreak, renderBreakingLine,
   restoreLineageSnapshots, withinWarmHorizon,
 } = internals;
 

@@ -41,11 +41,7 @@ import {
 import { renderBreakingLine, renderHeldLine, renderLedger, renderMissLine, renderRunSummary } from "./render.ts";
 import {
   confirmedWindow,
-  inferAnthropicTtlMs,
-  OPENAI_EXTENDED_WINDOW,
-  OPENAI_MINIMUM_WINDOW,
   retentionForRequest,
-  windowLabel,
   type RetentionMatch,
 } from "./retention.ts";
 import {
@@ -110,6 +106,8 @@ interface CachemireState extends WarmSyncState {
   pendingFingerprintCause?: CallCause;
   pendingRequestLeafId?: string | null;
   pendingRequestAt?: number;
+  /** When the provider began responding to the pending request: the cache TTL anchor. */
+  pendingResponseAt?: number;
   pendingPreviousRequestAt?: number;
   pendingPreviousWindow?: CacheWindow;
   pendingRetention?: RetentionMatch;
@@ -319,7 +317,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.inCompaction = false;
     s.pendingFingerprint = undefined;
     s.pendingFingerprintCause = undefined;
-    s.pendingRequestAt = s.pendingPreviousRequestAt = s.pendingCacheGapMs = undefined;
+    s.pendingRequestAt = s.pendingResponseAt = s.pendingPreviousRequestAt = s.pendingCacheGapMs = undefined;
     s.pendingRequestLeafId = undefined;
     s.pendingRetention = s.pendingPreviousWindow = undefined;
     s.ui = ctx.ui;
@@ -380,6 +378,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     });
     s.providerLabel = ctx.model?.provider;
     s.pendingRequestAt = requestAt;
+    s.pendingResponseAt = undefined;
     s.lastRequestAt = requestAt;
     s.window = UNKNOWN_WINDOW;
 
@@ -420,6 +419,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
       }
     }
     updateWidget();
+  });
+
+  // Anthropic sends response headers only after prefill has read and written the cache.
+  pi.on("after_provider_response", async () => {
+    if (ownsState() && s.pendingRequestAt !== undefined) s.pendingResponseAt ??= Date.now();
   });
 
   pi.on("model_select", async (event, ctx) => {
@@ -503,8 +507,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
       return;
     }
     const now = Date.now();
-    // Idle gap between the previous request (which refreshed the TTL) and this one.
+    // Idle gap between the previous call's cache refresh and this request.
     const requestAt = s.pendingRequestAt ?? now;
+    const refreshedAt = s.pendingResponseAt ?? requestAt;
     const gapMs = s.prevCallRequestAt !== undefined ? requestAt - s.prevCallRequestAt : undefined;
     const cacheGapMs = s.pendingCacheGapMs ?? gapMs;
 
@@ -557,6 +562,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       requestLeafId: s.pendingRequestLeafId ?? null,
       responseAt: typeof message.timestamp === "number" ? message.timestamp : now,
       requestAt,
+      responseStartAt: s.pendingResponseAt,
       promptTokens: promptSize,
       provider: message.provider,
       model: message.model,
@@ -565,10 +571,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
       window: activeWindow,
     });
     s.compacted = false;
-    s.prevCallRequestAt = requestAt;
+    s.prevCallRequestAt = refreshedAt;
     s.pendingFingerprint = undefined;
     s.pendingFingerprintCause = undefined;
-    s.pendingRequestAt = undefined;
+    s.pendingRequestAt = s.pendingResponseAt = undefined;
     s.pendingRequestLeafId = undefined;
     s.pendingPreviousRequestAt = s.pendingPreviousWindow = undefined;
     s.pendingCacheGapMs = undefined;
@@ -582,10 +588,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.switchForecast = undefined;
     s.lastCallThinkingLevel = s.currentThinkingLevel ?? s.lastCallThinkingLevel;
     s.thinkingChanged = false;
-    // Keep the request-start anchor: resetting to response end here would credit the cache
-    // with the whole generation time (a 4m thinking block would show 5m TTL remaining when
-    // the prefix written at request start has ~1m left).
-    s.lastRequestAt = requestAt;
+    // Anchor at the response start, not its end: a 4m thinking block must not show 5m left
+    // on a prefix written before it started.
+    s.lastRequestAt = refreshedAt;
 
     if (s.run) {
       s.run.calls += 1;
@@ -630,7 +635,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (s.pendingRequestAt !== undefined) {
       s.lastRequestAt = s.pendingPreviousRequestAt;
       s.window = s.pendingPreviousWindow ?? s.window;
-      s.pendingRequestAt = undefined;
+      s.pendingRequestAt = s.pendingResponseAt = undefined;
       s.pendingRequestLeafId = undefined;
       s.pendingPreviousRequestAt = s.pendingPreviousWindow = undefined;
       s.pendingFingerprint = undefined;
@@ -665,11 +670,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
 // Test-only surface. Pi's loader imports only the default export, so this is runtime-inert.
 export const internals = {
   fingerprintPayload,
-  inferAnthropicTtlMs,
-  windowLabel,
-  pastWindow,
-  OPENAI_EXTENDED_WINDOW,
-  OPENAI_MINIMUM_WINDOW,
   predictBreak,
   renderBreakingLine,
   withinWarmHorizon,
@@ -694,5 +694,4 @@ export const internals = {
   renderRunSummary,
   renderMissLine,
   renderLedger,
-  DEFAULT_CONFIG,
 };

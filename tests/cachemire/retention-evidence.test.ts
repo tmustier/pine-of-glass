@@ -16,7 +16,11 @@ const CACHE_READ = { cacheRead: 1_024, cacheWrite: 0 };
 test("model retention is limited to documented provider, API and model routes", () => {
   assert.deepEqual(
     retentionForModel("anthropic", "claude-sonnet-4-6", "anthropic-messages", {})?.window,
-    { kind: "contract", ttlMs: TTL_SHORT_MS, source: "inferred" },
+    { kind: "contract", ttlMs: TTL_SHORT_MS, source: "inferred", graceMs: 10_000 },
+  );
+  assert.deepEqual(
+    retentionForModel("anthropic", "claude-sonnet-4-6", "anthropic-messages", { PI_CACHE_RETENTION: "long" })?.window,
+    { kind: "contract", ttlMs: TTL_LONG_MS, source: "inferred", graceMs: 10_000 },
   );
   assert.equal(
     retentionForModel("openai-codex", "gpt-5.6-sol", "openai-codex-responses")?.window,
@@ -187,7 +191,7 @@ test("usage activates only the evidence each provider exposes", () => {
   });
   assert.deepEqual(
     confirmedWindow(anthropic, CACHE_WRITE),
-    { kind: "contract", ttlMs: TTL_SHORT_MS, source: "observed" },
+    { kind: "contract", ttlMs: TTL_SHORT_MS, source: "observed", graceMs: 10_000 },
   );
   assert.equal(confirmedWindow(groq, CACHE_WRITE), undefined);
   assert.equal(confirmedWindow(cerebras, CACHE_WRITE), undefined);

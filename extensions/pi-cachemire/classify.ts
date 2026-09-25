@@ -19,9 +19,14 @@ import { thinkingChangesPreserveCache, type ThinkingRoute } from "./thinking.ts"
 export const TTL_SHORT_MS = 5 * 60 * 1000;
 export const TTL_LONG_MS = 60 * 60 * 1000;
 
+/** When a contract entry stops serving reads: its documented TTL plus any measured grace. */
+export function contractExpiryMs(window: Extract<CacheWindow, { kind: "contract" }>): number {
+  return window.ttlMs + (window.graceMs ?? 0);
+}
+
 export function pastWindow(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
   if (!window || gapMs === undefined) return false;
-  if (window.kind === "contract") return gapMs >= window.ttlMs;
+  if (window.kind === "contract") return gapMs >= contractExpiryMs(window);
   if (window.kind === "maximum" || window.kind === "bounded") return gapMs >= window.maxMs;
   return false;
 }
@@ -31,7 +36,7 @@ export function pastWindow(window: CacheWindow | undefined, gapMs: number | unde
  * before it, and an unknown window nothing at all. */
 export function withinWarmPromise(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
   if (!window || gapMs === undefined) return false;
-  if (window.kind === "contract") return gapMs < window.ttlMs;
+  if (window.kind === "contract") return gapMs < contractExpiryMs(window);
   if (window.kind === "minimum" || window.kind === "bounded") return gapMs < window.minMs;
   return false;
 }
@@ -39,7 +44,7 @@ export function withinWarmPromise(window: CacheWindow | undefined, gapMs: number
 // Shared cause wording for predictions and resolved classifications.
 export function expiryCause(window: CacheWindow | undefined, gapMs: number | undefined): CallCause | undefined {
   if (!window || gapMs === undefined) return undefined;
-  if (window.kind === "contract" && gapMs >= window.ttlMs) {
+  if (window.kind === "contract" && gapMs >= contractExpiryMs(window)) {
     return { kind: "ttl", detail: `${formatDuration(window.ttlMs)} TTL reached after ${formatDuration(gapMs)} idle` };
   }
   if ((window.kind === "maximum" || window.kind === "bounded") && gapMs >= window.maxMs) {

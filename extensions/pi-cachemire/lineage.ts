@@ -9,6 +9,13 @@ import type {
   ResolvedCacheLineage,
 } from "./types.ts";
 
+/** When a billed call refreshed its cache entry. Providers read and write the cache
+ * during prefill, and Anthropic sends response headers only once prefill is done, so the
+ * response start is the TTL anchor. Restored calls lack it; their request time stands in. */
+export function cacheRefreshedAt(snapshot: CacheLineageSnapshot): number {
+  return snapshot.responseStartAt ?? snapshot.requestAt;
+}
+
 function changed(a: string | undefined, b: string | undefined): boolean {
   return a !== undefined && b !== undefined && a !== b;
 }
@@ -48,7 +55,7 @@ export function cacheStateForLineage(
   const { baseline, refresh } = resolution;
   return {
     expectedRead: baseline?.promptTokens ?? 0,
-    lastRequestAt: refresh?.requestAt,
+    lastRequestAt: refresh === undefined ? undefined : cacheRefreshedAt(refresh),
     lastCallModelId: baseline?.model,
     lastCallProvider: baseline?.provider,
     lastCallApi: baseline?.api,

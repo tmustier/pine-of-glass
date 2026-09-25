@@ -95,7 +95,13 @@ export interface CachemireConfig {
 }
 
 export type CacheWindow =
-  | { kind: "contract"; ttlMs: number; source: "observed" | "inferred" }
+  | {
+    kind: "contract";
+    ttlMs: number;
+    source: "observed" | "inferred";
+    /** Measured time past ttlMs during which the provider still serves reads. */
+    graceMs?: number;
+  }
   | { kind: "minimum"; minMs: number }
   | { kind: "maximum"; maxMs: number }
   | { kind: "bounded"; minMs: number; maxMs: number }
@@ -124,6 +130,8 @@ export interface CacheLineageSnapshot {
   responseEntryId?: string;
   responseAt: number;
   requestAt: number;
+  /** When the provider began responding; live calls only, because Pi does not persist it. */
+  responseStartAt?: number;
   promptTokens: number;
   provider?: string;
   model?: string;

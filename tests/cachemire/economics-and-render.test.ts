@@ -4,14 +4,15 @@ import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 import type { CallRecord } from "../../extensions/pi-cachemire/index.ts";
-import { CEREBRAS_BOUNDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
+import {
+  CEREBRAS_BOUNDED_WINDOW, inferAnthropicTtlMs, OPENAI_EXTENDED_WINDOW, OPENAI_MINIMUM_WINDOW,
+} from "../../extensions/pi-cachemire/retention.ts";
 
 const {
   uncachedCostUsd, rewriteCostUsd, sessionSavings,
   compactCount, formatUsd, formatDuration,
   cacheClock, renderRunSummary, renderMissLine, renderLedger,
-  inferAnthropicTtlMs, predictBreak, renderBreakingLine, renderHeldLine,
-  OPENAI_EXTENDED_WINDOW, OPENAI_MINIMUM_WINDOW,
+  predictBreak, renderBreakingLine, renderHeldLine,
   nextClockUpdateMs,
 } = internals;
 

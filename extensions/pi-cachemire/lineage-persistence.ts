@@ -48,6 +48,7 @@ function snapshotsFromEntries(
       responseEntryId: entry.id,
       responseAt,
       requestAt,
+      responseStartAt: previous?.responseStartAt,
       promptTokens: usage.input + usage.cacheRead + usage.cacheWrite,
       provider,
       model,
