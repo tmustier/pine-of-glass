@@ -29,8 +29,8 @@ export interface SwitchForecast {
   estTokens?: number;
   /** Gateway routes use rougher estimate wording because they can rewrite the prompt. */
   basis: "direct" | "gateway";
-  /** When the target's latest path-compatible billed call refreshed the cache, for switch-back warmth. */
-  prior?: { requestAt: number; window?: CacheWindow };
+  /** The target's latest path-compatible billed call, used for switch-back warmth. */
+  prior?: { refreshedAt: number; window?: CacheWindow };
 }
 
 export function computeSwitchForecast(args: {
@@ -56,7 +56,7 @@ export function computeSwitchForecast(args: {
   // A compaction after the prior call rewrote the prefix its cache entry covered; a
   // switch-back cannot revive it, so the warmth hint is withheld rather than hedged.
   if (prior && !pathContainsCompaction(args.entries, args.activeLeafId, prior)) {
-    forecast.prior = { requestAt: cacheRefreshedAt(prior), window: prior.window };
+    forecast.prior = { refreshedAt: cacheRefreshedAt(prior), window: prior.window };
   }
   let history: ForecastMessage[] | undefined;
   try {

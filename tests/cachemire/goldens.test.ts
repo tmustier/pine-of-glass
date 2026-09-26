@@ -62,7 +62,7 @@ test("cachemire ledger and one-line surfaces golden", () => {
     const state = cacheClock(input);
     return state.phase === "idle" ? "[idle] (hidden)" : `[${state.phase}] \u25cd ${state.text}`;
   };
-  const base = { lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 150_300, rewriteUsd: 2.82 };
+  const base = { lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 150_300, rewriteUsd: 2.82 };
 
   const lines = [
     "=== /cache ledger ===",
@@ -76,9 +76,9 @@ test("cachemire ledger and one-line surfaces golden", () => {
     clock({ now: 1 * MIN, ...base, thinkingChanged: true }),
     clock({ now: 1 * MIN, ...base, modelSwitched: true, switchForecast: { targetId: "gpt-5.6-sol", targetProvider: "openai-codex", estTokens: 96_400, basis: "direct" } }),
     clock({ now: 1 * MIN, ...base, modelSwitched: true, switchForecast: { targetId: "gpt-5.6-sol", targetProvider: "radius", estTokens: 96_400, basis: "gateway" } }),
-    clock({ now: 1 * MIN, ...base, modelSwitched: true, switchForecast: { targetId: "claude-opus-4-8", targetProvider: "anthropic", estTokens: 131_000, basis: "direct", prior: { requestAt: 0, window: CONTRACT_5M } } }),
+    clock({ now: 1 * MIN, ...base, modelSwitched: true, switchForecast: { targetId: "claude-opus-4-8", targetProvider: "anthropic", estTokens: 131_000, basis: "direct", prior: { refreshedAt: 0, window: CONTRACT_5M } } }),
     clock({ now: 1 * MIN, ...base, modelSwitched: true }),
-    clock({ now: 24 * 60 * MIN, lastRequestAt: 0, window: { kind: "maximum", maxMs: 24 * 60 * MIN }, cachedTokens: 64_300, rewriteUsd: 0.12 }),
+    clock({ now: 24 * 60 * MIN, lastRefreshedAt: 0, window: { kind: "maximum", maxMs: 24 * 60 * MIN }, cachedTokens: 64_300, rewriteUsd: 0.12 }),
     "",
     "=== Cerebras bounded clock ===",
     clock({ now: 5 * MIN, ...base, window: CEREBRAS_BOUNDED_WINDOW }),

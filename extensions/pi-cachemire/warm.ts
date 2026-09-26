@@ -10,8 +10,8 @@ export interface WarmSyncState {
   records: CallRecord[];
   lineages: CacheLineageSnapshot[];
   seenWarmEntryIds: Set<string>;
-  prevCallRequestAt?: number;
-  lastRequestAt?: number;
+  prevCallRefreshedAt?: number;
+  lastRefreshedAt?: number;
   window: CacheWindow;
   lastCallModelId?: string;
   lastCallProvider?: string;
@@ -47,7 +47,7 @@ export function syncWarmEntries(
     const requestAt = sessionEntryAt(entry);
     const lineage = state.lineages.find((snapshot) => snapshot.responseEntryId === entry.id);
     assert(lineage, `missing cache-warm lineage for ${entry.id}`);
-    const gapMs = state.prevCallRequestAt === undefined ? undefined : requestAt - state.prevCallRequestAt;
+    const gapMs = state.prevCallRefreshedAt === undefined ? undefined : requestAt - state.prevCallRefreshedAt;
     const switched = state.lastCallModelId !== undefined && (
       entry.model !== state.lastCallModelId ||
       (state.lastCallProvider !== undefined && entry.provider !== state.lastCallProvider)
@@ -77,8 +77,8 @@ export function syncWarmEntries(
       warm: true,
     });
     state.expectedRead = lineage.promptTokens;
-    state.prevCallRequestAt = requestAt;
-    state.lastRequestAt = Math.max(state.lastRequestAt ?? 0, requestAt);
+    state.prevCallRefreshedAt = requestAt;
+    state.lastRefreshedAt = Math.max(state.lastRefreshedAt ?? 0, requestAt);
     state.window = lineage.window ?? { kind: "unknown" };
     state.lastCallModelId = entry.model;
     state.lastCallProvider = entry.provider;

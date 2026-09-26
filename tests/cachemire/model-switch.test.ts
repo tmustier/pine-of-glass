@@ -27,14 +27,14 @@ const FORECAST = {
 test("clock: model switch forecasts in the target currency, always marked est", () => {
   // Per-model caches everywhere: the last call's entry is dead for the new model, and
   // the stored count is in the old tokenizer's currency, so it is never shown.
-  const switched = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true, switchForecast: FORECAST });
+  const switched = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true, switchForecast: FORECAST });
   assert.equal(switched.phase, "cold");
   assert.equal(switched.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (est)");
   // Gateway routes may transform the request upstream: the claim is demoted.
-  const gateway = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, basis: "gateway" } });
+  const gateway = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, basis: "gateway" } });
   assert.equal(gateway.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (rough est \u00b7 gateway route)");
   // Without an estimate the number is withheld outright (and stays out of the old currency).
-  const untagged = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
+  const untagged = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
   assert.equal(untagged.text, "cache cold expected \u00b7 model switched \u00b7 prompt size known at next send");
 });
 
@@ -44,65 +44,65 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
     targetProvider: "anthropic",
     estTokens: 96_400,
     basis: "direct" as const,
-    prior: { requestAt: 0, window: CONTRACT_5M },
+    prior: { refreshedAt: 0, window: CONTRACT_5M },
   };
-  const back = cacheClock({ now: 4 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
+  const back = cacheClock({ now: 4 * MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
   assert.equal(back.phase, "warm-unknown");
   assert.equal(back.text, "cache may still be warm \u00b7 switched back to claude-opus-4-8 \u00b7 next send confirms");
-  const backCold = cacheClock({ now: 5 * MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
+  const backCold = cacheClock({ now: 5 * MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
   assert.equal(backCold.phase, "cold", "the exact contract boundary is no longer warm");
 
-  const unknown = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { requestAt: 0, window: UNKNOWN } } });
+  const unknown = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { refreshedAt: 0, window: UNKNOWN } } });
   assert.equal(unknown.text, "cache state unknown \u00b7 model switched \u00b7 next send confirms");
 
-  const minimumForecast = { ...FORECAST, prior: { requestAt: 0, window: OPENAI_MINIMUM_WINDOW } };
+  const minimumForecast = { ...FORECAST, prior: { refreshedAt: 0, window: OPENAI_MINIMUM_WINDOW } };
   assert.equal(
-    cacheClock({ now: 29 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: minimumForecast }).text,
+    cacheClock({ now: 29 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: minimumForecast }).text,
     "cache may still be warm \u00b7 switched back to gpt-5.6-sol \u00b7 next send confirms",
   );
   assert.equal(
-    cacheClock({ now: 30 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: minimumForecast }).text,
+    cacheClock({ now: 30 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: minimumForecast }).text,
     "cache state unknown \u00b7 model switched \u00b7 next send confirms",
   );
 
-  const boundedForecast = { ...FORECAST, prior: { requestAt: 0, window: CEREBRAS_BOUNDED_WINDOW } };
+  const boundedForecast = { ...FORECAST, prior: { refreshedAt: 0, window: CEREBRAS_BOUNDED_WINDOW } };
   assert.match(
-    cacheClock({ now: 5 * MIN - 1, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).text,
+    cacheClock({ now: 5 * MIN - 1, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).text,
     /cache may still be warm/,
   );
   assert.match(
-    cacheClock({ now: 5 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).text,
+    cacheClock({ now: 5 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).text,
     /cache state unknown/,
   );
   assert.equal(nextClockUpdateMs({
     now: 5 * MIN,
-    lastRequestAt: 0,
+    lastRefreshedAt: 0,
     modelSwitched: true,
     switchForecast: boundedForecast,
   }), 55 * MIN);
   assert.equal(
-    cacheClock({ now: 60 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).phase,
+    cacheClock({ now: 60 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).phase,
     "cold",
   );
 
   const maximum = { kind: "maximum", maxMs: 24 * 60 * MIN } as const;
-  const extendedForecast = { ...FORECAST, prior: { requestAt: 0, window: maximum } };
+  const extendedForecast = { ...FORECAST, prior: { refreshedAt: 0, window: maximum } };
   assert.equal(
-    cacheClock({ now: 60 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: extendedForecast }).text,
+    cacheClock({ now: 60 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: extendedForecast }).text,
     "cache state unknown \u00b7 model switched \u00b7 next send confirms",
   );
   assert.equal(nextClockUpdateMs({
     now: 60 * MIN,
-    lastRequestAt: 0,
+    lastRefreshedAt: 0,
     window: UNKNOWN,
     modelSwitched: true,
     switchForecast: extendedForecast,
   }), 23 * 60 * MIN);
-  const atMaximum = { now: 24 * 60 * MIN, lastRequestAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: extendedForecast };
+  const atMaximum = { now: 24 * 60 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: extendedForecast };
   assert.equal(cacheClock(atMaximum).phase, "cold");
   assert.equal(nextClockUpdateMs(atMaximum), undefined);
 
-  const compacted = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, modelSwitched: true, compacted: true, switchForecast: anthropicForecast });
+  const compacted = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, compacted: true, switchForecast: anthropicForecast });
   assert.equal(compacted.text, "cache stale after compaction \u00b7 next send may re-write changed history");
 });
 
@@ -258,7 +258,7 @@ test("computeSwitchForecast: a switch-back prior needs an exact api and an uncom
   const base = { target: sol, entries: entriesFixture(), activeLeafId: "a1", systemPromptChars: 0, tools: [] };
   assert.deepEqual(
     computeSwitchForecast({ ...base, snapshots: [snapshot] }).prior,
-    { requestAt: 1_000, window: undefined },
+    { refreshedAt: 1_000, window: undefined },
   );
   // Same id via a different (or unrecorded) wire API is a different cache: no warmth hint.
   assert.equal(computeSwitchForecast({ ...base, snapshots: [{ ...snapshot, api: "openai-responses" }] }).prior, undefined);

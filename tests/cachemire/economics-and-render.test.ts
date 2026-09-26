@@ -59,36 +59,36 @@ test("formatting primitives", () => {
 test("cache clock stays silent until attention is useful", () => {
   assert.equal(cacheClock({ now: 0 }).phase, "idle");
 
-  const healthy = cacheClock({ now: 100_000, lastRequestAt: 0, window: CONTRACT_5M });
+  const healthy = cacheClock({ now: 100_000, lastRefreshedAt: 0, window: CONTRACT_5M });
   assert.equal(healthy.phase, "idle");
   assert.equal(healthy.text, "");
 
-  const closing = cacheClock({ now: 4 * MIN + 15_000, lastRequestAt: 0, window: CONTRACT_5M });
+  const closing = cacheClock({ now: 4 * MIN + 15_000, lastRefreshedAt: 0, window: CONTRACT_5M });
   assert.equal(closing.phase, "closing");
   assert.equal(closing.text, "cache expires in 45s");
 
-  const cold = cacheClock({ now: 6 * MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67 });
+  const cold = cacheClock({ now: 6 * MIN, lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67 });
   assert.equal(cold.phase, "cold");
   assert.equal(cold.text, "cache stale \u00b7 TTL expired \u00b7 next send may re-write ~142.3k (~$2.67)");
 
   // Unknown cache lifetimes stay silent rather than guessing at warm or cold states.
-  assert.deepEqual(cacheClock({ now: 3 * MIN, lastRequestAt: 0 }), { phase: "idle", text: "" });
+  assert.deepEqual(cacheClock({ now: 3 * MIN, lastRefreshedAt: 0 }), { phase: "idle", text: "" });
   assert.deepEqual(
-    cacheClock({ now: 535 * MIN, lastRequestAt: 0, cachedTokens: 109_800, rewriteUsd: 1.37 }),
+    cacheClock({ now: 535 * MIN, lastRefreshedAt: 0, cachedTokens: 109_800, rewriteUsd: 1.37 }),
     { phase: "idle", text: "" },
   );
 
-  const stale = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, compacted: true });
+  const stale = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, compacted: true });
   assert.equal(stale.phase, "stale");
   assert.equal(stale.text, "cache stale after compaction \u00b7 next send may re-write changed history");
 
   // Model-switch clock states (target-currency forecast, A→B→A warmth) live in
   // tests/cachemire/model-switch.test.ts.
 
-  const thinking = cacheClock({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, thinkingChanged: true });
+  const thinking = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, thinkingChanged: true });
   assert.equal(thinking.phase, "stale");
   assert.equal(thinking.text, "cache stale \u00b7 thinking level changed \u00b7 next send may re-write the prompt");
-  const minimum = { lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
+  const minimum = { lastRefreshedAt: 0, window: OPENAI_MINIMUM_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
   assert.deepEqual(
     cacheClock({ ...minimum, now: 15 * MIN }),
     { phase: "idle", text: "" },
@@ -102,11 +102,11 @@ test("cache clock stays silent until attention is useful", () => {
     },
   );
 
-  const bounded = { lastRequestAt: 0, window: CEREBRAS_BOUNDED_WINDOW, cachedTokens: 109_800 };
+  const bounded = { lastRefreshedAt: 0, window: CEREBRAS_BOUNDED_WINDOW, cachedTokens: 109_800 };
   assert.deepEqual([5 * MIN - 1, 5 * MIN, 60 * MIN - 1, 60 * MIN].map((now) => cacheClock({ ...bounded, now }).phase),
     ["idle", "warm-unknown", "warm-unknown", "cold"]);
   // A maximum is not a minimum lifetime, so it stays silent before the boundary.
-  const maximum = { lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
+  const maximum = { lastRefreshedAt: 0, window: OPENAI_EXTENDED_WINDOW, cachedTokens: 109_800, rewriteUsd: 1.37 };
   assert.deepEqual(
     cacheClock({ ...maximum, now: 23 * 60 * MIN, thinkingChanged: true }),
     { phase: "idle", text: "" },
@@ -122,31 +122,31 @@ test("cache clock stays silent until attention is useful", () => {
 });
 
 test("cache clock schedules only useful state changes", () => {
-  assert.equal(nextClockUpdateMs({ now: MIN, lastRequestAt: 0 }), undefined, "unknown TTL has no timer");
-  assert.equal(nextClockUpdateMs({ now: MIN, lastRequestAt: 0, window: CONTRACT_5M }), 3 * MIN);
-  assert.equal(nextClockUpdateMs({ now: 4 * MIN + 30_000, lastRequestAt: 0, window: CONTRACT_5M }), 1_000);
-  assert.equal(nextClockUpdateMs({ now: 6 * MIN, lastRequestAt: 0, window: CONTRACT_5M }), undefined);
-  assert.equal(nextClockUpdateMs({ now: 55 * MIN + 14_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
-  assert.equal(nextClockUpdateMs({ now: 58 * MIN + 29_000, lastRequestAt: 0, window: CONTRACT_1H }), 1_001);
-  assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRequestAt: 0, window: CONTRACT_5M, thinkingChanged: true }), undefined);
-  assert.equal(nextClockUpdateMs({ now: 15 * MIN, lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW }), 15 * MIN);
-  assert.equal(nextClockUpdateMs({ now: 30 * MIN, lastRequestAt: 0, window: OPENAI_MINIMUM_WINDOW }), undefined);
-  assert.deepEqual([5 * MIN - 1, 5 * MIN, 60 * MIN].map((now) => nextClockUpdateMs({ now, lastRequestAt: 0, window: CEREBRAS_BOUNDED_WINDOW })), [1, 55 * MIN, undefined]);
+  assert.equal(nextClockUpdateMs({ now: MIN, lastRefreshedAt: 0 }), undefined, "unknown TTL has no timer");
+  assert.equal(nextClockUpdateMs({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M }), 3 * MIN);
+  assert.equal(nextClockUpdateMs({ now: 4 * MIN + 30_000, lastRefreshedAt: 0, window: CONTRACT_5M }), 1_000);
+  assert.equal(nextClockUpdateMs({ now: 6 * MIN, lastRefreshedAt: 0, window: CONTRACT_5M }), undefined);
+  assert.equal(nextClockUpdateMs({ now: 55 * MIN + 14_000, lastRefreshedAt: 0, window: CONTRACT_1H }), 1_001);
+  assert.equal(nextClockUpdateMs({ now: 58 * MIN + 29_000, lastRefreshedAt: 0, window: CONTRACT_1H }), 1_001);
+  assert.equal(nextClockUpdateMs({ now: 3 * MIN, lastRefreshedAt: 0, window: CONTRACT_5M, thinkingChanged: true }), undefined);
+  assert.equal(nextClockUpdateMs({ now: 15 * MIN, lastRefreshedAt: 0, window: OPENAI_MINIMUM_WINDOW }), 15 * MIN);
+  assert.equal(nextClockUpdateMs({ now: 30 * MIN, lastRefreshedAt: 0, window: OPENAI_MINIMUM_WINDOW }), undefined);
+  assert.deepEqual([5 * MIN - 1, 5 * MIN, 60 * MIN].map((now) => nextClockUpdateMs({ now, lastRefreshedAt: 0, window: CEREBRAS_BOUNDED_WINDOW })), [1, 55 * MIN, undefined]);
   assert.equal(
-    nextClockUpdateMs({ now: 23 * 60 * MIN, lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW }),
+    nextClockUpdateMs({ now: 23 * 60 * MIN, lastRefreshedAt: 0, window: OPENAI_EXTENDED_WINDOW }),
     60 * MIN,
   );
-  assert.equal(nextClockUpdateMs({ now: 24 * 60 * MIN, lastRequestAt: 0, window: OPENAI_EXTENDED_WINDOW }), undefined);
+  assert.equal(nextClockUpdateMs({ now: 24 * 60 * MIN, lastRefreshedAt: 0, window: OPENAI_EXTENDED_WINDOW }), undefined);
   assert.equal(nextClockUpdateMs({
     now: MIN,
-    lastRequestAt: 0,
+    lastRefreshedAt: 0,
     modelSwitched: true,
     switchForecast: {
       targetId: "gpt-5.4",
       targetProvider: "openai",
       estTokens: 10_000,
       basis: "direct",
-      prior: { requestAt: 0, window: OPENAI_EXTENDED_WINDOW },
+      prior: { refreshedAt: 0, window: OPENAI_EXTENDED_WINDOW },
     },
   }), 24 * 60 * MIN - MIN);
 });
