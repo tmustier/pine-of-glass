@@ -9,6 +9,15 @@ export function inferAnthropicTtlMs(
   return env.PI_CACHE_RETENTION === "long" ? TTL_LONG_MS : TTL_SHORT_MS;
 }
 
+// Direct Anthropic served 5-minute and 1-hour entries for 10s past the documented TTL,
+// timed from the response start of the call that last read or wrote them
+// (docs/cache-anthropic-ttl-audit-2026-09-26.md).
+const ANTHROPIC_GRACE_MS = 10_000;
+
+function anthropicContract(ttlMs: number, source: "observed" | "inferred"): KnownCacheWindow {
+  return { kind: "contract", ttlMs, source, graceMs: ANTHROPIC_GRACE_MS };
+}
+
 const OPENAI_MINIMUM_MINOR = 6;
 const OPENAI_EXTENDED_VALUE = "24h";
 
@@ -73,6 +82,12 @@ export const RETENTION_EVIDENCE_SOURCES = {
     url: "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
     reviewedOn: "4 August 2026",
     detail: "ephemeral cache TTL contracts",
+  },
+  "anthropic-ttl-probe": {
+    label: "Cachemire Anthropic TTL boundary probe",
+    url: "https://github.com/tmustier/pine-of-glass/blob/main/docs/cache-anthropic-ttl-audit-2026-09-26.md",
+    reviewedOn: "26 September 2026",
+    detail: "live 5-minute and 1-hour entries serve reads until 10s past the TTL, timed from the response start",
   },
   "minimax-docs": {
     label: "MiniMax Anthropic-compatible caching",
@@ -194,15 +209,16 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
   {
     route: "Direct Anthropic",
     evidence: "live `cache_control`, or Pi's restored-session retention default",
-    behavior: "activate the observed or inferred TTL after a cache read or write",
-    sourceIds: ["anthropic-docs", "installed-pi"],
+    behavior: "activate the observed or inferred TTL after a cache read or write; " +
+      `the entry expires ${formatDuration(ANTHROPIC_GRACE_MS)} after its TTL`,
+    sourceIds: ["anthropic-docs", "anthropic-ttl-probe", "installed-pi"],
     activation: "read-or-write",
     resolveModel: (input) => onRoute(input, "anthropic", "anthropic-messages")
-      ? { kind: "contract", ttlMs: inferAnthropicTtlMs(input.env), source: "inferred" }
+      ? anthropicContract(inferAnthropicTtlMs(input.env), "inferred")
       : undefined,
     resolveRequest: (input) => onRoute(input, "anthropic", "anthropic-messages") &&
       (input.ttlMs === TTL_SHORT_MS || input.ttlMs === TTL_LONG_MS)
-      ? { kind: "contract", ttlMs: input.ttlMs, source: "observed" }
+      ? anthropicContract(input.ttlMs, "observed")
       : undefined,
   },
   {

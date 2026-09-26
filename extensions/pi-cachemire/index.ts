@@ -41,11 +41,7 @@ import {
 import { renderBreakingLine, renderHeldLine, renderLedger, renderMissLine, renderRunSummary } from "./render.ts";
 import {
   confirmedWindow,
-  inferAnthropicTtlMs,
-  OPENAI_EXTENDED_WINDOW,
-  OPENAI_MINIMUM_WINDOW,
   retentionForRequest,
-  windowLabel,
   type RetentionMatch,
 } from "./retention.ts";
 import {
@@ -110,7 +106,9 @@ interface CachemireState extends WarmSyncState {
   pendingFingerprintCause?: CallCause;
   pendingRequestLeafId?: string | null;
   pendingRequestAt?: number;
-  pendingPreviousRequestAt?: number;
+  /** When the provider began responding to the pending request: the cache TTL anchor. */
+  pendingResponseAt?: number;
+  pendingPreviousRefreshedAt?: number;
   pendingPreviousWindow?: CacheWindow;
   pendingRetention?: RetentionMatch;
   pendingCacheGapMs?: number;
@@ -184,7 +182,7 @@ function updateWidget(now = Date.now()): void {
     renderLine: econLine,
     clock: {
       now,
-      lastRequestAt: s.lastRequestAt,
+      lastRefreshedAt: s.lastRefreshedAt,
       window: s.window,
       cachedTokens: s.expectedRead,
       rewriteUsd: s.expectedRead > 0 ? rewriteCostUsd(s.expectedRead, s.rates) : undefined,
@@ -305,7 +303,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       { baseline, refresh: baseline, compatible: [] },
       { provider: model?.provider, model: model?.id, api: model?.api },
     ));
-    s.prevCallRequestAt = s.records.at(-1)?.at || undefined;
+    s.prevCallRefreshedAt = s.records.at(-1)?.at || undefined;
     // A restored branch can already be mid-switch (billed by a different model than the
     // current one); the forecast must exist before the first widget render.
     refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
@@ -319,7 +317,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.inCompaction = false;
     s.pendingFingerprint = undefined;
     s.pendingFingerprintCause = undefined;
-    s.pendingRequestAt = s.pendingPreviousRequestAt = s.pendingCacheGapMs = undefined;
+    s.pendingRequestAt = s.pendingResponseAt = s.pendingPreviousRefreshedAt = s.pendingCacheGapMs = undefined;
     s.pendingRequestLeafId = undefined;
     s.pendingRetention = s.pendingPreviousWindow = undefined;
     s.ui = ctx.ui;
@@ -368,9 +366,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.pendingFingerprintCause = resolution.cause ??
       withheldThinkingCause(resolution.baseline?.fingerprint, s.pendingFingerprint);
     s.pendingRequestLeafId = requestLeafFor(new Map(entries.map((entry) => [entry.id, entry])), ctx.sessionManager.getLeafId());
-    s.pendingPreviousRequestAt = s.lastRequestAt;
+    s.pendingPreviousRefreshedAt = s.lastRefreshedAt;
     s.pendingPreviousWindow = s.window;
-    s.pendingCacheGapMs = s.lastRequestAt !== undefined ? requestAt - s.lastRequestAt : undefined;
+    s.pendingCacheGapMs = s.lastRefreshedAt !== undefined ? requestAt - s.lastRefreshedAt : undefined;
     s.pendingRetention = retentionForRequest({
       provider: ctx.model?.provider,
       model: ctx.model?.id ?? s.pendingFingerprint.model,
@@ -380,7 +378,8 @@ export default function piCachemire(pi: ExtensionAPI): void {
     });
     s.providerLabel = ctx.model?.provider;
     s.pendingRequestAt = requestAt;
-    s.lastRequestAt = requestAt;
+    s.pendingResponseAt = undefined;
+    s.lastRefreshedAt = requestAt;
     s.window = UNKNOWN_WINDOW;
 
     // Place the break notice where the causality lives: between the user's action and the
@@ -399,7 +398,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         switchForecast: s.switchForecast === undefined ? undefined : {
           ...s.switchForecast,
           priorMayBeWarm: s.switchForecast.prior !== undefined &&
-            !pastWindow(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.requestAt),
+            !pastWindow(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.refreshedAt),
         },
       });
       const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;
@@ -420,6 +419,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
       }
     }
     updateWidget();
+  });
+
+  // Anthropic sends response headers only after prefill has read and written the cache.
+  pi.on("after_provider_response", async () => {
+    if (ownsState()) s.pendingResponseAt = Date.now();
   });
 
   pi.on("model_select", async (event, ctx) => {
@@ -503,9 +507,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
       return;
     }
     const now = Date.now();
-    // Idle gap between the previous request (which refreshed the TTL) and this one.
+    // Idle gap between the previous call's cache refresh and this request.
     const requestAt = s.pendingRequestAt ?? now;
-    const gapMs = s.prevCallRequestAt !== undefined ? requestAt - s.prevCallRequestAt : undefined;
+    const refreshedAt = s.pendingResponseAt ?? requestAt;
+    const gapMs = s.prevCallRefreshedAt !== undefined ? requestAt - s.prevCallRefreshedAt : undefined;
     const cacheGapMs = s.pendingCacheGapMs ?? gapMs;
 
     const fingerprintCause = s.pendingFingerprintCause;
@@ -557,6 +562,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       requestLeafId: s.pendingRequestLeafId ?? null,
       responseAt: typeof message.timestamp === "number" ? message.timestamp : now,
       requestAt,
+      responseStartAt: s.pendingResponseAt,
       promptTokens: promptSize,
       provider: message.provider,
       model: message.model,
@@ -565,12 +571,12 @@ export default function piCachemire(pi: ExtensionAPI): void {
       window: activeWindow,
     });
     s.compacted = false;
-    s.prevCallRequestAt = requestAt;
+    s.prevCallRefreshedAt = refreshedAt;
     s.pendingFingerprint = undefined;
     s.pendingFingerprintCause = undefined;
-    s.pendingRequestAt = undefined;
+    s.pendingRequestAt = s.pendingResponseAt = undefined;
     s.pendingRequestLeafId = undefined;
-    s.pendingPreviousRequestAt = s.pendingPreviousWindow = undefined;
+    s.pendingPreviousRefreshedAt = s.pendingPreviousWindow = undefined;
     s.pendingCacheGapMs = undefined;
     s.expectedRead = promptSize;
     s.window = activeWindow;
@@ -582,10 +588,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.switchForecast = undefined;
     s.lastCallThinkingLevel = s.currentThinkingLevel ?? s.lastCallThinkingLevel;
     s.thinkingChanged = false;
-    // Keep the request-start anchor: resetting to response end here would credit the cache
-    // with the whole generation time (a 4m thinking block would show 5m TTL remaining when
-    // the prefix written at request start has ~1m left).
-    s.lastRequestAt = requestAt;
+    // Anchor at the response start, not its end: a 4m thinking block must not show 5m left
+    // on a prefix written before it started.
+    s.lastRefreshedAt = refreshedAt;
 
     if (s.run) {
       s.run.calls += 1;
@@ -628,11 +633,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.requestArmed = false;
     resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
     if (s.pendingRequestAt !== undefined) {
-      s.lastRequestAt = s.pendingPreviousRequestAt;
+      s.lastRefreshedAt = s.pendingPreviousRefreshedAt;
       s.window = s.pendingPreviousWindow ?? s.window;
-      s.pendingRequestAt = undefined;
+      s.pendingRequestAt = s.pendingResponseAt = undefined;
       s.pendingRequestLeafId = undefined;
-      s.pendingPreviousRequestAt = s.pendingPreviousWindow = undefined;
+      s.pendingPreviousRefreshedAt = s.pendingPreviousWindow = undefined;
       s.pendingFingerprint = undefined;
       s.pendingFingerprintCause = undefined;
       s.pendingRetention = undefined;
@@ -665,11 +670,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
 // Test-only surface. Pi's loader imports only the default export, so this is runtime-inert.
 export const internals = {
   fingerprintPayload,
-  inferAnthropicTtlMs,
-  windowLabel,
-  pastWindow,
-  OPENAI_EXTENDED_WINDOW,
-  OPENAI_MINIMUM_WINDOW,
   predictBreak,
   renderBreakingLine,
   withinWarmHorizon,
@@ -694,5 +694,4 @@ export const internals = {
   renderRunSummary,
   renderMissLine,
   renderLedger,
-  DEFAULT_CONFIG,
 };

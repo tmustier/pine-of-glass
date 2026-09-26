@@ -19,9 +19,14 @@ import { thinkingChangesPreserveCache, type ThinkingRoute } from "./thinking.ts"
 export const TTL_SHORT_MS = 5 * 60 * 1000;
 export const TTL_LONG_MS = 60 * 60 * 1000;
 
+/** When a contract entry stops serving reads: its documented TTL plus any measured grace. */
+export function contractExpiryMs(window: Extract<CacheWindow, { kind: "contract" }>): number {
+  return window.ttlMs + (window.graceMs ?? 0);
+}
+
 export function pastWindow(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
   if (!window || gapMs === undefined) return false;
-  if (window.kind === "contract") return gapMs >= window.ttlMs;
+  if (window.kind === "contract") return gapMs >= contractExpiryMs(window);
   if (window.kind === "maximum" || window.kind === "bounded") return gapMs >= window.maxMs;
   return false;
 }
@@ -31,7 +36,7 @@ export function pastWindow(window: CacheWindow | undefined, gapMs: number | unde
  * before it, and an unknown window nothing at all. */
 export function withinWarmPromise(window: CacheWindow | undefined, gapMs: number | undefined): boolean {
   if (!window || gapMs === undefined) return false;
-  if (window.kind === "contract") return gapMs < window.ttlMs;
+  if (window.kind === "contract") return gapMs < contractExpiryMs(window);
   if (window.kind === "minimum" || window.kind === "bounded") return gapMs < window.minMs;
   return false;
 }
@@ -39,7 +44,7 @@ export function withinWarmPromise(window: CacheWindow | undefined, gapMs: number
 // Shared cause wording for predictions and resolved classifications.
 export function expiryCause(window: CacheWindow | undefined, gapMs: number | undefined): CallCause | undefined {
   if (!window || gapMs === undefined) return undefined;
-  if (window.kind === "contract" && gapMs >= window.ttlMs) {
+  if (window.kind === "contract" && gapMs >= contractExpiryMs(window)) {
     return { kind: "ttl", detail: `${formatDuration(window.ttlMs)} TTL reached after ${formatDuration(gapMs)} idle` };
   }
   if ((window.kind === "maximum" || window.kind === "bounded") && gapMs >= window.maxMs) {
@@ -94,7 +99,7 @@ function findTtlMs(payload: Record<string, unknown>): number | undefined {
 
 export function fingerprintPayload(
   payload: unknown,
-  thinkingRoute?: ThinkingRoute,
+  route?: ThinkingRoute,
 ): RequestFingerprint {
   const body = isJsonObject(payload) ? payload : {};
   if (Array.isArray(body.input) || typeof body.instructions === "string") {
@@ -113,6 +118,19 @@ export function fingerprintPayload(
     };
   }
   if (Array.isArray(body.messages)) {
+    const messages = body.messages;
+    // These backends cache only through explicit markers, so messages after the last
+    // marked one were never cached. Other backends Pi sends markers to may cache past them.
+    let cachedMessageCount: number | undefined;
+    if (route?.provider === "anthropic" || route?.provider === "amazon-bedrock" ||
+      (route?.provider === "openrouter" && route.model.startsWith("anthropic/"))) {
+      messages.forEach((message, index) => {
+        const blocks = isJsonObject(message) && Array.isArray(message.content) ? message.content : [];
+        if (blocks.some((block) => isJsonObject(block) && (block.cache_control !== undefined || block.cachePoint !== undefined))) {
+          cachedMessageCount = index + 1;
+        }
+      });
+    }
     const toolConfig = isJsonObject(body.toolConfig) ? body.toolConfig : undefined;
     const tools = Array.isArray(body.tools)
       ? body.tools
@@ -130,13 +148,14 @@ export function fingerprintPayload(
         const value = tool as { name?: string; toolSpec?: { name?: string } };
         return { name: value.name ?? value.toolSpec?.name ?? "?", hash: hashOf(stripCacheMarkers(tool)) };
       }),
-      messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheMarkers(message))),
+      messageHashes: messages.map((message) => hashOf(stripCacheMarkers(message))),
+      cachedMessageCount,
       ttlMs: findTtlMs(body),
       thinking: describeAnthropicThinking(
         body.thinking ?? additional?.thinking,
         body.output_config ?? additional?.output_config,
       ),
-      thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute) ? true : undefined,
+      thinkingCacheNeutral: thinkingChangesPreserveCache(route) ? true : undefined,
     };
   }
   return { kind: "unknown", toolHashes: [], messageHashes: [] };
@@ -209,14 +228,15 @@ export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerpri
   const cacheSafeEffortChange = cur.thinkingCacheNeutral === true &&
     isEffortThinking(prev.thinking) && isEffortThinking(cur.thinking);
   if (prev.thinking !== cur.thinking && !cacheSafeEffortChange) return thinkingCause(prev, cur);
-  // History: the previous request's messages must be a prefix of the current ones.
-  const checkable = Math.min(prev.messageHashes.length, cur.messageHashes.length);
+  // History: the previous request's cached messages must be a prefix of the current ones.
+  const cached = prev.cachedMessageCount ?? prev.messageHashes.length;
+  const checkable = Math.min(cached, cur.messageHashes.length);
   for (let i = 0; i < checkable; i++) {
     if (prev.messageHashes[i] !== cur.messageHashes[i]) {
       return { kind: "history", detail: `history rewritten at message ${i + 1} of ${prev.messageHashes.length}` };
     }
   }
-  if (cur.messageHashes.length < prev.messageHashes.length) {
+  if (cur.messageHashes.length < cached) {
     return { kind: "history", detail: `history truncated (${prev.messageHashes.length} \u2192 ${cur.messageHashes.length} messages)` };
   }
   return undefined;

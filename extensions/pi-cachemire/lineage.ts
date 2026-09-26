@@ -9,6 +9,11 @@ import type {
   ResolvedCacheLineage,
 } from "./types.ts";
 
+/** When a billed call last refreshed its cache entry; restored calls lack a response start. */
+export function cacheRefreshedAt(snapshot: CacheLineageSnapshot): number {
+  return snapshot.responseStartAt ?? snapshot.requestAt;
+}
+
 function changed(a: string | undefined, b: string | undefined): boolean {
   return a !== undefined && b !== undefined && a !== b;
 }
@@ -38,7 +43,7 @@ export function cacheStateForLineage(
   current: { provider?: string; model?: string; api?: string },
 ): {
   expectedRead: number;
-  lastRequestAt: number | undefined;
+  lastRefreshedAt: number | undefined;
   lastCallModelId: string | undefined;
   lastCallProvider: string | undefined;
   lastCallApi: string | undefined;
@@ -48,7 +53,7 @@ export function cacheStateForLineage(
   const { baseline, refresh } = resolution;
   return {
     expectedRead: baseline?.promptTokens ?? 0,
-    lastRequestAt: refresh?.requestAt,
+    lastRefreshedAt: refresh && cacheRefreshedAt(refresh),
     lastCallModelId: baseline?.model,
     lastCallProvider: baseline?.provider,
     lastCallApi: baseline?.api,

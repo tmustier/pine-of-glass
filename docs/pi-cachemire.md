@@ -19,7 +19,9 @@ official contract, sanitized Codex observations and unresolved route limits. Cac
 keeps an observed request policy pending until reported cache reads or writes confirm
 that an entry exists. The
 [`thinking-change audit`](./cache-thinking-change-audit-2026-09-10.md) records how
-Pi 0.85.1 handles Claude Fable 5.1 and GPT-6 Astra effort changes.
+Pi 0.85.1 handles Claude Fable 5.1 and GPT-6 Astra effort changes. The
+[`Anthropic TTL audit`](./cache-anthropic-ttl-audit-2026-09-26.md) measures when
+direct Anthropic cache entries stop serving reads.
 
 ## Moonshot and Together usage
 
@@ -48,11 +50,21 @@ response fixtures. Cache reads alone do not provide retention evidence.
    billed them. A model-switch forecast is a labelled estimate in the target model's
    tokenizer. Exact values return with the first billed call on the new model.
 
-## Confirmed clocks start at request time
+## Confirmed clocks start at the response start
 
-The outgoing request supplies the clock anchor, but Cachemire does not activate its
-window until normalized usage reports the required cache read or write. Generation time
-therefore uses some of the TTL before the confirmed clock becomes visible.
+Providers read and write the cache during prefill. Anthropic sends response headers
+only once prefill is done, and Pi reports them to extensions as
+`after_provider_response`. Cachemire anchors each live billed call's clock there. It
+does not activate the window until normalized usage reports the required cache read or
+write, so generation time uses some of the TTL before the confirmed clock becomes
+visible. Pi does not persist the response start: restored calls anchor at their request
+time, which can run early by that call's prefill time.
+
+Direct Anthropic serves 5-minute and 1-hour entries for 10s past their TTL. The
+[Anthropic TTL audit](./cache-anthropic-ttl-audit-2026-09-26.md) measured the 5-minute
+boundary at 310s after the response start on Haiku 4.5 and Opus 5.5, and the 1-hour
+boundary at 3,610s on Haiku 4.5. Cachemire's expiry, countdown and TTL causes include
+that grace; the labels stay `5m TTL` and `1h TTL`.
 
 A known 5-minute TTL appears during its final minute. A known 1-hour TTL appears during
 its final 5 minutes. After expiry, the warning remains until the next provider call
@@ -217,6 +229,16 @@ Every live request is fingerprinted across system instructions, tools, messages 
 relevant parameters. Cachemire excludes moving Anthropic `cache_control` and Bedrock
 `cachePoint` markers from the comparison.
 
+On routes whose backend caches only through explicit markers, history is compared
+only through the previous request's last marked message. Messages after it were never
+cached, so changing them cannot cost a read. These routes are direct Anthropic,
+Bedrock Converse and OpenRouter `anthropic/*` models on either Pi API. On Claude Fable
+5.1, Opus 5 and Opus 5.5, Pi appends an effort-only system message after the marked
+user message. An aborted turn replaces it with the next prompt, which full comparison
+would report as a rewrite. Pi also sends markers to backends such as Kimi, Fireworks
+and OpenCode, which may cache past them. Those routes, and routes without markers,
+keep full comparison.
+
 Causes resolve in this order:
 
 1. a Pi compaction event
@@ -261,8 +283,8 @@ On hot reload, Cachemire reattaches the process-live payload fingerprints to the
 persisted provider calls. Tool-schema and other prefix changes introduced by the reload
 therefore remain diagnosable. On process restart or session resume, Cachemire rebuilds
 its ledger and branch baselines from billed usage in assistant messages. Payload
-fingerprints, request-start observations and live retention fields are not persisted;
-diagnoses that need those fields remain unknown.
+fingerprints, request-start and response-start observations and live retention fields
+are not persisted; diagnoses that need those fields remain unknown.
 
 Only the interactive Pi extension instance owns the process-global state. Nested
 headless sessions cannot overwrite its ledger, clock or model metadata. The interactive

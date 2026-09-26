@@ -194,7 +194,7 @@ test("an unknown restored API withholds refresh proof without inventing a model 
     { provider: "anthropic", model: "claude-opus-4-8", api: "anthropic-messages" },
   );
   assert.equal(cacheState.modelSwitched, false);
-  assert.equal(cacheState.lastRequestAt, undefined, "unknown identity cannot restore a freshness clock");
+  assert.equal(cacheState.lastRefreshedAt, undefined, "unknown identity cannot restore a freshness clock");
 });
 
 test("incompatible descendants cannot refresh the selected lineage", () => {

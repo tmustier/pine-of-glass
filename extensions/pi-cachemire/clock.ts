@@ -1,5 +1,5 @@
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
-import { pastWindow } from "./classify.ts";
+import { contractExpiryMs, pastWindow } from "./classify.ts";
 import type { SwitchForecast } from "./forecast.ts";
 import type { CacheWindow } from "./types.ts";
 
@@ -7,7 +7,7 @@ export const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
 const EXACT_WARNING_MAX_MS = 5 * 60 * 1000;
 
 export function withinWarmHorizon(window: CacheWindow | undefined, sinceMs: number): boolean {
-  if (window?.kind === "contract") return sinceMs < window.ttlMs;
+  if (window?.kind === "contract") return sinceMs < contractExpiryMs(window);
   return (window?.kind === "minimum" || window?.kind === "bounded") && sinceMs < window.minMs;
 }
 
@@ -22,7 +22,7 @@ export interface ClockState {
 
 export interface ClockInput {
   now: number;
-  lastRequestAt?: number;
+  lastRefreshedAt?: number;
   window?: CacheWindow;
   cachedTokens?: number;
   rewriteUsd?: number;
@@ -46,7 +46,7 @@ function rewriteSuffix(verb: string, cachedTokens?: number, rewriteUsd?: number,
 }
 
 export function cacheClock(input: ClockInput): ClockState {
-  if (input.lastRequestAt === undefined) return { phase: "idle", text: "" };
+  if (input.lastRefreshedAt === undefined) return { phase: "idle", text: "" };
   if (input.compacted) {
     return { phase: "stale", text: "cache stale after compaction \u00b7 next send may re-write changed history" };
   }
@@ -54,7 +54,7 @@ export function cacheClock(input: ClockInput): ClockState {
     const forecast = input.switchForecast;
     if (forecast?.prior) {
       const prior = forecast.prior;
-      const priorAge = input.now - prior.requestAt;
+      const priorAge = input.now - prior.refreshedAt;
       if (withinWarmHorizon(prior.window, priorAge)) {
         return {
           phase: "warm-unknown",
@@ -76,7 +76,7 @@ export function cacheClock(input: ClockInput): ClockState {
         ` to ${forecast.targetProvider} (${confidence})`,
     };
   }
-  const since = input.now - input.lastRequestAt;
+  const since = input.now - input.lastRefreshedAt;
   const window = input.window ?? UNKNOWN_WINDOW;
   if (input.thinkingChanged && window.kind === "contract") {
     // No survival promise here: docs say system/tools outlive *budget* changes, but a
@@ -84,7 +84,7 @@ export function cacheClock(input: ClockInput): ClockState {
     return { phase: "stale", text: "cache stale \u00b7 thinking level changed \u00b7 next send may re-write the prompt" };
   }
   if (window.kind === "contract") {
-    const remaining = window.ttlMs - since;
+    const remaining = contractExpiryMs(window) - since;
     if (remaining <= 0) {
       return { phase: "cold", text: `cache stale \u00b7 TTL expired${rewriteSuffix("may re-write", input.cachedTokens, input.rewriteUsd)}` };
     }
@@ -110,20 +110,20 @@ export function cacheClock(input: ClockInput): ClockState {
 
 /** Delay until the clock's visible wording can change. Undefined means no timer is needed. */
 export function nextClockUpdateMs(input: ClockInput): number | undefined {
-  if (input.lastRequestAt === undefined || input.compacted) return undefined;
+  if (input.lastRefreshedAt === undefined || input.compacted) return undefined;
   if (input.modelSwitched) {
     const prior = input.switchForecast?.prior;
     const priorWindow = prior?.window;
     if (!prior || !priorWindow || priorWindow.kind === "unknown") return undefined;
-    const age = input.now - prior.requestAt;
+    const age = input.now - prior.refreshedAt;
     const horizon = priorWindow.kind === "contract"
-      ? priorWindow.ttlMs
+      ? contractExpiryMs(priorWindow)
       : priorWindow.kind === "minimum" ? priorWindow.minMs
       : priorWindow.kind === "bounded" && age < priorWindow.minMs ? priorWindow.minMs : priorWindow.maxMs;
     const remaining = horizon - age;
     return remaining > 0 ? remaining : undefined;
   }
-  const since = input.now - input.lastRequestAt;
+  const since = input.now - input.lastRefreshedAt;
   const window = input.window ?? UNKNOWN_WINDOW;
   if (window.kind === "unknown" || (input.thinkingChanged && window.kind === "contract")) return undefined;
   if (window.kind === "minimum") {
@@ -140,10 +140,11 @@ export function nextClockUpdateMs(input: ClockInput): number | undefined {
     return remaining > 0 ? remaining : undefined;
   }
 
-  const warningAt = window.ttlMs - warningLeadMs(window);
+  const expiry = contractExpiryMs(window);
+  const warningAt = expiry - warningLeadMs(window);
   if (since < warningAt) return warningAt - since;
 
-  const remaining = window.ttlMs - since;
+  const remaining = expiry - since;
   if (remaining <= 0) return undefined;
   if (remaining <= 90_000) return Math.min(remaining, 1_000);
   return (remaining % 15_000) + 1;

@@ -5,7 +5,7 @@ import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-age
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
 import type { ToolDefinition } from "../_lib/tool-payloads.ts";
-import { findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
+import { cacheRefreshedAt, findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
 
 export type SwitchTarget = {
@@ -30,7 +30,7 @@ export interface SwitchForecast {
   /** Gateway routes use rougher estimate wording because they can rewrite the prompt. */
   basis: "direct" | "gateway";
   /** The target's latest path-compatible billed call, used for switch-back warmth. */
-  prior?: { requestAt: number; window?: CacheWindow };
+  prior?: { refreshedAt: number; window?: CacheWindow };
 }
 
 export function computeSwitchForecast(args: {
@@ -56,7 +56,7 @@ export function computeSwitchForecast(args: {
   // A compaction after the prior call rewrote the prefix its cache entry covered; a
   // switch-back cannot revive it, so the warmth hint is withheld rather than hedged.
   if (prior && !pathContainsCompaction(args.entries, args.activeLeafId, prior)) {
-    forecast.prior = { requestAt: prior.requestAt, window: prior.window };
+    forecast.prior = { refreshedAt: cacheRefreshedAt(prior), window: prior.window };
   }
   let history: ForecastMessage[] | undefined;
   try {

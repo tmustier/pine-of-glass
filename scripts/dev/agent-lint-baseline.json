@@ -215,7 +215,6 @@
         "const t = tool as { name?: string; function?: { name?: string } };": 1,
         "const value = tool as { name?: string; toolSpec?: { name?: string } };": 1,
         "for (const message of messages as Array<{ content?: unknown }>) {": 1,
-        "messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheMarkers(message))),": 1,
         "thinking: `effort ${(body.reasoning as { effort?: string } | undefined)?.effort ?? \"default\"}`,": 1
       },
       "extensions/pi-cachemire/forecast.ts": {
@@ -297,7 +296,7 @@
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
-      "extensions/pi-cachemire/index.ts": 699,
+      "extensions/pi-cachemire/index.ts": 698,
       "extensions/pi-contextimate/index.ts": 1483,
       "extensions/pi-traceline/index.ts": 1677,
       "tests/contract/pi-internals.test.ts": 355,
@@ -305,7 +304,7 @@
     }
   },
   "internalsBudgets": {
-    "extensions/pi-cachemire/index.ts": 31,
+    "extensions/pi-cachemire/index.ts": 25,
     "extensions/pi-contextimate/index.ts": 28,
     "extensions/pi-traceline/index.ts": 55
   }

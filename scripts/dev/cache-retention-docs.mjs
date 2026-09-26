@@ -63,7 +63,7 @@ function renderedClock(input) {
 }
 
 const contract = { kind: "contract", ttlMs: 5 * MINUTE, source: "observed" };
-const common = { lastRequestAt: 0, cachedTokens: 109_800, rewriteUsd: 1.37 };
+const common = { lastRefreshedAt: 0, cachedTokens: 109_800, rewriteUsd: 1.37 };
 const clockExamples = [
   "```text",
   renderedClock({ ...common, now: 4.5 * MINUTE, window: contract }),
