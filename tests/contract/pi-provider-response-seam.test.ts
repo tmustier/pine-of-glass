@@ -28,10 +28,7 @@ test("Anthropic reports the response before Pi reads the stream body", async () 
         usage: { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }),
-    sse("content_block_start", { index: 0, content_block: { type: "text", text: "" } }),
-    sse("content_block_delta", { index: 0, delta: { type: "text_delta", text: "OK" } }),
-    sse("content_block_stop", { index: 0 }),
-    sse("message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } }),
+    sse("message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } }),
     sse("message_stop", {}),
   ];
   const fetch: FetchFunction = async () => {

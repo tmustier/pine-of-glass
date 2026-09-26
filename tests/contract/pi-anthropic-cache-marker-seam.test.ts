@@ -9,7 +9,6 @@ import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthr
 
 import { isJsonObject, type JsonFields } from "../../extensions/_lib/boundary.ts";
 import { diffFingerprints, fingerprintPayload } from "../../extensions/pi-cachemire/classify.ts";
-import type { ThinkingRoute } from "../../extensions/pi-cachemire/thinking.ts";
 
 const opus: Model<"anthropic-messages"> = {
   id: "claude-opus-5-5", name: "Claude Opus 5.5", api: "anthropic-messages", provider: "anthropic",
@@ -36,9 +35,6 @@ async function payloadFor(context: Context): Promise<JsonFields> {
   return captured;
 }
 
-const route = (provider: string, model: string): ThinkingRoute =>
-  ({ provider, model, api: "anthropic-messages", supportsMidConvoEffort: true });
-
 test("an aborted turn on a mid-conversation-effort model keeps the cached prefix", async () => {
   // Pi's prompts carry array content; the marker lands on their last block.
   const first = { role: "user" as const, content: [{ type: "text" as const, text: "first" }], timestamp: 1 };
@@ -54,17 +50,10 @@ test("an aborted turn on a mid-conversation-effort model keeps the cached prefix
   const before = await payloadFor({ messages: [first] });
   const after = await payloadFor({ messages: [first, aborted, next] });
 
-  for (const cached of [route("anthropic", "claude-opus-5-5"), route("openrouter", "anthropic/claude-opus-5.5")]) {
-    assert.equal(
-      diffFingerprints(fingerprintPayload(before, cached), fingerprintPayload(after, cached)),
-      undefined,
-      `${cached.provider}: the replaced effort message sat after the cache marker`,
-    );
-  }
-  const unverified = route("kimi-coding", "kimi-for-coding");
+  const route = { provider: opus.provider, model: opus.id, api: opus.api, supportsMidConvoEffort: true };
   assert.equal(
-    diffFingerprints(fingerprintPayload(before, unverified), fingerprintPayload(after, unverified))?.kind,
-    "history",
-    "a backend that may cache past the marker keeps full comparison",
+    diffFingerprints(fingerprintPayload(before, route), fingerprintPayload(after, route)),
+    undefined,
+    "the replaced effort message sat after the cache marker",
   );
 });

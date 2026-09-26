@@ -237,8 +237,7 @@ Bedrock Converse and OpenRouter `anthropic/*` models on either Pi API. On Claude
 user message. An aborted turn replaces it with the next prompt, which full comparison
 would report as a rewrite. Pi also sends markers to backends such as Kimi, Fireworks
 and OpenCode, which may cache past them. Those routes, and routes without markers,
-keep full comparison. Effort messages earlier in the conversation stay inside the
-cached prefix, so a change there still reports a history rewrite.
+keep full comparison.
 
 Causes resolve in this order:
 
