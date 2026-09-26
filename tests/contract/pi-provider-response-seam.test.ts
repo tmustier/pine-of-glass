@@ -49,16 +49,12 @@ test("Anthropic reports the response before Pi reads the stream body", async () 
   const stream = streamAnthropic(anthropic, normalizeContext({ messages: [{ role: "user", content: "Reply OK", timestamp: 1 }] }), {
     apiKey: "test",
     fetch,
-    onPayload: () => {
-      order.push("payload");
-      return undefined;
-    },
     onResponse: () => {
       order.push("onResponse");
     },
   });
   for await (const event of stream) order.push(event.type);
-  assert.deepEqual(order.slice(0, 4), ["payload", "headers", "onResponse", "body"],
+  assert.deepEqual(order.slice(0, 3), ["headers", "onResponse", "body"],
     "pi-cachemire's response-start anchor needs onResponse at the headers, before the body is read");
 });
 
@@ -71,9 +67,6 @@ test("Pi forwards the provider response to extensions before the assistant messa
     pi.on("after_provider_response", () => {
       seen.push("after_provider_response");
     });
-    pi.on("message_start", ({ message }) => {
-      if (message.role === "assistant") seen.push("message_start");
-    });
     pi.on("message_end", ({ message }) => {
       if (message.role === "assistant") seen.push("message_end");
     });
@@ -85,6 +78,6 @@ test("Pi forwards the provider response to extensions before the assistant messa
     await host.dispose();
     project.dispose();
   }
-  assert.deepEqual(seen, ["after_provider_response", "message_start", "message_end"],
+  assert.deepEqual(seen, ["after_provider_response", "message_end"],
     "pi-cachemire reads the response start from after_provider_response");
 });

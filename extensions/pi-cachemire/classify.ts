@@ -78,30 +78,6 @@ function hashOf(value: unknown): string {
   return createHash("sha1").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
-// Routes whose backend caches only through explicit breakpoints. Messages after the
-// last marked one were never cached, so a change there cannot cost a read. Pi also sends
-// markers to backends that may cache the whole prompt; those keep full comparison.
-function cachesOnlyThroughMarkers(route: ThinkingRoute): boolean {
-  if (route.provider === "anthropic") return route.api === "anthropic-messages";
-  if (route.provider === "amazon-bedrock") return route.api === "bedrock-converse-stream";
-  return route.provider === "openrouter" && route.model.startsWith("anthropic/") &&
-    (route.api === "anthropic-messages" || route.api === "openai-completions");
-}
-
-function carriesCacheMarker(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(carriesCacheMarker);
-  if (!isJsonObject(value)) return false;
-  return value.cache_control !== undefined || value.cachePoint !== undefined ||
-    Object.values(value).some(carriesCacheMarker);
-}
-
-function markedMessageCount(messages: unknown[]): number | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    if (carriesCacheMarker(messages[index])) return index + 1;
-  }
-  return undefined;
-}
-
 function findTtlMs(payload: Record<string, unknown>): number | undefined {
   const candidates: unknown[] = [];
   const system = payload.system;
@@ -143,6 +119,18 @@ export function fingerprintPayload(
   }
   if (Array.isArray(body.messages)) {
     const messages = body.messages;
+    // These backends cache only through explicit markers, so messages after the last
+    // marked one were never cached. Other backends Pi sends markers to may cache past them.
+    let cachedMessageCount: number | undefined;
+    if (route?.provider === "anthropic" || route?.provider === "amazon-bedrock" ||
+      (route?.provider === "openrouter" && route.model.startsWith("anthropic/"))) {
+      messages.forEach((message, index) => {
+        const blocks = isJsonObject(message) && Array.isArray(message.content) ? message.content : [];
+        if (blocks.some((block) => isJsonObject(block) && (block.cache_control !== undefined || block.cachePoint !== undefined))) {
+          cachedMessageCount = index + 1;
+        }
+      });
+    }
     const toolConfig = isJsonObject(body.toolConfig) ? body.toolConfig : undefined;
     const tools = Array.isArray(body.tools)
       ? body.tools
@@ -161,9 +149,7 @@ export function fingerprintPayload(
         return { name: value.name ?? value.toolSpec?.name ?? "?", hash: hashOf(stripCacheMarkers(tool)) };
       }),
       messageHashes: messages.map((message) => hashOf(stripCacheMarkers(message))),
-      cachedMessageCount: route !== undefined && cachesOnlyThroughMarkers(route)
-        ? markedMessageCount(messages)
-        : undefined,
+      cachedMessageCount,
       ttlMs: findTtlMs(body),
       thinking: describeAnthropicThinking(
         body.thinking ?? additional?.thinking,

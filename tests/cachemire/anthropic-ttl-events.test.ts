@@ -47,7 +47,7 @@ test("a 5-minute Anthropic entry stays warm until 10s past its TTL, timed from t
     mock.timers.tick(20_000);
     await runner.emit({ type: "after_provider_response", status: 200, headers: {} });
     mock.timers.tick(5_000);
-    await runner.emitMessageEnd({ type: "message_end", message: message });
+    await runner.emitMessageEnd({ type: "message_end", message });
   };
   try {
     await call(billed(0, 100_000));

@@ -423,7 +423,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
 
   // Anthropic sends response headers only after prefill has read and written the cache.
   pi.on("after_provider_response", async () => {
-    if (ownsState() && s.pendingRequestAt !== undefined) s.pendingResponseAt ??= Date.now();
+    if (ownsState()) s.pendingResponseAt = Date.now();
   });
 
   pi.on("model_select", async (event, ctx) => {

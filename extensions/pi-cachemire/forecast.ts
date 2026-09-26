@@ -29,8 +29,7 @@ export interface SwitchForecast {
   estTokens?: number;
   /** Gateway routes use rougher estimate wording because they can rewrite the prompt. */
   basis: "direct" | "gateway";
-  /** The target's latest path-compatible billed call, used for switch-back warmth;
-   * requestAt is when that call refreshed the cache. */
+  /** When the target's latest path-compatible billed call refreshed the cache, for switch-back warmth. */
   prior?: { requestAt: number; window?: CacheWindow };
 }
 

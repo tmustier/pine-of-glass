@@ -22,8 +22,7 @@ export interface ClockState {
 
 export interface ClockInput {
   now: number;
-  /** When the last billed call refreshed the cache: the provider's response start, or
-   * the request time when the response start was not observed. */
+  /** When the last billed call refreshed the cache. */
   lastRequestAt?: number;
   window?: CacheWindow;
   cachedTokens?: number;
