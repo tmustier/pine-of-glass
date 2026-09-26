@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.13.0 (2026-09-26)
+
+- Cachemire times direct Anthropic cache expiry from the provider's response start
+  and allows the 10s grace measured in live probes: 5-minute entries serve reads until
+  310s and 1-hour entries until 3,610s. Sends inside the grace no longer show a false
+  `ttl` warning. Restored sessions fall back to the request time because Pi does not
+  save the response start. MiniMax and Bedrock are unchanged. Method and results:
+  [`docs/cache-anthropic-ttl-audit-2026-09-26.md`](./docs/cache-anthropic-ttl-audit-2026-09-26.md).
+  [#127](https://github.com/tmustier/pine-of-glass/pull/127)
+- Cachemire no longer reports a false `history` break after an aborted turn on Claude
+  models that carry an effort-only message (Fable 5.1, Opus 5 and 5.5). On direct
+  Anthropic, Bedrock Converse and OpenRouter `anthropic/*`, history is compared only
+  through the previous request's last cache marker; other routes still compare the
+  whole history. [#127](https://github.com/tmustier/pine-of-glass/pull/127)
+- Cachemire applies OpenAI's documented 30-minute cache minimum to GPT-6 Sol and Luna
+  on direct OpenAI and Codex Responses routes, as it already did for GPT-6 Astra.
+  [#125](https://github.com/tmustier/pine-of-glass/pull/125)
+- Cachemire can record its in-flight break warnings for later audit. With
+  `"debug": true` in `~/.pi/agent/pi-cachemire.json`, each displayed warning writes a
+  non-context `cachemire-warning` session entry holding only the cause kind, so it can
+  be compared with the billed response that follows. Warnings display as before when
+  debug is off, and no markers are saved.
+  [#126](https://github.com/tmustier/pine-of-glass/pull/126)
+- Development: contract tests pin Pi's `after_provider_response` ordering and its
+  Anthropic cache-marker placement around effort messages. Cachemire's clock fields
+  are renamed to `*RefreshedAt`, and six test-only `internals` exports are removed.
+
 ## 0.12.1 (2026-09-21)
 
 - Require Pi 0.86.0 or later and support its revised extension lifecycle and prompt
