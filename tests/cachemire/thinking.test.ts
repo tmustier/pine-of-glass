@@ -119,6 +119,23 @@ test("Pi's managed Fable effort markers preserve a strict message prefix", () =>
 	])))?.kind, "history", "dropping the historical marker would rewrite the prefix");
 });
 
+test("a changed effort message inside the cached prefix still rewrites history", () => {
+	const route = directAnthropic("claude-fable-5-1", true);
+	const effort = (level: string) => ({ role: "system", content: [], output_config: { effort: level } });
+	const user = (text: string, cached = false) => ({
+		role: "user",
+		content: [{ type: "text", text, ...(cached ? { cache_control: { type: "ephemeral" } } : {}) }],
+	});
+	const assistant = { role: "assistant", content: [{ type: "text", text: "answer" }] };
+	const previous = fingerprintPayload(anthropicRequest("high", [
+		user("first"), effort("high"), assistant, user("second", true), effort("high"),
+	]), route);
+	const rewritten = fingerprintPayload(anthropicRequest("high", [
+		user("first"), effort("low"), assistant, user("second"), user("third", true), effort("high"),
+	]), route);
+	assert.equal(diffFingerprints(previous, rewritten)?.kind, "history");
+});
+
 test("GPT-6 Astra stays material until Pi appends configuration_update", () => {
 	const user = { role: "user", content: [{ type: "input_text", text: "first" }] };
 	const request = (effort: string, input: unknown[]) => ({

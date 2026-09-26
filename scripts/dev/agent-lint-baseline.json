@@ -215,7 +215,6 @@
         "const t = tool as { name?: string; function?: { name?: string } };": 1,
         "const value = tool as { name?: string; toolSpec?: { name?: string } };": 1,
         "for (const message of messages as Array<{ content?: unknown }>) {": 1,
-        "messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheMarkers(message))),": 1,
         "thinking: `effort ${(body.reasoning as { effort?: string } | undefined)?.effort ?? \"default\"}`,": 1
       },
       "extensions/pi-cachemire/forecast.ts": {

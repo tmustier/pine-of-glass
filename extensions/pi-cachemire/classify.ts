@@ -78,6 +78,30 @@ function hashOf(value: unknown): string {
   return createHash("sha1").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
+// Routes whose backend caches only through explicit breakpoints. Messages after the
+// last marked one were never cached, so a change there cannot cost a read. Pi also sends
+// markers to backends that may cache the whole prompt; those keep full comparison.
+function cachesOnlyThroughMarkers(route: ThinkingRoute): boolean {
+  if (route.provider === "anthropic") return route.api === "anthropic-messages";
+  if (route.provider === "amazon-bedrock") return route.api === "bedrock-converse-stream";
+  return route.provider === "openrouter" && route.model.startsWith("anthropic/") &&
+    (route.api === "anthropic-messages" || route.api === "openai-completions");
+}
+
+function carriesCacheMarker(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(carriesCacheMarker);
+  if (!isJsonObject(value)) return false;
+  return value.cache_control !== undefined || value.cachePoint !== undefined ||
+    Object.values(value).some(carriesCacheMarker);
+}
+
+function markedMessageCount(messages: unknown[]): number | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (carriesCacheMarker(messages[index])) return index + 1;
+  }
+  return undefined;
+}
+
 function findTtlMs(payload: Record<string, unknown>): number | undefined {
   const candidates: unknown[] = [];
   const system = payload.system;
@@ -99,7 +123,7 @@ function findTtlMs(payload: Record<string, unknown>): number | undefined {
 
 export function fingerprintPayload(
   payload: unknown,
-  thinkingRoute?: ThinkingRoute,
+  route?: ThinkingRoute,
 ): RequestFingerprint {
   const body = isJsonObject(payload) ? payload : {};
   if (Array.isArray(body.input) || typeof body.instructions === "string") {
@@ -118,6 +142,7 @@ export function fingerprintPayload(
     };
   }
   if (Array.isArray(body.messages)) {
+    const messages = body.messages;
     const toolConfig = isJsonObject(body.toolConfig) ? body.toolConfig : undefined;
     const tools = Array.isArray(body.tools)
       ? body.tools
@@ -135,13 +160,16 @@ export function fingerprintPayload(
         const value = tool as { name?: string; toolSpec?: { name?: string } };
         return { name: value.name ?? value.toolSpec?.name ?? "?", hash: hashOf(stripCacheMarkers(tool)) };
       }),
-      messageHashes: (body.messages as unknown[]).map((message) => hashOf(stripCacheMarkers(message))),
+      messageHashes: messages.map((message) => hashOf(stripCacheMarkers(message))),
+      cachedMessageCount: route !== undefined && cachesOnlyThroughMarkers(route)
+        ? markedMessageCount(messages)
+        : undefined,
       ttlMs: findTtlMs(body),
       thinking: describeAnthropicThinking(
         body.thinking ?? additional?.thinking,
         body.output_config ?? additional?.output_config,
       ),
-      thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute) ? true : undefined,
+      thinkingCacheNeutral: thinkingChangesPreserveCache(route) ? true : undefined,
     };
   }
   return { kind: "unknown", toolHashes: [], messageHashes: [] };
@@ -214,14 +242,15 @@ export function diffFingerprints(prev: RequestFingerprint, cur: RequestFingerpri
   const cacheSafeEffortChange = cur.thinkingCacheNeutral === true &&
     isEffortThinking(prev.thinking) && isEffortThinking(cur.thinking);
   if (prev.thinking !== cur.thinking && !cacheSafeEffortChange) return thinkingCause(prev, cur);
-  // History: the previous request's messages must be a prefix of the current ones.
-  const checkable = Math.min(prev.messageHashes.length, cur.messageHashes.length);
+  // History: the previous request's cached messages must be a prefix of the current ones.
+  const cached = prev.cachedMessageCount ?? prev.messageHashes.length;
+  const checkable = Math.min(cached, cur.messageHashes.length);
   for (let i = 0; i < checkable; i++) {
     if (prev.messageHashes[i] !== cur.messageHashes[i]) {
       return { kind: "history", detail: `history rewritten at message ${i + 1} of ${prev.messageHashes.length}` };
     }
   }
-  if (cur.messageHashes.length < prev.messageHashes.length) {
+  if (cur.messageHashes.length < cached) {
     return { kind: "history", detail: `history truncated (${prev.messageHashes.length} \u2192 ${cur.messageHashes.length} messages)` };
   }
   return undefined;

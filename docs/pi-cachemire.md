@@ -229,6 +229,17 @@ Every live request is fingerprinted across system instructions, tools, messages 
 relevant parameters. Cachemire excludes moving Anthropic `cache_control` and Bedrock
 `cachePoint` markers from the comparison.
 
+On routes whose backend caches only through explicit markers, history is compared
+only through the previous request's last marked message. Messages after it were never
+cached, so changing them cannot cost a read. These routes are direct Anthropic,
+Bedrock Converse and OpenRouter `anthropic/*` models on either Pi API. On Claude Fable
+5.1, Opus 5 and Opus 5.5, Pi appends an effort-only system message after the marked
+user message. An aborted turn replaces it with the next prompt, which full comparison
+would report as a rewrite. Pi also sends markers to backends such as Kimi, Fireworks
+and OpenCode, which may cache past them. Those routes, and routes without markers,
+keep full comparison. Effort messages earlier in the conversation stay inside the
+cached prefix, so a change there still reports a history rewrite.
+
 Causes resolve in this order:
 
 1. a Pi compaction event

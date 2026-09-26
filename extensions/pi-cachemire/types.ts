@@ -22,6 +22,8 @@ export interface RequestFingerprint {
   systemHash?: string;
   toolHashes: Array<{ name: string; hash: string }>;
   messageHashes: string[];
+  /** Messages through the last cache marker, on routes that cache only through markers. */
+  cachedMessageCount?: number;
   ttlMs?: number;
   /** Canonical thinking/reasoning wire parameters. */
   thinking?: string;
