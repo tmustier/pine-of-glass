@@ -87,10 +87,10 @@
     "pi-contextimate-check-xai-tokenizers": "scripts/contextimate/check-xai-tokenizers.py"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "0.87.1",
-    "@earendil-works/pi-ai": "0.87.1",
-    "@earendil-works/pi-coding-agent": "0.87.1",
-    "@earendil-works/pi-tui": "0.87.1",
+    "@earendil-works/pi-agent-core": ">=0.86.0",
+    "@earendil-works/pi-ai": ">=0.86.0",
+    "@earendil-works/pi-coding-agent": ">=0.86.0",
+    "@earendil-works/pi-tui": ">=0.86.0",
     "@oxlint/plugins": "1.82.0",
     "@types/node": "26.6.3",
     "oxc-parser": "0.149.0",
