@@ -10,7 +10,7 @@ import { streamSimple as streamOpenAICompletions } from "@earendil-works/pi-ai/a
 import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
-const piAiRoot = join(piRoot, "node_modules", "@earendil-works", "pi-ai", "dist");
+const piAiRoot = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-ai")));
 
 function source(name: string): string {
   return readFileSync(join(piAiRoot, "api", name), "utf8");

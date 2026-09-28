@@ -6,13 +6,13 @@ language. TypeScript, zero runtime dependencies, tests on `node:test`.
 ## Commands
 
 ```bash
-npm install             # pinned lint tooling; prunes the Pi symlinks, so:
-npm run link-pi         # symlink the installed pi runtime into node_modules (types + contract tests); run after every npm install
+npm install             # pinned Pi runtime (types, contract tests, smoke) and lint tooling
+npm run link-pi         # optional: check against your installed pi instead; npm install undoes it
 npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
 npm run docs:cache      # regenerate Cachemire retention docs
 npm run lint            # POG rules + oxlint/anti-slop (baselined) + generated-doc drift checks
 npm run lint:slop       # oxlint alone, full diagnostics
-npm run typecheck       # tsc against the real installed pi
+npm run typecheck       # tsc against the pinned (or linked) pi
 npm test                # unit + golden + pi contract tests (node:test)
 npm run check           # lint + typecheck + tests
 npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)
@@ -31,7 +31,7 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   all three extensions speak. Record design changes there first, then implement; when a
   renderer and that document disagree, one of them is wrong.
 - The contract suite pins every structural assumption about pi internals, so after
-  `pi update` a quick `npm test` says exactly which seam (if any) drifted. Test design
+  `pi update`, `npm run link-pi && npm test` says exactly which seam (if any) drifted. Test design
   notes: [`docs/testing.md`](./docs/testing.md).
 - Before changing Cachemire retention, read the dated
   [audit](./docs/cache-retention-audit-2026-08-04.md). `retention.ts` drives runtime
