@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0 (2026-09-28)
+
+- Contextimate's startup breakdown is available to other extensions as plain data:
+  `contextReport(pi, ctx)` from `extensions/pi-contextimate/report.ts` returns the model,
+  heuristic, total, each section's characters and estimated tokens, the skills in the skill
+  index and every tool with whether it is active. It counts Pi's current system prompt with
+  the panel's heuristic and your `pi-contextimate` config. The panel is unchanged.
+  [#140](https://github.com/tmustier/pine-of-glass/pull/140)
+
 ## 0.14.1 (2026-09-28)
 
 - Traceline no longer freezes Pi for seconds whenever the transcript refreshes (startup,
