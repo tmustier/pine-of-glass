@@ -3,16 +3,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-contextimate/index.ts";
+import { parseContextimateConfig, resolveHeuristic, type ContextimateConfig } from "../../extensions/pi-contextimate/heuristic-config.ts";
+import type { ModelSummary } from "../../extensions/_lib/heuristics.ts";
 import {
   keepsAllClaudeThinking,
   keepsAllOpenAIReasoning,
 } from "../../extensions/pi-contextimate/model-heuristics.ts";
-import type { ContextimateConfig, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
 import { tokenizerFamilies } from "./heuristic-family-fixtures.ts";
-
-const { parseContextimateConfig, resolveHeuristic } = internals;
 
 function model(provider: string, id: string, api: string): ModelSummary {
   return { provider, id, api };

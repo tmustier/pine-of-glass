@@ -13,7 +13,6 @@ import {
 } from "../_lib/chat.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { type ModelSummary } from "../_lib/heuristics.ts";
-import { estimateOpenAIFunctionToolTokens, estimateOpenAIToolDefinitionTokens } from "../_lib/tool-payloads.ts";
 import { GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import {
   countDetail,
@@ -29,7 +28,7 @@ import {
   type MetricRow,
   type TokenLabelLayout,
 } from "./metric-rows.ts";
-import { detectRuntimeAdditions, getPromptRemainder, parseSkillsBlock } from "./prompt-parsing.ts";
+import { getPromptRemainder, parseSkillsBlock } from "./prompt-parsing.ts";
 import {
   buildSessionBreakdown,
   estimateSessionBreakdown,
@@ -40,9 +39,7 @@ import {
   type ContextimateConfig,
   type ResolvedHeuristic,
   toModelSummary,
-  parseContextimateConfig,
   loadContextimateConfig,
-  resolveHeuristic,
 } from "./heuristic-config.ts";
 import {
   type ScanRow,
@@ -50,22 +47,13 @@ import {
   type PrefixSnapshot,
   tildeAll,
   singleLine,
-  parseContextSections,
-  runtimeAdditionsAttribution,
-  buildSkillsSection,
   buildSnapshot,
   sectionTokens,
-  sectionChars,
   totalTokens,
-  totalChars,
-} from "./snapshot.ts";
-import {
   type ToolSummary,
   type ToolField,
   type ToolExpanded,
-  buildToolNumerator,
-  buildToolDisplayEstimate,
-} from "./tool-accounting.ts";
+} from "./snapshot.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
 
@@ -172,7 +160,7 @@ function wrapPlainText(text: string, width: number, maxLines: number): string[] 
 
 function renderExpandedSectionHeader(section: PrefixSection, theme: Theme, width: number): string {
   const tokens = sectionTokens(section);
-  const chars = sectionChars(section);
+  const chars = section.content.length;
   const left = `  ${theme.bold(section.title)}  ${accent(theme, `${estimatedTokenLabel(tokens)} tokens`)}`;
   const right = theme.fg("dim", `${compactCount(chars)} ch ${section.detail}`);
   return joinLeftRight(left, right, Math.max(40, width));
@@ -299,7 +287,7 @@ function harnessDetail(snapshot: PrefixSnapshot): string {
   const share = ctxShareLabel(harnessTokens(snapshot), snapshot.contextUsage, { estimate: true });
   return buildSessionEstimate(snapshot)?.harnessSource === "measured"
     ? `(measured${SEP}rows ~${compactCount(totalTokens(snapshot))}${share ? `${SEP}${share}` : ""})`
-    : countDetail(totalChars(snapshot), share ? `· ${share}` : undefined);
+    : countDetail(snapshot.sections.reduce((sum, section) => sum + section.content.length, 0), share ? `· ${share}` : undefined);
 }
 
 // One stacked bar under Total request: the carried part (harness + session) in accent,
@@ -426,7 +414,7 @@ function renderSummary(snapshot: PrefixSnapshot, theme: Theme, width = 80): stri
     ...snapshot.sections.map((section): MetricRow => ({
       label: section.title,
       tokens: sectionTokens(section),
-      detail: countDetail(sectionChars(section)),
+      detail: countDetail(section.content.length),
       section: true,
     })),
     harnessTotalRow(snapshot),
@@ -450,7 +438,7 @@ function compactLabel(label: string, width: number): string {
 }
 
 function numericRowTokens(rows: ScanRow[]): number[] {
-  return rows.flatMap((row) => typeof row.tokens === "number" ? [row.tokens] : []);
+  return rows.flatMap((row) => row.inactive ? [] : [row.tokens]);
 }
 
 function compactLayout(snapshot: PrefixSnapshot): CompactLayout {
@@ -482,9 +470,9 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number, layout?: C
   return rows.map((row) => {
     const name = compactLabel(row.name, labelWidth);
     const desc = row.desc ? singleLine(row.desc, descWidth) : "";
-    const token = typeof row.tokens === "number"
-      ? estimatedTokenField(row.tokens, effectiveTokenLayout)
-      : inactiveTokenField(effectiveTokenLayout);
+    const token = row.inactive
+      ? inactiveTokenField(effectiveTokenLayout)
+      : estimatedTokenField(row.tokens, effectiveTokenLayout);
     if (row.inactive) {
       return theme.fg("dim", `    ${name}  ${token}${desc ? `  ${desc}` : ""}`);
     }
@@ -503,7 +491,7 @@ function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): s
   const layout = compactLayout(snapshot);
   for (const section of snapshot.sections) {
     const title = compactLabel(section.title, layout.labelWidth);
-    const counts = `${estimatedTokenLabel(sectionTokens(section), layout.tokenLayout)} tokens ${countDetail(sectionChars(section))}`;
+    const counts = `${estimatedTokenLabel(sectionTokens(section), layout.tokenLayout)} tokens ${countDetail(section.content.length)}`;
     lines.push("", `  ${accent(theme, GLYPH.section)} ${theme.bold(title)}  ${theme.fg("dim", counts)}`);
     if (section.compactRows && section.compactRows.length > 0) {
       lines.push(...renderScanRows(section.compactRows, theme, width, layout));
@@ -728,17 +716,6 @@ export const internals = {
   RESOURCE_HEADER_RE,
   getPromptRemainder,
   parseSkillsBlock,
-  parseContextSections,
-  buildSkillsSection,
-  // heuristic resolution
-  parseContextimateConfig,
-  resolveHeuristic,
-  // provider payload formats
-  buildToolNumerator,
-  buildToolDisplayEstimate,
-  // OpenAI tool render
-  estimateOpenAIToolDefinitionTokens,
-  estimateOpenAIFunctionToolTokens,
   // session accounting
   buildSessionBreakdown,
   buildSessionEstimate,
@@ -751,11 +728,7 @@ export const internals = {
   ctxShareLabel,
   contextWindowLabel,
   methodologyHint,
-  // runtime-addition attribution (issue #9)
-  detectRuntimeAdditions,
-  runtimeAdditionsAttribution,
   // snapshot + renderers
-  buildSnapshot,
   totalTokens,
   renderSummary,
   renderCompact,
@@ -810,14 +783,13 @@ export default function piContextimate(pi: ExtensionAPI) {
       () => {
         const now = Date.now();
         if (!cache.value || cache.dirty || now - cache.builtAt > SNAPSHOT_TTL_MS) {
-          cache.value = buildSnapshot(
-            pi,
-            () => runPrompt ?? ctx.getSystemPrompt(),
-            ctx.sessionManager,
-            () => ctx.getContextUsage(),
-            () => g.__piContextimateModel ?? toModelSummary(ctx.model),
+          cache.value = buildSnapshot(pi, {
+            systemPrompt: runPrompt ?? ctx.getSystemPrompt(),
+            sessionManager: ctx.sessionManager,
+            contextUsage: ctx.getContextUsage(),
+            model: g.__piContextimateModel ?? toModelSummary(ctx.model),
             config,
-          );
+          });
           cache.builtAt = now;
           cache.dirty = false;
         }

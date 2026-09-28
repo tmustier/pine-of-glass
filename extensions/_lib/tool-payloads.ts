@@ -39,11 +39,6 @@ export function schemaPropertyDescription(property: unknown): string {
   return typeof property.description === "string" ? trimFinalPeriod(property.description) : "";
 }
 
-export function schemaArrayItemProperties(property: unknown): Record<string, unknown> {
-  if (!isJsonObject(property)) return {};
-  return getSchemaProperties(property.items);
-}
-
 export function getSchemaRequired(schema: unknown): string[] {
   if (!isJsonObject(schema) || !Array.isArray(schema.required)) return [];
   return schema.required.filter((entry): entry is string => typeof entry === "string");

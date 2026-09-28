@@ -23,13 +23,11 @@ import {
 } from "../../scripts/contextimate/provider-token-counts.ts";
 import { isJsonObject, type JsonObject } from "../../extensions/_lib/boundary.ts";
 import { toolPayload } from "../../extensions/_lib/tool-payloads.ts";
-import { internals } from "../../extensions/pi-contextimate/index.ts";
+import { buildSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
 import { anthropicModel, fakePi, fixtureSystemPrompt } from "../helpers.ts";
 
-const { buildSnapshot } = internals;
-
 function capturedAnthropicPayload() {
-  const snapshot = buildSnapshot(fakePi(), () => fixtureSystemPrompt(), undefined, () => undefined, () => anthropicModel, {});
+  const snapshot = buildSnapshot(fakePi(), { systemPrompt: fixtureSystemPrompt(), model: anthropicModel });
   const tools = snapshot.tools.slice(0, 3).map((tool) => {
     const payload = toolPayload(tool, "anthropic");
     assert.ok(isJsonObject(payload));

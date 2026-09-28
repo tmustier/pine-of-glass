@@ -15,7 +15,11 @@ test("contextReport lists sections, skills and tools, counted with the user's co
   const skill = join(project.home, ".pi", "agent", "skills", "demo", "SKILL.md");
   mkdirSync(join(skill, ".."), { recursive: true });
   writeFileSync(skill, "---\nname: demo\ndescription: Shows up in the skill index\n---\nBody.\n");
-  project.writeProjectConfig("pi-contextimate", { defaults: { label: "one char per token", textDenominator: 1 } });
+  const globalRules = "# Global\nBe precise & kind.";
+  const localRules = "# Local\nKeep changes small.";
+  writeFileSync(join(project.home, ".pi", "agent", "AGENTS.md"), globalRules);
+  writeFileSync(join(project.dir, "AGENTS.md"), localRules);
+  project.writeProjectConfig("pi-contextimate", { defaults: { label: "one char per token", textDenominator: 1, toolDenominator: 1, toolNumerator: "anthropic" } });
 
   let report: ContextReport | undefined;
   const host = await hostExtension((pi) => {
@@ -30,8 +34,8 @@ test("contextReport lists sections, skills and tools, counted with the user's co
     pi.registerTool(tool("read"));
     pi.registerTool(tool("unused"));
     pi.registerCommand("report", {
-      handler: async (_args, ctx) => {
-        pi.setActiveTools(["read"]);
+      handler: async (args, ctx) => {
+        pi.setActiveTools(args === "none" ? [] : ["read"]);
         report = contextReport(pi, ctx);
       },
     });
@@ -45,14 +49,33 @@ test("contextReport lists sections, skills and tools, counted with the user's co
     assert.ok(system && system.chars > 0);
     assert.equal(system.tokens, system.chars, "the config's textDenominator of 1 applies");
     assert.equal(report.totalTokens, report.sections.reduce((sum, section) => sum + section.tokens, 0));
+    assert.deepEqual(report.sections.filter((section) => section.id.startsWith("context:")).map(({ title, chars, tokens }) => ({ title, chars, tokens })), [
+      { title: "Global AGENTS.md", chars: globalRules.length, tokens: globalRules.length },
+      { title: join(project.dir, "AGENTS.md"), chars: localRules.length, tokens: localRules.length },
+    ]);
 
     assert.deepEqual(report.skills.map(({ name, location }) => ({ name, location })), [{ name: "demo", location: skill }]);
     assert.ok(report.skills[0]!.tokens > 0);
 
-    const byName = Object.fromEntries(report.tools.map((tool) => [tool.name, tool]));
-    assert.equal(byName["read"]?.active, true);
-    assert.ok((byName["read"]?.tokens ?? 0) > 0);
-    assert.deepEqual({ active: byName["unused"]?.active, tokens: byName["unused"]?.tokens }, { active: false, tokens: undefined });
+    const read = report.tools.find((tool) => tool.name === "read");
+    const unused = report.tools.find((tool) => tool.name === "unused");
+    assert.ok(read?.active);
+    assert.ok(unused && !unused.active);
+    assert.equal("tokens" in unused, false);
+    // The complete Anthropic definition is 138 characters; the list adds two brackets.
+    assert.equal(read.tokens, 138);
+    assert.equal(report.sections.find((section) => section.id === "tools")?.tokens, 140);
+
+    project.writeProjectConfig("pi-contextimate", { defaults: { toolNumerator: "openai-cookbook" } });
+    await host.session.prompt("/report");
+    const openaiRead = report.tools.find((tool) => tool.name === "read");
+    assert.ok(openaiRead?.active);
+    assert.equal(report.sections.find((section) => section.id === "tools")?.tokens, openaiRead.tokens + 16);
+
+    await host.session.prompt("/report none");
+    assert.deepEqual(report.skills, []);
+    assert.ok(report.tools.every((tool) => !tool.active && !("tokens" in tool)));
+    assert.ok(report.sections.every((section) => section.id !== "tools" && section.id !== "skills"));
   } finally {
     await host.dispose();
     project.dispose();

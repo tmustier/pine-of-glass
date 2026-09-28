@@ -5,20 +5,13 @@ import assert from "node:assert/strict";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
-import type { PrefixSnapshot } from "../../extensions/pi-contextimate/index.ts";
+import { buildSnapshot, type PrefixSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
 import { assistantMessage, fakePi, fixtureSystemPrompt, anthropicModel, plainTheme, stripAnsi } from "../helpers.ts";
 
-const { buildSnapshot, buildSessionBreakdown, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, ctxShareLabel, contextWindowLabel, methodologyHint, renderSummary } = internals;
+const { buildSessionBreakdown, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, ctxShareLabel, contextWindowLabel, methodologyHint, renderSummary } = internals;
 
 function snapshotWith(session: PrefixSnapshot["session"], usage: PrefixSnapshot["contextUsage"]): PrefixSnapshot {
-  const snapshot = buildSnapshot(
-    fakePi(),
-    () => fixtureSystemPrompt(),
-    undefined,
-    () => usage,
-    () => anthropicModel,
-    {},
-  );
+  const snapshot = buildSnapshot(fakePi(), { systemPrompt: fixtureSystemPrompt(), contextUsage: usage, model: anthropicModel });
   snapshot.session = session;
   return snapshot;
 }
@@ -178,14 +171,9 @@ test("pre-switch usage names its old currency without losing Pi's estimate marke
     },
   ));
   const usage = { tokens: 50_000, contextWindow: 200_000, percent: 25 };
-  const build = () => buildSnapshot(
-    fakePi(),
-    () => fixtureSystemPrompt(),
-    manager,
-    () => usage,
-    () => anthropicModel,
-    {},
-  );
+  const build = () => buildSnapshot(fakePi(), {
+    systemPrompt: fixtureSystemPrompt(), sessionManager: manager, contextUsage: usage, model: anthropicModel,
+  });
 
   const switched = build();
   assert.deepEqual(switched.preSwitchUsage, { billedModel: "gpt-5.6-sol" });
@@ -279,7 +267,7 @@ test("methodology states session/tool methods only when they deviate from the te
 
 test("snapshot signature changes exactly when inputs that affect rendering change", () => {
   const build = (active: string[], model = anthropicModel, config = {}) =>
-    buildSnapshot(fakePi({ activeTools: active }), () => fixtureSystemPrompt(), undefined, () => undefined, () => model, config);
+    buildSnapshot(fakePi({ activeTools: active }), { systemPrompt: fixtureSystemPrompt(), model, config });
 
   const base = build(["read", "bash", "search"]);
   assert.equal(build(["read", "bash", "search"]).signature, base.signature, "same inputs → same signature");

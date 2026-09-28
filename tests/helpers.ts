@@ -278,11 +278,11 @@ export const fixtureTools: ToolInfo[] = [
   },
 ] as unknown as ToolInfo[];
 
-export function fakePi(options: { activeTools?: string[]; tools?: ToolInfo[] } = {}): ExtensionAPI {
+export function fakePi(options: { activeTools?: string[]; tools?: ToolInfo[] } = {}): Pick<ExtensionAPI, "getActiveTools" | "getAllTools"> {
   const tools = options.tools ?? fixtureTools;
   const active = options.activeTools ?? ["read", "bash", "search"];
   return {
     getActiveTools: () => active,
     getAllTools: () => tools,
-  } as unknown as ExtensionAPI;
+  };
 }

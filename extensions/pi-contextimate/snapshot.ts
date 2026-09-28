@@ -1,34 +1,47 @@
-// Contextimate's accounting: what fills the model's context before the conversation.
-// index.ts renders it; report.ts publishes it.
-import type { ContextUsage, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+// Shared accounting for the startup panel and plain-data report.
+import type { ContextUsage, ExtensionAPI, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { homedir } from "node:os";
 import { compactCount } from "../_lib/fmt.ts";
 import { estimateCharsAsTokens, type ModelSummary } from "../_lib/heuristics.ts";
-import { inlineCount, ratioDetail } from "./metric-rows.ts";
+import { SEP } from "../_lib/style.ts";
 import {
-  detectRuntimeAdditions,
-  getPromptRemainder,
-  parseSkillsBlock,
-  PROJECT_INSTRUCTIONS_RE,
-  type RuntimeAdditions,
-} from "./prompt-parsing.ts";
+  aggregateToolPayload, arrayItemsSchema, estimateOpenAIFunctionToolTokens,
+  estimateOpenAIToolDefinitionTokens, getSchemaProperties, getSchemaRequired,
+  renderOpenAITool, schemaPropertyDescription, schemaPropertyType, toolPayload, toolPayloadLabel,
+} from "../_lib/tool-payloads.ts";
+import { inlineCount, ratioDetail } from "./metric-rows.ts";
+import { detectRuntimeAdditions, getPromptRemainder, parseSkillsBlock, PROJECT_INSTRUCTIONS_RE, type SkillSummary } from "./prompt-parsing.ts";
 import { scanSession, type SessionBreakdown, type SessionSource } from "./session-accounting.ts";
 import { type ContextimateConfig, type ResolvedHeuristic, resolveHeuristic } from "./heuristic-config.ts";
-import {
-  type ToolSummary,
-  type ToolExpanded,
-  summarizeTool,
-  buildToolNumerator,
-  buildToolFields,
-  buildToolDisplayEstimate,
-} from "./tool-accounting.ts";
 
-export type ScanRow = {
+export type ToolSummary = {
   name: string;
-  tokens?: number;
-  desc?: string;
-  inactive?: boolean;
+  description: string;
+  source: string;
+  schema: ToolInfo["parameters"];
+  promptGuidelines: string[];
 };
+
+export type ToolField = {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+  depth: number;
+};
+
+export type ToolExpanded = {
+  name: string;
+  tokens: number;
+  source: string;
+  description: string;
+  fields: ToolField[];
+};
+
+export type ScanRow = { name: string; desc?: string } & (
+  | { inactive?: false; tokens: number }
+  | { inactive: true; tokens?: never }
+);
 
 type ExpandedContent =
   | { kind: "text"; note?: string; attribution?: string; preview?: string[] }
@@ -43,8 +56,6 @@ export type PrefixSection = {
   detail: string;
   /** Tools only: formula-derived tokens replacing the ch ÷ denominator estimate. */
   effectiveTokens?: number;
-  /** Tools only: minified-payload size, when content.length is not the counted chars. */
-  rawChars?: number;
   denominator: number;
   compactRows?: ScanRow[];
   expanded: ExpandedContent;
@@ -54,21 +65,17 @@ export type PrefixSnapshot = {
   signature: string;
   sections: PrefixSection[];
   tools: ToolSummary[];
+  skills: SkillSummary[];
   heuristic: ResolvedHeuristic;
   model?: ModelSummary;
   session?: SessionBreakdown;
   contextUsage?: ContextUsage;
-  /** Set when pi's exact usage was billed by a different model than the current one
-   * (issue #58): the count is old-currency, the window is new-currency, and the two
-   * must not be composed. Cleared by the first post-switch usage. */
+  /** Usage from before a model switch cannot be combined with the new model's window. */
   preSwitchUsage?: { billedModel: string };
 };
 
-function compactPath(filePath: string): string {
-  const home = homedir();
-  if (filePath === `${home}/.pi/agent/AGENTS.md`) return "Global AGENTS.md";
-  if (filePath.startsWith(`${home}/`)) return `~/${filePath.slice(home.length + 1)}`;
-  return filePath;
+export function sourceInfoLabel({ sourceInfo }: ToolInfo): string {
+  return sourceInfo.source === "builtin" ? "builtin" : `${sourceInfo.scope}${SEP}${sourceInfo.path ?? sourceInfo.source}`;
 }
 
 export function tildeAll(text: string): string {
@@ -81,204 +88,161 @@ export function singleLine(text: string, max = 140): string {
   return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 }
 
-function firstMeaningfulLines(text: string, maxLines: number): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, maxLines);
+function previewLines(text: string, maxLines: number, width = 140): string[] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, maxLines);
+  return lines.length ? lines.map((line) => singleLine(line, width)) : ["(no non-empty lines)"];
 }
 
-export function parseContextSections(systemPrompt: string, denominator: number): PrefixSection[] {
-  const sections: PrefixSection[] = [];
-  for (const match of systemPrompt.matchAll(PROJECT_INSTRUCTIONS_RE)) {
-    const [, rawPath, content] = match;
-    const filePath = rawPath ?? "";
-    const title = compactPath(filePath);
-    const body = content ?? "";
-    const preview = firstMeaningfulLines(body, 8).map((line) => singleLine(line, 150));
-    sections.push({
-      id: `context:${filePath}`,
-      title,
-      content: body,
-      denominator,
-      detail: ratioDetail(denominator),
-      expanded: {
-        kind: "text",
-        note: `${tildeAll(filePath)} · preview only`,
-        preview: preview.length > 0 ? preview : ["(no non-empty lines)"],
-      },
-    });
+function toolFields(schema: unknown, depth = 0): ToolField[] {
+  const required = new Set(getSchemaRequired(schema));
+  const fields: ToolField[] = [];
+  for (const [name, property] of Object.entries(getSchemaProperties(schema))) {
+    fields.push({ name, type: schemaPropertyType(property), required: required.has(name), description: schemaPropertyDescription(property), depth });
+    // agent-default (not a user rule): 2026-09-28, preserve the panel's existing depth limit.
+    if (depth < 3) fields.push(...toolFields(property, depth + 1), ...toolFields(arrayItemsSchema(property), depth + 1));
   }
-  return sections;
+  return fields;
 }
 
-export function runtimeAdditionsAttribution(additions: RuntimeAdditions, denominator: number): string | undefined {
-  if (additions.chars === 0) return undefined;
-  const tokens = estimateCharsAsTokens(additions.chars, denominator);
-  const parts: string[] = [];
-  if (additions.snippetCount > 0) parts.push(`${additions.snippetCount} tool snippet${additions.snippetCount === 1 ? "" : "s"}`);
-  if (additions.guidelineCount > 0) parts.push(`${additions.guidelineCount} guideline${additions.guidelineCount === 1 ? "" : "s"}`);
-  return `of which tool/extension instructions: ~${compactCount(tokens)} tokens (${parts.join(", ")}) · already counted in this row`;
-}
-
-export function buildSkillsSection(systemPrompt: string, denominator: number) {
-  const block = parseSkillsBlock(systemPrompt, denominator);
-  if (!block) return { skills: [] };
-  const { content, skills } = block;
-  const sortedSkills = [...skills].sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name));
-  const scanRows = sortedSkills.map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description }));
-  const wrapperChars = Math.max(0, content.length - skills.reduce((sum, skill) => sum + skill.chars, 0));
-  const wrapperNote = wrapperChars > 0
-    ? `list wrapper/markup  ${inlineCount(wrapperChars, denominator)}`
-    : undefined;
-  return {
-    skills,
-    section: {
-      id: "skills",
-      title: `Skill frontmatter (${skills.length})`,
-      content,
-      denominator,
-      detail: ratioDetail(denominator),
-      compactRows: scanRows,
-      expanded: { kind: "skills", note: wrapperNote, rows: scanRows },
-    } satisfies PrefixSection,
-  };
-}
-
-/** The active tools, and their section when any are active. */
-type ToolsSection = { section?: PrefixSection; tools: ToolSummary[] };
-
-function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): ToolsSection {
-  const activeNames = new Set(pi.getActiveTools());
-  const allTools = pi.getAllTools();
-  const activeToolInfos = allTools.filter((tool) => activeNames.has(tool.name));
-  const inactiveTools = allTools
-    .filter((tool) => !activeNames.has(tool.name))
-    .map(summarizeTool)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const tools = activeToolInfos.map(summarizeTool);
-  if (tools.length === 0) return { tools };
-
-  const numerator = buildToolNumerator(tools, heuristic);
-  const denominator = heuristic.toolDenominator;
-  const effectiveTokens = numerator.tokens ?? estimateCharsAsTokens(numerator.chars, denominator);
-  const sectionDetail = typeof numerator.tokens === "number"
-    ? "· OpenAI tool render"
-    : `${ratioDetail(denominator)} · ${numerator.label}`;
-  const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic) }));
-  const sortedEstimates = [...toolEstimates].sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name));
-  const compactToolRows: ScanRow[] = [
-    ...sortedEstimates.map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description })),
-    ...inactiveTools.map((tool) => ({ name: tool.name, desc: `(inactive) ${tool.description}`, inactive: true })),
-  ];
-  const expandedTools: ToolExpanded[] = sortedEstimates.map(({ tool, estimate }) => ({
-    name: tool.name,
-    tokens: estimate.tokens,
-    source: tool.source,
-    description: tool.description,
-    fields: buildToolFields(tool.schema),
-  }));
-  const notes = typeof numerator.tokens === "number"
-    ? [
-        `counted on OpenAI's TypeScript-style tool render (${compactCount(numerator.chars)} ch) with an o200k_base approximation, plus 16 once`,
-      ]
-    : [
-        `counts use ${numerator.label} at ch ${ratioDetail(denominator)} over the minified provider payload (${compactCount(numerator.chars)} ch); the tree below is the readable view`,
-      ];
-  return {
-    tools,
-    section: {
-      id: "tools",
-      title: `Tools (${tools.length}/${allTools.length} active)`,
-      content: numerator.content,
-      effectiveTokens,
-      rawChars: numerator.chars,
-      denominator,
-      detail: sectionDetail,
-      compactRows: compactToolRows,
-      expanded: { kind: "tools", notes, tools: expandedTools },
-    },
-  };
-}
-
-// May throw while pi is still wiring a resumed session; StartupContextComponent.render()
-// catches, renders the "unavailable" line, and recovers on the next snapshot.
+// The renderer catches failures while Pi is still wiring a resumed session.
 export function buildSnapshot(
-  pi: ExtensionAPI,
-  getSystemPrompt: () => string,
-  sessionManager?: SessionSource,
-  getContextUsage?: () => ContextUsage | undefined,
-  getModel?: () => ModelSummary | undefined,
-  config: ContextimateConfig = {},
+  pi: Pick<ExtensionAPI, "getActiveTools" | "getAllTools">,
+  { systemPrompt, model, config = {}, sessionManager, contextUsage }: {
+    systemPrompt: string;
+    model?: ModelSummary;
+    config?: ContextimateConfig;
+    sessionManager?: SessionSource;
+    contextUsage?: ContextUsage;
+  },
 ): PrefixSnapshot {
-  const systemPrompt = getSystemPrompt();
-  const model = getModel?.();
   const heuristic = resolveHeuristic(model, config);
   const textDenominator = heuristic.textDenominator;
   const promptRemainder = getPromptRemainder(systemPrompt);
-  const systemPreview = firstMeaningfulLines(promptRemainder, 6).map((line) => singleLine(line));
+  const activeNames = new Set(pi.getActiveTools());
+  const allTools = pi.getAllTools().map((tool): ToolSummary => ({
+    name: tool.name,
+    description: tool.description.trim() || "(no description)",
+    source: sourceInfoLabel(tool),
+    schema: tool.parameters,
+    promptGuidelines: tool.promptGuidelines ?? [],
+  }));
+  const tools = allTools.filter((tool) => activeNames.has(tool.name));
+  const additions = detectRuntimeAdditions(promptRemainder, tools);
+  const parts: string[] = [];
+  if (additions.snippetCount > 0) parts.push(`${additions.snippetCount} tool snippet${additions.snippetCount === 1 ? "" : "s"}`);
+  if (additions.guidelineCount > 0) parts.push(`${additions.guidelineCount} guideline${additions.guidelineCount === 1 ? "" : "s"}`);
+  const attribution = additions.chars === 0 ? undefined
+    : `of which tool/extension instructions: ~${compactCount(estimateCharsAsTokens(additions.chars, textDenominator))} tokens (${parts.join(", ")}) · already counted in this row`;
+  const sections: PrefixSection[] = [{
+    id: "system",
+    title: "Runtime system prompt",
+    content: promptRemainder,
+    denominator: textDenominator,
+    detail: ratioDetail(textDenominator),
+    expanded: {
+      kind: "text",
+      note: "assembled at runtime: pi base prompt + tool/extension instructions · preview only",
+      attribution,
+      preview: previewLines(promptRemainder, 6),
+    },
+  }];
 
-  // Tools are resolved before the system section so the runtime prompt row can attribute
-  // the tool/extension instructions embedded in it (issue #9).
-  const { section: toolsSection, tools } = buildToolsSection(pi, heuristic);
-  const runtimeAdditions = detectRuntimeAdditions(promptRemainder, tools);
-
-  const sections: PrefixSection[] = [
-    {
-      id: "system", // id is config/signature API — stays "system" even though the title changed
-      title: "Runtime system prompt",
-      content: promptRemainder,
+  for (const match of systemPrompt.matchAll(PROJECT_INSTRUCTIONS_RE)) {
+    // Both groups are mandatory in PROJECT_INSTRUCTIONS_RE.
+    const filePath = match[1]!;
+    const content = match[2]!;
+    const home = homedir();
+    let title = filePath;
+    if (filePath === `${home}/.pi/agent/AGENTS.md`) title = "Global AGENTS.md";
+    else if (filePath.startsWith(`${home}/`)) title = `~/${filePath.slice(home.length + 1)}`;
+    sections.push({
+      id: `context:${filePath}`,
+      title,
+      content,
       denominator: textDenominator,
       detail: ratioDetail(textDenominator),
-      expanded: {
-        kind: "text",
-        note: "assembled at runtime: pi base prompt + tool/extension instructions · preview only",
-        attribution: runtimeAdditionsAttribution(runtimeAdditions, textDenominator),
-        preview: systemPreview.length > 0 ? systemPreview : ["(no non-empty lines)"],
-      },
-    },
-    ...parseContextSections(systemPrompt, textDenominator),
-  ];
+      expanded: { kind: "text", note: `${tildeAll(filePath)} · preview only`, preview: previewLines(content, 8, 150) },
+    });
+  }
 
-  const { section: skillsSection } = buildSkillsSection(systemPrompt, textDenominator);
-  if (skillsSection) sections.push(skillsSection);
-  if (toolsSection) sections.push(toolsSection);
+  const skillsBlock = parseSkillsBlock(systemPrompt, textDenominator);
+  const skills = skillsBlock?.skills ?? [];
+  if (skillsBlock) {
+    const rows = [...skills].sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name))
+      .map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description }));
+    const wrapperChars = skillsBlock.content.length - skills.reduce((sum, skill) => sum + skill.chars, 0);
+    sections.push({
+      id: "skills",
+      title: `Skill frontmatter (${skills.length})`,
+      content: skillsBlock.content,
+      denominator: textDenominator,
+      detail: ratioDetail(textDenominator),
+      compactRows: rows,
+      expanded: {
+        kind: "skills",
+        note: wrapperChars > 0 ? `list wrapper/markup  ${inlineCount(wrapperChars, textDenominator)}` : undefined,
+        rows,
+      },
+    });
+  }
+
+  if (tools.length > 0) {
+    const numerator = heuristic.toolNumerator;
+    const denominator = heuristic.toolDenominator;
+    const openai = numerator === "openai-cookbook";
+    const content = openai ? tools.map(renderOpenAITool).join("") : JSON.stringify(aggregateToolPayload(tools, numerator));
+    const label = toolPayloadLabel(numerator);
+    const estimates = tools.map((tool) => ({
+      ...tool,
+      tokens: openai ? estimateOpenAIToolDefinitionTokens(tool)
+        : estimateCharsAsTokens(JSON.stringify(toolPayload(tool, numerator)).length, denominator),
+    })).sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name));
+    const inactiveTools = allTools.filter((tool) => !activeNames.has(tool.name)).sort((a, b) => a.name.localeCompare(b.name));
+    sections.push({
+      id: "tools",
+      title: `Tools (${tools.length}/${allTools.length} active)`,
+      content,
+      effectiveTokens: openai ? estimateOpenAIFunctionToolTokens(tools) : estimateCharsAsTokens(content.length, denominator),
+      denominator,
+      detail: openai ? "· OpenAI tool render" : `${ratioDetail(denominator)} · ${label}`,
+      compactRows: [
+        ...estimates.map((tool) => ({ name: tool.name, tokens: tool.tokens, desc: tool.description })),
+        ...inactiveTools.map((tool): ScanRow => ({ name: tool.name, desc: `(inactive) ${tool.description}`, inactive: true })),
+      ],
+      expanded: {
+        kind: "tools",
+        notes: [openai
+          ? `counted on OpenAI's TypeScript-style tool render (${compactCount(content.length)} ch) with an o200k_base approximation, plus 16 once`
+          : `counts use ${label} at ch ${ratioDetail(denominator)} over the minified provider payload (${compactCount(content.length)} ch); the tree below is the readable view`],
+        tools: estimates.map((tool) => ({ name: tool.name, tokens: tool.tokens, source: tool.source, description: tool.description, fields: toolFields(tool.schema) })),
+      },
+    });
+  }
 
   const { breakdown: session, lastBilled } = scanSession(sessionManager);
-  const contextUsage = getContextUsage?.();
   const preSwitchUsage = contextUsage && lastBilled && model &&
     (lastBilled.provider !== model.provider || lastBilled.id !== model.id || lastBilled.api !== model.api)
     ? { billedModel: lastBilled.id }
     : undefined;
-
   const signature = [
     systemPrompt.length,
     model ? `${model.provider}:${model.id}:${model.api}` : "no-model",
     `${heuristic.label}:${heuristic.textDenominator}:${heuristic.sessionDenominator}:${heuristic.toolDenominator}:${heuristic.toolNumerator}`,
     JSON.stringify(config),
-    pi.getActiveTools().join(","),
-    pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
+    [...activeNames].join(","),
+    allTools.map((tool) => `${tool.name}:${tool.description.length}`).join(","),
     session ? JSON.stringify(session) : "no-session",
     contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
     preSwitchUsage ? `pre-switch:${preSwitchUsage.billedModel}` : "currency-ok",
   ].join("|");
 
-  return { signature, sections, tools, heuristic, model, session, contextUsage, preSwitchUsage };
+  return { signature, sections, tools, skills, heuristic, model, session, contextUsage, preSwitchUsage };
 }
 
 export function sectionTokens(section: PrefixSection): number {
   return section.effectiveTokens ?? estimateCharsAsTokens(section.content.length, section.denominator);
 }
 
-export function sectionChars(section: PrefixSection): number {
-  return section.rawChars ?? section.content.length;
-}
-
 export function totalTokens(snapshot: PrefixSnapshot): number {
   return snapshot.sections.reduce((sum, section) => sum + sectionTokens(section), 0);
-}
-
-export function totalChars(snapshot: PrefixSnapshot): number {
-  return snapshot.sections.reduce((sum, section) => sum + sectionChars(section), 0);
 }
