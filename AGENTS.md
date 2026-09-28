@@ -6,13 +6,13 @@ language. TypeScript, zero runtime dependencies, tests on `node:test`.
 ## Commands
 
 ```bash
-npm install             # pinned Pi runtime (types, contract tests, smoke) and lint tooling
+npm install             # locked Pi runtime (types, contract tests, smoke) and lint tooling; npm update adopts a new Pi
 npm run link-pi         # optional: check against your installed pi instead; npm install undoes it
 npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
 npm run docs:cache      # regenerate Cachemire retention docs
 npm run lint            # POG rules + oxlint/anti-slop (baselined) + generated-doc drift checks
 npm run lint:slop       # oxlint alone, full diagnostics
-npm run typecheck       # tsc against the pinned (or linked) pi
+npm run typecheck       # tsc against the locked (or linked) pi
 npm test                # unit + golden + pi contract tests (node:test)
 npm run check           # lint + typecheck + tests
 npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-only)

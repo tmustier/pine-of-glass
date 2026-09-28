@@ -62,12 +62,12 @@ Deliberately **not** tested:
   (Node ≥ 22.6; this repo develops on 26). Lint fixture tests also use the pinned
   development toolchain; the shipped extensions still have no runtime dependencies.
 - **Pi runtime:** the Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`)
-  are pinned dev dependencies, so `npm install` gives tests, `tsc --noEmit` and the smoke
-  layer a real runtime. To check against the Pi you use, `npm run link-pi`
+  are dev dependencies held by the lockfile, so `npm install` gives tests, `tsc --noEmit`
+  and the smoke layer a real runtime. To check against the Pi you use, `npm run link-pi`
   (`scripts/dev/link-pi-runtime.sh`) replaces them with links to the globally installed
-  packages; `npm install` restores the pinned versions. Pi 0.86.0 is the minimum
+  packages; `npm install` restores the locked versions. Pi 0.86.0 is the minimum
   supported version, so a `pi update` followed by `npm run link-pi && npm test` is the
-  drift detector. Bump the pinned versions to adopt a new Pi.
+  drift detector. `npm update` moves the lockfile to the latest Pi.
 - **Testability route:** pure domain logic lives in importable domain modules; see
   "Public interfaces" above. Pi imports only each extension's default entry point, so
   named exports are runtime-inert.
@@ -268,7 +268,7 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 
 ## Layer 4: startup smoke (tmux, local-only)
 
-`npm run test:smoke` launches the Pi runtime in `node_modules` (pinned, or linked by
+`npm run test:smoke` launches the Pi runtime in `node_modules` (locked, or linked by
 `npm run link-pi`) in isolated tmux sessions with no model call required. The harness
 invokes that CLI directly: an isolated fixture `HOME` must not change how a user shell
 wrapper locates Node or Pi itself.
