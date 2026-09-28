@@ -1,6 +1,6 @@
 // Contextimate's startup breakdown as plain data, for other extensions and scripts. This is
-// the stable interface; index.ts and snapshot.ts are not. The numbers match the panel: the
-// same system prompt, heuristic and contextimate config.
+// the stable interface; index.ts and the other modules are not. It counts with the panel's
+// heuristic and contextimate config, over Pi's current system prompt.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { parseSkillsBlock } from "./prompt-parsing.ts";
@@ -13,17 +13,22 @@ export type ContextReport = {
   model?: string;
   /** The heuristic's label, e.g. "OpenAI-Codex heuristic". */
   heuristic: string;
-  /** Estimated tokens for everything sent before the conversation. */
+  /** Estimated tokens for everything sent before the conversation; not the session's context usage. */
   totalTokens: number;
   /** The runtime system prompt, each AGENTS file, the skill index and the active tool definitions. */
   sections: { id: string; title: string; chars: number; tokens: number }[];
   /** Skills in the model's skill index, with what each entry costs. */
   skills: { name: string; location: string; tokens: number }[];
-  /** Every registered tool. Only active tools are sent, so only they have tokens. */
+  /** Every registered tool. Only active tools are sent, so only they have tokens. Each is a per-tool
+   * estimate; with the provider's payload overhead they need not sum to the tools section. */
   tools: { name: string; active: boolean; tokens?: number; source: string }[];
 };
 
-/** Counts the current system prompt: during a run, the prompt that run sent. */
+/**
+ * Counts `ctx.getSystemPrompt()`: during a run, the prompt that run sent; otherwise Pi's base
+ * prompt. After a run the panel keeps counting that run's prompt, so the two can differ when an
+ * extension rewrites the prompt per run (for example `pi-skill-gate`).
+ */
 export function contextReport(pi: ExtensionAPI, ctx: ExtensionContext): ContextReport {
   const model = toModelSummary(ctx.model);
   const systemPrompt = ctx.getSystemPrompt();

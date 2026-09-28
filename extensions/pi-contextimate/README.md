@@ -60,7 +60,7 @@ The panel's visual grammar is the family design language: see `docs/design-langu
 
 ## Use from another extension
 
-`report.ts` returns the startup breakdown as plain data, counted exactly as the panel counts it: the same prompt, heuristic and `pi-contextimate` config. It is the stable interface; `index.ts` and the other modules are not.
+`report.ts` returns the startup breakdown as plain data, counted with the panel's heuristic and `pi-contextimate` config. It is the stable interface; `index.ts` and the other modules are not.
 
 ```ts
 import { contextReport } from "pine-of-glass/extensions/pi-contextimate/report.ts";
@@ -76,7 +76,7 @@ pi.registerCommand("context-json", {
 
 At `session_start` the prompt does not yet include skills other extensions add at startup; call it once startup has finished, as a command does.
 
-`sections` covers the runtime system prompt, each AGENTS file, the skill index and the active tool definitions, not the conversation. During a run it counts the prompt that run sent.
+`sections` covers the runtime system prompt, each AGENTS file, the skill index and the active tool definitions, not the conversation, and `totalTokens` is their sum. It counts Pi's current prompt, `ctx.getSystemPrompt()`: during a run, the prompt that run sent; otherwise Pi's base prompt. After a run the panel keeps counting that run's prompt, so the two differ when an extension rewrites the prompt per run. Each tool's `tokens` is a per-tool estimate; with the provider's payload overhead they need not sum to the tools section.
 
 ## How it counts
 
