@@ -119,6 +119,17 @@ test("compact <codex_skills> list parses into the same skills row as the XML ind
   assert.ok(remainder.includes("Current working directory"));
 });
 
+test("a skill index moved out of Pi's wrapper still parses into the skills row", () => {
+  // pi-skill-gate cuts <available_skills> out of <skills> and appends the enabled entries.
+  const native = fixtureSystemPrompt();
+  const alpha = native.match(/ *<skill>\s*<name>alpha-skill[\s\S]*?<\/skill>/)![0];
+  const gated = `${native.replace(/\n<available_skills>[\s\S]*?<\/available_skills>\n/, "\n")}\n<available_skills>\n${alpha}\n</available_skills>\n`;
+  const { section } = buildSkillsSection(gated, 4);
+  assert.equal(section!.title, "Skill frontmatter (1)");
+  assert.deepEqual(section!.compactRows!.map((row) => row.name), ["alpha-skill"]);
+  assert.ok(!getPromptRemainder(gated).includes("alpha-skill"));
+});
+
 test("prompt without context/skills blocks degrades to remainder-only", () => {
   const bare = "Just a bare prompt with no blocks.";
   assert.deepEqual(parseContextSections(bare, 4), []);

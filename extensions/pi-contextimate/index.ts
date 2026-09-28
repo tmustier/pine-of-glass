@@ -1204,14 +1204,6 @@ class StartupContextComponent implements Component {
   }
 }
 
-function renderPlain(component: Component, width = 120): string {
-  try {
-    return stripAnsi(component.render(width).join("\n"));
-  } catch {
-    return "";
-  }
-}
-
 function isPrefixBlock(component: unknown): component is StartupContextComponent {
   return !!component && typeof component === "object" && (component as { __piContextimateBlock?: boolean }).__piContextimateBlock === true;
 }
@@ -1220,11 +1212,6 @@ function isPrefixBlock(component: unknown): component is StartupContextComponent
 // arbitrary text the fuzzy [Section] regex must never re-anchor on.
 function isResourceComponent(component: unknown): boolean {
   return !isPrefixBlock(component) && isResourceRow(component);
-}
-
-function isBlankComponent(component: Component): boolean {
-  const text = renderPlain(component, 80);
-  return text.trim().length === 0;
 }
 
 function removeExistingPrefixBlocks(chat: ContainerLike): void {
@@ -1236,7 +1223,9 @@ function insertionIndexAfterResourceList(chat: ContainerLike): number {
   for (let i = 0; i < chat.children.length; i++) {
     if (!isResourceComponent(chat.children[i])) continue;
     index = i;
-    if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;
+    // SAFETY: Pi's resource container holds only TUI components.
+    const next = chat.children[i + 1] as Component | undefined;
+    if (next && stripAnsi(next.render(80).join("")).trim() === "") index = i + 1;
   }
   return index;
 }
@@ -1349,6 +1338,13 @@ export default function piContextimate(pi: ExtensionAPI) {
     cache.dirty = true;
   };
 
+  // Pi keeps before_agent_start rewrites (such as pi-skill-gate's filtered skill index) only
+  // while a run is active, so count the prompt the latest run sent once it has one.
+  let runPrompt: string | undefined;
+  pi.on("turn_start", async (_event, ctx) => {
+    runPrompt = ctx.getSystemPrompt();
+    markDirty();
+  });
   pi.on("message_end", async () => markDirty());
   pi.on("session_compact", async () => markDirty());
   // Branch checkout can change the model that billed the latest usage (issue #58).
@@ -1360,6 +1356,7 @@ export default function piContextimate(pi: ExtensionAPI) {
     // Restore Pi's normal header; this extension now renders below Pi's loaded-resource list.
     ctx.ui.setHeader(undefined);
 
+    runPrompt = undefined;
     const currentMode = g.__piContextimateMode ?? DEFAULT_MODE;
     const config = loadContextimateConfig(ctx.cwd);
     g.__piContextimateModel = toModelSummary(ctx.model);
@@ -1370,7 +1367,7 @@ export default function piContextimate(pi: ExtensionAPI) {
         if (!cache.value || cache.dirty || now - cache.builtAt > SNAPSHOT_TTL_MS) {
           cache.value = buildSnapshot(
             pi,
-            () => ctx.getSystemPrompt(),
+            () => runPrompt ?? ctx.getSystemPrompt(),
             ctx.sessionManager,
             () => ctx.getContextUsage(),
             () => g.__piContextimateModel ?? toModelSummary(ctx.model),

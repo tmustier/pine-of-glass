@@ -23,3 +23,9 @@
   session start and `/contextimate` search before the panel first attaches. Reported by
   Nico Bailon ([@nicobailon](https://github.com/nicobailon)) in
   [#122](https://github.com/tmustier/pine-of-glass/issues/122).
+- Contextimate counts the prompt the latest run sent. Extensions can change the prompt just
+  before each run (for example `pi-skill-gate` hiding skills), but Pi reverts to the
+  unchanged prompt once the run ends, so the panel had counted every skill, including
+  hidden ones. It also reads a skill index an extension has moved out of Pi's `<skills>`
+  section. Reported by [@punk-dev-robot](https://github.com/punk-dev-robot) in
+  [#56](https://github.com/tmustier/pine-of-glass/issues/56).
