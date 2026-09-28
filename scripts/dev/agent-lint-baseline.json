@@ -226,7 +226,6 @@
       "extensions/pi-contextimate/index.ts": {
         "const g = globalThis as ContextimateGlobal;": 1,
         "const requested = args.trim().toLowerCase() as ViewMode | \"\";": 1,
-        "if (i + 1 < chat.children.length && isBlankComponent(chat.children[i + 1] as Component)) index = i + 1;": 1,
         "return !!component && typeof component === \"object\" && (component as { __piContextimateBlock?: boolean }).__piContextimateBlock === true;": 1,
         "return [] as string[];": 1
       },
@@ -297,7 +296,7 @@
     "defaultTsMax": 350,
     "files": {
       "extensions/pi-cachemire/index.ts": 698,
-      "extensions/pi-contextimate/index.ts": 1434,
+      "extensions/pi-contextimate/index.ts": 1431,
       "extensions/pi-traceline/index.ts": 1674,
       "tests/contract/pi-internals.test.ts": 355,
       "tests/traceline/one-line.test.ts": 772

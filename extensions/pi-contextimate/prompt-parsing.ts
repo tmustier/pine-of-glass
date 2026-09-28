@@ -20,10 +20,14 @@ const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]
 // or spanning lines.
 export const CODEX_SKILLS_RE = /\n*<codex_skills>\n[\s\S]*?<\/codex_skills>/;
 const COMPACT_SKILL_RE = /^- (.+?): ([\s\S]*?) ?\(file: (.+?)\)$/gm;
+// Extensions that filter the index before each run (pi-skill-gate) cut <available_skills>
+// out of Pi's <skills> wrapper and append the filtered list on its own.
+const BARE_SKILLS_RE = /\n*<available_skills>\n[\s\S]*?\n<\/available_skills>\n*/;
 
 const SKILL_FORMATS = [
   { block: AVAILABLE_SKILLS_RE, entry: SKILL_RE, xml: true },
   { block: CODEX_SKILLS_RE, entry: COMPACT_SKILL_RE, xml: false },
+  { block: BARE_SKILLS_RE, entry: SKILL_RE, xml: true },
 ];
 
 export function getPromptRemainder(systemPrompt: string): string {
@@ -31,6 +35,7 @@ export function getPromptRemainder(systemPrompt: string): string {
     .replace(PROJECT_CONTEXT_RE, "\n")
     .replace(AVAILABLE_SKILLS_RE, "\n")
     .replace(CODEX_SKILLS_RE, "\n")
+    .replace(BARE_SKILLS_RE, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
