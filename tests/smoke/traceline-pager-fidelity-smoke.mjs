@@ -270,7 +270,9 @@ try {
   if (!Number.isInteger(launchedPid)) throw new Error("could not identify the isolated Pi pane PID");
 
   // 1. Resume renders both rows; the image read wears the §9.7 what-fact in the trace.
-  const resumed = waitForPane((pane) => pane.includes(readySentinel) && pane.includes("shot.png"));
+  // Pi paints native rows before Traceline's patch re-renders them; wait for the trace row
+  // itself, so the first native frame cannot fail the check below.
+  const resumed = waitForPane((pane) => pane.includes(readySentinel) && pane.includes("png 1044×646"));
   if (!resumed.includes(readySentinel)) throw new Error(`resumed session did not render\n${resumed}`);
   if (!resumed.includes("png 1044×646")) throw new Error(`image read trace row missing the png W×H fact\n${resumed}`);
 

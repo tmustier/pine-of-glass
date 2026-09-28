@@ -23,7 +23,9 @@ initTheme(undefined, false);
 trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);
 trace.patchAssistantRowPrototype(AssistantMessageComponent.prototype as unknown as AssistantRowPrototypeLike);
 const rowSeam = (row: ToolExecutionComponent) => row as unknown as ToolRowLike;
-let captures = 0;
+// Rows whose native call component rendered: every invocation capture renders it (at one
+// or more bounded widths, or the wide fallback), and nothing else does in these frames.
+let captured = new Set<number>();
 function makeRow(id: number) {
   const command = `cd /tmp/project && NODE_ENV=test npm run validate -- src/package-${id}/important-file.ts`;
   const row = new ToolExecutionComponent("bash", `bench-${id}`, { command }, {}, {
@@ -31,7 +33,7 @@ function makeRow(id: number) {
     renderCall: (args: { command: string }) => {
       const component = new Text(`$ ${args.command}`, 0, 0);
       const render = component.render.bind(component);
-      component.render = (width) => { if (width === 10_000) captures++; return render(width); };
+      component.render = (width) => { captured.add(id); return render(width); };
       return component;
     },
     renderResult: () => new Text("native output", 0, 0),
@@ -79,21 +81,22 @@ for (const [count, groupSize] of cases.slice(Number(process.argv[2]), Number(pro
   // The uncached giant-block path takes minutes. Sample oracle rows instead of
   // presenting a partial-transcript timing as a comparable full-frame baseline.
   if (groupSize <= 50) for (let i = 0; i < 3; i++) sample(baseline, () => { raw(); });
-  const warm: number[] = []; captures = 0; trace.renderCacheWorkCounts(true);
+  const warm: number[] = []; captured = new Set(); trace.renderCacheWorkCounts(true);
   for (let i = 0; i < 30; i++) sample(warm, () => { cached(); });
-  assert.equal(captures, 0, "warm frames must not capture native invocations");
+  assert.equal(captured.size, 0, "warm frames must not capture native invocations");
   assert.equal(trace.renderCacheWorkCounts().outputMisses, 0);
   const streaming: number[] = []; const work: number[] = []; const parsed: number[] = [];
+  const activeId = count - 1;
   for (let i = 0; i < 20; i++) {
-    captures = 0; trace.renderCacheWorkCounts(true);
+    captured = new Set(); trace.renderCacheWorkCounts(true);
     sample(streaming, () => {
       rows.at(-1)!.updateResult({ content: [{ type: "text", text: "x".repeat(1024 + i) }], isError: false }, true);
       cached();
     });
-    work.push(trace.renderCacheWorkCounts().outputMisses); parsed.push(captures);
+    work.push(trace.renderCacheWorkCounts().outputMisses); parsed.push(captured.size);
+    assert.deepEqual([...captured], [activeId], "only the mutated row may recapture its native invocation");
   }
   assert.ok(work.every((misses) => misses === groupSize), "only the active block may recompute output");
-  assert.ok(parsed.every((n) => n === 1), "only the mutated row may recapture its native invocation");
   const appends: number[] = [];
   for (let i = 0; i < 5; i++) sample(appends, () => {
     const row = makeRow(count + i); rows.push(row); tailRows.push(row);

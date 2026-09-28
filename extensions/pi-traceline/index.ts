@@ -62,6 +62,7 @@ import {
   type DiffStats,
 } from "./write-diff.ts";
 import { installThinkingPreviews } from "./thinking-preview.ts";
+import { captureCallLines } from "./call-capture.ts";
 import { summarizeCallLines } from "./call-summary.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 import { createTracelineTuiOwner } from "./tui-owner.ts";
@@ -98,7 +99,6 @@ const TOOL_PREFIX_VISIBLE_WIDTH = TOOL_INDENT.length + 2 + 1 + TOOL_AFTER_BULLET
 // The block nests on both sides (§9.1): a 2-column right inset mirrors the left
 // gutter, so the suffix column never touches the terminal edge.
 const TOOL_RIGHT_MARGIN = 2;
-const ONE_LINE_CAPTURE_WIDTH = 10_000;
 const TOOL_ROW_PATCH_VERSION = 30;
 const ASSISTANT_ROW_PATCH_VERSION = 8;
 
@@ -701,11 +701,9 @@ function stripTimeoutSuffix(text: string): string {
 // elision) stay in plain text; inkBashRow applies the family ink last.
 function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
   return comp ? renderCache.memo(comp, "bash-invocation", () => {
-    const call = comp.callRendererComponent;
-    if (!call || typeof call.render !== "function") return undefined;
-    const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
-    const lines = Array.isArray(rendered) ? rendered : [];
-    const flattened = flattenInvocationLines(lines.map((line: unknown) => stripAnsi(String(line))));
+    const lines = captureCallLines(comp.callRendererComponent, comp.args);
+    if (!lines) return undefined;
+    const flattened = flattenInvocationLines(lines.map((line) => stripAnsi(line)));
     return flattened ? stripTimeoutSuffix(flattened.replace(/^•\s*/, "")) : undefined;
   }) : undefined;
 }
@@ -912,10 +910,9 @@ function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): s
 // Results stay separate. Re-ink the verb neutral bold (error rows error).
 function nativeInvocationLine(comp: ToolRowLike): string | undefined {
   return renderCache.memo(comp, `native-invocation:${objectCacheKey(currentTheme())}`, () => {
-    const call = comp.callRendererComponent;
-    if (!call || typeof call.render !== "function") return undefined;
-    const rendered = call.render(ONE_LINE_CAPTURE_WIDTH);
-    const lines = (Array.isArray(rendered) ? rendered : []).map(stripTrailingExpandHint)
+    const captured = captureCallLines(comp.callRendererComponent, comp.args);
+    if (!captured) return undefined;
+    const lines = captured.map(stripTrailingExpandHint)
       .filter((line) => stripAnsi(line).trim().length > 0);
     const line = summarizeCallLines(lines);
     // Demote after verb re-inking, which strips foregrounds from the prefix region;

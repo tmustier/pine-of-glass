@@ -216,7 +216,6 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   if (visibleWidth(line) <= maxWidth) return line;
 
   const vis = stripAnsi(line);
-  const visLen = visibleWidth(vis);
   const ellipsisWidth = visibleWidth(ELLIPSIS);
   const budget = Math.max(1, maxWidth - ellipsisWidth); // reserve columns for the ellipsis
 
@@ -227,12 +226,32 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   // the head exactly fills the rest, so every line truncated to the same budget cuts at
   // identical columns and fills the budget exactly. Wide graphemes that cross either cut
   // round out of the retained spans; padding keeps the ellipsis and right edge fixed.
-  const tailStart = visLen - maxTail;
-  const tailBoundary = columnBoundary(vis, tailStart, "up");
+  // The tail is found walking back from the end, so a 26k-character tool line pays for
+  // the columns it keeps rather than a full grapheme walk. Summing per-grapheme widths
+  // matches visibleWidth(vis) unless an escape survived stripAnsi (visibleWidth strips
+  // more kinds) or a tab is present (it expands before segmenting); those lines scan
+  // forward from the start instead.
+  let tailStart = vis.length;
+  let tailWidth = 0;
+  if (vis.includes("\x1b") || vis.includes("\t")) {
+    const visLen = visibleWidth(vis);
+    const boundary = columnBoundary(vis, visLen - maxTail, "up");
+    tailStart = boundary.plainIndex;
+    tailWidth = visLen - boundary.column;
+  } else {
+    const segments = graphemeSegmenter.segment(vis);
+    while (tailStart > 0) {
+      const grapheme = segments.containing(tailStart - 1)!;
+      const graphemeWidth = visibleWidth(grapheme.segment);
+      if (tailWidth + graphemeWidth > maxTail) break;
+      tailWidth += graphemeWidth;
+      tailStart = grapheme.index;
+    }
+  }
   const dimEllipsis = ink(theme, "dim", ELLIPSIS);
-  const tailRawStart = rawIndexAtVisibleIndex(line, tailBoundary.plainIndex);
+  const tailRawStart = rawIndexAtVisibleIndex(line, tailStart);
   const tailRaw = `${activeSgrAt(line, tailRawStart)}${line.slice(tailRawStart)}`;
-  const tailPadding = Math.max(0, maxTail - (visLen - tailBoundary.column));
+  const tailPadding = Math.max(0, maxTail - tailWidth);
 
   const headEnd = budget - maxTail;
   if (headEnd <= 0) return `${dimEllipsis}${" ".repeat(tailPadding)}${tailRaw}`;

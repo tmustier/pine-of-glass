@@ -1,5 +1,36 @@
 # Work log
 
+## 2026-09-27: traceline refresh and frame cost
+
+Profiled a resumed 1.9 MB session (321 calls, 315 thinking blocks) in fullscreen Pi
+0.87.1. Every whole-transcript refresh (startup, resume, Ctrl+O, theme or cell-size
+change) cost about 19 s of CPU with Traceline against 1.2 s without it; 82% went to Pi
+padding and measuring native call lines rendered at the 10,000-column capture width.
+Warm frames spent about 85% of their time re-truncating every collapsed thinking
+preview, because fullscreen Pi renders the whole transcript each frame.
+
+Captures now use verified bounded pairs (256 then 1,024 columns, each checked at
+2w+66); labels memoise per native line and width; `middleTruncate` walks the tail from
+the end. CPU before -> after (Pi alone): startup 21.6 -> 5.3 s (3.2); refresh
+18.8 -> 2.4 s (1.2); 20 keystrokes 0.88 -> 0.37 s (0.44); RSS 323 -> 226 MB (220).
+
+A seeded 12,000-case differential pins `middleTruncate` to the v0.13.0 implementation.
+A new contract test compares the capture against Pi's wide render on its own call
+components and fuzzed Box/Text shells, and fails when either guard is removed. The
+bench now counts rows whose call component re-renders rather than renders at 10,000
+columns; warm frames capture none and each active update recaptures one row. Paging
+the real session end to end at 160x45, 126x37 and 90x40 gave byte-identical screens,
+colours included. A second session differed only by Pi's tmux extended-keys warning:
+the old startup freeze outlasted Pi's 2 s probe timeout and so suppressed it.
+
+Lint, typecheck and the full smoke suite passed. Full suite: 399 passed; the six
+failures are Cachemire contract tests that expect npm's nested pi-ai layout (this
+machine has a bun global install). Known gap: a call line wider than a check width whose text does not come
+from the args (an edit's on-disk diff) and wraps exactly at a run of 64 or more spaces
+can still differ from the wide capture; args with such runs take the wide capture.
+The per-line Markdown render for thinking previews still uses 10,000 columns; it is
+cached per block and measured at about 0.2 s, so it was left alone.
+
 ## 2026-09-07: tool trace clicks
 
 Added native per-call expansion and aggregate reveal/refold. Verified in fullscreen

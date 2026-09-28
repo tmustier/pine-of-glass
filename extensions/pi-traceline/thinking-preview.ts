@@ -121,10 +121,19 @@ export function installThinkingPreviews(comp: AssistantPreviewRow): void {
     const nativeLabel = region.child;
     const preview = previews?.[i];
     if (!(nativeLabel instanceof Text) || !preview) continue;
+    // Fullscreen Pi renders the whole transcript every frame, so every thinking label pays
+    // this per frame. The output is a function of the native label line and the width alone
+    // (the preview is fixed per install), so reuse it while both hold.
+    let last: { width: number; line: string; lines: string[] } | undefined;
     region.child = {
       render(width) {
         const lines = nativeLabel.render(width);
-        return lines.length === 1 ? [replaceVisibleLabel(lines[0]!, preview, width)] : lines;
+        if (lines.length !== 1) return lines;
+        const line = lines[0]!;
+        if (last?.width !== width || last.line !== line) {
+          last = { width, line, lines: [replaceVisibleLabel(line, preview, width)] };
+        }
+        return last.lines;
       },
       invalidate: () => nativeLabel.invalidate(),
     };
