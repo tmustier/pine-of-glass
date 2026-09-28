@@ -14,3 +14,12 @@
 - On a resumed 1.9 MB session (321 calls, 315 thinking blocks), CPU before -> after with
   Pi alone in brackets: startup 21.6 s -> 5.3 s (3.2 s); a whole-transcript refresh
   18.8 s -> 2.4 s (1.2 s); 20 keystrokes 0.88 s -> 0.37 s (0.44 s). Details in `LOG.md`.
+- Thanks to Stepan Mazurov ([@smazurov](https://github.com/smazurov)) for the Traceline
+  changes above, [#129](https://github.com/tmustier/pine-of-glass/pull/129).
+- Contextimate no longer searches the whole transcript on every redraw when its panel has
+  nowhere to attach, for example with `quietStartup`. On a resumed 336-call session this
+  kept a CPU core busy indefinitely; Pi now uses the same CPU as it does without
+  Contextimate. The search skips the transcript, reuses the container once found, and only
+  session start and `/contextimate` search before the panel first attaches. Reported by
+  Nico Bailon ([@nicobailon](https://github.com/nicobailon)) in
+  [#122](https://github.com/tmustier/pine-of-glass/issues/122).

@@ -5,7 +5,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { isJsonObject, positiveNumberValue, stringValue } from "../_lib/boundary.ts";
-import { findContainerBy, isResourceRow, RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
+import { findContainerBy, isAssistantRow, isResourceRow, isToolRow, RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
 import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import {
@@ -1227,17 +1227,11 @@ function isBlankComponent(component: Component): boolean {
   return text.trim().length === 0;
 }
 
-function findResourceChatContainer(node: unknown): ContainerLike | undefined {
-  return findContainerBy(node, (children) => children.some((child) => isResourceComponent(child)));
-}
-
 function removeExistingPrefixBlocks(chat: ContainerLike): void {
-  if (!Array.isArray(chat.children)) return;
   chat.children = chat.children.filter((child) => !isPrefixBlock(child));
 }
 
 function insertionIndexAfterResourceList(chat: ContainerLike): number {
-  if (!Array.isArray(chat.children)) return -1;
   let index = -1;
   for (let i = 0; i < chat.children.length; i++) {
     if (!isResourceComponent(chat.children[i])) continue;
@@ -1248,14 +1242,20 @@ function insertionIndexAfterResourceList(chat: ContainerLike): number {
 }
 
 function isContextBlockInstalled(block: StartupContextComponent): boolean {
-  const chat = g.__piContextimateChat;
-  return Array.isArray(chat?.children) && chat.children.includes(block);
+  return g.__piContextimateChat?.children.includes(block) === true;
 }
 
+// Pi creates the resource container once and only clears and refills it, so search until it
+// is first found. Spotting resource rows means rendering components, so the search skips the
+// transcript beside the list, which in a long session would cost seconds per search.
 function installContextBlock(block: StartupContextComponent): boolean {
   const tui = g.__piContextimateTui;
-  const chat = findResourceChatContainer(tui) ?? g.__piContextimateChat;
-  if (!chat || !Array.isArray(chat.children)) return false;
+  const chat = g.__piContextimateChat ?? findContainerBy(
+    tui,
+    (children) => children.some(isResourceComponent),
+    (children) => children.some((child) => isToolRow(child) || isAssistantRow(child)),
+  );
+  if (!chat) return false;
 
   g.__piContextimateChat = chat;
   if (chat.children.includes(block)) return true;
@@ -1391,10 +1391,10 @@ export default function piContextimate(pi: ExtensionAPI) {
       return {
         render: () => {
           const activeBlock = g.__piContextimateBlock;
-          // Reload and navigation can rebuild Pi's chat transcript and drop
-          // startup-only chat children. Keep this zero-line widget
-          // mounted so it can quietly reinsert the estimator after such rebuilds.
-          if (activeBlock && !isContextBlockInstalled(activeBlock)) scheduleInstall(activeBlock);
+          // Reload and navigation clear Pi's resource container and drop the panel; this
+          // zero-line widget puts it back. Until the panel first attaches (quietStartup hides
+          // the resource list), only session start and /contextimate search for it.
+          if (activeBlock && g.__piContextimateChat && !isContextBlockInstalled(activeBlock)) scheduleInstall(activeBlock);
           return [] as string[];
         },
         invalidate: () => {},
