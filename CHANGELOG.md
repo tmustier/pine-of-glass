@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.14.1 (2026-09-28)
+
+- Traceline no longer freezes Pi for seconds whenever the transcript refreshes (startup,
+  resume, `/clone`, Ctrl+O, theme or cell-size changes). Each tool row's one-line
+  invocation was captured at 10,000 columns; captures now run at 256 then 1,024 columns,
+  verified by a wider check render, with unchanged output. Collapsed thinking previews
+  also reuse their truncated label, so fullscreen keystrokes and scrolling no longer
+  re-truncate every preview. On a resumed 321-call session, startup CPU fell from 21.6 s
+  to 5.3 s and a whole-transcript refresh from 18.8 s to 2.4 s. Thanks to Stepan Mazurov
+  ([@smazurov](https://github.com/smazurov)).
+  [#129](https://github.com/tmustier/pine-of-glass/pull/129)
+- Contextimate no longer searches the whole transcript on every redraw when its panel has
+  nowhere to attach, for example with `quietStartup`, which kept a CPU core busy on long
+  sessions. Reported by Nico Bailon ([@nicobailon](https://github.com/nicobailon)).
+  [#135](https://github.com/tmustier/pine-of-glass/pull/135)
+- Contextimate counts the prompt the latest run sent, so skills an extension such as
+  `pi-skill-gate` hides are no longer counted, and it reads a skill index moved out of
+  Pi's `<skills>` section. Reported by [@punk-dev-robot](https://github.com/punk-dev-robot).
+  [#136](https://github.com/tmustier/pine-of-glass/pull/136)
+
 ## 0.14.0 (2026-09-28)
 
 - Contextimate measures tool outputs from the provider's own prompt counts. When two
