@@ -124,19 +124,21 @@ export interface ContainerLike {
   __tracelineCachePatched?: { changed: () => void };
 }
 
-/** Depth-first search for the container whose direct children satisfy `predicate`. */
+/** Depth-first search for the container whose direct children satisfy `predicate`,
+ * never entering a container whose children satisfy `skip`. */
 export function findContainerBy(
   node: unknown,
   predicate: (children: unknown[]) => boolean,
+  skip: (children: unknown[]) => boolean = () => false,
   seen = new Set<unknown>(),
 ): ContainerLike | undefined {
   if (!node || typeof node !== "object" || seen.has(node)) return undefined;
   seen.add(node);
   const children = (node as { children?: unknown[] }).children;
-  if (Array.isArray(children)) {
+  if (Array.isArray(children) && !skip(children)) {
     if (predicate(children)) return node as unknown as ContainerLike;
     for (const child of children) {
-      const found = findContainerBy(child, predicate, seen);
+      const found = findContainerBy(child, predicate, skip, seen);
       if (found) return found;
     }
   }
