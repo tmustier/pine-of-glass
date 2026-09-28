@@ -35,8 +35,7 @@ A baseline entry is debt with an intended fix; correct code that a rule rejects 
 rule-level decision in `.oxlintrc.json` with its reason, or an inline
 `oxlint-disable-next-line` with a justification, not a baseline entry.
 
-The Oxlint packages are pinned because their plugin APIs move together. After
-`npm install`, run `npm run link-pi` to restore the Pi runtime symlinks.
+The Oxlint packages are pinned because their plugin APIs move together.
 
 ## Boundary typing
 

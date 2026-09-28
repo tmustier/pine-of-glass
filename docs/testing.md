@@ -61,11 +61,13 @@ Deliberately **not** tested:
 - **Runner:** `node:test` + `node:assert/strict`, native TypeScript type stripping
   (Node ≥ 22.6; this repo develops on 26). Lint fixture tests also use the pinned
   development toolchain; the shipped extensions still have no runtime dependencies.
-- **Pi runtime linkage:** `scripts/dev/link-pi-runtime.sh` symlinks the globally installed
-  Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`) into the repo's
-  gitignored `node_modules/`. Tests and `tsc --noEmit` resolve against the *real* installed
-  runtime. Pi 0.86.0 is the minimum supported version, so a `pi update` followed by
-  `npm test` is the drift detector.
+- **Pi runtime:** the Pi packages (`pi-coding-agent`, `pi-tui`, `pi-ai`, `pi-agent-core`)
+  are pinned dev dependencies, so `npm install` gives tests, `tsc --noEmit` and the smoke
+  layer a real runtime. To check against the Pi you use, `npm run link-pi`
+  (`scripts/dev/link-pi-runtime.sh`) replaces them with links to the globally installed
+  packages; `npm install` restores the pinned versions. Pi 0.86.0 is the minimum
+  supported version, so a `pi update` followed by `npm run link-pi && npm test` is the
+  drift detector. Bump the pinned versions to adopt a new Pi.
 - **Testability route:** pure domain logic lives in importable domain modules; see
   "Public interfaces" above. Pi imports only each extension's default entry point, so
   named exports are runtime-inert.
@@ -266,10 +268,10 @@ and compares against checked-in golden files (`tests/fixtures/goldens/*.txt`).
 
 ## Layer 4: startup smoke (tmux, local-only)
 
-`npm run test:smoke` launches the installed Pi runtime linked by `npm run link-pi` in
-isolated tmux sessions with no model call required. The harness invokes the linked CLI
-directly: an isolated fixture `HOME` must not change how a user shell wrapper locates
-Node or Pi itself.
+`npm run test:smoke` launches the Pi runtime in `node_modules` (pinned, or linked by
+`npm run link-pi`) in isolated tmux sessions with no model call required. The harness
+invokes that CLI directly: an isolated fixture `HOME` must not change how a user shell
+wrapper locates Node or Pi itself.
 
 - `test:smoke:traceline` resumes a crafted session with adjacent collapsed thinking
   blocks, standalone strong-emphasis summary paragraphs, and empty or whitespace-only
