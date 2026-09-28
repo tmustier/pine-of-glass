@@ -20,7 +20,6 @@
   ],
   "scripts": {
     "link-pi": "scripts/dev/link-pi-runtime.sh",
-    "link-extensions": "scripts/dev/link-extensions.sh",
     "docs:cache": "node scripts/dev/cache-retention-docs.mjs",
     "docs:cache:check": "node scripts/dev/cache-retention-docs.mjs --check",
     "lint": "node scripts/dev/agent-lint.mjs && npm run docs:cache:check",
