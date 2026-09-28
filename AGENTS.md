@@ -8,7 +8,6 @@ language. TypeScript, zero runtime dependencies, tests on `node:test`.
 ```bash
 npm install             # locked Pi runtime (types, contract tests, smoke) and lint tooling; npm update adopts a new Pi
 npm run link-pi         # optional: check against your installed pi instead; npm install undoes it
-npm run link-extensions # symlink the extensions (as directories) into ~/.pi/agent/extensions
 npm run docs:cache      # regenerate Cachemire retention docs
 npm run lint            # POG rules + oxlint/anti-slop (baselined) + generated-doc drift checks
 npm run lint:slop       # oxlint alone, full diagnostics
@@ -24,9 +23,11 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
   [`extensions/_lib`](./extensions/_lib): number grammar, family style (glyphs,
   theme-derived ink, panel headers), ANSI helpers, chat-container detection, config
   convention. `_lib` has no `index.ts`, so pi's extension discovery skips it.
-- pi resolves extension-relative imports against the symlink path, so local installs
-  must link the extension *directories* plus `_lib`; `npm run link-extensions` does
-  exactly that.
+- Install for daily use with `pi install git:github.com/tmustier/pine-of-glass`. To try a
+  branch, check it out in the installed clone (`~/.pi/agent/git/github.com/tmustier/pine-of-glass`)
+  and `/reload`; `pi update --extensions` returns it to `main`. Do not also load a checkout
+  with `pi -e` or symlinks: Pi treats it as a second package and registers every extension
+  twice. Without the git install, `pi install <checkout path>` runs from a checkout.
 - [`docs/design-language.md`](./docs/design-language.md) specifies the visual grammar
   all three extensions speak. Record design changes there first, then implement; when a
   renderer and that document disagree, one of them is wrong.
