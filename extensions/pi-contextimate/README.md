@@ -58,6 +58,26 @@ How to read the numbers:
 
 The panel's visual grammar is the family design language: see `docs/design-language.md`.
 
+## Use from another extension
+
+`report.ts` returns the startup breakdown as plain data, counted exactly as the panel counts it: the same prompt, heuristic and `pi-contextimate` config. It is the stable interface; `index.ts` and the other modules are not.
+
+```ts
+import { contextReport } from "pine-of-glass/extensions/pi-contextimate/report.ts";
+
+pi.registerCommand("context-json", {
+  handler: async (_args, ctx) => {
+    const report = contextReport(pi, ctx);
+    // { model, heuristic, totalTokens, sections: [{ id, title, chars, tokens }],
+    //   skills: [{ name, location, tokens }], tools: [{ name, active, tokens?, source }] }
+  },
+});
+```
+
+At `session_start` the prompt does not yet include skills other extensions add at startup; call it once startup has finished, as a command does.
+
+`sections` covers the runtime system prompt, each AGENTS file, the skill index and the active tool definitions, not the conversation. During a run it counts the prompt that run sent.
+
 ## How it counts
 
 Sections are counted on provider-shaped payloads with per-model heuristics, never on local object size. [`docs/pi-contextimate.md`](../../docs/pi-contextimate.md) explains the counting policy, the evidence behind each heuristic, and the JSON config for overriding them per provider or model.
