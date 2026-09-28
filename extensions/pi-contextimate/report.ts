@@ -3,10 +3,9 @@
 // heuristic and contextimate config, over Pi's current system prompt.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { parseSkillsBlock } from "./prompt-parsing.ts";
+import assert from "node:assert/strict";
 import { loadContextimateConfig, toModelSummary } from "./heuristic-config.ts";
-import { buildSnapshot, sectionChars, sectionTokens, totalTokens } from "./snapshot.ts";
-import { sourceInfoLabel } from "./tool-accounting.ts";
+import { buildSnapshot, sectionTokens, sourceInfoLabel, totalTokens } from "./snapshot.ts";
 
 export type ContextReport = {
   /** `provider/id` the heuristic was resolved for; absent before a model is selected. */
@@ -21,7 +20,10 @@ export type ContextReport = {
   skills: { name: string; location: string; tokens: number }[];
   /** Every registered tool. Only active tools are sent, so only they have tokens. Each is a per-tool
    * estimate; with the provider's payload overhead they need not sum to the tools section. */
-  tools: { name: string; active: boolean; tokens?: number; source: string }[];
+  tools: ({ name: string; source: string } & (
+    | { active: true; tokens: number }
+    | { active: false; tokens?: never }
+  ))[];
 };
 
 /**
@@ -29,25 +31,27 @@ export type ContextReport = {
  * prompt. After a run the panel keeps counting that run's prompt, so the two can differ when an
  * extension rewrites the prompt per run (for example `pi-skill-gate`).
  */
-export function contextReport(pi: ExtensionAPI, ctx: ExtensionContext): ContextReport {
+export function contextReport(
+  pi: Pick<ExtensionAPI, "getActiveTools" | "getAllTools">,
+  ctx: Pick<ExtensionContext, "model" | "cwd" | "getSystemPrompt">,
+): ContextReport {
   const model = toModelSummary(ctx.model);
-  const systemPrompt = ctx.getSystemPrompt();
-  const snapshot = buildSnapshot(pi, () => systemPrompt, undefined, undefined, () => model, loadContextimateConfig(ctx.cwd));
-  const toolTokens = new Map(
-    snapshot.sections.flatMap((section) => (section.expanded.kind === "tools" ? section.expanded.tools.map((tool) => [tool.name, tool.tokens] as const) : [])),
-  );
+  const snapshot = buildSnapshot(pi, { systemPrompt: ctx.getSystemPrompt(), model, config: loadContextimateConfig(ctx.cwd) });
+  const tools = snapshot.sections.map((section) => section.expanded).find((content) => content.kind === "tools")?.tools ?? [];
+  const toolTokens = new Map(tools.map((tool) => [tool.name, tool.tokens]));
   const active = new Set(pi.getActiveTools());
   return {
     ...(model && { model: `${model.provider}/${model.id}` }),
     heuristic: snapshot.heuristic.label,
     totalTokens: totalTokens(snapshot),
-    sections: snapshot.sections.map((section) => ({ id: section.id, title: section.title, chars: sectionChars(section), tokens: sectionTokens(section) })),
-    skills: (parseSkillsBlock(systemPrompt, snapshot.heuristic.textDenominator)?.skills ?? []).map(({ name, location, tokens }) => ({ name, location, tokens })),
-    tools: pi.getAllTools().map((tool) => ({
-      name: tool.name,
-      active: active.has(tool.name),
-      ...(toolTokens.has(tool.name) && { tokens: toolTokens.get(tool.name) }),
-      source: sourceInfoLabel(tool),
-    })),
+    sections: snapshot.sections.map((section) => ({ id: section.id, title: section.title, chars: section.content.length, tokens: sectionTokens(section) })),
+    skills: snapshot.skills.map(({ name, location, tokens }) => ({ name, location, tokens })),
+    tools: pi.getAllTools().map((tool) => {
+      const entry = { name: tool.name, source: sourceInfoLabel(tool) };
+      if (!active.has(tool.name)) return { ...entry, active: false };
+      const tokens = toolTokens.get(tool.name);
+      assert(tokens !== undefined, `Missing estimate for active tool ${tool.name}`);
+      return { ...entry, active: true, tokens };
+    }),
   };
 }

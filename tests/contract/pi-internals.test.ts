@@ -15,6 +15,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import * as piTui from "@earendil-works/pi-tui";
 
 import { internals as contextimate } from "../../extensions/pi-contextimate/index.ts";
+import { buildSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
 import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
 import { assistantMessage } from "../helpers.ts";
 
@@ -89,13 +90,14 @@ test("contextimate regexes parse the system prompt Pi actually builds", async ()
     ],
   });
 
-  const sections = contextimate.parseContextSections(prompt, 4);
+  const snapshot = buildSnapshot({ getActiveTools: () => [], getAllTools: () => [] }, { systemPrompt: prompt });
+  const sections = snapshot.sections.filter((section) => section.id.startsWith("context:"));
   assert.equal(sections.length, 2, "project_instructions block format drifted — contextimate context-file rows break");
   assert.equal(sections[0]!.title, "Global AGENTS.md");
   assert.ok(sections[0]!.content.includes("Be precise"), "context file content not captured");
 
-  const { skills, section } = contextimate.buildSkillsSection(prompt, 4);
-  assert.ok(section, "available_skills block format drifted — contextimate skills section breaks");
+  const { skills } = snapshot;
+  assert.ok(snapshot.sections.some((section) => section.id === "skills"), "available_skills block format drifted — contextimate skills section breaks");
   assert.equal(skills.length, 1);
   assert.equal(skills[0]!.name, "demo-skill");
   assert.equal(skills[0]!.description, "Does a demo & more", "XML entity escaping convention changed");
@@ -326,15 +328,6 @@ test("real expanded tool row: setExpanded mirrors .expanded and leads with a bla
 
 // ---------------------------------------------------------------------------------------
 // Settings + ExtensionAPI declaration anchors (source-text tripwires).
-
-test("ExtensionAPI still declares the tool surface contextimate reads", () => {
-  const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
-  assert.ok(declarations.includes("getActiveTools(): string[]"), "getActiveTools signature drifted");
-  assert.ok(declarations.includes("getAllTools(): ToolInfo[]"), "getAllTools signature drifted");
-  for (const field of ["sourceInfo", "promptGuidelines"]) {
-    assert.ok(declarations.includes(field), `ToolInfo.${field} gone — contextimate tool rows degrade`);
-  }
-});
 
 test("thinking-level surface cachemire reads stays where it is", () => {
   const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");

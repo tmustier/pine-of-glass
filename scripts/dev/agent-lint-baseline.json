@@ -166,8 +166,7 @@
         "type HookableChatContainer = ContainerLike & {": 1
       },
       "extensions/_lib/tool-payloads.ts": {
-        "export function getSchemaProperties(schema: unknown): Record<string, unknown> {": 1,
-        "export function schemaArrayItemProperties(property: unknown): Record<string, unknown> {": 1
+        "export function getSchemaProperties(schema: unknown): Record<string, unknown> {": 1
       },
       "extensions/pi-cachemire/classify.ts": {
         "const out: Record<string, unknown> = {};": 1,
@@ -294,15 +293,14 @@
     "defaultTsMax": 350,
     "files": {
       "extensions/pi-cachemire/index.ts": 698,
-      "extensions/pi-contextimate/index.ts": 876,
+      "extensions/pi-contextimate/index.ts": 848,
       "extensions/pi-traceline/index.ts": 1674,
-      "tests/contract/pi-internals.test.ts": 355,
       "tests/traceline/one-line.test.ts": 772
     }
   },
   "internalsBudgets": {
     "extensions/pi-cachemire/index.ts": 25,
-    "extensions/pi-contextimate/index.ts": 28,
+    "extensions/pi-contextimate/index.ts": 17,
     "extensions/pi-traceline/index.ts": 55
   }
 }

@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { internals } from "../../extensions/pi-contextimate/index.ts";
-import type { PrefixSnapshot, ModelSummary } from "../../extensions/pi-contextimate/index.ts";
+import type { ModelSummary } from "../../extensions/_lib/heuristics.ts";
+import { buildSnapshot, type PrefixSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
 import {
   expectGolden,
   fakePi,
@@ -21,7 +22,7 @@ import {
   normalizeKeyHints,
 } from "../helpers.ts";
 
-const { buildSnapshot, renderSummary, renderCompact, renderExpanded } = internals;
+const { renderSummary, renderCompact, renderExpanded } = internals;
 
 // Raw prompt counts include absolute fixture paths, so pin HOME while building the
 // snapshot to keep the goldens independent of the developer's home-directory length.
@@ -34,14 +35,11 @@ function fixtureSnapshot(
   const previousHome = process.env.HOME;
   process.env.HOME = FIXTURE_HOME;
   try {
-    const snapshot = buildSnapshot(
-      fakePi({ activeTools: options.activeTools }),
-      options.prompt ?? (() => fixtureSystemPrompt()),
-      undefined,
-      () => fixtureContextUsage,
-      () => model,
-      {},
-    );
+    const snapshot = buildSnapshot(fakePi({ activeTools: options.activeTools }), {
+      systemPrompt: (options.prompt ?? fixtureSystemPrompt)(),
+      contextUsage: fixtureContextUsage,
+      model,
+    });
     snapshot.session = { ...fixtureSession };
     return snapshot;
   } finally {

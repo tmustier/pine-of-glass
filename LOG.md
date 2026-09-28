@@ -254,3 +254,38 @@ appeared. Herdr was unavailable in this session, so the test used an isolated tm
 fallback. The delayed provider cache-warming completion path was not exercised live;
 its persisted-entry behavior is covered against Pi's real `SessionManager` and extension
 host.
+
+## 2026-09-28: simplify PR #140
+
+Removed 331 net lines from Contextimate's accounting and tests. Inlined single-use
+helpers, removed the tool-accounting module and unused character counts, and replaced
+snapshot getter callbacks with named values. Skills are parsed once for both the panel
+and report. Config defaults now admit the label the parser already accepts; parsed
+rules no longer receive a second array check. Active report tools and compact rows
+require token counts, while inactive entries cannot carry them.
+
+Moved affected tests to domain exports and the SDK-hosted public report. Removed
+redundant helper assertions and the source-text check for Pi's typed tool API. The
+report test now covers actual AGENTS discovery, provider tool overhead, config reload
+and an empty active tool set. Three mutation checks failed as expected when config,
+skills or inactive tools were dropped. The lint baseline only shrank.
+
+Verification against code revision `94bd267`:
+
+- `npm run check`: lint, typecheck and all 415 tests passed. All render goldens stayed
+  unchanged.
+- `node tests/smoke/startup-smoke.mjs`: startup, view switching, reload and family-panel
+  persistence passed. This used the repository's isolated tmux fallback: the session
+  was outside Herdr and its client/server versions were incompatible. No fixture tmux
+  session remained.
+- A real Pi SDK session on `openai-codex/gpt-6-sol`, medium thinking, received:
+  `Call context_report exactly once. Then call bash exactly once to run: printf
+  'report-ok\\n' > '<scratch-project>/marker.txt'. Do not call any other tool. Reply
+  with DONE.` Both tools executed successfully. The report contained the configured
+  heuristic, skill, active and inactive tools, and additive section totals. A separate
+  verifier checked those fields and the OpenAI tool-block overhead; the host read the
+  exact bash-created marker before removing the scratch project.
+
+Local acceptance artifacts are in `/tmp/pog-pr140-live-evidence/`. The live run covered
+Codex only; other provider formats retain SDK and fixture coverage, not live-provider
+accuracy claims. No push, release or installed-package change was made.

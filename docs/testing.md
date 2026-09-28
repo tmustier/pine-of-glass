@@ -169,9 +169,8 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   per shape (`anthropic`, `openai-responses`, `openai-chat`, `bedrock`, `raw-schema`),
   the *aggregated* gemini `functionDeclarations` form, and the unknown-shape fallback to
   the OpenAI Responses payload.
-  Consistency invariant: `buildToolDisplayEstimate` counts the same payload shape that
-  `buildToolNumerator` counts (per-tool vs aggregate); this is also the invariant the
-  issue-#8 checker must preserve.
+  The SDK-hosted `contextReport` test checks per-tool and aggregate counts for the
+  Anthropic payload and OpenAI render, including the latter's block overhead.
 - **OpenAI tool render** (`estimateOpenAIFunctionToolTokens`): four Pi built-in tools, two
   small tools and seven structure-heavy probes with provider-measured counts
   (`tests/fixtures/openai-codex-tool-counts.json`). Each tool must land within 15% and the
