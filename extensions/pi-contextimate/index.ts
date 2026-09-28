@@ -1,34 +1,19 @@
 import type { Component } from "@earendil-works/pi-tui";
-import type { ContextUsage, ExtensionAPI, ExtensionContext, Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { keyText } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { homedir } from "node:os";
 import { stripAnsi } from "../_lib/ansi.ts";
-import { isJsonObject, positiveNumberValue, stringValue } from "../_lib/boundary.ts";
-import { findContainerBy, isAssistantRow, isResourceRow, isToolRow, RESOURCE_HEADER_RE, type ContainerLike } from "../_lib/chat.ts";
-import { configPaths, expandHomePath, readJsonConfig } from "../_lib/config.ts";
+import {
+  findContainerBy,
+  isAssistantRow,
+  isResourceRow,
+  isToolRow,
+  RESOURCE_HEADER_RE,
+  type ContainerLike,
+} from "../_lib/chat.ts";
 import { compactCount } from "../_lib/fmt.ts";
-import {
-  builtInHeuristicPatchForModel,
-  estimateCharsAsTokens,
-  fallbackHeuristicNumbers,
-  type ModelSummary,
-} from "../_lib/heuristics.ts";
-import {
-  aggregateToolPayload,
-  arrayItemsSchema,
-  estimateOpenAIFunctionToolTokens,
-  estimateOpenAIToolDefinitionTokens,
-  getSchemaProperties,
-  getSchemaRequired,
-  renderOpenAITool,
-  safeMinifiedJson,
-  schemaArrayItemProperties,
-  schemaPropertyDescription,
-  schemaPropertyType,
-  toolPayload,
-  toolPayloadLabel,
-} from "../_lib/tool-payloads.ts";
+import { type ModelSummary } from "../_lib/heuristics.ts";
+import { estimateOpenAIFunctionToolTokens, estimateOpenAIToolDefinitionTokens } from "../_lib/tool-payloads.ts";
 import { GLYPH, SEP, ink, panelHeader } from "../_lib/style.ts";
 import {
   countDetail,
@@ -36,7 +21,6 @@ import {
   estimatedTokenLabel,
   exactTokenLabel,
   formatPercent,
-  inlineCount,
   metricLayout,
   ratioDetail,
   renderMetricRow,
@@ -45,128 +29,45 @@ import {
   type MetricRow,
   type TokenLabelLayout,
 } from "./metric-rows.ts";
-import {
-  detectRuntimeAdditions,
-  getPromptRemainder,
-  parseSkillsBlock,
-  PROJECT_INSTRUCTIONS_RE,
-  type RuntimeAdditions,
-} from "./prompt-parsing.ts";
+import { detectRuntimeAdditions, getPromptRemainder, parseSkillsBlock } from "./prompt-parsing.ts";
 import {
   buildSessionBreakdown,
   estimateSessionBreakdown,
-  scanSession,
   type SessionBreakdown,
   type SessionEstimate,
-  type SessionSource,
 } from "./session-accounting.ts";
+import {
+  type ContextimateConfig,
+  type ResolvedHeuristic,
+  toModelSummary,
+  parseContextimateConfig,
+  loadContextimateConfig,
+  resolveHeuristic,
+} from "./heuristic-config.ts";
+import {
+  type ScanRow,
+  type PrefixSection,
+  type PrefixSnapshot,
+  tildeAll,
+  singleLine,
+  parseContextSections,
+  runtimeAdditionsAttribution,
+  buildSkillsSection,
+  buildSnapshot,
+  sectionTokens,
+  sectionChars,
+  totalTokens,
+  totalChars,
+} from "./snapshot.ts";
+import {
+  type ToolSummary,
+  type ToolField,
+  type ToolExpanded,
+  buildToolNumerator,
+  buildToolDisplayEstimate,
+} from "./tool-accounting.ts";
 
 type ViewMode = "summary" | "compact" | "expanded";
-
-type ToolSummary = {
-  name: string;
-  description: string;
-  source: string;
-  schema: unknown;
-  promptGuidelines: string[];
-};
-
-type ScanRow = {
-  name: string;
-  tokens?: number;
-  desc?: string;
-  inactive?: boolean;
-};
-
-type ToolField = {
-  name: string;
-  type: string;
-  required: boolean;
-  description: string;
-  depth: number;
-};
-
-type ToolExpanded = {
-  name: string;
-  tokens: number;
-  source: string;
-  description: string;
-  fields: ToolField[];
-};
-
-type ExpandedContent =
-  | { kind: "text"; note?: string; attribution?: string; preview?: string[] }
-  | { kind: "skills"; note?: string; rows: ScanRow[] }
-  | { kind: "tools"; notes: string[]; tools: ToolExpanded[] };
-
-type PrefixSection = {
-  id: string;
-  title: string;
-  content: string;
-  /** Dim suffix after the char count, e.g. "÷ 2.6" or "÷ 2.6 · Anthropic tool payload". */
-  detail: string;
-  /** Tools only: formula-derived tokens replacing the ch ÷ denominator estimate. */
-  effectiveTokens?: number;
-  /** Tools only: minified-payload size, when content.length is not the counted chars. */
-  rawChars?: number;
-  denominator: number;
-  compactRows?: ScanRow[];
-  expanded: ExpandedContent;
-};
-
-type HeuristicProfile = Partial<Pick<ResolvedHeuristic, "label" | "textDenominator" | "sessionDenominator" | "toolDenominator" | "toolNumerator">>;
-
-type HeuristicRule = HeuristicProfile & {
-  profile?: string;
-  match?: {
-    provider?: string;
-    model?: string;
-    id?: string;
-    api?: string;
-  };
-};
-
-type ContextimateConfig = {
-  profiles?: Record<string, HeuristicProfile>;
-  defaults?: Partial<Pick<ResolvedHeuristic, "textDenominator" | "sessionDenominator" | "toolDenominator" | "toolNumerator">> & { profile?: string };
-  rules?: HeuristicRule[];
-};
-
-type ResolvedHeuristic = {
-  label: string;
-  source: string;
-  textDenominator: number;
-  sessionDenominator: number;
-  toolDenominator: number;
-  toolNumerator: string;
-};
-
-type ToolNumeratorResult = {
-  label: string;
-  content: string;
-  chars: number;
-  /** Present only for the OpenAI tool render; ratio numerators divide chars instead. */
-  tokens?: number;
-};
-
-type ToolDisplayEstimate = {
-  tokens: number;
-  chars: number;
-};
-
-type PrefixSnapshot = {
-  signature: string;
-  sections: PrefixSection[];
-  tools: ToolSummary[];
-  heuristic: ResolvedHeuristic;
-  model?: ModelSummary;
-  session?: SessionBreakdown;
-  contextUsage?: ContextUsage;
-  /** Set when pi's exact usage was billed by a different model than the current one
-   * (issue #58): the count is old-currency, the window is new-currency, and the two
-   * must not be composed. Cleared by the first post-switch usage. */
-  preSwitchUsage?: { billedModel: string };
-};
 
 type ContextimateTui = {
   children?: unknown[];
@@ -192,17 +93,6 @@ function accent(theme: Theme | undefined, text: string): string {
   return ink(theme, "accent", text);
 }
 
-function compactPath(filePath: string): string {
-  const home = homedir();
-  if (filePath === `${home}/.pi/agent/AGENTS.md`) return "Global AGENTS.md";
-  if (filePath.startsWith(`${home}/`)) return `~/${filePath.slice(home.length + 1)}`;
-  return filePath;
-}
-
-function tildeAll(text: string): string {
-  return text.split(`${homedir()}/`).join("~/");
-}
-
 function middleTruncatePath(text: string, width: number): string {
   if (text.length <= width) return text;
   if (width <= 3) return "…";
@@ -216,372 +106,8 @@ function middleTruncatePath(text: string, width: number): string {
   return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
 }
 
-function singleLine(text: string, max = 140): string {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= max) return normalized;
-  return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
-}
-
-function firstMeaningfulLines(text: string, maxLines: number): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, maxLines);
-}
-
-function parseContextSections(systemPrompt: string, denominator: number): PrefixSection[] {
-  const sections: PrefixSection[] = [];
-  for (const match of systemPrompt.matchAll(PROJECT_INSTRUCTIONS_RE)) {
-    const [, rawPath, content] = match;
-    const filePath = rawPath ?? "";
-    const title = compactPath(filePath);
-    const body = content ?? "";
-    const preview = firstMeaningfulLines(body, 8).map((line) => singleLine(line, 150));
-    sections.push({
-      id: `context:${filePath}`,
-      title,
-      content: body,
-      denominator,
-      detail: ratioDetail(denominator),
-      expanded: {
-        kind: "text",
-        note: `${tildeAll(filePath)} · preview only`,
-        preview: preview.length > 0 ? preview : ["(no non-empty lines)"],
-      },
-    });
-  }
-  return sections;
-}
-
-function runtimeAdditionsAttribution(additions: RuntimeAdditions, denominator: number): string | undefined {
-  if (additions.chars === 0) return undefined;
-  const tokens = estimateCharsAsTokens(additions.chars, denominator);
-  const parts: string[] = [];
-  if (additions.snippetCount > 0) parts.push(`${additions.snippetCount} tool snippet${additions.snippetCount === 1 ? "" : "s"}`);
-  if (additions.guidelineCount > 0) parts.push(`${additions.guidelineCount} guideline${additions.guidelineCount === 1 ? "" : "s"}`);
-  return `of which tool/extension instructions: ~${compactCount(tokens)} tokens (${parts.join(", ")}) · already counted in this row`;
-}
-
-function buildSkillsSection(systemPrompt: string, denominator: number) {
-  const block = parseSkillsBlock(systemPrompt, denominator);
-  if (!block) return { skills: [] };
-  const { content, skills } = block;
-  const sortedSkills = [...skills].sort((a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name));
-  const scanRows = sortedSkills.map((skill) => ({ name: skill.name, tokens: skill.tokens, desc: skill.description }));
-  const wrapperChars = Math.max(0, content.length - skills.reduce((sum, skill) => sum + skill.chars, 0));
-  const wrapperNote = wrapperChars > 0
-    ? `list wrapper/markup  ${inlineCount(wrapperChars, denominator)}`
-    : undefined;
-  return {
-    skills,
-    section: {
-      id: "skills",
-      title: `Skill frontmatter (${skills.length})`,
-      content,
-      denominator,
-      detail: ratioDetail(denominator),
-      compactRows: scanRows,
-      expanded: { kind: "skills", note: wrapperNote, rows: scanRows },
-    } satisfies PrefixSection,
-  };
-}
-
-// Provenance short form (design language §8): the local defining path *is* the
-// audit trail, and the origin URL / package ref / `top-level` decorations duplicate
-// it, so the label is `scope · path` (falling back to the loader source when no path
-// exists) and builtins collapse to one word. Pi keeps the full SourceInfo.
-function sourceInfoLabel(tool: ToolInfo): string {
-  const sourceInfo = tool.sourceInfo;
-  if (sourceInfo.source === "builtin") return "builtin";
-  const where = sourceInfo.path ?? sourceInfo.source;
-  return [sourceInfo.scope, where].filter(Boolean).join(SEP) || "unknown";
-}
-
-function summarizeTool(tool: ToolInfo): ToolSummary {
-  return {
-    name: tool.name,
-    description: tool.description.trim() || "(no description)",
-    source: sourceInfoLabel(tool),
-    schema: tool.parameters,
-    promptGuidelines: tool.promptGuidelines ?? [],
-  };
-}
-
-// pi does not re-export pi-ai's Model type; ctx.model carries it.
-type PiModel = NonNullable<ExtensionContext["model"]>;
-
-function toModelSummary(model: PiModel | undefined): ModelSummary | undefined {
-  return model ? { provider: model.provider, id: model.id, api: model.api } : undefined;
-}
-
 function modelLabel(model?: ModelSummary): string {
   return model ? `${model.provider}/${model.id}` : "unknown model";
-}
-
-function mergeContextimateConfig(base: ContextimateConfig, next?: ContextimateConfig): ContextimateConfig {
-  if (!next) return base;
-  return {
-    ...base,
-    ...next,
-    defaults: { ...base.defaults, ...next.defaults },
-    profiles: { ...base.profiles, ...next.profiles },
-    rules: [...(base.rules ?? []), ...(Array.isArray(next.rules) ? next.rules : [])],
-  };
-}
-
-function parseHeuristicProfile(value: unknown): HeuristicProfile {
-  if (!isJsonObject(value)) return {};
-  const profile: HeuristicProfile = {};
-  const label = stringValue(value.label);
-  const textDenominator = positiveNumberValue(value.textDenominator);
-  const sessionDenominator = positiveNumberValue(value.sessionDenominator);
-  const toolDenominator = positiveNumberValue(value.toolDenominator);
-  const toolNumerator = stringValue(value.toolNumerator);
-  if (label) profile.label = label;
-  if (textDenominator) profile.textDenominator = textDenominator;
-  if (sessionDenominator) profile.sessionDenominator = sessionDenominator;
-  if (toolDenominator) profile.toolDenominator = toolDenominator;
-  if (toolNumerator) profile.toolNumerator = toolNumerator;
-  return profile;
-}
-
-function parseHeuristicRule(value: unknown): HeuristicRule | undefined {
-  if (!isJsonObject(value)) return undefined;
-  const rule: HeuristicRule = parseHeuristicProfile(value);
-  const profile = stringValue(value.profile);
-  if (profile) rule.profile = profile;
-  if (isJsonObject(value.match)) {
-    const match: NonNullable<HeuristicRule["match"]> = {};
-    const provider = stringValue(value.match.provider);
-    const model = stringValue(value.match.model);
-    const id = stringValue(value.match.id);
-    const api = stringValue(value.match.api);
-    if (provider) match.provider = provider;
-    if (model) match.model = model;
-    if (id) match.id = id;
-    if (api) match.api = api;
-    if (Object.keys(match).length > 0) rule.match = match;
-  }
-  return Object.keys(rule).length > 0 ? rule : undefined;
-}
-
-function parseContextimateConfig(value: unknown): ContextimateConfig {
-  if (!isJsonObject(value)) return {};
-  const config: ContextimateConfig = {};
-  if (isJsonObject(value.defaults)) {
-    const defaults: NonNullable<ContextimateConfig["defaults"]> = parseHeuristicProfile(value.defaults);
-    const profile = stringValue(value.defaults.profile);
-    if (profile) defaults.profile = profile;
-    if (Object.keys(defaults).length > 0) config.defaults = defaults;
-  }
-  if (isJsonObject(value.profiles)) {
-    const profiles: Record<string, HeuristicProfile> = {};
-    for (const [name, entry] of Object.entries(value.profiles)) {
-      const profile = parseHeuristicProfile(entry);
-      if (Object.keys(profile).length > 0) profiles[name] = profile;
-    }
-    if (Object.keys(profiles).length > 0) config.profiles = profiles;
-  }
-  if (Array.isArray(value.rules)) {
-    const rules = value.rules.map(parseHeuristicRule).filter((rule): rule is HeuristicRule => !!rule);
-    if (rules.length > 0) config.rules = rules;
-  }
-  return config;
-}
-
-function splitConfigPaths(value: string | undefined): string[] {
-  return (value ?? "").split(":").map((entry) => expandHomePath(entry.trim())).filter(Boolean);
-}
-
-function loadContextimateConfig(cwd: string): ContextimateConfig {
-  const paths = [...configPaths("pi-contextimate", cwd), ...splitConfigPaths(process.env.PI_CONTEXTIMATE_CONFIG)];
-  return paths.reduce<ContextimateConfig>(
-    (config, filePath) => mergeContextimateConfig(config, readJsonConfig(filePath, parseContextimateConfig)),
-    {},
-  );
-}
-
-function globToRegex(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
-  return new RegExp(`^${escaped}$`, "i");
-}
-
-function matchesPattern(value: string, pattern?: string): boolean {
-  if (!pattern) return true;
-  if (pattern.startsWith("/") && pattern.lastIndexOf("/") > 0) {
-    const end = pattern.lastIndexOf("/");
-    try {
-      return new RegExp(pattern.slice(1, end), pattern.slice(end + 1) || undefined).test(value);
-    } catch {
-      return false;
-    }
-  }
-  if (pattern.includes("*") || pattern.includes("?")) return globToRegex(pattern).test(value);
-  return value.toLowerCase() === pattern.toLowerCase();
-}
-
-function ruleMatchesModel(rule: HeuristicRule, model?: ModelSummary): boolean {
-  const match = rule.match;
-  if (!match) return true;
-  const provider = model?.provider ?? "";
-  const id = model?.id ?? "";
-  const api = model?.api ?? "";
-  return matchesPattern(provider, match.provider)
-    && matchesPattern(id, match.model ?? match.id)
-    && matchesPattern(api, match.api);
-}
-
-function defaultHeuristic(): ResolvedHeuristic {
-  return { ...fallbackHeuristicNumbers(), source: "fallback" };
-}
-
-function applyHeuristicPatch(base: ResolvedHeuristic, patch: HeuristicProfile | Partial<ResolvedHeuristic>, source: string): ResolvedHeuristic {
-  return {
-    label: patch.label ?? base.label,
-    source,
-    textDenominator: patch.textDenominator ?? base.textDenominator,
-    sessionDenominator: patch.sessionDenominator ?? base.sessionDenominator,
-    toolDenominator: patch.toolDenominator ?? base.toolDenominator,
-    toolNumerator: patch.toolNumerator ?? base.toolNumerator,
-  };
-}
-
-function resolveHeuristic(model: ModelSummary | undefined, config: ContextimateConfig): ResolvedHeuristic {
-  const candidates: Array<{ patch: HeuristicProfile | Partial<ResolvedHeuristic>; source: string }> = [];
-  const defaults = config.defaults ?? {};
-  if (defaults.profile && config.profiles?.[defaults.profile]) {
-    candidates.push({ patch: config.profiles[defaults.profile], source: `profile:${defaults.profile}` });
-  }
-  candidates.push({ patch: defaults, source: "configured defaults" });
-  const builtIn = builtInHeuristicPatchForModel(model);
-  if (builtIn) candidates.push({ patch: builtIn, source: builtIn.label });
-  for (const rule of config.rules ?? []) {
-    if (!ruleMatchesModel(rule, model)) continue;
-    if (rule.profile && config.profiles?.[rule.profile]) {
-      candidates.push({ patch: config.profiles[rule.profile], source: `profile:${rule.profile}` });
-    }
-    candidates.push({ patch: rule, source: rule.label ?? (rule.profile ? `rule:${rule.profile}` : "custom rule") });
-  }
-  return candidates.reduce(
-    (heuristic, { patch, source }) => applyHeuristicPatch(heuristic, patch, source),
-    defaultHeuristic(),
-  );
-}
-
-function buildToolNumerator(tools: ToolSummary[], heuristic: ResolvedHeuristic): ToolNumeratorResult {
-  const numerator = heuristic.toolNumerator;
-  if (numerator === "openai-cookbook") {
-    const content = tools.map(renderOpenAITool).join("");
-    return {
-      label: "OpenAI tool render",
-      content,
-      chars: content.length,
-      tokens: estimateOpenAIFunctionToolTokens(tools),
-    };
-  }
-  const content = safeMinifiedJson(aggregateToolPayload(tools, numerator));
-  return {
-    label: toolPayloadLabel(numerator),
-    content,
-    chars: content.length,
-  };
-}
-
-function collectToolFields(name: string, property: unknown, depth: number, required: boolean, out: ToolField[], maxDepth = 3): void {
-  out.push({
-    name,
-    type: schemaPropertyType(property),
-    required,
-    description: schemaPropertyDescription(property),
-    depth,
-  });
-  if (depth >= maxDepth) return;
-  const nested = getSchemaProperties(property);
-  if (Object.keys(nested).length > 0) {
-    const requiredKeys = new Set(getSchemaRequired(property));
-    for (const [childName, childProperty] of Object.entries(nested)) {
-      collectToolFields(childName, childProperty, depth + 1, requiredKeys.has(childName), out, maxDepth);
-    }
-  }
-  const itemProperties = schemaArrayItemProperties(property);
-  if (Object.keys(itemProperties).length > 0) {
-    const requiredKeys = new Set(getSchemaRequired(arrayItemsSchema(property)));
-    for (const [childName, childProperty] of Object.entries(itemProperties)) {
-      collectToolFields(childName, childProperty, depth + 1, requiredKeys.has(childName), out, maxDepth);
-    }
-  }
-}
-
-function buildToolFields(schema: unknown): ToolField[] {
-  const fields: ToolField[] = [];
-  const requiredKeys = new Set(getSchemaRequired(schema));
-  for (const [name, property] of Object.entries(getSchemaProperties(schema))) {
-    collectToolFields(name, property, 0, requiredKeys.has(name), fields);
-  }
-  return fields;
-}
-
-function buildToolDisplayEstimate(tool: ToolSummary, heuristic: ResolvedHeuristic): ToolDisplayEstimate {
-  const numerator = heuristic.toolNumerator;
-  if (numerator === "openai-cookbook") {
-    return { tokens: estimateOpenAIToolDefinitionTokens(tool), chars: renderOpenAITool(tool).length };
-  }
-  const chars = safeMinifiedJson(toolPayload(tool, numerator)).length;
-  return { tokens: estimateCharsAsTokens(chars, heuristic.toolDenominator), chars };
-}
-
-function buildToolsSection(pi: ExtensionAPI, heuristic: ResolvedHeuristic): { section?: PrefixSection; tools: ToolSummary[] } {
-  const activeNames = new Set(pi.getActiveTools());
-  const allTools = pi.getAllTools();
-  const activeToolInfos = allTools.filter((tool) => activeNames.has(tool.name));
-  const inactiveTools = allTools
-    .filter((tool) => !activeNames.has(tool.name))
-    .map(summarizeTool)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const tools = activeToolInfos.map(summarizeTool);
-  if (tools.length === 0) return { tools };
-
-  const numerator = buildToolNumerator(tools, heuristic);
-  const denominator = heuristic.toolDenominator;
-  const effectiveTokens = numerator.tokens ?? estimateCharsAsTokens(numerator.chars, denominator);
-  const sectionDetail = typeof numerator.tokens === "number"
-    ? "· OpenAI tool render"
-    : `${ratioDetail(denominator)} · ${numerator.label}`;
-  const toolEstimates = tools.map((tool) => ({ tool, estimate: buildToolDisplayEstimate(tool, heuristic) }));
-  const sortedEstimates = [...toolEstimates].sort((a, b) => b.estimate.tokens - a.estimate.tokens || a.tool.name.localeCompare(b.tool.name));
-  const compactToolRows: ScanRow[] = [
-    ...sortedEstimates.map(({ tool, estimate }) => ({ name: tool.name, tokens: estimate.tokens, desc: tool.description })),
-    ...inactiveTools.map((tool) => ({ name: tool.name, desc: `(inactive) ${tool.description}`, inactive: true })),
-  ];
-  const expandedTools: ToolExpanded[] = sortedEstimates.map(({ tool, estimate }) => ({
-    name: tool.name,
-    tokens: estimate.tokens,
-    source: tool.source,
-    description: tool.description,
-    fields: buildToolFields(tool.schema),
-  }));
-  const notes = typeof numerator.tokens === "number"
-    ? [
-        `counted on OpenAI's TypeScript-style tool render (${compactCount(numerator.chars)} ch) with an o200k_base approximation, plus 16 once`,
-      ]
-    : [
-        `counts use ${numerator.label} at ch ${ratioDetail(denominator)} over the minified provider payload (${compactCount(numerator.chars)} ch); the tree below is the readable view`,
-      ];
-  return {
-    tools,
-    section: {
-      id: "tools",
-      title: `Tools (${tools.length}/${allTools.length} active)`,
-      content: numerator.content,
-      effectiveTokens,
-      rawChars: numerator.chars,
-      denominator,
-      detail: sectionDetail,
-      compactRows: compactToolRows,
-      expanded: { kind: "tools", notes, tools: expandedTools },
-    },
-  };
 }
 
 // Only for walking the foreign TUI component tree, whose objects we do not control.
@@ -594,87 +120,6 @@ function safely<T>(fn: () => T, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-// May throw while pi is still wiring a resumed session; StartupContextComponent.render()
-// catches, renders the "unavailable" line, and recovers on the next snapshot.
-function buildSnapshot(
-  pi: ExtensionAPI,
-  getSystemPrompt: () => string,
-  sessionManager?: SessionSource,
-  getContextUsage?: () => ContextUsage | undefined,
-  getModel?: () => ModelSummary | undefined,
-  config: ContextimateConfig = {},
-): PrefixSnapshot {
-  const systemPrompt = getSystemPrompt();
-  const model = getModel?.();
-  const heuristic = resolveHeuristic(model, config);
-  const textDenominator = heuristic.textDenominator;
-  const promptRemainder = getPromptRemainder(systemPrompt);
-  const systemPreview = firstMeaningfulLines(promptRemainder, 6).map((line) => singleLine(line));
-
-  // Tools are resolved before the system section so the runtime prompt row can attribute
-  // the tool/extension instructions embedded in it (issue #9).
-  const { section: toolsSection, tools } = buildToolsSection(pi, heuristic);
-  const runtimeAdditions = detectRuntimeAdditions(promptRemainder, tools);
-
-  const sections: PrefixSection[] = [
-    {
-      id: "system", // id is config/signature API — stays "system" even though the title changed
-      title: "Runtime system prompt",
-      content: promptRemainder,
-      denominator: textDenominator,
-      detail: ratioDetail(textDenominator),
-      expanded: {
-        kind: "text",
-        note: "assembled at runtime: pi base prompt + tool/extension instructions · preview only",
-        attribution: runtimeAdditionsAttribution(runtimeAdditions, textDenominator),
-        preview: systemPreview.length > 0 ? systemPreview : ["(no non-empty lines)"],
-      },
-    },
-    ...parseContextSections(systemPrompt, textDenominator),
-  ];
-
-  const { section: skillsSection } = buildSkillsSection(systemPrompt, textDenominator);
-  if (skillsSection) sections.push(skillsSection);
-  if (toolsSection) sections.push(toolsSection);
-
-  const { breakdown: session, lastBilled } = scanSession(sessionManager);
-  const contextUsage = getContextUsage?.();
-  const preSwitchUsage = contextUsage && lastBilled && model &&
-    (lastBilled.provider !== model.provider || lastBilled.id !== model.id || lastBilled.api !== model.api)
-    ? { billedModel: lastBilled.id }
-    : undefined;
-
-  const signature = [
-    systemPrompt.length,
-    model ? `${model.provider}:${model.id}:${model.api}` : "no-model",
-    `${heuristic.label}:${heuristic.textDenominator}:${heuristic.sessionDenominator}:${heuristic.toolDenominator}:${heuristic.toolNumerator}`,
-    JSON.stringify(config),
-    pi.getActiveTools().join(","),
-    pi.getAllTools().map((tool) => `${tool.name}:${tool.description.length}`).join(","),
-    session ? JSON.stringify(session) : "no-session",
-    contextUsage ? `${contextUsage.tokens}:${contextUsage.contextWindow}:${contextUsage.percent}` : "no-usage",
-    preSwitchUsage ? `pre-switch:${preSwitchUsage.billedModel}` : "currency-ok",
-  ].join("|");
-
-  return { signature, sections, tools, heuristic, model, session, contextUsage, preSwitchUsage };
-}
-
-function sectionTokens(section: PrefixSection): number {
-  return section.effectiveTokens ?? estimateCharsAsTokens(section.content.length, section.denominator);
-}
-
-function sectionChars(section: PrefixSection): number {
-  return section.rawChars ?? section.content.length;
-}
-
-function totalTokens(snapshot: PrefixSnapshot): number {
-  return snapshot.sections.reduce((sum, section) => sum + sectionTokens(section), 0);
-}
-
-function totalChars(snapshot: PrefixSnapshot): number {
-  return snapshot.sections.reduce((sum, section) => sum + sectionChars(section), 0);
 }
 
 function nextMode(mode: ViewMode): ViewMode {

@@ -43,9 +43,7 @@
         "return {": 1
       },
       "extensions/pi-contextimate/index.ts": {
-        "const cache: { value?: PrefixSnapshot; builtAt: number; dirty: boolean } = { builtAt: 0, dirty: true };": 1,
-        "if (tools.length === 0) return { tools };": 1,
-        "return {": 1
+        "const cache: { value?: PrefixSnapshot; builtAt: number; dirty: boolean } = { builtAt: 0, dirty: true };": 1
       },
       "extensions/pi-meantime/timing.ts": {
         "const SEGMENT_OF: Record<string, SegmentKind | undefined> = {": 1,
@@ -296,7 +294,7 @@
     "defaultTsMax": 350,
     "files": {
       "extensions/pi-cachemire/index.ts": 698,
-      "extensions/pi-contextimate/index.ts": 1431,
+      "extensions/pi-contextimate/index.ts": 876,
       "extensions/pi-traceline/index.ts": 1674,
       "tests/contract/pi-internals.test.ts": 355,
       "tests/traceline/one-line.test.ts": 772

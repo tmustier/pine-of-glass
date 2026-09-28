@@ -93,11 +93,13 @@ export async function hostExtension(
     reason?: SessionStartEvent["reason"];
     model?: CreateAgentSessionOptions["model"];
     thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
+    /** "builtin" keeps the extension's own tools; the default disables every tool. */
+    noTools?: CreateAgentSessionOptions["noTools"];
     /** A pre-populated session to resume, as Pi does from a session file. */
     sessionManager?: SessionManager;
   },
 ): Promise<HostedExtension> {
-  const { project, interactive = true, reason = "startup", model, thinkingLevel } = options;
+  const { project, interactive = true, reason = "startup", model, thinkingLevel, noTools = "all" } = options;
   const cwd = project.dir;
   const agentDir = join(project.home, ".pi", "agent");
   const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
@@ -112,7 +114,7 @@ export async function hostExtension(
     sessionManager: options.sessionManager ?? SessionManager.inMemory(cwd),
     model,
     thinkingLevel,
-    noTools: "all",
+    noTools,
     sessionStartEvent: { type: "session_start", reason },
   });
   const ui = new RecordedUi();
