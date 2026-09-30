@@ -1,7 +1,7 @@
 // Pi emits <available_skills> only while read or bash is active. pi-codex-conversion
-// swaps those tools out and re-injects the skill index per turn as a compact
-// <codex_skills> list. Pin the installed adapter's output against contextimate's
-// parser; skipped when the adapter is not installed.
+// swaps those tools out and re-injects the skill index per turn as a compact list. Pin
+// the installed adapter's output against contextimate's parser; skipped when the adapter
+// is not installed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -26,16 +26,18 @@ test(
       buildSystemPrompt: (options: BuildSystemPromptOptions) => string;
       normalizeBuildSystemPromptOptions: (options: BuildSystemPromptOptions) => NormalizedBuildSystemPromptOptions;
     };
-    // The package manager keeps peer dependencies outside this package's ESM lookup
-    // ancestry. Pi's loader supplies them at runtime; make the same installed peer
-    // explicit in a temporary copy so this direct deep-import contract can execute.
+    // The adapter's peer import of pi is outside its ESM lookup ancestry (Pi's loader
+    // supplies it at runtime), so import a temporary copy with that import and the
+    // package-relative ones made absolute.
     const temp = mkdtempSync(join(tmpdir(), "pog-codex-builder-"));
     const testBuilder = join(temp, "build-system-prompt.mjs");
     const piModule = pathToFileURL(join(piRoot, "dist/index.js")).href;
     writeFileSync(
       testBuilder,
       readFileSync(codexConversionBuilder, "utf8")
-        .replace('"@earendil-works/pi-coding-agent"', JSON.stringify(piModule)),
+        .replace('"@earendil-works/pi-coding-agent"', JSON.stringify(piModule))
+        .replace(/from "(\.\.?\/[^"]+)"/g, (_match, relative: string) =>
+          `from ${JSON.stringify(pathToFileURL(resolve(dirname(codexConversionBuilder), relative)).href)}`),
     );
     type CodexBuilder = {
       prepareCodexSystemPrompt: (options: NormalizedBuildSystemPromptOptions, config: {
@@ -69,6 +71,6 @@ test(
       ],
       "adapter entry grammar drifted",
     );
-    assert.ok(!contextimate.getPromptRemainder(prompt).includes("<codex_skills>"));
+    assert.ok(!contextimate.getPromptRemainder(prompt).includes(block.content), "adapter skills section left in the remainder");
   },
 );

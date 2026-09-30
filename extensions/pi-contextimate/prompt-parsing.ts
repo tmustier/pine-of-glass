@@ -17,8 +17,8 @@ const SKILL_RE = /<skill>\s*<name>([\s\S]*?)<\/name>[\s\S]*?<description>([\s\S]
 // Pi emits <available_skills> only while read or bash is active. Codex-dialect adapters
 // (pi-codex-conversion) swap those tools out and re-inject the index per turn in upstream
 // Codex's compact form: `- name: description (file: path)`, description possibly empty
-// or spanning lines.
-export const CODEX_SKILLS_RE = /\n*<codex_skills>\n[\s\S]*?<\/codex_skills>/;
+// or spanning lines. The section tag depends on the adapter version.
+const CODEX_SKILLS_RE = /\n*<(codex_skills|skill_catalog)>\n[\s\S]*?<\/\1>/;
 const COMPACT_SKILL_RE = /^- (.+?): ([\s\S]*?) ?\(file: (.+?)\)$/gm;
 // Extensions that filter the index before each run (pi-skill-gate) cut <available_skills>
 // out of Pi's <skills> wrapper and append the filtered list on its own.

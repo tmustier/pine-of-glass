@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Contextimate reads the `<skill_catalog>` section `pi-codex-conversion` 3.0.40 injects
+  per turn; the skills row no longer vanishes after the first turn with the catalog
+  counted as runtime prompt. The installed-adapter contract test runs again.
+
 ## 0.15.0 (2026-09-28)
 
 - Contextimate's startup breakdown is available to other extensions as plain data:

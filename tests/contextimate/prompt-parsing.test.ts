@@ -62,6 +62,12 @@ test("compact <codex_skills> list parses into the same skills row as the XML ind
   assert.ok(remainder.includes("Current working directory"));
 });
 
+test("the adapter's <skill_catalog> tag parses the same as <codex_skills>", () => {
+  const renamed = fixtureCodexSystemPrompt().replaceAll("codex_skills>", "skill_catalog>");
+  assert.deepEqual(parseSkillsBlock(renamed, 4)!.skills, parseSkillsBlock(fixtureCodexSystemPrompt(), 4)!.skills);
+  assert.equal(getPromptRemainder(renamed), getPromptRemainder(fixtureCodexSystemPrompt()));
+});
+
 test("a skill index moved out of Pi's wrapper still parses into the skills row", () => {
   // pi-skill-gate cuts <available_skills> out of <skills> and appends the enabled entries.
   const native = fixtureSystemPrompt();
