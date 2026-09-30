@@ -33,6 +33,8 @@ export type DrillHost = {
   /** True when the row renders nothing because an earlier row carries its fold. */
   hiddenByFold(comp: ToolRowLike): boolean;
   statusTone(comp: ToolRowLike): Tone;
+  /** A composed row's full ledger lines at the given width (§9.14), or none. */
+  ledgerLines(comp: ToolRowLike, width: number): string[];
 };
 
 export type DrillState = {

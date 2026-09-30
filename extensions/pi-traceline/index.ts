@@ -38,7 +38,8 @@ import {
   relativizeContextCd,
   type BashPreambleRun,
 } from "./bash-preamble.ts";
-import { checkFacts, checkFailed, type CheckTone } from "./checks.ts";
+import { checkFacts, checkFailed } from "./checks.ts";
+import { fitHeadline, mergeHeadlineFacts, recordCellText, type RecordCellData } from "./headline.ts";
 import { fitCompoundCommand, type FitPiece } from "./compound-fit.ts";
 import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
@@ -51,7 +52,7 @@ import {
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact as rawResultImageFact } from "./image-fact.ts";
-import { isRevealed, resetRevealedFolds, revealRenderKey, revealedBullet, type TraceMousePrototype } from "./click.ts";
+import { isLedgerRevealed, isRevealed, resetRevealedFolds, revealRenderKey, revealedBullet, type LedgerView, type TraceMousePrototype } from "./click.ts";
 import {
   cachedIntrinsic,
   installAssistantCacheHook,
@@ -59,8 +60,10 @@ import {
   installContainerCacheHooks,
   objectCacheKey,
 } from "./cache-hooks.ts";
+import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStart } from "./nested-calls.ts";
+import { composedBody, composedSuffix, ledgerLines } from "./nested-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
-import { recordFacts, type RecordTone } from "./records.ts";
+import { recordFacts } from "./records.ts";
 import { TraceRenderCache } from "./render-cache.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun, readPlan, repetitionPlan } from "./repetition-fold.ts";
 import { TraceTopology, isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./topology.ts";
@@ -129,6 +132,9 @@ function dim(text: string): string {
 const resultTextCharCount = cachedIntrinsic(renderCache, "result-chars", rawResultTextCharCount);
 const resultImageFact = cachedIntrinsic(renderCache, "image-fact", rawResultImageFact);
 const mutationDiffStats = cachedIntrinsic(renderCache, "mutation-diff", rawMutationDiffStats);
+// Composed-call facts (§9.14) re-derive whenever the row's result changes: the streamed
+// ledger and a live capture both land through updateResult, which dirties the row.
+const composedFacts = cachedIntrinsic(renderCache, "composed", composedFactsOf);
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
 // Structural detection (isToolRow / isAssistantRow / findChatContainer) lives in _lib
 // and is shared across the extension family.
@@ -262,10 +268,6 @@ function charSuffix(chars: number | undefined, columnLive = false): string {
   return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
 }
 
-function resultCharSuffix(comp: ToolRowDataLike | undefined, facts: BlockFacts): string {
-  return charSuffix(resultTextCharCount(comp), facts.sizeColumnLive);
-}
-
 // The image what-fact (§9.7, image-fact.ts): dim, never lighting the size column.
 function imageFactCell(comp: ToolRowDataLike | undefined): string {
   const fact = resultImageFact(comp);
@@ -323,6 +325,7 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
     // size column nor set its width — their magnitude lives on the basename instead.
     const sizeColumnLive = rows.some((c) => {
       if (inlineMutationRow(c)) return false;
+      if (composedFacts(c)?.trimmed) return true; // a trimmed output is warning severity (§9.14)
       const chars = resultTextCharCount(c);
       if (chars === undefined) return false;
       // Record rows (§9.10) suppress their size cell below warning severity, so only
@@ -340,8 +343,7 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
         if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
         if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
       }
-      const cell = recordRow(row) ? recordCharSuffix(row) : imageFactCell(row) || charSuffix(resultTextCharCount(row), sizeColumnLive);
-      size = Math.max(size, visibleWidth(cell));
+      size = Math.max(size, visibleWidth(sizeBerthCell(row, sizeColumnLive)));
     }
     return { sizeColumnLive, diffColumns: { plus, minus, size } };
   });
@@ -421,74 +423,16 @@ function mutationInlineDiffInk(comp: ToolRowDataLike): string {
 // Parsing lives in records.ts; rendering stays here because it depends on the live
 // theme, record headline fitting, and row suffix policy.
 
-// Facts chain in output order; consecutive same-verb facts merge their data
-// (`pushed main, v0.5.9`) and exact duplicates collapse. Merging also requires the
-// tones to agree (§9.10): a forced push never hides inside a routine one.
-// Check facts (§9.10.1) share the headline: they chain with records in output order
-// and merge under the same rule; a pass wears neutral ink, never green.
-type RecordCellData = { verb: string; data: string[]; tone: RecordTone | CheckTone; opaque: boolean };
-
 function recordCellData(comp: ToolRowDataLike): RecordCellData[] {
-  return renderCache.memo(comp, "records", () => {
-    const merged: RecordCellData[] = [];
-    const facts = [...recordFacts(comp), ...checkFacts(comp).map((fact) => ({ ...fact, opaque: false }))]
-      .sort((a, b) => a.at - b.at);
-    for (const fact of facts) {
-      const last = merged[merged.length - 1];
-      if (last && last.verb === fact.verb && last.tone === fact.tone) {
-        if (!last.data.includes(fact.datum)) last.data.push(fact.datum);
-      } else {
-        merged.push({ verb: fact.verb, data: [fact.datum], tone: fact.tone, opaque: fact.opaque });
-      }
-    }
-    return merged;
-  });
-}
-
-function recordCellText(cell: RecordCellData): string {
-  return `${cell.verb} ${cell.data.join(", ")}`;
+  return renderCache.memo(comp, "records", () => mergeHeadlineFacts(recordFacts(comp), checkFacts(comp)));
 }
 
 function recordCells(comp: ToolRowDataLike): string[] {
   return recordCellData(comp).map(recordCellText);
 }
 
-// Records may take at most roughly a third of the row (§9.10), so the command keeps
-// its width: overflow drops whole facts oldest first (a failed check last, §9.10.1) —
-// terminal state wins, a mangled sha is worse than none, Ctrl+T shows the rest.
-const RECORD_HEADLINE_SHARE = 1 / 3;
-
-// Records wear the ink of what they state (§9.10): the cell renders bold in its
-// fact's tone — success for landed state, warning for a forced push — verb and datum
-// as one chunk, because the refname/tag/version/PR number is the event's identity.
-// Opaque audit data (a commit sha) stays dim: copy-paste material, not news. The tone
-// is per-fact, not per-row: a failed row keeps its surviving facts success-toned —
-// red discriminators beside a green `committed` is exactly "committed, demonstrably
-// not landed" (§9.10); separators stay at the supporting grey and the size cell
-// keeps its severity ink.
-function inkRecordCell(cell: RecordCellData): string {
-  const theme = currentTheme();
-  if (cell.opaque) {
-    const verb = ink(theme, cell.tone, `${BOLD}${cell.verb}${BOLD_OFF}`);
-    return `${verb}${dim(` ${cell.data.join(", ")}`)}`;
-  }
-  return ink(theme, cell.tone, `${BOLD}${recordCellText(cell)}${BOLD_OFF}`);
-}
-
-// A bash row that landed real shared state graduates to a verb-led outcome row
-// (§9.10): the record leads — `pushed main $ git push` — joining the verb-first
-// family (read, edit, write, `$`), and the command trails as provenance behind its
-// `$`, which keeps its promise that what follows ran in a shell (a record never sits
-// between `$` and the command). Records exist only when success porcelain appeared,
-// so a row leads with an outcome exactly when there demonstrably was one; a partial
-// success on a red row still headlines what landed. The headline survives truncation:
-// the middle cut (§9.8) lands in the command, never in the record.
 function recordHeadline(comp: ToolRowDataLike, available: number): string {
-  const cells = recordCellData(comp);
-  if (!cells.length) return "";
-  const cap = Math.floor(available * RECORD_HEADLINE_SHARE);
-  while (cells.length && cells.map(recordCellText).join(SEP).length > cap) cells.splice(Math.max(0, cells.findIndex((c) => c.tone !== "error")), 1);
-  return cells.map(inkRecordCell).join(dim(SEP));
+  return fitHeadline(currentTheme(), recordCellData(comp), available);
 }
 
 // Only records of consequence suppress the size cell (§9.7); a check row keeps it,
@@ -506,6 +450,14 @@ function recordCharSuffix(comp: ToolRowDataLike): string {
   return charSuffix(chars);
 }
 
+// The row's size-berth cell: a record's suppressed cell, an image what-fact, or the
+// char count; a composed call's `trimmed` fact rides ahead of it (§9.14).
+function sizeBerthCell(comp: ToolRowDataLike, sizeColumnLive: boolean): string {
+  const base = recordRow(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || charSuffix(resultTextCharCount(comp), sizeColumnLive);
+  const composed = composedFacts(comp);
+  return composed ? composedSuffix(currentTheme(), composed, base) : base;
+}
+
 function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {
   const theme = currentTheme();
   const parts: string[] = [];
@@ -515,7 +467,7 @@ function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY,
   // below warning severity.
   const inline = inlineMutationRow(comp);
   const diff = inline ? undefined : mutationDiffStats(comp);
-  const chars = inline ? "" : recordRow(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || resultCharSuffix(comp, facts);
+  const chars = inline ? "" : sizeBerthCell(comp, facts.sizeColumnLive);
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`
@@ -885,6 +837,15 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
 // row fits itself to it by command (§9.8). Other rows leave the cut to rightAlignSuffix.
 function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, bodyBudget = Number.POSITIVE_INFINITY): string {
   return renderCache.memo(comp, `invocation:${available}:${bodyBudget}:${objectCacheKey(currentTheme())}`, () => {
+    // A composed call states its effects, never its script (§9.14).
+    const composed = composedFacts(comp);
+    if (composed) {
+      // The body budget is the row's share after the block's suffix reserve (§9.8).
+      const rows = blockToolRows(comp);
+      const facts = blockFacts(rows);
+      const budget = available - blockSuffixReserve(rows, facts, available);
+      return composedBody(currentTheme(), comp, composed, toolStatus(comp) === "error", budget);
+    }
     if (toolLabel(comp?.toolName) === "bash") {
       const plain = bashInvocationText(comp);
       if (plain === undefined) return inkedFallbackLine(comp);
@@ -912,12 +873,20 @@ function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string
   return comp ? renderCache.memo(comp, key, fit) : fit();
 }
 
+// A composed row with a ledger is an aggregate (§9.14): `▸` folded, `▾` revealed.
+function ledgerView(comp: ToolRowDataLike): LedgerView | undefined {
+  const composed = composedFacts(comp);
+  if (!composed || composed.calls.length === 0) return undefined;
+  return isLedgerRevealed(comp) ? "revealed" : "folded";
+}
+
 function oneLine(comp: ToolRowLike, width: number): string {
   const rows = blockToolRows(comp);
   const facts = blockFacts(rows);
   const available = traceRowAvailable(width);
   const suffix = toolFactSuffix(comp, available, facts);
   const reserve = blockSuffixReserve(rows, facts, available);
+  const ledger = ledgerView(comp);
   return fitTraceRow(
     comp,
     statusTone(comp),
@@ -925,6 +894,7 @@ function oneLine(comp: ToolRowLike, width: number): string {
     suffix,
     reserve,
     width,
+    ledger === "revealed" ? "▾" : ledger === "folded" ? "▸" : undefined,
   );
 }
 
@@ -1097,7 +1067,7 @@ function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | un
 // Reads, mutations, records and images carry facts a generic count cannot preserve.
 function repetitionKey(comp: ToolRowLike): string | undefined {
   if (comp.expanded === true || isRevealed(comp) || toolLabel(comp.toolName) === "read") return undefined;
-  if (inlineMutationRow(comp) || recordCellData(comp).length > 0 || resultImageFact(comp)) return undefined;
+  if (inlineMutationRow(comp) || recordCellData(comp).length > 0 || resultImageFact(comp) || composedFacts(comp)) return undefined;
   return stripAnsi(invocationInk(comp)).trim() || undefined;
 }
 
@@ -1292,7 +1262,9 @@ function renderTraceRow(comp: ToolRowLike, width: number): string[] {
     return leadingBlank(comp) ? ["", line] : [line];
   }
   const line = oneLine(comp, width);
-  return leadingBlank(comp) ? ["", line] : [line];
+  const composed = composedFacts(comp);
+  const ledger = composed && isLedgerRevealed(comp) ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
+  return leadingBlank(comp) ? ["", line, ...ledger] : [line, ...ledger];
 }
 
 // --- collapsed thinking previews (issue #14, pi-native rendering) ----------------------
@@ -1334,7 +1306,7 @@ function cachedLayout(row: ToolRowLike, width: number) {
   const key = `${width}:${objectCacheKey(chat)}:${objectCacheKey(currentTheme())}:${drillRenderKey(row)}:${revealRenderKey()}`;
   return renderCache.value(row, `layout:${key}`, () => {
     const lines = renderTraceRow(row, width);
-    return { lines, plain: lines.map(stripAnsi), members: readRun(row)?.rows ?? repetitionRun(row)?.rows };
+    return { lines, plain: lines.map(stripAnsi), members: readRun(row)?.rows ?? repetitionRun(row)?.rows, ledger: ledgerView(row) };
   });
 }
 
@@ -1491,6 +1463,10 @@ export default function piTraceline(pi: ExtensionAPI) {
     hiddenByFold: (comp) =>
       displayMode() === "oneLine" && ((readRun(comp)?.index ?? 0) > 0 || (repetitionRun(comp)?.index ?? 0) > 0),
     statusTone,
+    ledgerLines: (comp, width) => {
+      const composed = composedFacts(comp);
+      return composed && composed.calls.length > 0 ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
+    },
   });
   const startDrill = (ctx: { ui: ExtensionUIContext; hasUI: boolean }) => {
     if (!ctx.hasUI) return;
@@ -1509,7 +1485,27 @@ export default function piTraceline(pi: ExtensionAPI) {
     if (tuiOwner.owns() && ctx.mode === "tui" && event.message.role === "assistant") schedulePatches();
   });
   pi.on("message_update", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
-  pi.on("tool_execution_start", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
+  // Nested calls (§9.14) never get rows of their own; their live events are the only
+  // source of a nested result's size, so capture what the row grammar needs and
+  // re-render the parent row that owns them.
+  const captureNested = (parentToolCallId: string, record: () => void) => {
+    try {
+      record();
+      for (const row of chatChildren() ?? []) if (isToolRow(row) && row.toolCallId === parentToolCallId) renderCache.dirty(row);
+      g.__tracelineTui?.requestRender();
+    } catch {
+      /* Traceline display work must never block nested execution. */
+    }
+  };
+  pi.on("tool_execution_start", (event, ctx) => {
+    if (!tuiOwner.owns() || ctx.mode !== "tui") return;
+    if (event.parentToolCallId) captureNested(event.parentToolCallId, () => recordNestedStart(event.toolCallId, event.toolName, event.args));
+    else schedulePatches();
+  });
+  pi.on("tool_execution_end", (event, ctx) => {
+    if (!tuiOwner.owns() || ctx.mode !== "tui" || !event.parentToolCallId) return;
+    captureNested(event.parentToolCallId, () => recordNestedEnd(event.toolCallId, event.toolName, event.result, event.isError));
+  });
   pi.on("session_tree", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
   pi.on("tool_call", (event, ctx) => {
     if (!tuiOwner.owns() || ctx.mode !== "tui" || event.toolName !== "write") return;
@@ -1524,6 +1520,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     if (!tuiOwner.claim(ctx)) return;
     clearPatchTimer();
     clearWriteCallSnapshots();
+    clearNestedCaptures();
     resetRevealedFolds();
     renderCache.reset();
     g.__tracelinePatchVersion = g.__tracelineAssistantPatchVersion = undefined; // rebind both adapters on reload

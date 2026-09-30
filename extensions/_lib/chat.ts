@@ -12,6 +12,8 @@ export interface ToolArgsLike {
   command?: unknown;
   offset?: unknown;
   limit?: unknown;
+  /** codemode's script source. */
+  code?: unknown;
 }
 
 export interface ToolResultDetailsLike {
@@ -23,6 +25,8 @@ export interface ToolResultLike {
   isError?: unknown;
   content?: unknown;
   details?: ToolResultDetailsLike;
+  /** pi's record of the calls this tool made through ctx.executeTool() (persisted results only). */
+  nestedCalls?: unknown;
 }
 
 export interface ToolCallPreviewLike {

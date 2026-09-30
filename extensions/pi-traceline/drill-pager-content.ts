@@ -20,6 +20,12 @@ export type ImageBlockLike = { type?: unknown; data?: unknown; mimeType?: unknow
 // (papercut, MCP tools, most extension tools) shows its complete arguments instead
 // (§9.13): the arguments are the invocation, a bare tool name is not.
 export function invocationLines(theme: Theme | undefined, call: ToolRowLike, width: number): string[] {
+  // A codemode script is code (§9.14): pi's own JavaScript ink, complete, never the
+  // ten-line preview its call renderer shows.
+  const code = call.toolName === "codemode" ? call.args?.code : undefined;
+  if (typeof code === "string") {
+    return textBlockLines(theme, code, width, { language: "javascript", nextLine: undefined });
+  }
   try {
     const out = call.callRendererComponent?.render?.(width);
     if (Array.isArray(out) && out.length > 0) return out.map((line) => String(line));

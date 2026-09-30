@@ -16,7 +16,8 @@ import { installThinkingPreviews } from "../../extensions/pi-traceline/thinking-
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantMessage, expectGolden } from "../helpers.ts";
-import { assistantBefore, completedWriteRow, nativeBashLines } from "./runtime-fixtures.ts";
+import { assistantBefore, completedWriteRow, composedRow, nativeBashLines } from "./runtime-fixtures.ts";
+import { setLedgerRevealed } from "../../extensions/pi-traceline/click.ts";
 
 const {
   renderTraceRow,
@@ -114,6 +115,21 @@ test("one-line trace goldens at 80 and 120 columns", () => {
     });
     const merge = bash("gh pr merge 87 --squash --delete-branch", { text: "(no output)" });
     const status = bash("git status --short", { running: true });
+    // Composed calls (§9.14): a recon script whose output hit the cap with one nested
+    // miss, a long fan-out naming its slow child, and a revealed ledger.
+    const recon = composedRow([
+      { name: "read", args: { path: `${repo}/docs/design-language.md`, offset: 1, limit: 120 }, durationMs: 23 },
+      { name: "read", args: { path: `${repo}/docs/testing.md` }, durationMs: 19 },
+      { name: "read", args: { path: `${repo}/docs/upstream.md` }, status: "error", error: "ENOENT: no such file or directory, access '/docs/upstream.md'", durationMs: 7 },
+      { name: "bash", args: { command: `cd ${repo} && find docs -name '*.md' | head -20`, timeout: 30 }, durationMs: 540 },
+    ], { cwd: repo, trimmed: true, output: "x".repeat(40_150), wallSeconds: 0.6 });
+    const fanOut = composedRow([
+      { name: "mcp__monaco__list_contacts", args: { page_size: 100 }, durationMs: 2_900 },
+      ...Array.from({ length: 24 }, (_, i) => ({ name: "mcp__monaco__get_account", args: { account_id: `acc-${i}` }, durationMs: 100 + i })),
+      { name: "mcp__superhuman-mail__query_email_and_calendar", args: { question: "…" }, durationMs: 41_300 },
+      { name: "write", args: { path: "/tmp/audit/accounts.json", content: "…" }, durationMs: 3 },
+    ], { cwd: repo, output: "x".repeat(9_100), wallSeconds: 44.2 });
+    setLedgerRevealed(recon, true);
 
     const children = [
       prose("Let me look at the failing suite.", [testRun]),
@@ -143,6 +159,9 @@ test("one-line trace goldens at 80 and 120 columns", () => {
       commit,
       merge,
       status,
+      prose("Auditing the docs and the account list in one script each.", [recon, fanOut]),
+      recon,
+      fanOut,
     ];
     setTracelineChat({ children });
 

@@ -4,10 +4,17 @@ import { drillState } from "./drill.ts";
 
 // View-only fold state. Output expansion always belongs to Pi's setExpanded().
 let revealed = new WeakMap<ToolRowDataLike, ToolRowLike[]>();
+// A composed row's revealed ledger (§9.14): the same transient view state, per row.
+let revealedLedgers = new WeakSet<ToolRowDataLike>();
 let revealRevision = 0;
-export function resetRevealedFolds(): void { revealed = new WeakMap(); revealRevision++; }
+export function resetRevealedFolds(): void { revealed = new WeakMap(); revealedLedgers = new WeakSet(); revealRevision++; }
 export function revealRenderKey(): number { return revealRevision; }
 export function isRevealed(comp: ToolRowDataLike): boolean { return revealed.has(comp); }
+export function isLedgerRevealed(comp: ToolRowDataLike): boolean { return revealedLedgers.has(comp); }
+export function setLedgerRevealed(comp: ToolRowDataLike, shown: boolean): void {
+  if (shown) revealedLedgers.add(comp); else revealedLedgers.delete(comp);
+  revealRevision++;
+}
 export function revealedBullet(comp: ToolRowDataLike | undefined): string | undefined {
   return comp && revealed.get(comp)?.[0] === comp ? "▾" : undefined;
 }
@@ -15,7 +22,7 @@ export function revealedBullet(comp: ToolRowDataLike | undefined): string | unde
 export interface TraceMouseHost {
   bulletColumn: number;
   isCompact: (row: ToolRowLike) => boolean;
-  renderTrace: (row: ToolRowLike, width: number) => { lines: string[]; plain: string[]; members?: ToolRowLike[] };
+  renderTrace: (row: ToolRowLike, width: number) => { lines: string[]; plain: string[]; members?: ToolRowLike[]; ledger?: LedgerView };
   decorateNative: (row: ToolRowLike, lines: unknown) => unknown;
   viewChanged: (rows: ToolRowLike[]) => void;
 }
@@ -26,10 +33,13 @@ export interface TraceMousePrototype extends ToolRowPrototypeLike {
   handleMouse: MouseHandler;
   __tracelineOriginalMouse?: MouseHandler;
 }
+/** A composed row's ledger state as painted (§9.14): folded behind `▸` or revealed under `▾`. */
+export type LedgerView = "folded" | "revealed";
 interface TraceLayout {
   width: number;
   lines: string[];
   members?: ToolRowLike[];
+  ledger?: LedgerView;
 }
 
 /** Pair Traceline's substituted geometry with normalized Pi mouse dispatch. */
@@ -44,7 +54,7 @@ export function installTraceMouse(proto: TraceMousePrototype, host: TraceMouseHo
     if (!host.isCompact(this)) return host.decorateNative(this, originalRender.call(this, width));
     try {
       const rendered = host.renderTrace(this, width);
-      layouts.set(this, { width, lines: rendered.plain, members: rendered.members });
+      layouts.set(this, { width, lines: rendered.plain, members: rendered.members, ledger: rendered.ledger });
       return rendered.lines;
     } catch {
       // Pi seam: a failed compact render must keep its native geometry and input.
@@ -61,7 +71,15 @@ export function installTraceMouse(proto: TraceMousePrototype, host: TraceMouseHo
     const line = layout.lines[event.y];
     if (!line?.trim() || event.x < 2 || event.x >= event.width - 2) return undefined;
     const group = revealed.get(this);
-    if (group?.[0] === this && event.x === host.bulletColumn) {
+    const parentY = layout.lines.findIndex((painted) => painted.trim().length > 0); // after any group blank
+    if (layout.ledger === "revealed" && event.y === parentY && event.x === host.bulletColumn) {
+      // The `▾` refolds the ledger (§9.14); the parent line stays.
+      setLedgerRevealed(this, false);
+      host.viewChanged([this]);
+    } else if (layout.ledger === "folded") {
+      setLedgerRevealed(this, true);
+      host.viewChanged([this]);
+    } else if (group?.[0] === this && event.x === host.bulletColumn) {
       for (const member of group) {
         revealed.delete(member);
         member.setExpanded(false);

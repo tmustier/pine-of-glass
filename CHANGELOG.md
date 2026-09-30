@@ -15,6 +15,15 @@
   checks that failed on current Pi are re-pinned, and the minimum supported Pi is
   unchanged. On Pi 1.x, Traceline's Drill viewer shows JPEG and other non-PNG images
   on kitty-protocol terminals again, using Pi's own converter.
+- Traceline shows what a `codemode` script did instead of its source: the nested calls
+  fold by tool with counts, paths and namespaces (`codemode 7 calls · read ×6 ✗1 ./docs/ ·
+  $ find`), a nested failure inside a completed script wears a warning `✗N`, output cut by
+  codemode's cap wears `trimmed`, and a slow script names the nested call that explains
+  its wall time. The row is an aggregate: click it in fullscreen mode to reveal a ledger
+  with one line per nested call, its duration and, for calls made in this session, its
+  result size; the drill pager shows the complete script, the ledger and the output. Any
+  tool that calls tools through Pi's `ctx.executeTool()` gets the same rows. Requires Pi
+  0.99 for the nested-call record; older Pi shows the native row.
 
 ## 0.15.3 (2026-10-09)
 

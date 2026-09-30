@@ -38,6 +38,9 @@ export class RecordedUi {
     this.notifications.push(text);
   };
 
+  readonly getToolsExpanded = (): boolean => false;
+  readonly setToolsExpanded = (_expanded: boolean): void => {};
+
   readonly setWidget = (key: string, content: string[] | WidgetFactory | undefined): void => {
     this.widgetCalls.push(key);
     if (content === undefined) {
