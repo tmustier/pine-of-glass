@@ -119,6 +119,9 @@ The lint also protects existing repo rules:
 - TypeScript files should stay context-sized. Existing oversized files have temporary
   budgets in the baseline and should be split over time rather than grown.
 - The three legacy `export const internals` objects do not grow (POG012).
+- Tests do not assert the absence of an external tag by literal (POG013). A producer
+  rename makes `assert.ok(!remainder.includes("<codex_skills>"))` pass while the block is
+  no longer stripped; assert the absence of the parser's returned `content` instead.
 
 ## Baseline policy
 

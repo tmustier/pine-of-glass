@@ -104,9 +104,9 @@ test("contextimate regexes parse the system prompt Pi actually builds", async ()
   assert.ok(skills[0]!.location.endsWith("SKILL.md"));
 
   const remainder = contextimate.getPromptRemainder(prompt);
-  assert.ok(!remainder.includes("<project_instructions"), "PROJECT_CONTEXT_RE no longer strips the context block");
-  assert.ok(!remainder.includes("<available_skills>"), "AVAILABLE_SKILLS_RE no longer strips the skills block");
-  assert.ok(!remainder.includes("<skills>"), "Pi's outer skills wrapper leaked into the runtime prompt row");
+  for (const section of snapshot.sections.filter((section) => section.id.startsWith("context:") || section.id === "skills")) {
+    assert.ok(!remainder.includes(section.content), `${section.id} block leaked into the runtime prompt row`);
+  }
 });
 
 test("startup resource list still renders [Section] headers contextimate anchors on", () => {

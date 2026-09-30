@@ -21,11 +21,10 @@ test("skills parse with XML entities unescaped and stable ordering by tokens", (
 });
 
 test("prompt remainder strips project context and skills blocks entirely", () => {
-  const remainder = getPromptRemainder(fixtureSystemPrompt());
-  assert.ok(!remainder.includes("<project_instructions"));
-  assert.ok(!remainder.includes("<available_skills>"));
-  assert.ok(!remainder.includes("<skills>"));
-  assert.ok(!remainder.includes("alpha-skill"));
+  const prompt = fixtureSystemPrompt();
+  const remainder = getPromptRemainder(prompt);
+  assert.ok(!remainder.includes("Global guidance"), "project instructions leaked");
+  assert.ok(!remainder.includes(parseSkillsBlock(prompt, 4)!.content), "skills block leaked");
   assert.ok(remainder.includes("You are a fixture harness"));
   assert.ok(remainder.includes("Current date: 2026-06-09"));
 });
@@ -58,7 +57,7 @@ test("compact <codex_skills> list parses into the same skills row as the XML ind
   assert.equal(byName["gamma"]!.location, `${homedir()}/.pi/agent/skills/gamma/SKILL.md`);
 
   const remainder = getPromptRemainder(prompt);
-  assert.ok(!remainder.includes("<codex_skills>"));
+  assert.ok(!remainder.includes(parseSkillsBlock(prompt, 4)!.content), "skills block leaked");
   assert.ok(remainder.includes("Current working directory"));
 });
 
