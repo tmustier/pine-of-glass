@@ -146,6 +146,7 @@ test("Drill entry, selection and exit update warm row styling", () => {
     ui: { custom: () => new Promise(() => {}), notify() {} } as never,
     theme: () => undefined, chatChildren: () => container.children, requestRender() {},
     traceLines: trace.renderTraceRow, runRows: () => undefined, hiddenByFold: () => false, statusTone: trace.statusTone,
+    ledgerLines: () => [],
   };
   enterDrillMode(host); equal([a, b]);
   assert.ok(text(b).includes("1 ›"));

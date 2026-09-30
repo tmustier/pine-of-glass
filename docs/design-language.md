@@ -786,6 +786,74 @@ Mouse:
 - drill mode stays keyboard-only. Future row clicking must use a public Pi
   component-click API, never a render-wide hit map or raw terminal mouse input
 
+### 9.14 Composed calls
+
+A composed call is one model-issued tool call that runs other tools while it
+executes: a `codemode` script, or any tool that calls `ctx.executeTool()`. Pi
+records those nested calls on the parent's result (`nestedCalls`, and for codemode
+`details.calls`, streamed while the script runs) and emits their `tool_execution_*`
+events with a `parentToolCallId`. Only the script's own output reaches the model;
+the nested calls are how it got there. A trace states effects, not means: a composed
+row never shows its script source at z0.
+
+The row:
+
+- verb-led like every row (§9.2): the tool name in L0 bold, then a dim count cell
+  (`7 calls`, `1 call`; a codemode script that called nothing says `script only`),
+  then the member summary. The bullet carries the composed call's own status
+- members reuse §9.9's fold grammar: nested calls fold by tool in first-appearance
+  order, `·`-separated, each an L0-bold tool name with a dim `×N` when repeated. A
+  namespaced tool (`mcp__monaco__get_account`) keeps the family's path grammar
+  (§9.5): dim `monaco/` apparatus, bold `get_account` discriminator. Bash members
+  render as `$` plus the crown of their first command (`$ find`), or `$ ×N` when
+  repeated. A file member carries its one distinct path (cwd-relative, boring prefix
+  dim, basename bold, a read's warning `:range`), or the one shared directory when
+  several files sit in it; otherwise no target. A fold compresses only the boring,
+  and a row cannot carry twenty paths
+- a nested failure inside a call that completed is a partial state (§2): the member
+  wears a warning `✗N` after its count. The composed call's own failure tints the
+  row's discriminators error (§9.2); the `✗N` marks stay, so a red row still says
+  which member failed
+- wall time is a tempo fact pi reports (`Wall time N seconds`, an event-boundary
+  observation per §10.1), so a composed row may carry it: dim, after the count,
+  only once it clears 10s (agent default, not a user rule: 2026-09-30). When one
+  member's recorded duration is at least half of that wall, that member wears its
+  duration, so the slow child is named without expanding anything
+- the size cell keeps its meaning: what reached the model. A composed call whose
+  tool cut its output to a cap (codemode's `max_output_tokens`, spilled to a file)
+  earned a `trimmed` fact: the model provably did not see what it asked for. The
+  fact renders in warning ink ahead of the size cell (`trimmed · 40.3k ch`), in the
+  suffix so the size column stays aligned, and it lights the block's size column
+  like any warning-severity cell (§9.7)
+- while the call runs, the count and members come from the streamed ledger and the
+  bullet is running ink (§9.2); nothing is invented ahead of the record
+
+The ledger:
+
+- a composed row with at least one nested call is an aggregate (§9.12.1) and wears
+  `▸`. Revealing it shows the ledger: one compact line per nested call, in call
+  order, indented one gutter under the parent (`  ▏   › body`) so the rail still
+  fuses the block. The parent keeps its line and wears `▾`; clicking that glyph
+  refolds. Clicking the parent's body or a ledger line opens the parent at z1 (pi's
+  native row, which shows the script, pi's own call list and the output), because a
+  nested call has no row of its own to expand
+- each ledger line speaks its tool's grammar: `read` with the §9.5 path treatment,
+  `$` with crowns (§9.4), a namespaced name with its dim prefix, and otherwise the
+  fallback `name` plus dim compact arguments. Its bullet carries that call's status;
+  an error line tints its discriminators and trails its error's first line, dim,
+  after a `·`. A call cut off by the script ending or a timeout reads `cancelled`
+- the ledger's fact column is duration (§4 latency grammar, dim) and, when known,
+  result size. Nested result sizes are observed live from `tool_execution_end`
+  events; pi does not persist them, so a resumed session's ledger shows durations
+  only, exactly as a resumed session's calls are simply not timed (§10.1). A live
+  size cell follows §6 severity and §9.7's column rule within the ledger
+- ledger lines share one body budget (§9.8) and one right edge; middle truncation
+  protects each line's operative tail
+- the reveal is transient view state like §9.12.1's revealed membership: kept through
+  redraws and streaming, reset on reload or session replacement. Drill mode numbers
+  the composed row as one target; its pager shows the complete script with pi's
+  syntax ink, the full ledger under a `calls` label, then the result
+
 ## 10. Tempo facts
 
 Meantime decomposes the loop's wall-clock: where the time went, and why. Its lines

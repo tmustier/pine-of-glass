@@ -194,6 +194,9 @@ export class DrillPager implements Component {
       const callLabel = calls.length > 1 ? `${SEP}call ${callIndex + 1} of ${calls.length}` : "";
       lines.push("", `  ${ink(theme, "dim", `invocation${callLabel}`)}`);
       for (const line of invocationLines(theme, call, contentWidth)) lines.push(fit(`${SECTION_INDENT}${line}`));
+      // A composed call's ledger sits between what was asked and what came back (§9.14).
+      const ledger = st.host.ledgerLines(call, width);
+      if (ledger.length > 0) lines.push("", `  ${ink(theme, "dim", "calls")}`, ...ledger.map(fit));
       const code = codeContextFor(call);
       lines.push("", `  ${resultLabel(theme, st.host.statusTone(call), call, code?.language)}`);
       this.pushResult(call, callIndex, code, theme, width, contentWidth, viewport, lines, images);

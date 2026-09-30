@@ -116,6 +116,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
 | Native OpenAI Completions accounts top-level `usage.cached_tokens` for Moonshot, Moonshot CN and Together, while preserving detailed-field precedence and cost accounting | cachemire provider usage accounting |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
+| A real codemode run records `details.calls` (streamed) and `nestedCalls` (persisted, ids `<parent>/<n>`, typed arguments, `durationMs`, `error`), opens its result with `Script completed\nWall time N seconds\nOutput:\n`, prefixes capped output with `Warning: truncated output`, and emits nested `tool_execution_*` events with `parentToolCallId` and the full nested result | traceline composed rows |
 
 Where instantiating real components is impractical, the contract test asserts on the
 class/prototype from Pi's modules rather than a live TUI; that is still the real artifact,
@@ -148,6 +149,16 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   Pi's exact `(no output)` result; auto modes, status masks and later commands do not.
   Same-row state verification accepts bare or JSON `MERGED` state and matches the
   explicit merge and view targets.
+- **Composed calls** (`composed-calls.test.ts`, design language §9.14): a codemode row
+  folds nested calls by tool with counts, one target per member, `✗N` for nested
+  failures inside a completed script, `trimmed` ahead of the size cell, wall time from
+  10s with the explaining member named; the revealed ledger lists every call in its
+  tool's grammar with one duration edge; result sizes appear only from live nested
+  events and never on a restored row; composed rows never fold as repetitions and stay
+  inside the width budget. The contract `pi-composed-calls.test.ts` runs a real
+  codemode script through the installed Pi's agent loop (a scripted provider issues the
+  call; nothing leaves the process) and pins `details.calls`, `nestedCalls`, the script
+  header, the truncation notice and the parent-tagged execution events.
 - **Collapsed thinking previews**: three adjacent non-empty blocks and every non-empty
   line inside them append into one ` · `-separated display row; source paragraph breaks
   never add rows; empty thinking fragments do not consume labels or break adjacency;

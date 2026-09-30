@@ -30,6 +30,11 @@ export class RecordedUi {
     this.notifications.push(text);
   };
 
+  /** Pi's raw terminal-input tap (traceline's Ctrl+T and drill chords); nothing is ever sent here. */
+  readonly onTerminalInput = (_handler: unknown): (() => void) => () => {};
+  readonly getToolsExpanded = (): boolean => false;
+  readonly setToolsExpanded = (_expanded: boolean): void => {};
+
   readonly setWidget = (key: string, content: string[] | WidgetFactory | undefined): void => {
     if (content === undefined) {
       this.widgets.delete(key);

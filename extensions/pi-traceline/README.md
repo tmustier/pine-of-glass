@@ -152,6 +152,28 @@ Successful commands can lead with a verified outcome:
 
 Traceline requires result evidence, not just a command. A successful terminal `gh pr merge <number>` qualifies when Pi reports `(no output)`; auto modes do not. On merge-queue repositories, add a same-row `gh pr view <number> --json state` check when queued versus landed matters.
 
+## See what a script did
+
+Pi's `codemode` tool runs a JavaScript script that calls other tools. Only the script's output reaches the model, so a native row shows the code and Pi's own call list. Traceline shows what the script did instead:
+
+```
+  ▏ ▸ codemode 7 calls · read ×6 ✗1 ./docs/ · $ find                 trimmed · 40.3k ch
+  ▏ ▸ codemode 76 calls · 11s · monaco/list_contacts · get_account ×74 · write   20.0k ch
+  ▏ › codemode script only                                                       11.6k ch
+```
+
+- nested calls fold by tool in the order they first ran, with a count when repeated. A file tool shows its one path, or the directory several files share; a namespaced tool (`mcp__monaco__get_account`) shows `monaco/get_account`
+- a nested call that failed inside a script that completed shows `✗N` in warning colour; the bullet still says the script completed
+- `trimmed` means the script's output hit codemode's cap and Pi cut the middle: the model saw less than it asked for. The size cell stays what reached the model
+- wall time appears from 10 seconds, and the nested call that explains it wears its own duration (`superhuman-mail/query_email_and_calendar 2m02s`)
+- while the script runs, the row counts up from Pi's streamed ledger
+
+A script row with calls wears `▸`. In fullscreen mode, click it to reveal the ledger: one line per nested call, in call order, in that tool's own grammar, with its duration and (for calls made in this session) its result size. Click the `▾` to fold it away; click the row's body to open Pi's native row with the script, Pi's call list and the output. Nested result sizes come from live tool events and are not stored in the session, so a resumed session shows durations only.
+
+In drill mode, the pager shows the complete script with syntax highlighting, the ledger under a `calls` label, then the output.
+
+Any other tool that calls tools through Pi's `ctx.executeTool()` gets the same treatment once its result records nested calls.
+
 ## Keep repeated work compact
 
 Traceline folds rows when repetition would hide the useful difference:

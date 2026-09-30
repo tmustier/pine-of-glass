@@ -29,6 +29,7 @@ import {
   type Tone,
 } from "../_lib/style.ts";
 import { LINE_BREAK_MARK, PREAMBLE_MARK, bashPreambleRun, type BashPreambleRun } from "./bash-preamble.ts";
+import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
   drillDecorateNativeRow,
   drillRenderKey,
@@ -39,7 +40,7 @@ import {
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact as rawResultImageFact } from "./image-fact.ts";
-import { isRevealed, resetRevealedFolds, revealRenderKey, revealedBullet, type TraceMousePrototype } from "./click.ts";
+import { isLedgerRevealed, isRevealed, resetRevealedFolds, revealRenderKey, revealedBullet, type LedgerView, type TraceMousePrototype } from "./click.ts";
 import {
   cachedIntrinsic,
   installAssistantCacheHook,
@@ -47,6 +48,8 @@ import {
   installContainerCacheHooks,
   objectCacheKey,
 } from "./cache-hooks.ts";
+import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStart } from "./nested-calls.ts";
+import { composedBody, composedSuffix, ledgerLines } from "./nested-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, type RecordTone } from "./records.ts";
 import { TraceRenderCache } from "./render-cache.ts";
@@ -117,6 +120,9 @@ function dim(text: string): string {
 const resultTextCharCount = cachedIntrinsic(renderCache, "result-chars", rawResultTextCharCount);
 const resultImageFact = cachedIntrinsic(renderCache, "image-fact", rawResultImageFact);
 const mutationDiffStats = cachedIntrinsic(renderCache, "mutation-diff", rawMutationDiffStats);
+// Composed-call facts (§9.14) re-derive whenever the row's result changes: the streamed
+// ledger and a live capture both land through updateResult, which dirties the row.
+const composedFacts = cachedIntrinsic(renderCache, "composed", composedFactsOf);
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
 // Structural detection (isToolRow / isAssistantRow / findChatContainer) lives in _lib
 // and is shared across the extension family.
@@ -248,10 +254,6 @@ function charSuffix(chars: number | undefined, columnLive = false): string {
   return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
 }
 
-function resultCharSuffix(comp: ToolRowDataLike | undefined, facts: BlockFacts): string {
-  return charSuffix(resultTextCharCount(comp), facts.sizeColumnLive);
-}
-
 // The image what-fact (§9.7, image-fact.ts): dim, never lighting the size column.
 function imageFactCell(comp: ToolRowDataLike | undefined): string {
   const fact = resultImageFact(comp);
@@ -309,6 +311,7 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
     // size column nor set its width — their magnitude lives on the basename instead.
     const sizeColumnLive = rows.some((c) => {
       if (inlineMutationRow(c)) return false;
+      if (composedFacts(c)?.trimmed) return true; // a trimmed output is warning severity (§9.14)
       const chars = resultTextCharCount(c);
       if (chars === undefined) return false;
       // Record rows (§9.10) suppress their size cell below warning severity, so only
@@ -326,8 +329,7 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
         if (stats.added > 0) plus = Math.max(plus, 1 + String(stats.added).length);
         if (stats.removed > 0) minus = Math.max(minus, 1 + String(stats.removed).length);
       }
-      const cell = recordRow(row) ? recordCharSuffix(row) : imageFactCell(row) || charSuffix(resultTextCharCount(row), sizeColumnLive);
-      size = Math.max(size, visibleWidth(cell));
+      size = Math.max(size, visibleWidth(sizeBerthCell(row, sizeColumnLive)));
     }
     return { sizeColumnLive, diffColumns: { plus, minus, size } };
   });
@@ -486,6 +488,14 @@ function recordCharSuffix(comp: ToolRowDataLike): string {
   return charSuffix(chars);
 }
 
+// The row's size-berth cell: a record's suppressed cell, an image what-fact, or the
+// char count; a composed call's `trimmed` fact rides ahead of it (§9.14).
+function sizeBerthCell(comp: ToolRowDataLike, sizeColumnLive: boolean): string {
+  const base = recordRow(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || charSuffix(resultTextCharCount(comp), sizeColumnLive);
+  const composed = composedFacts(comp);
+  return composed ? composedSuffix(currentTheme(), composed, base) : base;
+}
+
 function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {
   const theme = currentTheme();
   const parts: string[] = [];
@@ -495,7 +505,7 @@ function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY,
   // below warning severity.
   const inline = inlineMutationRow(comp);
   const diff = inline ? undefined : mutationDiffStats(comp);
-  const chars = inline ? "" : recordRow(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || resultCharSuffix(comp, facts);
+  const chars = inline ? "" : sizeBerthCell(comp, facts.sizeColumnLive);
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`
@@ -676,157 +686,6 @@ function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefin
   }) : undefined;
 }
 
-// Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
-const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-
-// Sequencing operators start a new command whose head word is a discriminator
-// (§9.4). Pipes and redirects continue a command — `| head -240` is a filter, and
-// §9.4's rejection of brightening filters stands — so `|` consumes a pending head
-// slot instead of re-arming it. The attached form of the semicolon (`sleep 60; ps`)
-// sequences too (§9.4); it is detected on the token, quote-aware, in the walk below.
-const BASH_SEQUENCER = /^(?:&&|\|\||;)$/;
-
-// A heredoc marker arms body-inertness (§9.4): from the `↵` that follows `<<TAG`
-// until the terminator line, tokens are data — no heads, no re-arms, and no quote
-// tracking, so an unbalanced apostrophe in heredoc prose cannot silence the commands
-// after the terminator (§9.4). A bare `<<`/`<<-` takes the next token as its tag;
-// `<<<` is a here-string, not a heredoc, and matches neither form.
-const BASH_HEREDOC_TOKEN = /^<<-?(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))?$/;
-
-// The crown vocabularies (§9.4, measured over a 51k-invocation corpus — see
-// scripts/dev/bash-corpus/). Preambles situate (`cd X && …`, `set -e; …`); plumbing
-// glues (`|| true`, `&& echo done`); neither is why the row exists, so neither wears
-// a crown when a real command in the row does. Closers are the block keywords a
-// sequencer exposes (`; do`, `↵ fi`); they pass the crown to the head that follows.
-const BASH_PREAMBLE_HEADS = new Set(["cd", "set"]);
-const BASH_PLUMBING_HEADS = new Set(["echo", "true", "false", "printf", "exit"]);
-const BASH_CLOSERS = new Set(["do", "done", "then", "else", "elif", "fi", "esac", "in"]);
-
-type BashHeadClass = "real" | "plumbing" | "preamble";
-type BashHead = { start: number; end: number; cls: BashHeadClass };
-
-// One walk over the flattened body collects every command's head candidate (§9.4's
-// grammar): tokens scan left to right with quote state carried across
-// them (the gaps are whitespace and hold none), sequencers re-arm the pending head
-// slot only outside quotes, a token-final unquoted `;` re-arms exactly like the
-// space-delimited form, and heredoc bodies are skipped whole. Within an armed slot:
-// env assignments are scanned past (§9.4), block closers pass the crown through,
-// and a token with no word character (§9.4) or a leading `-` (a flattened
-// continuation line's flag, §9.4) renders headless and consumes the slot so a
-// pipe filter cannot inherit it.
-function bashHeadCandidates(body: string): BashHead[] {
-  const heads: BashHead[] = [];
-  let quote: "'" | '"' | undefined;
-  let headPending = true;
-  let heredocTag: string | undefined; // armed by `<<TAG`; active from the next ↵
-  let heredocTagFromNext = false; // armed by a bare `<<`; the next token names the tag
-  let heredocActive = false;
-  let atLineStart = false; // inside a heredoc: was the previous token a ↵?
-  const tokens = /\S+/g;
-  let match: RegExpExecArray | null;
-  while ((match = tokens.exec(body))) {
-    const text = match[0];
-    if (heredocActive) {
-      if (text === LINE_BREAK_MARK) {
-        atLineStart = true;
-        continue;
-      }
-      if (atLineStart && text === heredocTag) {
-        heredocActive = false;
-        heredocTag = undefined;
-      }
-      atLineStart = false;
-      continue;
-    }
-    const startsInQuote = quote !== undefined;
-    // Advance the quote scanner across this token. A backslash escapes the next
-    // character except inside single quotes; a `;` counts as a sequencer only when
-    // it is the token's last character and sits outside any quote (`\;` is find's).
-    let endsWithUnquotedSemi = false;
-    for (let k = 0; k < text.length; k++) {
-      const ch = text[k];
-      if (quote === "'") {
-        if (ch === "'") quote = undefined;
-      } else if (quote === '"') {
-        if (ch === "\\") k++;
-        else if (ch === '"') quote = undefined;
-      } else if (ch === "'") quote = "'";
-      else if (ch === '"') quote = '"';
-      else if (ch === "\\") k++;
-      else if (ch === ";" && k === text.length - 1) endsWithUnquotedSemi = true;
-    }
-    if (!startsInQuote) {
-      if (text === LINE_BREAK_MARK) {
-        if (heredocTag !== undefined) {
-          heredocActive = true;
-          headPending = false;
-        } else headPending = true;
-        atLineStart = true;
-        continue;
-      }
-      if (BASH_SEQUENCER.test(text)) {
-        headPending = true;
-        continue;
-      }
-      if (text === "|") {
-        headPending = false;
-        continue;
-      }
-      if (text === PREAMBLE_MARK) continue; // the ⋯ elision mark neither crowns nor consumes
-      if (heredocTagFromNext) {
-        heredocTagFromNext = false;
-        heredocTag = text.replace(/^['"]|['"]$/g, "");
-        continue;
-      }
-      const heredoc = BASH_HEREDOC_TOKEN.exec(text);
-      if (heredoc) {
-        const tag = heredoc[1] ?? heredoc[2] ?? heredoc[3];
-        if (tag !== undefined) heredocTag = tag;
-        else heredocTagFromNext = true;
-        continue;
-      }
-      if (headPending && !ENV_ASSIGNMENT.test(text)) {
-        // Parens are apparatus (§9.4's spirit): `(cd …` and `… || true)` classify
-        // and crown on the inner word, so a subshell close cannot smuggle glue past
-        // the §9.4 vocabularies and a crown never bolds punctuation.
-        const trimmed = endsWithUnquotedSemi ? text.slice(0, -1) : text;
-        const open = /^\(+/.exec(trimmed)?.[0].length ?? 0;
-        const close = /\)+$/.exec(trimmed)?.[0].length ?? 0;
-        const word = trimmed.slice(open, trimmed.length - close);
-        const wordStart = match.index + open;
-        if (!/[A-Za-z0-9]/.test(word) || word.startsWith("-")) {
-          headPending = false; // §9.4: apparatus and flags consume the slot
-        } else if (!BASH_CLOSERS.has(word)) {
-          const cls: BashHeadClass = BASH_PREAMBLE_HEADS.has(word)
-            ? "preamble"
-            : BASH_PLUMBING_HEADS.has(word)
-              ? "plumbing"
-              : "real";
-          heads.push({ start: wordStart, end: wordStart + word.length, cls });
-          headPending = false;
-        }
-        // a closer falls through with the slot still armed: `; do gh …` crowns gh
-      }
-    }
-    atLineStart = false;
-    if (endsWithUnquotedSemi) headPending = true;
-  }
-  return heads;
-}
-
-// Crown selection is row-global (§9.4): every real command head is crowned, and
-// preamble (`cd`, `set`) and plumbing (`echo`, `true`, …) heads render headless
-// beside them. A row with no real head keeps its first operative head — plumbing
-// before preamble — so no row goes dark: `$ cd /tmp` and `$ echo hi > f` still
-// carry one crown each.
-function bashCrownedHeads(body: string): BashHead[] {
-  const heads = bashHeadCandidates(body);
-  const real = heads.filter((head) => head.cls === "real");
-  if (real.length > 0) return real;
-  const fallback = heads.find((head) => head.cls === "plumbing") ?? heads[0];
-  return fallback ? [fallback] : [];
-}
-
 // Emission splices the crowns into dim runs: everything between crowned head words —
 // arguments, operators, marks, quoted scripts, demoted glue — dims in maximal spans
 // (middleTruncate replays the active ink after a cut, §5, so a long dim run
@@ -993,6 +852,15 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
 function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY): string {
   return renderCache.memo(comp, `invocation:${available}:${objectCacheKey(currentTheme())}`, () => {
+    // A composed call states its effects, never its script (§9.14).
+    const composed = composedFacts(comp);
+    if (composed) {
+      // The body budget is the row's share after the block's suffix reserve (§9.8).
+      const rows = blockToolRows(comp);
+      const facts = blockFacts(rows);
+      const budget = available - blockSuffixReserve(rows, facts, available);
+      return composedBody(currentTheme(), comp, composed, toolStatus(comp) === "error", budget);
+    }
     if (toolLabel(comp?.toolName) === "bash") {
       const plain = bashInvocationText(comp);
       if (plain === undefined) return inkedFallbackLine(comp);
@@ -1019,10 +887,18 @@ function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string
   return comp ? renderCache.memo(comp, key, fit) : fit();
 }
 
+// A composed row with a ledger is an aggregate (§9.14): `▸` folded, `▾` revealed.
+function ledgerView(comp: ToolRowDataLike): LedgerView | undefined {
+  const composed = composedFacts(comp);
+  if (!composed || composed.calls.length === 0) return undefined;
+  return isLedgerRevealed(comp) ? "revealed" : "folded";
+}
+
 function oneLine(comp: ToolRowLike, width: number): string {
   const rows = blockToolRows(comp);
   const facts = blockFacts(rows);
   const available = traceRowAvailable(width);
+  const ledger = ledgerView(comp);
   return fitTraceRow(
     comp,
     statusTone(comp),
@@ -1030,6 +906,7 @@ function oneLine(comp: ToolRowLike, width: number): string {
     toolFactSuffix(comp, available, facts),
     blockSuffixReserve(rows, facts, available),
     width,
+    ledger === "revealed" ? "▾" : ledger === "folded" ? "▸" : undefined,
   );
 }
 
@@ -1181,7 +1058,7 @@ function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | un
 // Reads, mutations, records and images carry facts a generic count cannot preserve.
 function repetitionKey(comp: ToolRowLike): string | undefined {
   if (comp.expanded === true || isRevealed(comp) || toolLabel(comp.toolName) === "read") return undefined;
-  if (inlineMutationRow(comp) || recordRow(comp) || resultImageFact(comp)) return undefined;
+  if (inlineMutationRow(comp) || recordRow(comp) || resultImageFact(comp) || composedFacts(comp)) return undefined;
   return stripAnsi(invocationInk(comp)).trim() || undefined;
 }
 
@@ -1374,7 +1251,9 @@ function renderTraceRow(comp: ToolRowLike, width: number): string[] {
     return leadingBlank(comp) ? ["", line] : [line];
   }
   const line = oneLine(comp, width);
-  return leadingBlank(comp) ? ["", line] : [line];
+  const composed = composedFacts(comp);
+  const ledger = composed && isLedgerRevealed(comp) ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
+  return leadingBlank(comp) ? ["", line, ...ledger] : [line, ...ledger];
 }
 
 // --- collapsed thinking previews (issue #14, pi-native rendering) ----------------------
@@ -1416,7 +1295,7 @@ function cachedLayout(row: ToolRowLike, width: number) {
   const key = `${width}:${objectCacheKey(chat)}:${objectCacheKey(currentTheme())}:${drillRenderKey(row)}:${revealRenderKey()}`;
   return renderCache.value(row, `layout:${key}`, () => {
     const lines = renderTraceRow(row, width);
-    return { lines, plain: lines.map(stripAnsi), members: readRun(row)?.rows ?? repetitionRun(row)?.rows };
+    return { lines, plain: lines.map(stripAnsi), members: readRun(row)?.rows ?? repetitionRun(row)?.rows, ledger: ledgerView(row) };
   });
 }
 
@@ -1573,6 +1452,10 @@ export default function piTraceline(pi: ExtensionAPI) {
     hiddenByFold: (comp) =>
       displayMode() === "oneLine" && ((readRun(comp)?.index ?? 0) > 0 || (repetitionRun(comp)?.index ?? 0) > 0),
     statusTone,
+    ledgerLines: (comp, width) => {
+      const composed = composedFacts(comp);
+      return composed && composed.calls.length > 0 ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
+    },
   });
   const startDrill = (ctx: { ui: ExtensionUIContext; hasUI: boolean }) => {
     if (!ctx.hasUI) return;
@@ -1591,7 +1474,35 @@ export default function piTraceline(pi: ExtensionAPI) {
     if (tuiOwner.owns() && ctx.mode === "tui" && event.message.role === "assistant") schedulePatches();
   });
   pi.on("message_update", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
-  pi.on("tool_execution_start", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
+  // Nested calls (§9.14) never get rows of their own; their live events are the only
+  // source of a nested result's size, so capture what the row grammar needs and
+  // re-render the parent row that owns them.
+  const dirtyParentRow = (parentToolCallId: string) => {
+    for (const row of chatChildren() ?? []) if (isToolRow(row) && row.toolCallId === parentToolCallId) renderCache.dirty(row);
+    g.__tracelineTui?.requestRender();
+  };
+  pi.on("tool_execution_start", (event, ctx) => {
+    if (!tuiOwner.owns() || ctx.mode !== "tui") return;
+    if (event.parentToolCallId) {
+      try {
+        recordNestedStart(event.toolCallId, event.toolName, event.args);
+        dirtyParentRow(event.parentToolCallId);
+      } catch {
+        /* Traceline display work must never block nested execution. */
+      }
+      return;
+    }
+    schedulePatches();
+  });
+  pi.on("tool_execution_end", (event, ctx) => {
+    if (!tuiOwner.owns() || ctx.mode !== "tui" || !event.parentToolCallId) return;
+    try {
+      recordNestedEnd(event.toolCallId, event.toolName, event.result, event.isError);
+      dirtyParentRow(event.parentToolCallId);
+    } catch {
+      /* Traceline display work must never block nested execution. */
+    }
+  });
   pi.on("session_tree", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
   pi.on("tool_call", (event, ctx) => {
     if (!tuiOwner.owns() || ctx.mode !== "tui" || event.toolName !== "write") return;
@@ -1606,6 +1517,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     if (!tuiOwner.claim(ctx)) return;
     clearPatchTimer();
     clearWriteCallSnapshots();
+    clearNestedCaptures();
     resetRevealedFolds();
     renderCache.reset();
     g.__tracelinePatchVersion = g.__tracelineAssistantPatchVersion = undefined; // rebind both adapters on reload

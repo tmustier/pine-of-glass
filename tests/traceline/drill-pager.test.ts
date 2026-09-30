@@ -55,6 +55,7 @@ function pagerFor(rows: ToolRowLike[], terminalRows = 16): DrillPager {
     traceLines: () => ["trace line"],
     runRows: () => undefined,
     hiddenByFold: () => false,
+    ledgerLines: () => [],
     statusTone: () => "success",
   };
   const st: DrillState = { host, rows, numbers: new Map(), selected: 0, digits: "" };

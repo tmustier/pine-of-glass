@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Traceline shows what a `codemode` script did instead of its source: the nested calls
+  fold by tool with counts, paths and namespaces (`codemode 7 calls · read ×6 ✗1 ./docs/ ·
+  $ find`), a nested failure inside a completed script wears a warning `✗N`, output cut by
+  codemode's cap wears `trimmed`, and a slow script names the nested call that explains
+  its wall time. The row is an aggregate: click it in fullscreen mode to reveal a ledger
+  with one line per nested call, its duration and, for calls made in this session, its
+  result size; the drill pager shows the complete script, the ledger and the output. Any
+  tool that calls tools through Pi's `ctx.executeTool()` gets the same rows. Requires Pi
+  0.99 for the nested-call record; older Pi shows the native row.
+- The locked Pi runtime moves to 0.99.2. Traceline's suppression of Pi's `Thinking
+  blocks: hidden/visible` caption follows Pi 0.99's lazily built status line, and the
+  contract suite pins the other seams that moved (provider catalogue keys, the startup
+  section list, the call-fallback preview).
+
 ## 0.15.0 (2026-09-28)
 
 - Contextimate's startup breakdown is available to other extensions as plain data:

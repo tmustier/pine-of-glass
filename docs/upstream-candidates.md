@@ -98,3 +98,25 @@ estimator block. Two extensions re-deriving the same workaround suggests a seam 
 an API. Possible upstream direction: either a documented “persistent chat line”
 extension API that survives rebuilds, or rebuilds that preserve/replay status lines at
 their original positions.
+
+## 4. Nested tool call records carry no result size
+
+**Observed:** Pi 0.99.2 · `dist/core/nested-tool-calls.js`, `dist/extensions/codemode/execute.js`
+
+`NestedToolCallRecord` (the `nestedCalls` record on a tool result message, and codemode's
+`details.calls`) carries `id`, `name`, `arguments`, `status`, `durationMs` and a truncated
+`error`. It carries nothing about the nested result: not its text size, not whether it
+held an image. The full nested result exists only in the live `tool_execution_end` event
+with `parentToolCallId`, which is never persisted.
+
+Consequence for traceline (design language §9.14): a composed row's ledger shows each
+nested call's result size only for calls observed live in the current process. A
+resumed session's ledger shows durations only. The session in which the model saw
+1,519 nested calls behind 165 codemode scripts (2026-09-30, `commercial` workspace) has
+no persisted record of which nested reads flooded the script's context.
+
+**Possible upstream direction:** add `resultChars?: number` (sum of text block lengths)
+and `resultImages?: number` to `NestedToolCallRecord` at `NestedCallRecorder.finish()`.
+Both are already computed elsewhere in the tool pipeline; the cost is a few bytes per
+call under the existing 256-call cap.
+

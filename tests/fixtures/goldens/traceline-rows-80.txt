@@ -30,3 +30,12 @@ Fixed — committing and shipping the release.
   ▏ › pushed main $ cd ~/projects/pine…ne: records of consequence" && git push
   ▏ › merged PR #87 $ gh pr merge 87 --squash --delete-branch
   ▏ › $ git status --short
+
+Auditing the docs and the account list in one script each.
+
+  ▏ ▾ codemode 4 calls · read ×3 ✗1 ./docs/ · $ find        trimmed · 40.3k ch
+  ▏   › read ./docs/design-language.md:1-120
+  ▏   › read ./docs/testing.md
+  ▏   › read ./docs/upstream.md · ENO…h file or directory, access '/doc…
+  ▏   › $ cd ~/projects/pine-of-glass… find docs -name '*.md' | head -20  0.5s
+  ▏ ▸ codemode 27 calls · 44s…ail_and_calendar 41s · write             9.1k ch

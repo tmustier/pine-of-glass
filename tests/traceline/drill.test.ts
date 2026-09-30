@@ -75,6 +75,7 @@ function makeHost(children: unknown[], calls: CustomCall[] = [], notifications: 
       return run && run.index === 0 ? run.rows : undefined;
     },
     hiddenByFold: (comp) => (readRun(comp)?.index ?? 0) > 0,
+    ledgerLines: () => [],
     statusTone: (comp) => statusTone(comp),
   };
 }
