@@ -58,12 +58,19 @@ test("ToolExecutionComponent seams the pager piggybacks on", () => {
     /caps\.images === "kitty" && imageMimeType !== "image\/png"/.test(source),
     "kitty PNG-only guard gone — re-verify the pager's mirrored guard",
   );
-  // A tool without renderCall renders only its bold name; that bareness is why the
-  // pager renders the complete arguments itself (§9.13).
+  // A tool without renderCall renders its bold name plus a collapsed `key=value`
+  // preview cut at a fixed character budget (pi 0.99: formatToolCallWithArgs); the
+  // pager still renders the complete, aligned arguments itself (§9.13) because the
+  // preview is lossy.
   assert.ok(
     source.includes("createCallFallback() {") &&
-      source.includes("return new Text(theme.fg(\"toolTitle\", theme.bold(this.toolName)), 0, 0);"),
-    "call fallback no longer a bare tool name — revisit whether the argument grammar still owns this gap",
+      source.includes("return new Text(formatToolCallWithArgs(this.toolName, this.args, theme, this.expanded), 0, 0);"),
+    "call fallback shape drifted — revisit whether the argument grammar still owns this gap",
+  );
+  const renderUtils = readFileSync(join(piRoot, "dist/core/tools/render-utils.js"), "utf8");
+  assert.ok(
+    /const preview = pairs\.length > COLLAPSED_ARGS_CHARS \? `\$\{pairs\.slice\(0, COLLAPSED_ARGS_CHARS - 3\)\}\.\.\.` : pairs;/.test(renderUtils),
+    "collapsed fallback preview no longer lossy — the pager's argument grammar may be redundant",
   );
 });
 

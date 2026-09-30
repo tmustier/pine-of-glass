@@ -255,9 +255,7 @@
         "!!block && typeof block === \"object\" && (block as { type?: unknown }).type === \"image\",": 1
       },
       "extensions/pi-traceline/index.ts": {
-        "const g = globalThis as TracelineGlobal;": 1,
-        "const row = comp as { lines?: unknown; setLines?: unknown };": 1,
-        "const row = comp as { text?: unknown; setText?: unknown };": 1
+        "const g = globalThis as TracelineGlobal;": 1
       },
       "extensions/pi-traceline/repetition-fold.ts": {
         "const call = block && typeof block === \"object\" ? block as { type?: unknown; id?: unknown } : undefined;": 1
@@ -295,8 +293,8 @@
     "files": {
       "extensions/pi-cachemire/index.ts": 698,
       "extensions/pi-contextimate/index.ts": 876,
-      "extensions/pi-traceline/index.ts": 1674,
-      "tests/contract/pi-internals.test.ts": 355,
+      "extensions/pi-traceline/index.ts": 1642,
+      "tests/contract/pi-internals.test.ts": 308,
       "tests/traceline/one-line.test.ts": 772
     }
   },

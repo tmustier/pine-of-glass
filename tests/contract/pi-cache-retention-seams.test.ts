@@ -107,7 +107,8 @@ function modelRecord(name: string, api: string, model: string): Record<string, u
   assert(isJsonObject(raw), `invalid provider catalogue: ${name}`);
   const models = raw[api];
   assert(isJsonObject(models), `missing provider API: ${name} ${api}`);
-  const record = models[model];
+  // Pi 0.99 keys catalogue entries by model type (`chat:<id>`); older records were bare.
+  const record = models[`chat:${model}`] ?? models[model];
   assert(isJsonObject(record), `missing provider model: ${name} ${api} ${model}`);
   return record;
 }

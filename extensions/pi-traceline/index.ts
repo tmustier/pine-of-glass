@@ -65,6 +65,7 @@ import { installThinkingPreviews } from "./thinking-preview.ts";
 import { captureCallLines } from "./call-capture.ts";
 import { summarizeCallLines } from "./call-summary.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
+import { isSpacerRow, isThinkingToggleStatusRow, suppressThinkingToggleStatus } from "./status-line.ts";
 import { createTracelineTuiOwner } from "./tui-owner.ts";
 
 /** Compact trace rendering; see docs/design-language.md §9. */
@@ -143,39 +144,6 @@ function thinkingHidden(): boolean {
 
 function displayMode(): ToolDisplayMode {
   return thinkingHidden() ? "oneLine" : "native";
-}
-
-// --- suppressing pi's Ctrl+T status line (design language §9.11) ---------------------
-// pi's toggleThinkingBlockVisibility appends a dim "Thinking blocks: hidden/visible"
-// status pair (Spacer + Text) to the chat tail — a holdover from when the toggle's only
-// visible effect was each thinking block collapsing to a label. With traceline loaded
-// the flip is self-evident (every tool row collapses to a trace line or expands back),
-// so the label is redundant noise; drop the pair inside the requestRender that
-// announces it, before it ever reaches the screen. Other showStatus messages
-// ("Forked to new session", …) are announcements of otherwise-invisible actions and
-// pass through untouched.
-const THINKING_TOGGLE_STATUS = /^Thinking blocks: (?:hidden|visible)$/;
-
-function isThinkingToggleStatusRow(comp: unknown): boolean {
-  if (!comp || typeof comp !== "object") return false;
-  const row = comp as { text?: unknown; setText?: unknown };
-  return typeof row.text === "string" && typeof row.setText === "function" && THINKING_TOGGLE_STATUS.test(stripAnsi(row.text).trim());
-}
-
-// pi's showStatus pairs the Text with a one-line Spacer; drop that too so no stray
-// blank line accumulates at the chat tail.
-function isSpacerRow(comp: unknown): boolean {
-  if (!comp || typeof comp !== "object") return false;
-  const row = comp as { lines?: unknown; setLines?: unknown };
-  return typeof row.setLines === "function" && typeof row.lines === "number" && !("text" in comp);
-}
-
-function suppressThinkingToggleStatus(): boolean {
-  const sibs = chatChildren();
-  if (!sibs || sibs.length === 0 || !isThinkingToggleStatusRow(sibs[sibs.length - 1])) return false;
-  sibs.pop();
-  if (sibs.length > 0 && isSpacerRow(sibs[sibs.length - 1])) sibs.pop();
-  return true;
 }
 
 // --- one-line rendering ---------------------------------------------------------------
@@ -1547,10 +1515,10 @@ export const internals = {
     renderCache.withoutCache(() => renderTraceRow(row, width)),
   renderCacheWorkCounts: (reset = false) => renderCache.workCounts(reset),
   resetRenderCache: () => renderCache.reset(),
-  // Ctrl+T status-line suppression
+  // Ctrl+T status-line suppression (status-line.ts)
   isThinkingToggleStatusRow,
   isSpacerRow,
-  suppressThinkingToggleStatus,
+  suppressThinkingToggleStatus: () => suppressThinkingToggleStatus(chatChildren()),
 };
 
 export default function piTraceline(pi: ExtensionAPI) {
@@ -1577,7 +1545,7 @@ export default function piTraceline(pi: ExtensionAPI) {
   };
   const afterThinkingToggle = () => {
     const patched = tryPatch();
-    const suppressed = suppressThinkingToggleStatus();
+    const suppressed = suppressThinkingToggleStatus(chatChildren());
     if (patched || suppressed) g.__tracelineTui?.requestRender();
   };
 
