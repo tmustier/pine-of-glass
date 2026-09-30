@@ -1,7 +1,7 @@
 // Pi emits <available_skills> only while read or bash is active. pi-codex-conversion
 // swaps those tools out and re-injects the skill index per turn as a compact
-// <codex_skills> list. Pin the installed adapter's output against contextimate's
-// parser; skipped when the adapter is not installed.
+// <skill_catalog> list (<codex_skills> before 3.0.40). Pin the installed adapter's
+// output against contextimate's parser; skipped when the adapter is not installed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -32,10 +32,14 @@ test(
     const temp = mkdtempSync(join(tmpdir(), "pog-codex-builder-"));
     const testBuilder = join(temp, "build-system-prompt.mjs");
     const piModule = pathToFileURL(join(piRoot, "dist/index.js")).href;
+    // The copy leaves the package tree, so its relative sibling imports resolve back
+    // to their original locations.
     writeFileSync(
       testBuilder,
       readFileSync(codexConversionBuilder, "utf8")
-        .replace('"@earendil-works/pi-coding-agent"', JSON.stringify(piModule)),
+        .replace('"@earendil-works/pi-coding-agent"', JSON.stringify(piModule))
+        .replace(/from "(\.\.?\/[^"]+)"/g, (_match, relative: string) =>
+          `from ${JSON.stringify(pathToFileURL(resolve(dirname(codexConversionBuilder), relative)).href)}`),
     );
     type CodexBuilder = {
       prepareCodexSystemPrompt: (options: NormalizedBuildSystemPromptOptions, config: {
@@ -69,6 +73,7 @@ test(
       ],
       "adapter entry grammar drifted",
     );
-    assert.ok(!contextimate.getPromptRemainder(prompt).includes("<codex_skills>"));
+    const remainder = contextimate.getPromptRemainder(prompt);
+    assert.ok(!/<(codex_skills|skill_catalog)>/.test(remainder), "adapter skills section left in the remainder");
   },
 );
