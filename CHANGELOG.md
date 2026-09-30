@@ -2,11 +2,9 @@
 
 ## Unreleased
 
-- Contextimate reads the skill index `pi-codex-conversion` 3.0.40 injects: the adapter
-  renamed its section from `<codex_skills>` to `<skill_catalog>`, which left the skills
-  row empty and the list counted as prompt remainder. Both tags now parse as one section.
-  The installed-adapter contract test loads the current builder again (it gained a
-  relative import that broke the test's out-of-tree copy).
+- Contextimate reads the `<skill_catalog>` section `pi-codex-conversion` 3.0.40 injects
+  per turn; the skills row no longer vanishes after the first turn with the catalog
+  counted as runtime prompt. The installed-adapter contract test runs again.
 
 ## 0.15.0 (2026-09-28)
 

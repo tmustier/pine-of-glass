@@ -62,14 +62,10 @@ test("compact <codex_skills> list parses into the same skills row as the XML ind
   assert.ok(remainder.includes("Current working directory"));
 });
 
-test("the adapter's renamed <skill_catalog> section parses like <codex_skills>", () => {
-  const prompt = fixtureCodexSystemPrompt().replace("<codex_skills>", "<skill_catalog>").replace("</codex_skills>", "</skill_catalog>");
-  const { skills } = parseSkillsBlock(prompt, 4)!;
-  assert.deepEqual(skills.map((skill) => skill.name), ["alpha-skill", "beta-skill", "gamma"]);
-  assert.deepEqual(skills, parseSkillsBlock(fixtureCodexSystemPrompt(), 4)!.skills, "same entries either tag");
-  const remainder = getPromptRemainder(prompt);
-  assert.ok(!remainder.includes("skill_catalog"));
-  assert.ok(remainder.includes("Current working directory"));
+test("the adapter's <skill_catalog> tag parses the same as <codex_skills>", () => {
+  const renamed = fixtureCodexSystemPrompt().replaceAll("codex_skills>", "skill_catalog>");
+  assert.deepEqual(parseSkillsBlock(renamed, 4)!.skills, parseSkillsBlock(fixtureCodexSystemPrompt(), 4)!.skills);
+  assert.equal(getPromptRemainder(renamed), getPromptRemainder(fixtureCodexSystemPrompt()));
 });
 
 test("a skill index moved out of Pi's wrapper still parses into the skills row", () => {
