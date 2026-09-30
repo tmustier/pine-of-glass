@@ -156,6 +156,8 @@ Traceline requires result evidence, not just a command. A successful terminal `g
 
 Pi's `codemode` tool runs a JavaScript script that calls other tools. Only the script's output reaches the model, so a native row shows the code and Pi's own call list. Traceline shows what the script did instead:
 
+![Three codemode scripts as one line each](../../docs/img/pi-traceline-codemode-after.png)
+
 ```
   ▏ ▸ codemode 7 calls · read ×6 ✗1 ./docs/ · $ find                 trimmed · 40.3k ch
   ▏ ▸ codemode 76 calls · 11s · monaco/list_contacts · get_account ×74 · write   20.0k ch
@@ -170,7 +172,13 @@ Pi's `codemode` tool runs a JavaScript script that calls other tools. Only the s
 
 A script row with calls wears `▸`. In fullscreen mode, click it to reveal the ledger: one line per nested call, in call order, in that tool's own grammar, with its duration and (for calls made in this session) its result size. Click the `▾` to fold it away; click the row's body to open Pi's native row with the script, Pi's call list and the output. Nested result sizes come from live tool events and are not stored in the session, so a resumed session shows durations only.
 
+![A revealed ledger](../../docs/img/pi-traceline-codemode-ledger.png)
+
 In drill mode, the pager shows the complete script with syntax highlighting, the ledger under a `calls` label, then the output.
+
+![The drill pager on a script](../../docs/img/pi-traceline-codemode-pager.png)
+
+The screenshots come from `node scripts/dev/screenshots/rig.mjs codemode`: a real model works through a fixture project by script, and the real TUI replays that session with and without Traceline.
 
 Any other tool that calls tools through Pi's `ctx.executeTool()` gets the same treatment once its result records nested calls.
 

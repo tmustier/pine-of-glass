@@ -11,6 +11,7 @@ node scripts/dev/screenshots/rig.mjs traceline     # replays a crafted session (
 node scripts/dev/screenshots/rig.mjs contextimate  # real startup panel (free)
 node scripts/dev/screenshots/rig.mjs cachemire     # LIVE model calls (cents, gpt-5.6-sol)
 node scripts/dev/screenshots/rig.mjs meantime      # LIVE model calls (cents, gpt-5.6-sol)
+node scripts/dev/screenshots/rig.mjs codemode      # LIVE model calls (cents, gpt-6.1-sol), then replays
 ```
 
 PNGs land in `docs/img/`. Each run prints the intermediate ANSI capture path so you can
@@ -110,6 +111,18 @@ The meantime scenario asks `openai-codex/gpt-5.6-sol` to run an eight-second sle
 captures the live tool-union clock while the tool is open, then captures `/pace` after
 the follow-up model call resolves. Both images come from real stream and tool event
 boundaries; only the tiny fixture prompt is crafted.
+
+### codemode: live session, replayed twice
+
+Stage 1 runs `pi -p` with `codemode` enabled and a real model (`openai/gpt-6.1-sol`) over a
+small docs fixture, asking for three scripts: a parallel fan-out read with one missing
+file plus a `find`, a small read-and-`wc` script, and one with no tool calls. Pi records
+the session with real nested calls, a real ENOENT and real durations. Stage 2 replays it in
+the TUI without this repo's extension (stock pi's codemode renderer: `-before`), then with
+Traceline in fullscreen mode (`-after`), clicks the first composed row's bullet through raw
+SGR mouse input to reveal its ledger (`-ledger`), and drills into it (`-pager`). The prompt
+is passed to `pi` without a shell so its backticks survive. Expect the scripts to vary run
+to run; the model writes them.
 
 ## Iterating
 

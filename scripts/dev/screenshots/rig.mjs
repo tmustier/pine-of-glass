@@ -10,10 +10,11 @@
 //   node scripts/dev/screenshots/rig.mjs contextimate
 //   node scripts/dev/screenshots/rig.mjs cachemire   # LIVE: real model calls (cents)
 //   node scripts/dev/screenshots/rig.mjs meantime    # LIVE: real model calls (cents)
+//   node scripts/dev/screenshots/rig.mjs codemode    # LIVE: real model drives codemode, then replays
 //
 // Captures land in docs/img/. Pass --keep to leave the tmux session running.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync, copyFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync, copyFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +32,7 @@ const run = (args, opts = {}) => spawnSync(args[0], args.slice(1), { encoding: "
 // Private tmux server: extended-keys on (silences pi's tmux warning) without touching
 // the user's tmux config or server.
 const tmuxConf = join(tmpdir(), "pog-shots-tmux.conf");
-writeFileSync(tmuxConf, 'set -g extended-keys on\nset -g default-terminal "tmux-256color"\nset -as terminal-features ",*:RGB"\n');
+writeFileSync(tmuxConf, 'set -g extended-keys on\nset -g extended-keys-format csi-u\nset -g default-terminal "tmux-256color"\nset -as terminal-features ",*:RGB"\n');
 const tmux = (...args) => run(["tmux", "-L", "pogshots", "-f", tmuxConf, ...args]);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -47,7 +48,8 @@ function waitFor(label, predicate, timeoutMs = 60000) {
     if (predicate(captureText())) return true;
     sleep(500);
   }
-  throw new Error(`${label}: not ready within ${timeoutMs}ms`);
+  const tail = captureText().split("\n").filter((line) => line.trim()).slice(-25).join("\n");
+  throw new Error(`${label}: not ready within ${timeoutMs}ms\n--- pane tail ---\n${tail}`);
 }
 const send = (...keys) => tmux("send-keys", "-t", session, ...keys);
 
@@ -294,8 +296,118 @@ function meantimeShot() {
   }
 }
 
+// Composed calls (design language §9.14). Stage 1 is live: a real model, with codemode
+// enabled, works through a fixture project by script; pi records the session with real
+// nested calls, a real ENOENT, a real capped output. Stage 2 replays that session in the
+// TUI twice: without traceline (the native codemode rows: the "before") and with it (the
+// "after"), then reveals a ledger by click in fullscreen mode and opens the drill pager.
+// Nothing in the transcript is crafted; the model chose the scripts.
+function codemodeShot() {
+  const fixture = makeFixture({ extensions: ["pi-traceline"], withAuth: true });
+  const fixtureSettings = JSON.parse(readFileSync(join(fixture.cwd, ".pi", "settings.json"), "utf8"));
+  fixtureSettings.defaultTools = ["+codemode"];
+  writeFileSync(join(fixture.cwd, ".pi", "settings.json"), JSON.stringify(fixtureSettings, null, 2));
+  const docs = join(fixture.cwd, "docs");
+  mkdirSync(join(docs, "adr"), { recursive: true });
+  writeFileSync(join(fixture.cwd, "README.md"), "# lantern\n\nA tiny CLI that turns build logs into one-line verdicts.\n\nSee docs/ for the architecture notes and ADRs.\n");
+  writeFileSync(join(docs, "architecture.md"), `# Architecture\n\n${"The parser streams log lines through a small set of matchers and folds them into a verdict. ".repeat(120)}\n`);
+  writeFileSync(join(docs, "matchers.md"), `# Matchers\n\n${"Each matcher is a pure function from a line to an optional finding. ".repeat(90)}\n`);
+  writeFileSync(join(docs, "verdicts.md"), `# Verdicts\n\n${"A verdict is the highest-severity finding plus a count of the rest. ".repeat(60)}\n`);
+  for (let i = 1; i <= 6; i++) {
+    writeFileSync(join(docs, "adr", `000${i}-decision-${i}.md`), `# ADR ${i}\n\nStatus: accepted\n\n${"Context and consequences of decision ".repeat(30)}${i}.\n`);
+  }
+  writeFileSync(join(fixture.cwd, "package.json"), JSON.stringify({ name: "lantern", version: "0.3.1", license: "MIT", scripts: { test: "node --test" } }, null, 2));
+  const sessionDir = join(fixture.home, "sessions");
+  mkdirSync(sessionDir, { recursive: true });
+  const prompt = [
+    "Use codemode scripts for everything, never direct tool calls. Do this in three separate scripts:",
+    "1. One script that reads every markdown file under docs/ (including docs/adr/) in parallel with Promise.allSettled, plus docs/CHANGELOG.md which may not exist, and also runs `find docs -type f | sort` with the bash tool. Emit every file's full content with text().",
+    "2. One script that reads README.md and package.json, runs `wc -c docs/*.md` with bash, and emits only a JSON object {files, bytes, license}.",
+    "3. One script with no tool calls at all that just emits the string 'summary ready'.",
+    "Then reply in one line: the license and the number of ADRs.",
+  ].join(" ");
+  // Stage 1: live. `pi -p` runs the real agent loop with codemode active and records the session.
+  // No shell: the prompt carries backticks that a shell would substitute.
+  const live = run(["pi", "-p", "--model", "openai/gpt-6.1-sol:medium", "--session-dir", sessionDir, prompt], {
+    cwd: fixture.cwd, env: { ...process.env, HOME: fixture.home }, timeout: 600000,
+  });
+  if (live.status !== 0) throw new Error(`live stage failed: ${live.stderr}\n${live.stdout}`);
+  console.log(`live reply: ${live.stdout.trim().split("\n").at(-1)}`);
+  const sessionFile = readdirSync(sessionDir).filter((f) => f.endsWith(".jsonl")).map((f) => join(sessionDir, f)).sort().at(-1);
+  if (!sessionFile) throw new Error("live stage recorded no session");
+  console.log(`session: ${sessionFile}`);
+
+  const settingsPath = join(fixture.cwd, ".pi", "settings.json");
+  const replay = (extraArgs, shots, { traceline = true } = {}) => {
+    // "Before" is stock pi with its own codemode renderer: the same fixture with
+    // this repo's extension removed from settings (not --no-extensions, which would
+    // also drop pi's built-in codemode extension and its renderer).
+    writeFileSync(settingsPath, JSON.stringify({ ...fixtureSettings, extensions: traceline ? fixtureSettings.extensions : [] }, null, 2));
+    launchPi({ ...fixture, args: `--session ${JSON.stringify(sessionFile)} --session-dir ${JSON.stringify(sessionDir)} ${extraArgs}`, rows: 60 });
+    try {
+      waitFor("transcript", (t) => /ADR/i.test(t) && /MIT/.test(t), 90000);
+      sleep(4000);
+      // Restored sessions open with thinking visible. Press Ctrl+T until reasoning is
+      // hidden: with traceline that is the trace rail (`▏ ›`/`▏ ▸`) appearing, without
+      // it the reasoning paragraphs vanishing. A collapsed traceline preview still
+      // contains the reasoning's first words, so the text itself is not the signal.
+      const hidden = (t) => traceline ? /^\s*▏\s+[›▸▾]/m.test(t) : !/\n\s*Thinking\.\.\.|I'm contemplating|Figuring out/m.test(t);
+      for (let attempt = 0; attempt < 3 && !hidden(captureText()); attempt++) {
+        send("C-t");
+        sleep(3000);
+        console.log(`ctrl+t attempt ${attempt + 1}: ${hidden(captureText()) ? "reasoning hidden" : "still visible"}`);
+      }
+      shots();
+    } finally {
+      // Two replays share one fixture: end this pi, keep the HOME until the last one.
+      if (!keep) {
+        send("/quit", "Enter");
+        sleep(800);
+        tmux("kill-session", "-t", session);
+      }
+    }
+  };
+  // Stage 2a: before. The native codemode rows, thinking hidden.
+  replay("", () => {
+    waitFor("native codemode rows", (t) => t.includes("codemode"), 15000);
+    shoot("pi-traceline-codemode-before", { trimTo: "Use codemode scripts" });
+  }, { traceline: false });
+  // Stage 2b: after. Traceline's composed rows; then click the first row to reveal
+  // its ledger (fullscreen mode owns the mouse), then drill into it.
+  replay("--tui-mode fullscreen", () => {
+    waitFor("composed rows", (t) => /▸ codemode \d+ calls/.test(t), 30000);
+    shoot("pi-traceline-codemode-after", { trimTo: "Use codemode scripts" });
+    const text = captureText();
+    const y = text.split("\n").findIndex((line) => /▸ codemode \d+ calls/.test(line));
+    if (y < 0) throw new Error("no composed row on screen");
+    // SGR 1006 mouse press+release at the row's bullet cell, the same raw path the
+    // click smoke tests use (tests/smoke/click-fixture.mjs).
+    const raw = (x, row, release) => {
+      const data = `\x1b[<0;${x};${row}${release ? "m" : "M"}`;
+      tmux("send-keys", "-t", session, "-H", ...[...Buffer.from(data)].map((b) => b.toString(16)));
+    };
+    raw(5, y + 1, false);
+    raw(5, y + 1, true);
+    waitFor("revealed ledger", (t) => /▾ codemode \d+ calls/.test(t), 10000);
+    sleep(1500);
+    shoot("pi-traceline-codemode-ledger", { trimTo: "Use codemode scripts" });
+    send("Escape");
+    send("/drill", "Enter");
+    waitFor("drill", (t) => t.includes("[Traceline] drill"), 10000);
+    sleep(800);
+    send("3"); // the oldest row: the many-call script, so the pager shows a real ledger
+    waitFor("pager", (t) => t.includes("[Traceline] peek"), 10000);
+    sleep(1200);
+    shoot("pi-traceline-codemode-pager", { trimTo: "[Traceline] peek" });
+    send("Escape");
+    send("Escape");
+  });
+  cleanup(fixture);
+}
+
 const scenarios = {
   traceline: tracelineShot,
+  codemode: codemodeShot,
   contextimate: contextimateShot,
   cachemire: cachemireShot,
   meantime: meantimeShot,
