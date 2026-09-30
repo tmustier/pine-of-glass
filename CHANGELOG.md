@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Lint rule POG013: tests may not assert the absence of an external tag by literal; a
+  producer rename leaves such a check passing vacuously (the pi-codex-conversion 3.0.40
+  `<skill_catalog>` rename would have slipped past one). The three existing checks now
+  assert against the parser's own output.
+
 - Contextimate reads the `<skill_catalog>` section `pi-codex-conversion` 3.0.40 injects
   per turn; the skills row no longer vanishes after the first turn with the catalog
   counted as runtime prompt. The installed-adapter contract test runs again.

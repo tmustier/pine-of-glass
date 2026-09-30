@@ -7,7 +7,7 @@ import { parseSync } from "oxc-parser";
 const ROOT = process.cwd();
 const BASELINE_PATH = join(ROOT, "scripts", "dev", "agent-lint-baseline.json");
 const DEFAULT_TS_MAX_LINES = 350;
-const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012"]);
+const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012", "POG013"]);
 
 const RULE_MESSAGES = {
   POG001: [
@@ -63,6 +63,11 @@ const RULE_MESSAGES = {
     "test-only `internals` export grew.",
     "Tests reach behaviour through public interfaces (docs/testing.md): the extension's default export via the test harness, or named exports of a domain module.",
     "Move the logic into a domain module and import it directly, or test it through the harness; do not add another entry to the grab bag.",
+  ],
+  POG013: [
+    "negative assertion names an external tag literal.",
+    "When the producer renames its tag, `!text.includes(\"<tag>\")` passes without the block being stripped.",
+    "Assert absence of what the parser returned (its `content`) so the check drifts with the format.",
   ],
 };
 
@@ -178,6 +183,10 @@ function scanTsFile(absPath, findings) {
 
     if (!hasDisable(lines, index, "POG005") && /@ts-(?:ignore|expect-error)/.test(line) && !hasSafety(lines, index)) {
       findings.push(makeFinding("POG005", file, lineNumber, line));
+    }
+
+    if (inPath(file, "tests") && !hasDisable(lines, index, "POG013") && /assert\.ok\(\s*![^,]*\.includes\(["'`]</.test(line)) {
+      findings.push(makeFinding("POG013", file, lineNumber, line));
     }
 
     if (inPath(file, "extensions") && file !== "extensions/_lib/style.ts" && file !== "extensions/_lib/ansi.ts") {
