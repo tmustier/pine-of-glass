@@ -34,7 +34,7 @@ test("a cache-warming payload hook without context cannot replace real-call evid
       system: [{ type: "text", text: "a real changed request", cache_control: { type: "ephemeral" } }],
     });
     assert.equal(host.ui.notifications.length, 1, "the next context-armed request still diagnoses its own change");
-    assert.match(host.ui.notifications[0]!, /cache breaking/);
+    assert.match(host.ui.notifications[0]!, /cause: model switched/);
   } finally {
     await host.dispose();
     project.dispose();

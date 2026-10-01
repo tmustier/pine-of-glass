@@ -63,7 +63,7 @@ export function computeSwitchForecast(args: {
     history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];
   } catch {
     // SAFETY: buildSessionContext/convertToLlm are pi seams; a shape drift must degrade
-    // to an unsized "cold expected" clock, never break the model switch itself.
+    // to an unsized model-switch clock, never break the model switch itself.
   }
   if (history) {
     const prompt = forecastTargetPrompt({

@@ -28,14 +28,14 @@ test("clock: model switch forecasts in the target currency, always marked est", 
   // Per-model caches everywhere: the last call's entry is dead for the new model, and
   // the stored count is in the old tokenizer's currency, so it is never shown.
   const switched = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, rewriteUsd: 2.67, modelSwitched: true, switchForecast: FORECAST });
-  assert.equal(switched.phase, "cold");
-  assert.equal(switched.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (est)");
+  assert.equal(switched.phase, "switch");
+  assert.equal(switched.text, "model switched \u00b7 previous prefix not reusable \u00b7 next prompt ~96.4k tokens to openai-codex (est)");
   // Gateway routes may transform the request upstream: the claim is demoted.
   const gateway = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, basis: "gateway" } });
-  assert.equal(gateway.text, "cache cold expected \u00b7 model switched \u00b7 next send ~96.4k uncached to openai-codex (rough est \u00b7 gateway route)");
+  assert.equal(gateway.text, "model switched \u00b7 previous prefix not reusable \u00b7 next prompt ~96.4k tokens to openai-codex (rough est \u00b7 gateway route)");
   // Without an estimate the number is withheld outright (and stays out of the old currency).
   const untagged = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, cachedTokens: 142_300, modelSwitched: true });
-  assert.equal(untagged.text, "cache cold expected \u00b7 model switched \u00b7 prompt size known at next send");
+  assert.equal(untagged.text, "model switched \u00b7 previous prefix not reusable \u00b7 prompt size known at next send");
 });
 
 test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry", () => {
@@ -50,7 +50,7 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
   assert.equal(back.phase, "warm-unknown");
   assert.equal(back.text, "cache may still be warm \u00b7 switched back to claude-opus-4-8 \u00b7 next send confirms");
   const backCold = cacheClock({ now: 5 * MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: anthropicForecast });
-  assert.equal(backCold.phase, "cold", "the exact contract boundary is no longer warm");
+  assert.equal(backCold.phase, "switch", "the exact contract boundary is no longer warm, but target cache state is unobserved");
 
   const unknown = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, switchForecast: { ...FORECAST, prior: { refreshedAt: 0, window: UNKNOWN } } });
   assert.equal(unknown.text, "cache state unknown \u00b7 model switched \u00b7 next send confirms");
@@ -82,7 +82,7 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
   }), 55 * MIN);
   assert.equal(
     cacheClock({ now: 60 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: boundedForecast }).phase,
-    "cold",
+    "switch",
   );
 
   const maximum = { kind: "maximum", maxMs: 24 * 60 * MIN } as const;
@@ -99,7 +99,7 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
     switchForecast: extendedForecast,
   }), 23 * 60 * MIN);
   const atMaximum = { now: 24 * 60 * MIN, lastRefreshedAt: 0, window: UNKNOWN, modelSwitched: true, switchForecast: extendedForecast };
-  assert.equal(cacheClock(atMaximum).phase, "cold");
+  assert.equal(cacheClock(atMaximum).phase, "switch");
   assert.equal(nextClockUpdateMs(atMaximum), undefined);
 
   const compacted = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, compacted: true, switchForecast: anthropicForecast });
@@ -128,7 +128,7 @@ test("break prediction: model switch sized in the target currency, or silent whe
   // Without a forecast: certain break, but the size is in the old tokenizer \u2014 withheld.
   const model = predictBreak({ ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause })!;
   assert.equal(model.expectedRewriteTokens, undefined);
-  assert.equal(renderBreakingLine(model), "cache breaking \u00b7 re-writing the full prompt \u00b7 cause: model switched a \u2192 b");
+  assert.equal(renderBreakingLine(model), "sending the prompt \u00b7 cache read unknown \u00b7 cause: model switched a \u2192 b");
 
   // With a target-currency forecast: sized, est-marked, est-priced.
   const sized = predictBreak({
@@ -140,14 +140,14 @@ test("break prediction: model switch sized in the target currency, or silent whe
   assert.equal(sized.estimatedUsd, 1.807_5); // 96.4k at $18.75/M write, still an estimate
   assert.equal(
     renderBreakingLine(sized),
-    "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (est \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
+    "sending ~96.4k prompt tokens to openai-codex (est) \u00b7 cache read unknown \u00b7 cause: model switched a \u2192 b",
   );
   assert.equal(
     renderBreakingLine(predictBreak({
       ...base, gapMs: 1_000, window: CONTRACT_5M, fingerprintCause: modelCause,
       switchForecast: { estTokens: 96_400, basis: "gateway", priorMayBeWarm: false, targetProvider: "openai-codex" },
     })!),
-    "cache breaking \u00b7 sending ~96.4k uncached to openai-codex (rough est \u00b7 gateway route \u00b7 ~$1.81) \u00b7 cause: model switched a \u2192 b",
+    "sending ~96.4k prompt tokens to openai-codex (rough est \u00b7 gateway route) \u00b7 cache read unknown \u00b7 cause: model switched a \u2192 b",
   );
 
   // A\u2192B\u2192A switch-back with the target's own contract entry still warm: no

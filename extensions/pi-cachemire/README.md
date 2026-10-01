@@ -16,7 +16,9 @@ boundaries.
 
 Cachemire stays hidden while the cache is healthy or its retention is unknown. It
 appears above the input box only at a supported retention boundary, or when a change
-such as compaction or a model switch puts the next send at risk.
+such as compaction or a model switch puts the next send at risk. A model switch makes
+only the previous model's cache entry ineligible; the target may already have a cached
+prefix. Cachemire does not call that target cache cold before seeing provider usage.
 
 <!-- BEGIN GENERATED CACHE RETENTION: policy-table -->
 | Route | Retention evidence | Cachemire behaviour | Evidence source |
@@ -44,8 +46,9 @@ grace.
 The `~` re-write count starts from the prior billed prompt-side usage. It is not the
 whole next prompt, which adds your new message and other suffix content. After a model
 switch, Cachemire estimates canonical history in the new model's tokenizer and keeps
-that estimate through send. A new message or gateway rewrite can make the eventual
-provider count differ.
+that estimate through send. It does not substitute the previous model's billed count,
+which may use different tokenization or describe an earlier prompt. A new message,
+images or gateway rewrite can make the eventual provider count differ.
 
 <!-- BEGIN GENERATED CACHE RETENTION: clock-examples -->
 ```text
