@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionFactory, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { captureTui } from "../_lib/capture.ts";
 import { type ContainerLike } from "../_lib/chat.ts";
 import { appendAnchoredLine, type AnchoredLine } from "../_lib/chatline.ts";
@@ -148,11 +148,19 @@ function updateWidget(now = Date.now()): void {
 
 // --- extension entry --------------------------------------------------------------------------
 
-export default function piMeantime(pi: ExtensionAPI): void {
+/** Distributions can own enablement without creating or changing a user's config file. */
+export function createMeantimeExtension(options: { enabled?: boolean } = {}): ExtensionFactory {
+  return (pi) => initializeMeantime(pi, options.enabled);
+}
+
+export default createMeantimeExtension();
+
+function initializeMeantime(pi: ExtensionAPI, enabled: boolean | undefined): void {
   const config = configPaths("pi-meantime", process.cwd()).reduce(
     (current, filePath) => Object.assign(current, readJsonConfig(filePath, parseMeantimeConfig)),
     { ...DEFAULT_CONFIG },
   );
+  config.enabled = enabled ?? config.enabled;
   if (!config.enabled) return;
   const s = state();
   s.config = config;

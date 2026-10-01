@@ -79,6 +79,12 @@ all projects or `<project>/.pi/pi-meantime.json` for one project, then run `/rel
 }
 ```
 
+Distributions that own feature enablement can import `createMeantimeExtension` from
+`extensions/pi-meantime/index.ts` and call `createMeantimeExtension({ enabled: true })`
+to get a Pi extension factory. The explicit override wins over both config files;
+other tuning (for example `widget: false`) still applies. Omit the override to keep
+the default export's file-based behaviour. This never writes user configuration.
+
 `enabled` is the feature flag. Unless it is explicitly `true`, Meantime registers no
 hooks, timer, widget, notices, or `/pace` command. Once enabled, there is nothing to
 press: the tempo line ticks during a run, notices arrive on their own, and `/pace`
