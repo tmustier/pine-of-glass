@@ -25,6 +25,15 @@ export function renderRunSummary(run: RunAggregate, endedAt: number): string {
 }
 
 export function renderBreakingLine(prediction: BreakPrediction): string {
+  if (prediction.cause.kind === "model") {
+    const estimate = prediction.estimatedRewriteTokens === undefined ? "the prompt" :
+      `~${compactCount(prediction.estimatedRewriteTokens)} prompt tokens`;
+    const basis = prediction.estimatedRewriteTokens === undefined ? "" :
+      ` (${prediction.estimateBasis === "gateway" ? "rough est \u00b7 gateway route" : "est"})`;
+    return `sending ${estimate}` +
+      `${prediction.targetProvider === undefined ? "" : ` to ${prediction.targetProvider}`}${basis}` +
+      ` \u00b7 cache read unknown \u00b7 cause: ${prediction.cause.detail}`;
+  }
   let size: string;
   if (prediction.expectedRewriteTokens) {
     size = ` \u00b7 re-writing ~${compactCount(prediction.expectedRewriteTokens)}` +

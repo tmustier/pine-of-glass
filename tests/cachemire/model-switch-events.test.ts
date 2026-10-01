@@ -206,7 +206,8 @@ test("event flow: the model-switch forecast remains stable through send", async 
 
   await fire(probe, "session_start", {}, ctx);
   try {
-    assert.match(widgets.at(-1)!, /next send ~76\.9k/);
+    assert.match(widgets.at(-1)!, /next prompt ~76\.9k tokens/);
+    assert.doesNotMatch(widgets.at(-1)!, /cache cold|uncached/);
     entries.push({
       type: "message", id: "u2", parentId: "a1", timestamp: "2026-07-01T10:01:00.000Z",
       message: { role: "user", content: next, timestamp: 6_000 },
@@ -220,7 +221,8 @@ test("event flow: the model-switch forecast remains stable through send", async 
       ],
     } }, ctx);
     assert.equal(notifications.length, 1);
-    assert.match(notifications[0]!, /sending ~76\.9k uncached to anthropic \(est/);
+    assert.match(notifications[0]!, /sending ~76\.9k prompt tokens to anthropic \(est\) · cache read unknown/);
+    assert.doesNotMatch(notifications[0]!, /cache breaking|uncached/);
   } finally {
     await fire(probe, "session_shutdown", {});
   }
@@ -335,7 +337,7 @@ test("event flow: model_select flips the clock before any send, and back again",
     } }, ctx);
     const line = widgets.at(-1)!;
     assert.match(line, /model switched/, "the pre-send widget must flip on model_select");
-    assert.match(line, /next send ~[\d.]+k uncached to openai-codex/, "sized in the target's own currency");
+    assert.match(line, /next prompt ~[\d.]+k tokens to openai-codex/, "sized in the target's own currency");
     // Switching back before any send revives the old entry: the switch state clears.
     await fire(probe, "model_select", { model: ctx.model }, ctx);
     assert.doesNotMatch(widgets.at(-1)!, /model switched/);

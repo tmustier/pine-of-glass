@@ -212,22 +212,23 @@ Anomaly thresholds tint the quantity suffix or the glyph, never the body:
   system-prefix change made by the reload remains observable. The intentional suffix
   divergence is ordinary prefix growth; withhold its estimate until provider usage makes
   the new request exact
-- a model switch re-prices the conversation; the wording leads with the consequence
-  (the whole prompt goes uncached to the new provider): `cache cold expected · model
-  switched · next send ~32.4k uncached to anthropic (est)`. The headline is the
-  estimate of canonical history in the target model's currency. It remains stable
-  through the send while the provider payload supplies cache evidence. The next user
-  message or a gateway rewrite can change the exact result. The estimate is never
-  rescaled from a source-model bill: token density is not transferable across
-  tokenizers, and the source bill may describe an earlier request.
+- a model switch re-prices the conversation and makes the last model's cache entry
+  ineligible, but says nothing about the target model's cache state. The clock says
+  `model switched · previous prefix not reusable · next prompt ~32.4k tokens to
+  anthropic (est)`. The headline is the estimate of canonical history in the target
+  model's currency. It remains stable through the send while the provider payload
+  supplies cache evidence. The next user message or a gateway rewrite can change the
+  exact result. The estimate is never rescaled from a source-model bill: token density
+  is not transferable across tokenizers, and the source bill may describe an earlier
+  request.
   Switch-back warmth anchors require exact provider, API and model identity plus an
   active TTL or minimum, including the minimum phase of a bounded window. Unknown
   retention, including the middle of a bounded window, makes no warmth claim. The
-  send-time notice keeps the grammar in progressive tense: `cache breaking · sending
-  ~32.4k uncached to anthropic (est · ~$0.41) · cause: model switched
-  openai-codex/gpt-5.6-sol → anthropic/claude-fable-5`; gateway routes use `(rough est ·
-  gateway route)`. The resolved line stays past tense and provider-exact (`cache broke ·
-  re-wrote 28.2k …`). Resolution
+  send-time notice keeps the grammar in progressive tense without predicting a cache
+  miss: `sending ~32.4k prompt tokens to anthropic (est) · cache read unknown · cause:
+  model switched openai-codex/gpt-5.6-sol → anthropic/claude-fable-5`; gateway routes use
+  `(rough est · gateway route)`. The resolved line stays past tense and provider-exact
+  (`cache broke · re-wrote 28.2k …`). Resolution
   obeys the same currency rule: the pre-switch expectation is denominated in the
   old model's tokenizer, so a switched call is classified and rendered against its
   own billed prompt only. A switched send that lands warm (a twin session's

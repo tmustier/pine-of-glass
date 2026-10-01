@@ -16,7 +16,7 @@ function warningLeadMs(window: Extract<CacheWindow, { kind: "contract" }>): numb
 }
 
 export interface ClockState {
-  phase: "idle" | "closing" | "cold" | "stale" | "warm-unknown";
+  phase: "idle" | "closing" | "cold" | "stale" | "warm-unknown" | "switch";
   text: string;
 }
 
@@ -66,13 +66,14 @@ export function cacheClock(input: ClockInput): ClockState {
       }
     }
     if (forecast?.estTokens === undefined) {
-      return { phase: "cold", text: "cache cold expected \u00b7 model switched \u00b7 prompt size known at next send" };
+      return { phase: "switch", text: "model switched \u00b7 previous prefix not reusable \u00b7 prompt size known at next send" };
     }
-    // BLUF (design language §7): the consequence first, in the target currency.
+    // The old model's entry cannot carry over, but the target may already have a
+    // matching prefix. Size is an estimate; cache reads need provider usage.
     const confidence = forecast.basis === "gateway" ? "rough est \u00b7 gateway route" : "est";
     return {
-      phase: "cold",
-      text: `cache cold expected \u00b7 model switched \u00b7 next send ~${compactCount(forecast.estTokens)} uncached` +
+      phase: "switch",
+      text: `model switched \u00b7 previous prefix not reusable \u00b7 next prompt ~${compactCount(forecast.estTokens)} tokens` +
         ` to ${forecast.targetProvider} (${confidence})`,
     };
   }

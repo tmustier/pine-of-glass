@@ -217,11 +217,11 @@ function cachemireShot() {
   );
   launchPi({
     ...fixture,
-    args: '--model openai-codex/gpt-5.6-sol:medium --models "openai-codex/gpt-5.6-sol:medium,anthropic/claude-fable-5:medium"',
+    args: '--model openai/gpt-6-sol:medium --models "openai/gpt-6-sol:medium,openai/gpt-6-astra:medium"',
     rows: 45,
   });
   try {
-    waitFor("editor", (t) => t.includes("gpt-5.6-sol"), 90000);
+    waitFor("editor", (t) => t.includes("gpt-6-sol"), 90000);
     sleep(1500);
     send("Read README.md and tell me, in one line, what this project is.");
     sleep(300);
@@ -252,11 +252,11 @@ function cachemireShot() {
     send("C-t");
     sleep(1500);
     send("C-p");
-    waitFor("actionable cache warning", (t) => t.includes("cache cold expected") && t.includes("model switched"));
+    waitFor("model-switch forecast", (t) => t.includes("previous prefix not reusable") && t.includes("model switched"));
     sleep(1000);
     shoot("pi-cachemire-clock", { trimTo: "Read README.md" });
     send("C-p");
-    waitFor("billed model restored", (t) => t.includes("Switched to GPT-5.6 Sol"));
+    waitFor("billed model restored", (t) => t.includes("Switched to GPT-6 Sol"));
     sleep(500);
     send("/cache", "Enter");
     waitFor("ledger", (t) => t.includes("cache & loop ledger"));
