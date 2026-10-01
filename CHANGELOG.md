@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.15.1 (2026-10-01)
+
+- Cachemire and Meantime keep their live clock widgets in fixed positions above the
+  editor. Ticking one clock updates its mounted component instead of replacing its
+  widget, so the two lines no longer swap places while the agent runs. Idle clocks
+  remain hidden. Tested together in a live Pi session with Anthropic OAuth.
 - Lint rule POG013: tests may not assert the absence of an external tag by literal; a
   producer rename leaves such a check passing vacuously (the pi-codex-conversion 3.0.40
   `<skill_catalog>` rename would have slipped past one). The three existing checks now
