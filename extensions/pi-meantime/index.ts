@@ -3,6 +3,7 @@ import { captureTui } from "../_lib/capture.ts";
 import { type ContainerLike } from "../_lib/chat.ts";
 import { appendAnchoredLine, type AnchoredLine } from "../_lib/chatline.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
+import { LiveWidget } from "../_lib/live-widget.ts";
 import { GLYPH, ink, type Tone } from "../_lib/style.ts";
 import { renderPace, renderSlowStartLine, renderSlowStreamLine, tempoWidget } from "./render.ts";
 import {
@@ -53,7 +54,7 @@ interface MeantimeState {
   theme?: Theme;
   ui?: Pick<ExtensionUIContext, "setWidget" | "notify">;
   tui?: { requestRender?: (force?: boolean) => void };
-  lastWidgetText?: string;
+  widget?: LiveWidget;
 }
 
 type MeantimeGlobal = typeof globalThis & {
@@ -115,13 +116,7 @@ function finalizePendingPhase(endAt: number, endedByRequest: boolean): void {
 
 function updateWidget(now = Date.now()): void {
   const s = state();
-  if (!s.ui) return;
-  if (!s.config.widget) {
-    if (s.lastWidgetText === "") return;
-    s.lastWidgetText = "";
-    s.ui.setWidget("pi-meantime", undefined);
-    return;
-  }
+  if (!s.widget) return;
   const baseline = s.live && s.live.firstTokenAt === undefined
     ? baselineFor(s.calls, s.currentModel, (call) => call.ttftMs)
     : undefined;
@@ -141,9 +136,7 @@ function updateWidget(now = Date.now()): void {
     slowStartBar,
   });
   const text = line ? tempoLine(line.tone, line.text) : "";
-  if (text === s.lastWidgetText) return;
-  s.lastWidgetText = text;
-  s.ui.setWidget("pi-meantime", text === "" ? undefined : [text]);
+  s.widget.setLine(text);
 }
 
 // --- extension entry --------------------------------------------------------------------------
@@ -178,7 +171,7 @@ export default function piMeantime(pi: ExtensionAPI): void {
         theme: undefined,
         ui: undefined,
         tui: undefined,
-        lastWidgetText: undefined,
+        widget: undefined,
       });
     }
     s.config = config;
@@ -190,6 +183,14 @@ export default function piMeantime(pi: ExtensionAPI): void {
       s.tui = tui;
     });
     if (g.__piMeantimeTimer) clearInterval(g.__piMeantimeTimer);
+    if (s.config.widget) {
+      ctx.ui.setWidget("pi-meantime", (tui) => {
+        s.widget = new LiveWidget(tui);
+        return s.widget;
+      });
+    } else {
+      s.widget = undefined;
+    }
     g.__piMeantimeTimer = s.config.widget ? setInterval(() => updateWidget(), 1000) : undefined;
     updateWidget(now);
   });
@@ -197,8 +198,8 @@ export default function piMeantime(pi: ExtensionAPI): void {
   pi.on("session_shutdown", async (_event, ctx) => {
     if (g.__piMeantimeTimer) clearInterval(g.__piMeantimeTimer);
     g.__piMeantimeTimer = undefined;
-    if (ctx.hasUI) ctx.ui.setWidget("pi-meantime", undefined);
-    s.lastWidgetText = undefined;
+    if (ctx.hasUI && s.widget) ctx.ui.setWidget("pi-meantime", undefined);
+    s.widget = undefined;
   });
 
   pi.on("model_select", async (event) => {

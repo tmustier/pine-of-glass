@@ -23,6 +23,7 @@ type WidgetFactory = (tui: TUI, theme: Theme) => Component;
 export class RecordedUi {
   readonly notifications: string[] = [];
   readonly widgets = new Map<string, string[] | Component>();
+  readonly widgetCalls: string[] = [];
   readonly theme = undefined;
   readonly tui = { requestRender(): void {} };
 
@@ -31,6 +32,7 @@ export class RecordedUi {
   };
 
   readonly setWidget = (key: string, content: string[] | WidgetFactory | undefined): void => {
+    this.widgetCalls.push(key);
     if (content === undefined) {
       this.widgets.delete(key);
     } else if (Array.isArray(content)) {
