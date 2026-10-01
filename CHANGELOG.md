@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.15.2 (2026-10-01)
+
+- Cachemire no longer calls the target model's cache cold on a model switch. The
+  previous model's prefix cannot carry over, but the target may have its own cached
+  prefix. The clock shows an estimated next-prompt size and the in-flight notice
+  leaves cache reads unknown until provider usage arrives. The target-token estimate
+  remains heuristic; this release does not correct large size errors. [#150](https://github.com/tmustier/pine-of-glass/pull/150)
+
 ## 0.15.1 (2026-10-01)
 
 - Cachemire and Meantime keep their live clock widgets in fixed positions above the
