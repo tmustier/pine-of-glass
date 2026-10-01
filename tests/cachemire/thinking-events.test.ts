@@ -99,16 +99,16 @@ test("thinking_level_select keeps direct Claude Fable 5.1 cache UI silent", asyn
 		await host.session.extensionRunner.emitContext([]);
 		await host.session.extensionRunner.emitBeforeProviderRequest(anthropicPayload(fable, "low", ["first"]));
 		await host.session.extensionRunner.emitMessageEnd({ type: "message_end", message: assistant });
-		assert.equal(host.ui.widgetLines("pi-cachemire"), undefined, "a healthy cache is silent");
+		assert.deepEqual(host.ui.widgetLines("pi-cachemire"), [], "a healthy cache is silent");
 
 		await host.session.extensionRunner.emit({
 			type: "thinking_level_select",
 			previousLevel: "low",
 			level: "high",
 		});
-		assert.equal(
+		assert.deepEqual(
 			host.ui.widgetLines("pi-cachemire"),
-			undefined,
+			[],
 			"the cache-safe effort change must not show a false stale clock",
 		);
 	} finally {
@@ -146,7 +146,7 @@ test("a billed hit after an effort change silences a route the contract expects 
 
 		// The verdict now outranks the contract: the next change is quiet end to end.
 		await runner.emit({ type: "thinking_level_select", previousLevel: "high", level: "low" });
-		assert.equal(host.ui.widgetLines("pi-cachemire"), undefined, "evidence must silence the stale clock");
+		assert.deepEqual(host.ui.widgetLines("pi-cachemire"), [], "evidence must silence the stale clock");
 		host.session.sessionManager.appendMessage({ role: "user", content: "third", timestamp: Date.now() });
 		await runner.emitContext([]);
 		await runner.emitBeforeProviderRequest(anthropicPayload(fableFive, "low", ["first", "second", "third"]));
@@ -241,7 +241,7 @@ test("a billed miss on a contract-neutral route names the effort change and char
 	try {
 		await call(host, anthropicPayload(fable, "low", ["first"]), billed(fable, { input: 2, cacheRead: 0, cacheWrite: 100_000 }));
 		host.session.setThinkingLevel("high");
-		assert.equal(host.ui.widgetLines("pi-cachemire"), undefined, "the contract calls the change neutral: no claim");
+		assert.deepEqual(host.ui.widgetLines("pi-cachemire"), [], "the contract calls the change neutral: no claim");
 
 		// The cache-key diff withheld the change (lineage keeps one prefix), and the contract
 		// silenced the in-flight claim; the bill still says miss, so the change is charged.

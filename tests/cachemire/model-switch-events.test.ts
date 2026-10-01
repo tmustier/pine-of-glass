@@ -55,11 +55,12 @@ function probeContext(entries: unknown[], api: string, notifications: string[], 
     hasUI: true,
     ui: {
       theme: undefined,
-      setWidget(_key: string, widget?: unknown): void {
-        // Cachemire also registers a TUI-capture hook through setWidget; only record
-        // real widget lines.
-        if (typeof widget === "function") widget({ requestRender: () => {} });
-        else widgets.push(Array.isArray(widget) ? widget.join("\n") : "");
+      setWidget(key: string, widget?: unknown): void {
+        if (key !== "pi-cachemire" || typeof widget !== "function") return;
+        let component: { render(width: number): string[] };
+        const tui = { requestRender: () => widgets.push(component.render(200).join("\n")) };
+        component = widget(tui);
+        widgets.push(component.render(200).join("\n"));
       },
       notify(text: string): void {
         notifications.push(text);

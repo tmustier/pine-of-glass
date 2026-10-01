@@ -39,7 +39,9 @@ They should read as one instrument panel, not four apps that happen to share a r
    from the active pi theme. No raw ANSI colour constants in extension code. Family
    identity comes from glyphs and layout, not from a brand colour.
 6. Silence when healthy. A line appears when it informs a decision or flags an
-   anomaly. No ambient chrome.
+   anomaly. No ambient chrome. Cache and tempo clocks keep their widget positions
+   while active: each mounts once per session, redraws its content in place, and
+   renders no line when silent. A ticking clock must not reorder its neighbour.
 
 ## 1. Glyphs
 

@@ -36,7 +36,7 @@ test("enabling meantime in .pi/pi-meantime.json makes /pace answer with the temp
 
 test("enabling meantime shows a waiting clock while a provider request is in flight", async () => {
   await withProject({ enabled: true }, async ({ session, ui }) => {
-    assert.equal(ui.widgets.has("pi-meantime"), false, "idle sessions draw nothing");
+    assert.deepEqual(ui.widgetLines("pi-meantime"), [], "idle sessions draw no line");
     await session.extensionRunner.emit({ type: "agent_start" });
     await session.extensionRunner.emitContext([]);
     await session.extensionRunner.emitBeforeProviderRequest({ model: "fixture", messages: [] });

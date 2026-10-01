@@ -53,7 +53,7 @@ import {
   thinkingRoute,
 } from "./thinking.ts";
 import { isWarmUsageEntry, syncWarmEntries, type WarmSyncState } from "./warm.ts";
-import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
+import { clearCacheWidgetTimer, mountCacheWidget, unmountCacheWidget, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
   CacheWindow,
   CachemireConfig,
@@ -178,7 +178,6 @@ function updateWidget(now = Date.now()): void {
   const s = state();
   updateCacheWidget(cacheWidget, {
     enabled: s.config.widget,
-    ui: s.ui,
     renderLine: econLine,
     clock: {
       now,
@@ -325,13 +324,14 @@ export default function piCachemire(pi: ExtensionAPI): void {
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
       s.tui = tui;
     });
-    cacheWidget.lastText = undefined;
+    mountCacheWidget(cacheWidget, ctx.ui, s.config.widget);
     updateWidget();
   });
 
   pi.on("session_shutdown", async () => {
     if (!ownsState()) return;
     clearCacheWidgetTimer(cacheWidget);
+    if (s.ui) unmountCacheWidget(cacheWidget, s.ui);
     g.__piCachemireOwner = undefined;
   });
 
