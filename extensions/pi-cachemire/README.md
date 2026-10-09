@@ -234,7 +234,9 @@ for the Fable and Astra probes, and
 | **cachemire** | per model call / turn | exact provider tokens & $ (est across a model switch) | what did the loop cost, and why? |
 
 The ledger starts with the family panel header (`[Cachemire]` in the theme accent).
-The shared `ink()` helper provides theme-derived tones. The `◍` / `○ ● ◑ ◌` glyphs
+Notices, ledgers and clocks follow Pi's selected theme, including `system`. Existing
+lines recolour on a theme change while their historical facts stay fixed. See the
+[dark and light captures](../../README.md#themes). The `◍` / `○ ● ◑ ◌` glyphs
 come from the family vocabulary. Read
 [`docs/design-language.md`](../../docs/design-language.md) for details.
 
@@ -248,6 +250,6 @@ navigation, reload or settings changes rebuild the chat. If the anchor disappear
 Cachemire drops the line. Ctrl+T updates existing components in both regular and
 fullscreen modes, so it preserves the lines without re-attachment.
 
-If this internal seam drifts, Cachemire falls back to plain `notify` lines. The
-contract test suite names the break. Cachemire does not modify anything in pi's
-`node_modules`, so it survives `pi update`.
+When the chat container is unavailable, Cachemire uses plain `notify` lines. The
+contract suite checks the container interface. Cachemire does not modify Pi's
+`node_modules`; see the [compatibility notes](../../README.md#compatibility).

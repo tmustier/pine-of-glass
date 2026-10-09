@@ -1,10 +1,9 @@
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { ThemedText, resolveText, type TextContent } from "./themed-text.ts";
+import { ThemedText, type TextContent } from "./themed-text.ts";
 
 /** A mounted widget whose changing clock text never changes its position in Pi's widget map. */
 export class LiveWidget implements Component {
   private readonly text = new ThemedText("");
-  private line = "";
   private readonly tui: Pick<TUI, "requestRender">;
 
   constructor(tui: Pick<TUI, "requestRender">) {
@@ -12,11 +11,9 @@ export class LiveWidget implements Component {
   }
 
   setLine(content: TextContent): void {
-    const line = resolveText(content);
+    const previous = this.text.getText();
     this.text.setText(content);
-    if (line === this.line) return;
-    this.line = line;
-    this.tui.requestRender();
+    if (this.text.getText() !== previous) this.tui.requestRender();
   }
 
   render(width: number): string[] {

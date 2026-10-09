@@ -10,14 +10,15 @@ rendering never is: the point is to show what the actual renderers produce.
 node scripts/dev/screenshots/rig.mjs traceline     # replays a crafted session (free)
 node scripts/dev/screenshots/rig.mjs contextimate  # real startup panel (free)
 node scripts/dev/screenshots/rig.mjs cachemire     # LIVE model calls (cents, gpt-6-sol)
-node scripts/dev/screenshots/rig.mjs meantime      # LIVE model calls (cents, gpt-5.6-sol)
+node scripts/dev/screenshots/rig.mjs meantime      # LIVE model calls (cents, gpt-6.1-sol)
 ```
 
 PNGs land in `docs/img/`. Each run prints the intermediate ANSI capture path so you can
 inspect exactly what was on screen. Pass `--keep` to leave the tmux session and fixture
 HOME in place for debugging (attach with `tmux -L pogshots attach -t pog-shots-<pid>`).
 
-Requirements: `pi` on PATH, `tmux`, Google Chrome (headless), `python3` with PIL,
+Requirements: `npm install` (or `npm run link-pi` for your installed Pi), `tmux`,
+Google Chrome (headless), `python3` with PIL,
 `~/.pi/agent/auth.json` (copied into the fixture; live scenarios need working credentials,
 including Anthropic for Cachemire's no-call model switch).
 
@@ -44,9 +45,9 @@ Per scenario, `rig.mjs`:
    `auth.json` in.
 2. **Puts the fixture project *inside* the fixture HOME** at `~/projects/site`, so every
    path pi renders tildifies like a normal machine instead of leaking temp dirs.
-3. **Launches pi in tmux on a private server** (`tmux -L pogshots`, own config with
-   `extended-keys on` and truecolor) so nothing touches your real tmux server and pi's
-   extended-keys warning never fires.
+3. **Launches the repo's locked or linked Pi CLI directly with Node**, in a private
+   tmux server (`tmux -L pogshots`, own config with `extended-keys on` and truecolor).
+   An isolated HOME cannot break a shell wrapper's runtime path.
 4. **Drives the session** (waits on pane text predicates, sends keys), then captures the
    pane with `capture-pane -e` (colors preserved).
 5. **Post-processes the capture** (`shoot()`):
@@ -106,7 +107,8 @@ An unexplained miss keeps an unknown cause.
 
 ### meantime: fully live (costs money)
 
-The meantime scenario asks `openai-codex/gpt-5.6-sol` to run an eight-second sleep. It
+The meantime scenario enables Meantime in its project config and asks
+`openai-codex/gpt-6.1-sol` (medium thinking) to run an eight-second sleep. It
 captures the live tool-union clock while the tool is open, then captures `/pace` after
 the follow-up model call resolves. Both images come from real stream and tool event
 boundaries; only the tiny fixture prompt is crafted.

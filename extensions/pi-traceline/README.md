@@ -100,6 +100,10 @@ The pager shows the row's trace line, then the complete invocation and the compl
 - a result that provably is code renders as code: a read whose path names a code language gets pi's own syntax highlighting, a dim line-number gutter counting from the call's offset, and wrapped lines that hang under the code's indentation instead of snapping back to the margin. A bash `cat`/`sed`/`head`/`tail` of a single code file earns the same ink (without the gutter)
 - an image result always shows a fact line (`image · png · 1044×646 · 65.6k bytes`), and on a terminal with inline-image support (kitty, iTerm2, Ghostty) the pixels render right in the pager, mirroring pi's own inline images. A partially scrolled image shows a dim `scroll to view` hint instead of a torn image
 
+On Pi 1.1, non-PNG previews on kitty-protocol terminals may be unavailable because
+Pi changed its image-conversion interface. Image facts remain visible. This theme
+release does not resolve that separate compatibility risk.
+
 Scroll with `j`/`k`, the arrow keys, the page keys or `g`/`G`. Press `h`/`l` to move to the neighbouring row without closing. Press `esc` to return to the numbered transcript, exactly as you left it.
 
 The most common case takes two keys: `Alt+T`, then `1` for the latest call.
@@ -185,7 +189,10 @@ Traceline shortens rows before they reach the terminal edge. It:
 
 ## Understand colours and status
 
-The `›` bullet shows status: blue while running, green after success and red after failure. Group controls (`▸` and `▾`) keep the same status colours. Failed rows also colour the action and main target red, so the failure does not depend on one small glyph.
+The `›` bullet uses Pi's accent colour while running, success colour after success
+and error colour after failure. Group controls (`▸` and `▾`) use the same roles.
+Failed rows also colour the action and main target, so the failure does not depend
+on one small glyph. The selected theme, including `system`, controls the colours.
 
 The dim `▏` rail joins consecutive tool calls into a visible block. Traceline uses theme-derived colours rather than fixed terminal colours.
 
@@ -195,4 +202,6 @@ Read the [family design language](../../docs/design-language.md#9-trace-rows) fo
 
 Traceline wraps Pi's tool-row renderer after the session starts. When reasoning is visible, it uses Pi's native renderer unchanged. When reasoning is hidden, it renders the compact trace.
 
-If compact rendering fails, Traceline falls back to Pi's native row. It does not modify Pi's `node_modules`, so it survives `pi update`.
+If compact rendering fails, Traceline falls back to Pi's native row. It does not
+modify Pi's `node_modules`. Pi updates can change renderer interfaces; see the
+[compatibility notes](../../README.md#compatibility).

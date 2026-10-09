@@ -84,7 +84,7 @@ function state(): MeantimeState {
 }
 
 // One-line tempo facts share cachemire's loop-economics voice (design language §1, §10).
-function tempoLine(tone: Tone, text: string): TextContent {
+function tempoLine(tone: Tone, text: string): () => string {
   return () => ink(state().theme, tone, `${GLYPH.econ} ${text}`);
 }
 

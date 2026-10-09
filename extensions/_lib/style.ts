@@ -1,8 +1,8 @@
 // The pine-of-glass family style — implementation of docs/design-language.md §§1–6.
 // Identity lives in glyphs and layout, not colour: all ink is theme-derived through
-// ink(), with raw-ANSI fallbacks only when no usable Theme handle exists.
+// ink(), with raw-ANSI fallbacks only before a Theme handle exists.
 
-import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, stripAnsi } from "./ansi.ts";
@@ -44,17 +44,6 @@ export type Tone =
   | "running"
   | "accent";
 
-const THEME_ROLE: Record<Tone, ThemeColor> = {
-  text: "text",
-  muted: "muted",
-  dim: "dim",
-  success: "success",
-  warning: "warning",
-  error: "error",
-  accent: "accent",
-  running: "accent", // Active status; glyph and position distinguish it from branding.
-};
-
 const RESET = "\x1b[0m";
 
 // Raw fallbacks: basic ANSI only (widest terminal support), used when no Theme is
@@ -74,14 +63,7 @@ const RAW: Record<Tone, string> = {
 /** All family ink flows through here (design language §3). */
 export function ink(theme: Theme | undefined, tone: Tone, text: string): string {
   if (text.length === 0) return text;
-  const role = THEME_ROLE[tone];
-  if (theme) {
-    try {
-      return theme.fg(role, text);
-    } catch {
-      // fall through to the raw tone — never let styling break a render
-    }
-  }
+  if (theme) return theme.fg(tone === "running" ? "accent" : tone, text);
   const open = RAW[tone];
   return open ? `${open}${text}${RESET}` : text;
 }
@@ -91,7 +73,7 @@ export function ink(theme: Theme | undefined, tone: Tone, text: string): string 
 /** Mode pips for a panel header: active mode accent-bold, others dim, `→` dim. */
 export function panelPips(theme: Theme | undefined, modes: readonly string[], active: string): string {
   return modes
-    .map((mode) => (mode === active ? ink(theme, "accent", bold(theme, mode)) : ink(theme, "dim", mode)))
+    .map((mode) => (mode === active ? ink(theme, "accent", theme?.bold(mode) ?? mode) : ink(theme, "dim", mode)))
     .join(ink(theme, "dim", " → "));
 }
 
@@ -105,19 +87,12 @@ export function panelHeader(
   name: string,
   options: { modes?: readonly string[]; active?: string; hint?: string } = {},
 ): string[] {
-  const brand = ink(theme, "accent", bold(theme, `[${name}]`));
+  const label = `[${name}]`;
+  const brand = ink(theme, "accent", theme?.bold(label) ?? label);
   const pips = options.modes && options.active ? ` ${panelPips(theme, options.modes, options.active)}` : "";
   const lines = ["", `${brand}${pips}`];
   if (options.hint) lines.push(`  ${ink(theme, "dim", options.hint)}`);
   return lines;
-}
-
-function bold(theme: Theme | undefined, text: string): string {
-  try {
-    return theme?.bold ? theme.bold(text) : text;
-  } catch {
-    return text;
-  }
 }
 
 // --- layout helpers (design language §5) -----------------------------------------------

@@ -171,7 +171,7 @@ function state(): CachemireState {
 
 // One-line loop-economics facts (design language §§1, 6): ◍ opens the line; the status
 // tone is theme-derived. These are transient signals, so the tone covers the whole line.
-function econLine(tone: Tone, text: string): TextContent {
+function econLine(tone: Tone, text: string): () => string {
   return () => ink(state().theme, tone, `${GLYPH.econ} ${text}`);
 }
 function updateWidget(now = Date.now()): void {

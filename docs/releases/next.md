@@ -1,3 +1,3 @@
 # Next release notes (draft)
 
-No changes recorded since v0.15.0.
+No unreleased changes since v0.15.3.

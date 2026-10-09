@@ -71,9 +71,10 @@ Deliberately **not** tested:
 - **Testability route:** pure domain logic lives in importable domain modules; see
   "Public interfaces" above. Pi imports only each extension's default entry point, so
   named exports are runtime-inert.
-- **Extension host:** see "Public interfaces" above. Its recording UI has no chat
-  container, so chat fallback text is observable but chat placement is not. Anything that
-  needs a real terminal goes to the smoke layer.
+- **Extension host:** see "Public interfaces" above. Its default recording UI has no
+  chat container. Theme contracts supply Pi's live theme and native component tree,
+  driving ledger commands through the SDK and observing their visible output.
+  Anything that needs a real terminal goes to the smoke layer.
 - **Scripts:** `npm run lint` (agent coding-standard and generated-doc drift checks),
   `npm run docs:cache` (regenerate Cachemire retention docs),
   `npm run typecheck`, `npm test` (unit + render + contract),

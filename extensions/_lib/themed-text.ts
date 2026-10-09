@@ -1,16 +1,11 @@
 import { Text } from "@earendil-works/pi-tui";
 
-/** A fixed fact or a renderer that applies the current theme to fixed facts. */
 export type TextContent = string | (() => string);
 
-export function resolveText(content: TextContent): string {
-  return typeof content === "string" ? content : content();
-}
-
-/** Pi invalidates components on theme changes; reapply ink before laying out text. */
+/** Retains facts and reapplies their ink when Pi invalidates the component. */
 export class ThemedText extends Text {
   private content: TextContent;
-  private resolved = false;
+  private resolved?: string;
 
   constructor(content: TextContent) {
     super("", 1, 0);
@@ -22,16 +17,21 @@ export class ThemedText extends Text {
     this.invalidate();
   }
 
-  override render(width: number): string[] {
-    if (!this.resolved) {
-      super.setText(resolveText(this.content));
-      this.resolved = true;
+  getText(): string {
+    if (this.resolved === undefined) {
+      this.resolved = typeof this.content === "string" ? this.content : this.content();
+      super.setText(this.resolved);
     }
+    return this.resolved;
+  }
+
+  override render(width: number): string[] {
+    this.getText();
     return super.render(width);
   }
 
   override invalidate(): void {
-    this.resolved = false;
+    this.resolved = undefined;
     super.invalidate();
   }
 }
