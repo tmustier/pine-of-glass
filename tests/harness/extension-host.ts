@@ -24,8 +24,15 @@ export class RecordedUi {
   readonly notifications: string[] = [];
   readonly widgets = new Map<string, string[] | Component>();
   readonly widgetCalls: string[] = [];
-  readonly theme = undefined;
-  readonly tui = { requestRender(): void {} };
+  readonly theme: Theme | undefined;
+  readonly tui: Pick<TUI, "requestRender">;
+
+  constructor(theme?: Theme, tui: Pick<TUI, "requestRender"> = { requestRender(): void {} }) {
+    this.theme = theme;
+    this.tui = tui;
+  }
+
+  readonly onTerminalInput: ExtensionUIContext["onTerminalInput"] = () => () => {};
 
   readonly notify = (text: string): void => {
     this.notifications.push(text);
@@ -38,8 +45,8 @@ export class RecordedUi {
     } else if (Array.isArray(content)) {
       this.widgets.set(key, content);
     } else {
-      // SAFETY: the family only calls requestRender on the captured TUI and renders without a theme.
-      this.widgets.set(key, content(this.tui as unknown as TUI, undefined as unknown as Theme));
+      // SAFETY: the default host only uses requestRender; seam tests can supply a native TUI.
+      this.widgets.set(key, content(this.tui as TUI, this.theme as Theme));
     }
   };
 
@@ -91,6 +98,7 @@ export async function hostExtension(
   factory: ExtensionFactory,
   options: {
     project: IsolatedProject;
+    ui?: RecordedUi;
     interactive?: boolean;
     reason?: SessionStartEvent["reason"];
     model?: CreateAgentSessionOptions["model"];
@@ -119,7 +127,7 @@ export async function hostExtension(
     noTools,
     sessionStartEvent: { type: "session_start", reason },
   });
-  const ui = new RecordedUi();
+  const ui = options.ui ?? new RecordedUi();
   const errors: string[] = [];
   const onError = (error: { event: string; error: string }) => errors.push(`${error.event}: ${error.error}`);
   await session.bindExtensions(

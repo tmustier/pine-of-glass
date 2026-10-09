@@ -15,7 +15,10 @@ let id = 0;
 function makeRow(path: string, name = "read", pending = false) {
   const comp = new ToolExecutionComponent(name, `transition-${id++}`, { path, command: path }, {}, {
     ...createReadTool("/tmp"), name,
-    renderCall: (args: { path: string }) => new Text(name === "bash" ? `$ ${args.path}` : `${name} ${args.path}`, 0, 0),
+    renderCall: (args: unknown) => {
+      assert.ok(args && typeof args === "object" && "path" in args && typeof args.path === "string");
+      return new Text(name === "bash" ? `$ ${args.path}` : `${name} ${args.path}`, 0, 0);
+    },
     renderResult: () => new Text("native result", 0, 0),
   }, { requestRender() {} } as never, "/tmp");
   if (!pending) comp.updateResult({ content: [{ type: "text", text: "done" }], isError: false });

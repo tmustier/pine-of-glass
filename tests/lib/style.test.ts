@@ -32,8 +32,8 @@ test("ink derives from the theme for every role-mapped tone", () => {
   assert.equal(ink(recordingTheme, "accent", "x"), "<accent>x</accent>");
 });
 
-test("running has no faithful theme role: raw ANSI blue even with a theme", () => {
-  assert.equal(ink(recordingTheme, "running", "x"), "\x1b[34mx\x1b[0m");
+test("running uses the active theme accent, with ANSI blue only before a theme exists", () => {
+  assert.equal(ink(recordingTheme, "running", "x"), "<accent>x</accent>");
   assert.equal(ink(undefined, "running", "x"), "\x1b[34mx\x1b[0m");
 });
 

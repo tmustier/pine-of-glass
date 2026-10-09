@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Running status inherits Pi's selected theme accent instead of raw ANSI blue, so
+  the system theme can adjust it for terminal contrast. Cachemire and Meantime
+  recolour existing notices, ledgers and clock widgets when the theme changes,
+  without changing historical facts or widget positions.
+
 ## 0.15.2 (2026-10-01)
 
 - Cachemire no longer calls the target model's cache cold on a model switch. The

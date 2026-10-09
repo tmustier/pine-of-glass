@@ -1,13 +1,13 @@
-import { TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
+import { TuiAltScreen } from "@earendil-works/pi-tui";
 
 export function mouseViewport() {
   let onInput!: (data: string) => void;
   const noop = () => {};
-  const terminal: Terminal = {
+  const terminal = {
     columns: 80, rows: 24, kittyProtocolActive: false,
-    start: (input) => { onInput = input; }, stop: noop, drainInput: async () => {},
+    start: (input: (data: string) => void) => { onInput = input; }, stop: noop, drainInput: async () => {},
     write: noop, moveBy: noop, hideCursor: noop, showCursor: noop, clearLine: noop,
-    clearFromCursor: noop, clearScreen: noop, setTitle: noop, setProgress: noop,
+    clearFromCursor: noop, clearScreen: noop, setTitle: noop, setProgress: noop, setProgramStatus: noop,
   };
   class Viewport extends TuiAltScreen { paint() { this.doRender(); } }
   const urls: string[] = [];

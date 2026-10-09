@@ -109,6 +109,8 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | Pi's call renderers (built-in bash, read and write, and a padded `Box`/`Text` shell) wrap greedily and pad to width, so bounded renders that agree once trailing padding is removed match the 10,000-column render; lines too wide for every pair, and args with long space runs, take the wide render | traceline call capture |
 | A successful silent built-in bash call returns exactly `(no output)` | traceline's terminal `gh pr merge` evidence rule |
 | Native thinking toggles preserve assistant and family-line identities; native rebuilds trigger anchored-line restoration and retire missing anchors | shared chat-line persistence |
+| Native theme invalidation recolours SDK-created cache/pace ledgers, clocks and pending tool rows while preserving facts and layout; Pi's identity-stable theme proxy supplies the new ink | shared styling and themed chat lines |
+| On Pi versions with the system theme, palette, background-only and no-reply cases flow through the same semantic roles | terminal-derived family styling |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |

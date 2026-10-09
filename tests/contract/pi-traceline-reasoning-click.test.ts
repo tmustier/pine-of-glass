@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { Markdown, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { getCapabilities, Markdown, setCapabilities, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { AssistantRowPrototypeLike } from "../../extensions/_lib/chat.ts";
 import { internals as trace } from "../../extensions/pi-traceline/index.ts";
 import { mouseViewport } from "../fixtures/mouse-viewport.ts";
@@ -110,13 +110,15 @@ test("compact previews preserve native width and ignore non-click gestures", () 
 
 test("expanded reasoning keeps Pi links and drag selection ahead of collapse", () => {
   const { view, urls, mouse } = mouseViewport();
-  const comp = new AssistantMessageComponent(assistantMessage([
-    { type: "thinking", thinking: "[example](https://example.com) rationale\nanother detail" },
-  ]), true);
-  assert.ok(clickText(comp, "example rationale")?.handled);
-  view.addChild(comp);
-
+  const capabilities = getCapabilities();
   try {
+    // Exercise OSC 8 links, not Markdown's URL-in-parentheses fallback on non-link terminals.
+    setCapabilities({ ...capabilities, hyperlinks: true });
+    const comp = new AssistantMessageComponent(assistantMessage([
+      { type: "thinking", thinking: "[example](https://example.com) rationale\nanother detail" },
+    ]), true);
+    assert.ok(clickText(comp, "example rationale")?.handled);
+    view.addChild(comp);
     view.start(); view.paint();
     const lines = painted(comp);
     const y = lines.findIndex((line) => line.includes("example"));
@@ -131,5 +133,6 @@ test("expanded reasoning keeps Pi links and drag selection ahead of collapse", (
     assert.ok(painted(comp).some((line) => line.trim() === "another detail"), "selection must not collapse");
   } finally {
     view.stop();
+    setCapabilities(capabilities);
   }
 });

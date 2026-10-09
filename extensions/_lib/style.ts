@@ -1,7 +1,6 @@
 // The pine-of-glass family style — implementation of docs/design-language.md §§1–6.
 // Identity lives in glyphs and layout, not colour: all ink is theme-derived through
-// ink(), with raw-ANSI fallbacks only for surfaces rendered before a Theme handle
-// exists and for the one tone pi's theme has no faithful role for ("running").
+// ink(), with raw-ANSI fallbacks only when no usable Theme handle exists.
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -45,7 +44,7 @@ export type Tone =
   | "running"
   | "accent";
 
-const THEME_ROLE: Partial<Record<Tone, ThemeColor>> = {
+const THEME_ROLE: Record<Tone, ThemeColor> = {
   text: "text",
   muted: "muted",
   dim: "dim",
@@ -53,9 +52,7 @@ const THEME_ROLE: Partial<Record<Tone, ThemeColor>> = {
   warning: "warning",
   error: "error",
   accent: "accent",
-  // "running" has no faithful theme role (accent would collide with brand/total
-  // highlights; warning overloads "fading") — resolved to the ANSI-blue raw tone
-  // (design language §2).
+  running: "accent", // Active status; glyph and position distinguish it from branding.
 };
 
 const RESET = "\x1b[0m";
@@ -78,7 +75,7 @@ const RAW: Record<Tone, string> = {
 export function ink(theme: Theme | undefined, tone: Tone, text: string): string {
   if (text.length === 0) return text;
   const role = THEME_ROLE[tone];
-  if (theme && role) {
+  if (theme) {
     try {
       return theme.fg(role, text);
     } catch {

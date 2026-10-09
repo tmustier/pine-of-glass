@@ -4,6 +4,7 @@ import { type ContainerLike } from "../_lib/chat.ts";
 import { appendAnchoredLine, type AnchoredLine } from "../_lib/chatline.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { LiveWidget } from "../_lib/live-widget.ts";
+import type { TextContent } from "../_lib/themed-text.ts";
 import { GLYPH, ink, type Tone } from "../_lib/style.ts";
 import { renderPace, renderSlowStartLine, renderSlowStreamLine, tempoWidget } from "./render.ts";
 import {
@@ -83,11 +84,11 @@ function state(): MeantimeState {
 }
 
 // One-line tempo facts share cachemire's loop-economics voice (design language §1, §10).
-function tempoLine(tone: Tone, text: string): string {
-  return ink(state().theme, tone, `${GLYPH.econ} ${text}`);
+function tempoLine(tone: Tone, text: string): TextContent {
+  return () => ink(state().theme, tone, `${GLYPH.econ} ${text}`);
 }
 
-function appendChatLine(text: string): void {
+function appendChatLine(text: TextContent): void {
   const s = state();
   s.notifyFallback ??= (plainText) => s.ui?.notify(plainText, "info");
   appendAnchoredLine(s, "meantime", text);
@@ -303,12 +304,9 @@ export default function piMeantime(pi: ExtensionAPI): void {
         idleMs: s.idleMs,
         idleSince: s.idleSince,
       });
-      const lines = renderPace(s.calls, totals, {
-        config: s.config,
-        theme: s.theme,
-        modelLabel: s.currentModel,
-      });
-      appendChatLine(lines.join("\n"));
+      const calls = s.calls.map((call) => ({ ...call }));
+      const options = { config: s.config, modelLabel: s.currentModel };
+      appendChatLine(() => renderPace(calls, totals, { ...options, theme: s.theme }).join("\n"));
     },
   });
 }
