@@ -1,9 +1,8 @@
 // The pine-of-glass family style — implementation of docs/design-language.md §§1–6.
 // Identity lives in glyphs and layout, not colour: all ink is theme-derived through
-// ink(), with raw-ANSI fallbacks only for surfaces rendered before a Theme handle
-// exists and for the one tone pi's theme has no faithful role for ("running").
+// ink(), with raw-ANSI fallbacks only before a Theme handle exists.
 
-import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { OSC_SEQUENCE, rawIndexAtVisibleIndex, stripAnsi } from "./ansi.ts";
@@ -45,19 +44,6 @@ export type Tone =
   | "running"
   | "accent";
 
-const THEME_ROLE: Partial<Record<Tone, ThemeColor>> = {
-  text: "text",
-  muted: "muted",
-  dim: "dim",
-  success: "success",
-  warning: "warning",
-  error: "error",
-  accent: "accent",
-  // "running" has no faithful theme role (accent would collide with brand/total
-  // highlights; warning overloads "fading") — resolved to the ANSI-blue raw tone
-  // (design language §2).
-};
-
 const RESET = "\x1b[0m";
 
 // Raw fallbacks: basic ANSI only (widest terminal support), used when no Theme is
@@ -77,14 +63,7 @@ const RAW: Record<Tone, string> = {
 /** All family ink flows through here (design language §3). */
 export function ink(theme: Theme | undefined, tone: Tone, text: string): string {
   if (text.length === 0) return text;
-  const role = THEME_ROLE[tone];
-  if (theme && role) {
-    try {
-      return theme.fg(role, text);
-    } catch {
-      // fall through to the raw tone — never let styling break a render
-    }
-  }
+  if (theme) return theme.fg(tone === "running" ? "accent" : tone, text);
   const open = RAW[tone];
   return open ? `${open}${text}${RESET}` : text;
 }
@@ -94,7 +73,7 @@ export function ink(theme: Theme | undefined, tone: Tone, text: string): string 
 /** Mode pips for a panel header: active mode accent-bold, others dim, `→` dim. */
 export function panelPips(theme: Theme | undefined, modes: readonly string[], active: string): string {
   return modes
-    .map((mode) => (mode === active ? ink(theme, "accent", bold(theme, mode)) : ink(theme, "dim", mode)))
+    .map((mode) => (mode === active ? ink(theme, "accent", theme?.bold(mode) ?? mode) : ink(theme, "dim", mode)))
     .join(ink(theme, "dim", " → "));
 }
 
@@ -108,19 +87,12 @@ export function panelHeader(
   name: string,
   options: { modes?: readonly string[]; active?: string; hint?: string } = {},
 ): string[] {
-  const brand = ink(theme, "accent", bold(theme, `[${name}]`));
+  const label = `[${name}]`;
+  const brand = ink(theme, "accent", theme?.bold(label) ?? label);
   const pips = options.modes && options.active ? ` ${panelPips(theme, options.modes, options.active)}` : "";
   const lines = ["", `${brand}${pips}`];
   if (options.hint) lines.push(`  ${ink(theme, "dim", options.hint)}`);
   return lines;
-}
-
-function bold(theme: Theme | undefined, text: string): string {
-  try {
-    return theme?.bold ? theme.bold(text) : text;
-  } catch {
-    return text;
-  }
 }
 
 // --- layout helpers (design language §5) -----------------------------------------------

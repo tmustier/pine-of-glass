@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.15.3 (2026-10-09)
+
+- Running status uses Pi's selected accent, including the terminal-derived `system`
+  theme. Cachemire and Meantime recolour existing notices, ledgers and clocks when
+  the theme changes. Historical facts, column alignment and widget positions stay
+  fixed. [#152](https://github.com/tmustier/pine-of-glass/pull/152)
+- Simplify shared text and widget state, remove redundant role maps and swallowed
+  typed-API errors, and test theme changes through real Pi components and SDK-created
+  ledgers. Refresh README colour guidance and live captures.
+- This is a theme fix, not a full Pi 1.1 compatibility release. The separate risk
+  to non-PNG kitty-protocol previews remains; see the
+  [release notes](./docs/releases/0.15.3.md).
+
 ## 0.15.2 (2026-10-01)
 
 - Cachemire no longer calls the target model's cache cold on a model switch. The

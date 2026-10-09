@@ -16,7 +16,8 @@
 // Extracted from pi-cachemire (upstream-candidates.md entry 3: multiple extensions
 // re-deriving this workaround is the evidence the seam deserves one implementation).
 
-import { Spacer, Text } from "@earendil-works/pi-tui";
+import { Spacer } from "@earendil-works/pi-tui";
+import { ThemedText, type TextContent } from "./themed-text.ts";
 import { stripAnsi } from "./ansi.ts";
 import { isJsonObject } from "./boundary.ts";
 import { findChatContainer, type ContainerLike } from "./chat.ts";
@@ -132,24 +133,20 @@ function ensureChatClearHook(chat: unknown, ns: string, host: ChatLineHost): voi
 /** Append one spacer+text pair to pi's chat scrollback, tracked for re-attachment
  * across rebuilds. Returns the Text (so the caller can resolve it in place), or
  * undefined when the seam degraded to the notify fallback. */
-export function appendAnchoredLine(host: ChatLineHost, ns: string, text: string): Text | undefined {
+export function appendAnchoredLine(host: ChatLineHost, ns: string, text: TextContent): ThemedText | undefined {
   const chat = (host.tui ? findChatContainer(host.tui) : undefined) ?? host.chat;
+  const line = new ThemedText(text);
   if (chat?.addChild) {
     host.chat = chat;
-    try {
-      const line = new Text(text, 1, 0);
-      const spacer = new Spacer(1);
-      const anchor = anchorForAppend(chat.children, host.anchored);
-      chat.addChild(spacer);
-      chat.addChild(line);
-      host.anchored.push({ spacer, text: line, ...anchor });
-      ensureChatClearHook(chat, ns, host);
-      host.tui?.requestRender?.(true);
-      return line;
-    } catch {
-      // fall through to the notify fallback — never let a chat seam break a turn
-    }
+    const spacer = new Spacer(1);
+    const anchor = anchorForAppend(chat.children, host.anchored);
+    chat.addChild(spacer);
+    chat.addChild(line);
+    host.anchored.push({ spacer, text: line, ...anchor });
+    ensureChatClearHook(chat, ns, host);
+    host.tui?.requestRender?.(true);
+    return line;
   }
-  host.notifyFallback?.(stripAnsi(text));
+  host.notifyFallback?.(stripAnsi(line.getText()));
   return undefined;
 }

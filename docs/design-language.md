@@ -99,7 +99,7 @@ metadata such as read `:line-range` spans. They never tint body prose.
 | success | completed / hit / fresh | `success` |
 | warning | fading / closing / large / partial | `warning` |
 | error | failed / broken / huge | `error` |
-| running | in flight | no faithful theme role; `style.ts` falls back to ANSI blue (`accent` would collide with brand highlights, `warning` overloads "fading") |
+| running | in flight | `accent`; glyph and position distinguish active status from panel branding |
 
 A verb is L0 neutral bold and the `›` bullet alone carries success or running.
 The exceptions are failure, which tints the row's discriminators (§9.2), and
@@ -115,8 +115,15 @@ as assistant prose, the hierarchy is wrong.
   extension files. `style.ts` resolves tones against the live `Theme`, so light
   terminals and custom themes work
 - the family accent is `theme.fg("accent")`. Use it sparingly: panel brands,
-  highlighted token figures, total rows, the filled part of proportion bars.
+  highlighted token figures, total rows, the filled part of proportion bars, and
+  in-flight status markers or tempo clocks.
   Recognizability comes from the glyph and layout grammar, which survives any theme
+- Pi owns terminal palette detection and contrast adjustment. Family renderers use
+  semantic roles from the selected theme, including `system`, without querying the
+  terminal or generating a separate palette
+- stored chat lines, ledgers and clocks retain their content, not their ink. Theme
+  invalidation rebuilds styling from the current theme without changing historical
+  facts or moving mounted widgets
 - family renderers do not synthesize backgrounds; trace rows are unbanded
 - components that render before a `Theme` handle exists may use the raw fallbacks
   in `style.ts`; everything rendered after `session_start` has `ctx.ui.theme` and

@@ -2,6 +2,7 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { LiveWidget } from "../_lib/live-widget.ts";
 import { type ClockInput, cacheClock, nextClockUpdateMs } from "./clock.ts";
 import type { Tone } from "../_lib/style.ts";
+import type { TextContent } from "../_lib/themed-text.ts";
 
 export interface CacheWidgetRuntime {
   timer?: ReturnType<typeof setTimeout>;
@@ -11,7 +12,7 @@ export interface CacheWidgetRuntime {
 interface CacheWidgetInput {
   enabled: boolean;
   clock: ClockInput;
-  renderLine: (tone: Tone, text: string) => string;
+  renderLine: (tone: Tone, text: string) => TextContent;
 }
 
 export function mountCacheWidget(runtime: CacheWidgetRuntime, ui: Pick<ExtensionUIContext, "setWidget">, enabled: boolean): void {

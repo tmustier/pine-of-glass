@@ -125,13 +125,14 @@ Honesty rules:
 | cachemire | per model call / turn | exact provider tokens & $ | what did the loop cost, and why? |
 | **meantime** | per stream segment | exact wall-clock ms | what happened in the meantime? |
 
-The ledger opens with the family panel header (`[Meantime]` in the theme accent);
-tones are theme-derived through the shared `ink()` helper, and tempo facts share
-cachemire's loop-economics glyph `◍`: the same voice, a different currency (see
-[`docs/design-language.md`](../../docs/design-language.md), §10).
+The ledger opens with `[Meantime]` in Pi's accent colour. Running clocks also use
+the accent; slow waits use the warning role. Notices, ledgers and clocks follow
+the selected theme, including `system`. Existing lines recolour without changing
+historical timings. See the [dark and light captures](../../README.md#themes).
+Tempo facts share Cachemire's `◍` glyph; the
+[design language](../../docs/design-language.md#10-tempo-facts) specifies their layout.
 
-Notice lines are appended to pi's chat container directly and persist across pi's
-chat rebuilds through the same durable-anchor machinery cachemire uses; if the
-internal seam ever drifts, meantime degrades to plain `notify` lines and the contract
-test suite names the break. Nothing in pi's `node_modules` is modified, so it
-survives `pi update`.
+Notice lines persist across chat rebuilds through Cachemire's durable anchors.
+When the chat container is unavailable, Meantime uses plain `notify` lines.
+The contract suite checks the container interface. Pi's `node_modules` remain
+unchanged; see the [compatibility notes](../../README.md#compatibility).

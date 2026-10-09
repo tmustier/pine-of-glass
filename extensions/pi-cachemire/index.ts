@@ -4,7 +4,7 @@ import type {
   ExtensionUIContext,
   Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import type { ThemedText, TextContent } from "../_lib/themed-text.ts";
 import { booleanValue, isJsonObject, positiveNumberValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
 import { type ContainerLike } from "../_lib/chat.ts";
@@ -133,7 +133,7 @@ interface CachemireState extends WarmSyncState {
    * lives for the whole interactive session, so the first find stays valid. */
   chat?: ContainerLike;
   /** In-flight break notice placed at request time; resolved in place when usage arrives. */
-  pendingNotice?: Text;
+  pendingNotice?: ThemedText;
   run?: RunAggregate;
   /** Theme handle (captured at session_start) — all chat/widget ink flows through ink(). */
   theme?: Theme;
@@ -171,8 +171,8 @@ function state(): CachemireState {
 
 // One-line loop-economics facts (design language §§1, 6): ◍ opens the line; the status
 // tone is theme-derived. These are transient signals, so the tone covers the whole line.
-function econLine(tone: Tone, text: string): string {
-  return ink(state().theme, tone, `${GLYPH.econ} ${text}`);
+function econLine(tone: Tone, text: string): () => string {
+  return () => ink(state().theme, tone, `${GLYPH.econ} ${text}`);
 }
 function updateWidget(now = Date.now()): void {
   const s = state();
@@ -192,13 +192,13 @@ function updateWidget(now = Date.now()): void {
     },
   });
 }
-function appendChatLine(text: string): Text | undefined {
+function appendChatLine(text: TextContent): ThemedText | undefined {
   const s = state();
   s.notifyFallback ??= (plainText) => s.ui?.notify(plainText, "info");
   return appendAnchoredLine(s, "cachemire", text);
 }
 
-function resolveNotice(text: string): void {
+function resolveNotice(text: TextContent): void {
   const s = state();
   if (!s.pendingNotice) return;
   s.pendingNotice.setText(text);
@@ -656,13 +656,9 @@ export default function piCachemire(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       if (!ownsState() || !ctx.hasUI) return;
       syncWarmEntries(s, ctx);
-      const lines = renderLedger(s.records, {
-        providerLabel: s.providerLabel,
-        window: s.window,
-        modelLabel: s.modelLabel,
-        theme: s.theme,
-      });
-      appendChatLine(lines.join("\n"));
+      const records = s.records.slice();
+      const options = { providerLabel: s.providerLabel, window: s.window, modelLabel: s.modelLabel };
+      appendChatLine(() => renderLedger(records, { ...options, theme: s.theme }).join("\n"));
     },
   });
 }

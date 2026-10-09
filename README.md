@@ -15,6 +15,29 @@ Requires Pi 0.86.0 or later.
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
 - From npm (installs `contextimate`, `traceline`, and experimental `cachemire` and `meantime`): `pi install npm:pine-of-glass`. Meantime stays inert until its config sets `"enabled": true`.
 
+## Themes
+
+All four extensions use Pi's selected theme. Running status uses its accent colour;
+warning, success and error states use their corresponding roles. The `system` theme
+lets Pi match these colours to your terminal. Existing notices, `/cache` and `/pace`
+ledgers, and live clocks recolour when you change themes. Historical facts and
+column alignment stay unchanged.
+
+These real Pi 1.1 captures show the same ledgers with supplied dark and light terminal
+palettes:
+
+![Existing Cachemire and Meantime ledgers in the dark system theme](./docs/img/pi-system-theme-dark.png)
+
+![The same ledgers after switching to the light system theme](./docs/img/pi-system-theme-light.png)
+
+## Compatibility
+
+The locked test runtime is Pi 0.87.1. Theme switching and startup have also been
+tested on Pi 1.1, but full Pi 1.1 compatibility remains
+under review. In particular, Traceline's Drill viewer may lose non-PNG previews on
+kitty-protocol terminals after Pi's image-conversion changes. See the
+[release notes](./docs/releases/0.15.3.md) for validation and known limits.
+
 ## Screenshots
 ### [Traceline](./extensions/pi-traceline)
 `ctrl+t` collapses each tool call and reasoning run to a single line. In fullscreen mode, click a compact call or reasoning preview to expand it independently, or use `ctrl+t` to reset the whole view.

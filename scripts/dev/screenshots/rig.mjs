@@ -21,6 +21,7 @@ import { buildTracelineSession } from "./traceline-session.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..", "..");
+const piCli = join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "cli.js");
 const imgDir = join(repoRoot, "docs", "img");
 const scenario = process.argv[2];
 const keep = process.argv.includes("--keep");
@@ -78,7 +79,7 @@ function makeFixture({ extensions, withAuth = false }) {
 function launchPi({ home, cwd, args = "", cols = 120, rows = 45 }) {
   const launch = tmux(
     "new-session", "-d", "-s", session, "-x", String(cols), "-y", String(rows),
-    `cd ${JSON.stringify(cwd)} && HOME=${JSON.stringify(home)} COLORTERM=truecolor pi ${args}`,
+    `cd ${JSON.stringify(cwd)} && HOME=${JSON.stringify(home)} COLORTERM=truecolor ${JSON.stringify(process.execPath)} ${JSON.stringify(piCli)} ${args}`,
   );
   if (launch.status !== 0) throw new Error(`tmux launch failed: ${launch.stderr}`);
 }
@@ -273,9 +274,10 @@ function meantimeShot() {
     join(fixture.cwd, "README.md"),
     "# tempo fixture\n\nA tiny project used to show model and tool timing in the real pi TUI.\n",
   );
-  launchPi({ ...fixture, args: "--model openai-codex/gpt-5.6-sol:medium", rows: 48 });
+  writeFileSync(join(fixture.cwd, ".pi", "pi-meantime.json"), JSON.stringify({ enabled: true }));
+  launchPi({ ...fixture, args: "--model openai-codex/gpt-6.1-sol --thinking medium", rows: 48 });
   try {
-    waitFor("editor", (t) => t.includes("gpt-5.6-sol"), 90000);
+    waitFor("editor", (t) => t.includes("gpt-6.1-sol"), 90000);
     sleep(1500);
     send("Use the bash tool to run `sleep 8`, then reply with exactly: Timing complete.");
     sleep(300);
