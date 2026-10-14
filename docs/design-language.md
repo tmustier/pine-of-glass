@@ -103,7 +103,8 @@ metadata such as read `:line-range` spans. They never tint body prose.
 
 A verb is L0 neutral bold and the `›` bullet alone carries success or running.
 The exceptions are failure, which tints the row's discriminators (§9.2), and
-record facts, which state real events rather than ambient status (§9.10).
+record and check facts, which state real events rather than ambient status
+(§9.10, §9.10.1).
 
 The test of a good ink assignment is to squint. Only L0 and non-dim severity tones
 should survive. If a wall of tool rows survives the squint at the same brightness
@@ -365,6 +366,9 @@ output stay one zoom away (§9.12).
   healthy columns are never green
 - a failed row tints its whole discriminator set (verb, bash heads, basename) in
   error ink, still bold. Supporting text stays dim; healthy rows are untouched
+- a bash row that exited 0 while its output reports a failed check (§9.10.1)
+  wears a warning bullet. Pipelines such as `npm test | tail -5` return the
+  filter's exit code, so success at the tool level is not success of the check
 
 ### 9.3 Bash ink
 
@@ -432,6 +436,13 @@ are validated against a corpus of 51k real invocations
     block-scoped: a `⋯` never points across visible prose, and never lands on a
     row with no real command after it; that row keeps its context, so no row
     goes dark. A distinct context prints once, on its first appearance
+  - a `cd` target under the row's working directory prints relative to it, the
+    way path rows do (§9.5): `cd ./.worktrees/fix`, not
+    `cd ~/projects/repo/.worktrees/fix`
+  - a lone `cd` whose target sits strictly below the previous bash row's lone
+    `cd` target folds the shared part into the same mark: `cd ⋯/slack-bridge &&`.
+    The `⋯` keeps one meaning: the previous bash row's context. The same
+    block-scoping applies
 
 ### 9.5 Path rows
 
@@ -513,14 +524,35 @@ row stays on the exact grid and can never overflow. Rows that fit their budget
 simply end early, like prose. A mid-token cut beside a dim ellipsis is legible;
 a wandering ellipsis column is not.
 
+A compound bash row (two or more crowned commands, §9.4) is the exception. A
+single middle cut keeps the opening context and the closing filter and drops
+the commands between them, which are the reason the row exists. So a compound
+row that overflows its budget fits by command instead:
+
+- every crowned head stays visible. Each command keeps the start of its own
+  text (head, subcommand, first arguments) and ends in a dim `… ` where its tail
+  was cut; the trailing connector goes with the tail
+- commands share the budget by water-filling: short commands render whole and
+  the longest are cut back to a common length, so one long heredoc cannot
+  starve its neighbours. The leading context (§9.4) takes part, cut in its
+  middle so its final directory survives: `cd ./…/slack-bridge && `
+- git's global options (`-c key=value`, `-C dir`, `--no-pager` and kin) fold to
+  `…` in a cut command, so `git … commit` keeps its subcommand
+- the row still ends flush at the suffix column, so the right edge holds; only
+  the interior ellipses wander, one per cut command
+- when even bare heads do not fit, the row falls back to the single middle cut
+
+A single-command row keeps the middle cut: its tail (the target file, the
+final filter) is usually what discriminates it.
+
 ### 9.9 Repetition folds
 
 Identical compact invocations within one assistant step fold into one row with a dim
 count: `mcp call linear_save_issue ×22`. The visible invocation is the key, so calls
 with different hidden arguments may fold; calls from separate steps never do. Folded
 rows sum landed result sizes and use the worst status: error, then running, then
-success. Expanded rows split folds. Reads, file mutations, image results and record
-rows stay separate because their row-specific facts matter. Ctrl+T restores native
+success. Expanded rows split folds. Reads, file mutations, image results, record
+rows and check rows stay separate because their row-specific facts matter. Ctrl+T restores native
 rows.
 
 Consecutive reads use a richer fold at two granularities sharing one grammar (both
@@ -603,6 +635,39 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
 
 Rarity keeps records on the right side of principle 3: a handful of green events
 punctuate the wall; ambient green stays purged.
+
+### 9.10.1 Checks
+
+Test, type-check, lint and format runs are the commonest compound rows, and
+their outcome is the row's point. A bash row whose command names a known
+checker and whose output carries that checker's summary leads with a check
+fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
+
+- evidence only, as for records: the command must invoke the checker (a
+  package script such as `pnpm test`, `npm run lint` or `npm run check`, or
+  `vitest`, `jest`, `pytest`, `cargo test`, `node --test`, `tsc`, `eslint`,
+  `oxlint`, `ruff`, `prettier`) and the output must carry its summary line. A
+  word in a file name (`cat test-log.txt`) does not count, and silence is not a
+  pass: a quiet `tsc` earns no fact
+- recognised summaries: Vitest and Jest `Tests` lines, `node --test` pass/fail
+  counts, pytest and cargo result lines, `tsc` errors, ESLint, oxlint, ruff and
+  Biome problem counts, and Prettier's check verdict. Counts from several
+  summaries in one output add up, so a red-then-green comparison run reports
+  its failure
+- wording is verb-first: `passed 1731 tests`, `failed 3 of 1731 tests`,
+  `found 2 type errors`, `found 5 lint errors`, `found 4 lint warnings`,
+  `passed lint`, `passed format`, `found 2 unformatted files`. Without tsc's
+  `Found N errors` summary the fact reads `found type errors`: the diagnostics
+  prove failure, but a `| head` may have hidden some of them
+- a pass is health, not news: it renders neutral bold (§9.2), never green. A
+  failure renders error bold and a warning-only result renders warning bold.
+  Principle 3 holds: the wall stays calm until a check fails
+- unlike a record, a check row keeps its size cell. Test output is pulled
+  context, not porcelain about an event
+- check facts share the record headline: they chain in output order with
+  records, merge same-verb neighbours of the same tone
+  (`passed 1731 tests, lint`), and obey the same one-third cap
+- check rows never repetition-fold (§9.9): their counts are row-specific
 
 ### 9.11 Collapsed thinking
 

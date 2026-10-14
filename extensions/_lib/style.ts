@@ -248,18 +248,25 @@ export function rightAlignSuffix(
 ): string {
   const maxWidth = Math.max(1, width);
   const bodyText = body.trimEnd();
-  if (!suffix) {
-    const budget = maxWidth - reserve >= MIN_HEAD_COLS ? maxWidth - reserve : maxWidth;
-    return middleTruncate(bodyText, budget, theme);
-  }
+  if (!suffix) return middleTruncate(bodyText, suffixBodyWidth(suffix, maxWidth, reserve), theme);
 
   const suffixWidth = visibleWidth(suffix);
   if (suffixWidth >= maxWidth) return truncateToWidth(suffix, maxWidth, ELLIPSIS);
 
-  const bodyWidth = Math.max(0, maxWidth - Math.max(suffixWidth + 2, reserve));
+  const bodyWidth = suffixBodyWidth(suffix, maxWidth, reserve);
   const fittedBody = bodyWidth > 0 ? middleTruncate(bodyText, bodyWidth, theme) : "";
   const gapWidth = Math.max(1, maxWidth - visibleWidth(fittedBody) - suffixWidth);
   return `${fittedBody}${" ".repeat(gapWidth)}${suffix}`;
+}
+
+/** The body width `rightAlignSuffix` leaves beside `suffix` under `reserve`, so a
+ * caller can fit a body itself before handing it over (traceline's compound rows). */
+export function suffixBodyWidth(suffix: string, width: number, reserve = 0): number {
+  const maxWidth = Math.max(1, width);
+  if (!suffix) return maxWidth - reserve >= MIN_HEAD_COLS ? maxWidth - reserve : maxWidth;
+  const suffixWidth = visibleWidth(suffix);
+  if (suffixWidth >= maxWidth) return 0;
+  return Math.max(0, maxWidth - Math.max(suffixWidth + 2, reserve));
 }
 
 // --- severity (design language §6) -------------------------------------------------------

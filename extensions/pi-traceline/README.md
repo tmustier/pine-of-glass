@@ -146,6 +146,15 @@ A command starts with `$`. Traceline highlights the commands that carry meaning 
 
 Multiline commands fit on one line. A dim `↵` marks each original line break. Traceline removes common boilerplate such as a leading `set -euo pipefail` and the bash tool's `(timeout Ns)` suffix. Use `Ctrl+T` to see the complete command.
 
+When a row runs several commands and does not fit, Traceline shortens each command rather than cutting out the middle of the row. Every command name stays visible, and a dim `…` marks where each one was shortened:
+
+```
+  ▏ › $ cd ./.worktrees/review-1068 && git status --short                                            0.1k ch
+  ▏ › $ cd ⋯/slack-bridge && git add -A && (pnpm lint 2>&1 | … pnpm typecheck 2>… npx prettier --c…  0.7k ch
+```
+
+A leading `cd` into the working directory prints relative to it (`cd ./.worktrees/fix`). A `cd` into a subdirectory of the previous row's directory prints as `cd ⋯/slack-bridge`.
+
 Successful commands can lead with a verified outcome:
 
 ```
@@ -153,6 +162,21 @@ Successful commands can lead with a verified outcome:
   ▏ › pushed main $ git push
   ▏ › merged PR #87 $ gh pr merge 87 --squash
 ```
+
+Test, type-check, lint and format runs lead with their outcome when the output
+carries the checker's summary:
+
+```
+  ▏ › passed 1731 tests $ ⋯ pnpm test 2>&1 | grep -E "Test Files|Tests" | tail -30                   1.2k ch
+  ▏ › failed 2 of 1731 tests $ ⋯ pnpm test | tail -5                                                 0.4k ch
+  ▏ › found 3 type errors $ ⋯ npx tsc --noEmit -p . 2>&1 | tail -3                                   0.8k ch
+```
+
+A pass renders in neutral bold; failures and warnings use the error and warning
+colours. If a command exits 0 but its output reports a failed check, the bullet
+turns to the warning colour. This happens when a pipe such as `| tail -5` hides
+the checker's exit code. Traceline needs the summary in the output: a silent
+`tsc` gets no outcome.
 
 Traceline requires result evidence, not just a command. A successful terminal `gh pr merge <number>` qualifies when Pi reports `(no output)`; auto modes do not. On merge-queue repositories, add a same-row `gh pr view <number> --json state` check when queued versus landed matters.
 

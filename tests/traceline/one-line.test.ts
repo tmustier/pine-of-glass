@@ -702,10 +702,10 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   assert.match(line, /\x1b\[90m[^\x1b]*\u21b5/, "break marks must sit inside a dim run");
   assert.ok(!visible.includes("timeout"), `timeout boilerplate stays stripped after flatten: ${visible}`);
 
-  // Narrow widths middle-truncate but still keep both ends of the flattened command.
+  // Narrow widths fit this compound row by command (§9.8): every crowned head survives.
   const narrow = stripAnsi(oneLine(comp, 60));
   assert.ok(narrow.includes("python3"), narrow);
-  assert.ok(narrow.includes("tail -4"), narrow);
+  assert.equal(narrow.match(/\btmux\b/g)?.length, 2, narrow);
 
   // Unit edges: blank-only lines drop out; a single line flattens to itself, unmarked;
   // the joined line stays plain — inkBashBody dims the marks later.

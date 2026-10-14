@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Traceline keeps every command visible in a long compound bash row. A row that
+  overflows now shortens each command instead of cutting out the middle, so
+  `cd … && git add && pnpm lint && pnpm typecheck` no longer hides the lint and type
+  check. Leading `cd` targets print relative to the working directory, and a `cd`
+  into a subdirectory of the previous row's folds to `cd ⋯/sub`.
+- Test, type-check, lint and format runs lead with their outcome when the output
+  carries a summary: `passed 1731 tests`, `failed 2 of 1731 tests`,
+  `found 3 type errors`. A command that exits 0 while its output reports a failed
+  check (`pnpm test | tail -5`) gets a warning bullet instead of a success bullet.
+
 ## 0.15.3 (2026-10-09)
 
 - Running status uses Pi's selected accent, including the terminal-derived `system`

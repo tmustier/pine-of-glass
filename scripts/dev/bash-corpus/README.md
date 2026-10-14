@@ -24,7 +24,7 @@ writes per-row crown lists so row-level regressions can be joined and inspected.
 
 ```bash
 node scripts/dev/bash-corpus/report.ts --census out/census-before.json --dump out/crowns-before.jsonl
-# ... edit extensions/pi-traceline/index.ts ...
+# ... edit extensions/pi-traceline/bash-crowns.ts ...
 node scripts/dev/bash-corpus/report.ts --census out/census-after.json --dump out/crowns-after.jsonl
 ```
 

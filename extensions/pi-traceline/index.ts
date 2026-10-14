@@ -24,11 +24,23 @@ import {
   middleTruncate,
   rightAlignSuffix,
   sizeTone,
+  suffixBodyWidth,
   tildify,
   type SizeThresholds,
   type Tone,
 } from "../_lib/style.ts";
-import { LINE_BREAK_MARK, PREAMBLE_MARK, bashPreambleRun, type BashPreambleRun } from "./bash-preamble.ts";
+import {
+  LINE_BREAK_MARK,
+  PREAMBLE_MARK,
+  bashPreambleRun,
+  bashTopLevelSegments,
+  loneCdTarget,
+  relativizeContextCd,
+  type BashPreambleRun,
+} from "./bash-preamble.ts";
+import { checkFacts, checkFailed, type CheckTone } from "./checks.ts";
+import { fitCompoundCommand, type FitPiece } from "./compound-fit.ts";
+import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
   drillDecorateNativeRow,
   drillRenderKey,
@@ -193,10 +205,12 @@ function toolStatus(comp: ToolRowDataLike | undefined): ToolStatus {
   return "running";
 }
 
+// A row that exited 0 while its output reports a failed check (§9.2, §9.10.1) wears a
+// warning bullet: `npm test | tail -5` returns tail's status, not the tests'.
 function statusTone(comp: ToolRowDataLike | undefined): Tone {
   const status = toolStatus(comp);
   if (status === "error") return "error";
-  if (status === "success") return "success";
+  if (status === "success") return comp && checkFailed(comp) ? "warning" : "success";
   return "running";
 }
 
@@ -442,12 +456,16 @@ function mutationInlineDiffInk(comp: ToolRowDataLike): string {
 // Facts chain in output order; consecutive same-verb facts merge their data
 // (`pushed main, v0.5.9`) and exact duplicates collapse. Merging also requires the
 // tones to agree (§9.10): a forced push never hides inside a routine one.
-type RecordCellData = { verb: string; data: string[]; tone: RecordTone; opaque: boolean };
+// Check facts (§9.10.1) share the headline: they chain with records in output order
+// and merge under the same rule; a pass wears neutral ink, never green.
+type RecordCellData = { verb: string; data: string[]; tone: RecordTone | CheckTone; opaque: boolean };
 
 function recordCellData(comp: ToolRowDataLike): RecordCellData[] {
   return renderCache.memo(comp, "records", () => {
     const merged: RecordCellData[] = [];
-    for (const fact of recordFacts(comp)) {
+    const facts = [...recordFacts(comp), ...checkFacts(comp).map((fact) => ({ ...fact, opaque: false }))]
+      .sort((a, b) => a.at - b.at);
+    for (const fact of facts) {
       const last = merged[merged.length - 1];
       if (last && last.verb === fact.verb && last.tone === fact.tone) {
         if (!last.data.includes(fact.datum)) last.data.push(fact.datum);
@@ -505,8 +523,10 @@ function recordHeadline(comp: ToolRowDataLike, available: number): string {
   return cells.map(inkRecordCell).join(dim(SEP));
 }
 
+// Only records of consequence suppress the size cell (§9.7); a check row keeps it,
+// because test output is pulled context (§9.10.1).
 function recordRow(comp: ToolRowDataLike): boolean {
-  return recordCellData(comp).length > 0;
+  return recordFacts(comp).length > 0;
 }
 
 // A record row's size cell is suppressed as noise (§9.10/§9.7): its result is
@@ -708,157 +728,6 @@ function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefin
   }) : undefined;
 }
 
-// Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
-const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-
-// Sequencing operators start a new command whose head word is a discriminator
-// (§9.4). Pipes and redirects continue a command — `| head -240` is a filter, and
-// §9.4's rejection of brightening filters stands — so `|` consumes a pending head
-// slot instead of re-arming it. The attached form of the semicolon (`sleep 60; ps`)
-// sequences too (§9.4); it is detected on the token, quote-aware, in the walk below.
-const BASH_SEQUENCER = /^(?:&&|\|\||;)$/;
-
-// A heredoc marker arms body-inertness (§9.4): from the `↵` that follows `<<TAG`
-// until the terminator line, tokens are data — no heads, no re-arms, and no quote
-// tracking, so an unbalanced apostrophe in heredoc prose cannot silence the commands
-// after the terminator (§9.4). A bare `<<`/`<<-` takes the next token as its tag;
-// `<<<` is a here-string, not a heredoc, and matches neither form.
-const BASH_HEREDOC_TOKEN = /^<<-?(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))?$/;
-
-// The crown vocabularies (§9.4, measured over a 51k-invocation corpus — see
-// scripts/dev/bash-corpus/). Preambles situate (`cd X && …`, `set -e; …`); plumbing
-// glues (`|| true`, `&& echo done`); neither is why the row exists, so neither wears
-// a crown when a real command in the row does. Closers are the block keywords a
-// sequencer exposes (`; do`, `↵ fi`); they pass the crown to the head that follows.
-const BASH_PREAMBLE_HEADS = new Set(["cd", "set"]);
-const BASH_PLUMBING_HEADS = new Set(["echo", "true", "false", "printf", "exit"]);
-const BASH_CLOSERS = new Set(["do", "done", "then", "else", "elif", "fi", "esac", "in"]);
-
-type BashHeadClass = "real" | "plumbing" | "preamble";
-type BashHead = { start: number; end: number; cls: BashHeadClass };
-
-// One walk over the flattened body collects every command's head candidate (§9.4's
-// grammar): tokens scan left to right with quote state carried across
-// them (the gaps are whitespace and hold none), sequencers re-arm the pending head
-// slot only outside quotes, a token-final unquoted `;` re-arms exactly like the
-// space-delimited form, and heredoc bodies are skipped whole. Within an armed slot:
-// env assignments are scanned past (§9.4), block closers pass the crown through,
-// and a token with no word character (§9.4) or a leading `-` (a flattened
-// continuation line's flag, §9.4) renders headless and consumes the slot so a
-// pipe filter cannot inherit it.
-function bashHeadCandidates(body: string): BashHead[] {
-  const heads: BashHead[] = [];
-  let quote: "'" | '"' | undefined;
-  let headPending = true;
-  let heredocTag: string | undefined; // armed by `<<TAG`; active from the next ↵
-  let heredocTagFromNext = false; // armed by a bare `<<`; the next token names the tag
-  let heredocActive = false;
-  let atLineStart = false; // inside a heredoc: was the previous token a ↵?
-  const tokens = /\S+/g;
-  let match: RegExpExecArray | null;
-  while ((match = tokens.exec(body))) {
-    const text = match[0];
-    if (heredocActive) {
-      if (text === LINE_BREAK_MARK) {
-        atLineStart = true;
-        continue;
-      }
-      if (atLineStart && text === heredocTag) {
-        heredocActive = false;
-        heredocTag = undefined;
-      }
-      atLineStart = false;
-      continue;
-    }
-    const startsInQuote = quote !== undefined;
-    // Advance the quote scanner across this token. A backslash escapes the next
-    // character except inside single quotes; a `;` counts as a sequencer only when
-    // it is the token's last character and sits outside any quote (`\;` is find's).
-    let endsWithUnquotedSemi = false;
-    for (let k = 0; k < text.length; k++) {
-      const ch = text[k];
-      if (quote === "'") {
-        if (ch === "'") quote = undefined;
-      } else if (quote === '"') {
-        if (ch === "\\") k++;
-        else if (ch === '"') quote = undefined;
-      } else if (ch === "'") quote = "'";
-      else if (ch === '"') quote = '"';
-      else if (ch === "\\") k++;
-      else if (ch === ";" && k === text.length - 1) endsWithUnquotedSemi = true;
-    }
-    if (!startsInQuote) {
-      if (text === LINE_BREAK_MARK) {
-        if (heredocTag !== undefined) {
-          heredocActive = true;
-          headPending = false;
-        } else headPending = true;
-        atLineStart = true;
-        continue;
-      }
-      if (BASH_SEQUENCER.test(text)) {
-        headPending = true;
-        continue;
-      }
-      if (text === "|") {
-        headPending = false;
-        continue;
-      }
-      if (text === PREAMBLE_MARK) continue; // the ⋯ elision mark neither crowns nor consumes
-      if (heredocTagFromNext) {
-        heredocTagFromNext = false;
-        heredocTag = text.replace(/^['"]|['"]$/g, "");
-        continue;
-      }
-      const heredoc = BASH_HEREDOC_TOKEN.exec(text);
-      if (heredoc) {
-        const tag = heredoc[1] ?? heredoc[2] ?? heredoc[3];
-        if (tag !== undefined) heredocTag = tag;
-        else heredocTagFromNext = true;
-        continue;
-      }
-      if (headPending && !ENV_ASSIGNMENT.test(text)) {
-        // Parens are apparatus (§9.4's spirit): `(cd …` and `… || true)` classify
-        // and crown on the inner word, so a subshell close cannot smuggle glue past
-        // the §9.4 vocabularies and a crown never bolds punctuation.
-        const trimmed = endsWithUnquotedSemi ? text.slice(0, -1) : text;
-        const open = /^\(+/.exec(trimmed)?.[0].length ?? 0;
-        const close = /\)+$/.exec(trimmed)?.[0].length ?? 0;
-        const word = trimmed.slice(open, trimmed.length - close);
-        const wordStart = match.index + open;
-        if (!/[A-Za-z0-9]/.test(word) || word.startsWith("-")) {
-          headPending = false; // §9.4: apparatus and flags consume the slot
-        } else if (!BASH_CLOSERS.has(word)) {
-          const cls: BashHeadClass = BASH_PREAMBLE_HEADS.has(word)
-            ? "preamble"
-            : BASH_PLUMBING_HEADS.has(word)
-              ? "plumbing"
-              : "real";
-          heads.push({ start: wordStart, end: wordStart + word.length, cls });
-          headPending = false;
-        }
-        // a closer falls through with the slot still armed: `; do gh …` crowns gh
-      }
-    }
-    atLineStart = false;
-    if (endsWithUnquotedSemi) headPending = true;
-  }
-  return heads;
-}
-
-// Crown selection is row-global (§9.4): every real command head is crowned, and
-// preamble (`cd`, `set`) and plumbing (`echo`, `true`, …) heads render headless
-// beside them. A row with no real head keeps its first operative head — plumbing
-// before preamble — so no row goes dark: `$ cd /tmp` and `$ echo hi > f` still
-// carry one crown each.
-function bashCrownedHeads(body: string): BashHead[] {
-  const heads = bashHeadCandidates(body);
-  const real = heads.filter((head) => head.cls === "real");
-  if (real.length > 0) return real;
-  const fallback = heads.find((head) => head.cls === "plumbing") ?? heads[0];
-  return fallback ? [fallback] : [];
-}
-
 // Emission splices the crowns into dim runs: everything between crowned head words —
 // arguments, operators, marks, quoted scripts, demoted glue — dims in maximal spans
 // (middleTruncate replays the active ink after a cut, §5, so a long dim run
@@ -876,9 +745,30 @@ function inkBashBody(body: string, comp?: ToolRowDataLike): string {
   return out;
 }
 
-function inkBashRow(comp: ToolRowDataLike | undefined, text: string): string {
+// A compound row that overflows `budget` fits by command (§9.8): the kept ranges ink
+// with the crowns computed on the whole body, and each cut wears a dim `…`.
+function inkFittedBashBody(body: string, pieces: FitPiece[], comp?: ToolRowDataLike): string {
+  const crowns = bashCrownedHeads(body);
+  let out = "";
+  for (const piece of pieces) {
+    let cursor = piece.start;
+    for (const crown of crowns) {
+      if (crown.start < piece.start || crown.end > piece.end) continue;
+      if (crown.start > cursor) out += dim(body.slice(cursor, crown.start));
+      out += discriminatorInk(comp, body.slice(crown.start, crown.end));
+      cursor = crown.end;
+    }
+    if (cursor < piece.end) out += dim(body.slice(cursor, piece.end));
+    if (piece.mark) out += dim(piece.mark);
+  }
+  return out;
+}
+
+function inkBashRow(comp: ToolRowDataLike | undefined, text: string, budget = Number.POSITIVE_INFINITY): string {
   if (!text.startsWith("$ ")) return dim(text);
-  return `${verbInk(comp, "$")} ${inkBashBody(text.slice(2), comp)}`;
+  const body = text.slice(2);
+  const pieces = body.length + 2 > budget ? fitCompoundCommand(body, bashCrownedHeads(body), budget - 2) : undefined;
+  return `${verbInk(comp, "$")} ${pieces ? inkFittedBashBody(body, pieces, comp) : inkBashBody(body, comp)}`;
 }
 
 function commandPrefixLength(comp: ToolRowDataLike | undefined, line: string): number {
@@ -1023,13 +913,16 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
 // The invocation body with family ink applied: bash rows rebuild from plain text, path
 // rows get the dim-directory emphasis, everything else keeps pi's native line with a
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
-function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY): string {
-  return renderCache.memo(comp, `invocation:${available}:${objectCacheKey(currentTheme())}`, () => {
+// `bodyBudget` is the width the row's body may use beside its suffix; a compound bash
+// row fits itself to it by command (§9.8). Other rows leave the cut to rightAlignSuffix.
+function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, bodyBudget = Number.POSITIVE_INFINITY): string {
+  return renderCache.memo(comp, `invocation:${available}:${bodyBudget}:${objectCacheKey(currentTheme())}`, () => {
     if (toolLabel(comp?.toolName) === "bash") {
       const plain = bashInvocationText(comp);
       if (plain === undefined) return inkedFallbackLine(comp);
-      const body = inkBashRow(comp, foldBashPreamble(comp, tildify(plain)));
       const headline = recordHeadline(comp, available);
+      const headlineWidth = headline ? visibleWidth(headline) + 1 : 0;
+      const body = inkBashRow(comp, foldBashPreamble(comp, bashDisplayLine(comp, plain)), bodyBudget - headlineWidth);
       return headline ? `${headline} ${body}` : body;
     }
     const native = nativeInvocationLine(comp);
@@ -1055,12 +948,14 @@ function oneLine(comp: ToolRowLike, width: number): string {
   const rows = blockToolRows(comp);
   const facts = blockFacts(rows);
   const available = traceRowAvailable(width);
+  const suffix = toolFactSuffix(comp, available, facts);
+  const reserve = blockSuffixReserve(rows, facts, available);
   return fitTraceRow(
     comp,
     statusTone(comp),
-    invocationInk(comp, available),
-    toolFactSuffix(comp, available, facts),
-    blockSuffixReserve(rows, facts, available),
+    invocationInk(comp, available, suffixBodyWidth(suffix, available, reserve)),
+    suffix,
+    reserve,
     width,
   );
 }
@@ -1103,7 +998,16 @@ function bashPreambleRunOf(comp: ToolRowDataLike | undefined): BashPreambleRun |
   if (!comp || toolLabel(comp?.toolName) !== "bash") return undefined;
   const plain = bashInvocationText(comp);
   if (plain === undefined || !plain.startsWith("$ ")) return undefined;
-  return bashPreambleRun(tildify(plain).slice(2));
+  return bashPreambleRun(bashDisplayLine(comp, plain).slice(2));
+}
+
+// The tildified `$ …` line with its leading `cd` targets relative to the row's cwd
+// (§9.4), so context keys and the shown text agree across rows.
+function bashDisplayLine(comp: ToolRowDataLike, plain: string): string {
+  const line = tildify(plain);
+  if (!line.startsWith("$ ")) return line;
+  const cwd = typeof comp.cwd === "string" && comp.cwd.length > 0 ? tildify(comp.cwd) : undefined;
+  return `$ ${relativizeContextCd(line.slice(2), cwd)}`;
 }
 
 // Reclaim the leading preamble of a `$ …` line (§9.4): fold the situating context to a
@@ -1121,6 +1025,18 @@ function foldBashPreamble(comp: ToolRowDataLike, line: string): string {
     const prev = bashPreambleRunOf(previousBashRow(comp));
     if (prev && prev.contextText === run.contextText) {
       return `$ ${PREAMBLE_MARK} ${body.slice(run.firstRealStart)}`;
+    }
+    // A lone `cd` strictly below the previous row's lone `cd` folds the shared part:
+    // `cd ⋯/slack-bridge && …` (§9.4).
+    const target = loneCdTarget(run.contextText);
+    const base = prev ? loneCdTarget(prev.contextText) : undefined;
+    if (target && base && base !== "." && target.startsWith(`${base}/`)) {
+      const seg = bashTopLevelSegments(body).find((s) => s.text.startsWith("cd") && s.start >= (run.dropStart ?? 0));
+      if (seg) {
+        const targetStart = seg.start + seg.text.length - target.length;
+        const nested = `${body.slice(seg.start, targetStart)}${PREAMBLE_MARK}${target.slice(base.length)}`;
+        return `$ ${nested}${body.slice(seg.start + seg.text.length)}`;
+      }
     }
   }
   // B: otherwise drop a leading `set -…` hygiene run outright (dropStart > 0 means a
@@ -1213,7 +1129,7 @@ function readRun(comp: ToolRowLike): { rows: ToolRowLike[]; index: number } | un
 // Reads, mutations, records and images carry facts a generic count cannot preserve.
 function repetitionKey(comp: ToolRowLike): string | undefined {
   if (comp.expanded === true || isRevealed(comp) || toolLabel(comp.toolName) === "read") return undefined;
-  if (inlineMutationRow(comp) || recordRow(comp) || resultImageFact(comp)) return undefined;
+  if (inlineMutationRow(comp) || recordCellData(comp).length > 0 || resultImageFact(comp)) return undefined;
   return stripAnsi(invocationInk(comp)).trim() || undefined;
 }
 
@@ -1238,10 +1154,12 @@ function foldedRepetitionLine(rows: ToolRowLike[], width: number): string {
   const blockRows = blockToolRows(carrier);
   const facts = blockFacts(blockRows);
   const available = traceRowAvailable(width);
-  const body = `${invocationInk(failed ?? carrier, available)}${dim(` ×${rows.length}`)}`;
+  const count = ` ×${rows.length}`;
   const suffix = charSuffix(combinedResultChars(rows), facts.sizeColumnLive);
-  return fitTraceRow(carrier, status, body, suffix,
-    blockSuffixReserve(blockRows, facts, available), width, "▸");
+  const reserve = blockSuffixReserve(blockRows, facts, available);
+  const budget = suffixBodyWidth(suffix, available, reserve) - count.length;
+  const body = `${invocationInk(failed ?? carrier, available, budget)}${dim(count)}`;
+  return fitTraceRow(carrier, status, body, suffix, reserve, width, "▸");
 }
 
 function foldedReadSuffix(rows: ToolRowDataLike[], facts: BlockFacts): string {

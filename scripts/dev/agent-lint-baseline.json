@@ -294,7 +294,7 @@
     "files": {
       "extensions/pi-cachemire/index.ts": 694,
       "extensions/pi-contextimate/index.ts": 848,
-      "extensions/pi-traceline/index.ts": 1674,
+      "extensions/pi-traceline/index.ts": 1592,
       "tests/traceline/one-line.test.ts": 772
     }
   },

@@ -287,7 +287,7 @@ const RECORD_RULES: RecordRule[] = [
   },
 ];
 
-function resultText(comp: ToolRowDataLike | undefined): string {
+export function resultText(comp: ToolRowDataLike | undefined): string {
   const content = comp?.result?.content;
   if (!Array.isArray(content)) return "";
   let out = "";

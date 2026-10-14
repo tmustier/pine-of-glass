@@ -101,6 +101,37 @@ export function classifyBashSegment(text: string): BashSegmentClass {
   return "real";
 }
 
+// A `cd` target under the row's working directory prints relative to it (§9.4), the
+// way path rows show `./` (§9.5). Only the leading preamble run is rewritten: an
+// interior `cd` is part of a real command's story and keeps its text. Both inputs are
+// tildified, so `cd ~/repo/x` under cwd `~/repo` becomes `cd ./x`.
+export function relativizeContextCd(body: string, cwd: string | undefined): string {
+  if (!cwd) return body;
+  const root = cwd.replace(/\/+$/, "");
+  if (root.length === 0) return body;
+  const edits: { start: number; end: number; text: string }[] = [];
+  for (const seg of bashTopLevelSegments(body)) {
+    const cls = classifyBashSegment(seg.text);
+    if (cls === "real") break;
+    if (cls !== "context") continue;
+    const target = /^cd\s+(\S+)$/.exec(seg.text)?.[1];
+    if (target === undefined) continue;
+    const shown = target === root ? "." : target.startsWith(`${root}/`) ? `./${target.slice(root.length + 1)}` : undefined;
+    if (shown === undefined) continue;
+    const start = seg.start + seg.text.length - target.length;
+    edits.push({ start, end: start + target.length, text: shown });
+  }
+  let out = body;
+  for (const edit of edits.reverse()) out = `${out.slice(0, edit.start)}${edit.text}${out.slice(edit.end)}`;
+  return out;
+}
+
+// The target of a context run that is exactly one unquoted `cd <dir>`, else undefined.
+// Nested-context folding (§9.4) compares two such targets.
+export function loneCdTarget(contextText: string): string | undefined {
+  return /^cd\s+([^\s'"]+)$/.exec(contextText)?.[1];
+}
+
 export type BashPreambleRun = {
   contextText: string; // situating context, joined; "" when the run has none
   firstRealStart?: number; // body index of the first real command, if any
