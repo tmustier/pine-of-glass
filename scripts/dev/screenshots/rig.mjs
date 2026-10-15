@@ -330,7 +330,7 @@ function codemodeShot() {
   ].join(" ");
   // Stage 1: live. `pi -p` runs the real agent loop with codemode active and records the session.
   // No shell: the prompt carries backticks that a shell would substitute.
-  const live = run(["pi", "-p", "--model", "openai/gpt-6.1-sol:medium", "--session-dir", sessionDir, prompt], {
+  const live = run(["pi", "-p", "--model", "openai-codex/gpt-6.1-sol:medium", "--session-dir", sessionDir, prompt], {
     cwd: fixture.cwd, env: { ...process.env, HOME: fixture.home }, timeout: 600000,
   });
   if (live.status !== 0) throw new Error(`live stage failed: ${live.stderr}\n${live.stdout}`);

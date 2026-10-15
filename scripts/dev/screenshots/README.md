@@ -116,7 +116,7 @@ boundaries; only the tiny fixture prompt is crafted.
 
 ### codemode: live session, replayed twice
 
-Stage 1 runs `pi -p` with `codemode` enabled and a real model (`openai/gpt-6.1-sol`) over a
+Stage 1 runs `pi -p` with `codemode` enabled and a real model (`openai-codex/gpt-6.1-sol`) over a
 small docs fixture, asking for three scripts: a parallel fan-out read with one missing
 file plus a `find`, a small read-and-`wc` script, and one with no tool calls. Pi records
 the session with real nested calls, a real ENOENT and real durations. Stage 2 replays it in
