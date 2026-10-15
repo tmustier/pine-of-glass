@@ -1,7 +1,7 @@
 // Pins for the pi seams behind the peek pager's fidelity surface (design language
 // §9.13) and the trace row's image what-fact (§9.7): the result image blocks pi's
 // read tool emits, the ToolExecutionComponent fields the pager piggybacks on
-// (showImages, convertedImages, the kitty PNG-only guard), the bare-name call
+// (showImages, image sources handed to pi-tui's transcoding Image), the call
 // fallback that justifies the pager's argument grammar, the syntax-highlight exports
 // behind the pager's code grammar, and the pi-tui image API (Image component line
 // accounting, kitty id deletion). After `pi update`, a failure here names exactly
@@ -42,28 +42,35 @@ test("ToolExecutionComponent seams the pager piggybacks on", () => {
   );
   assert.ok(
     source.includes('this.result.content.filter((c) => c.type === "image")'),
-    "image blocks no longer filtered by type — convertedImages indexing drifted",
+    "image blocks no longer filtered by type — the pager's per-block indexing drifted",
   );
+  // Pi 1.x keeps no conversions on the row: it hands each block's source to pi-tui's
+  // Image and registers the PNG transcoder that Image applies for kitty. The pager
+  // passes sources through the same way (drill-pager-content.ts imagePixelSource).
   assert.ok(
-    source.includes("this.convertedImages.set(index, {") &&
-      source.includes("sourceData,") && source.includes("sourceMimeType,") &&
-      source.includes("...converted,"),
-    "convertedImages no longer records source identity with the converted pixels — the pager's kitty reuse drifted",
+    !source.includes("convertedImages") &&
+      source.includes("new Image(source.data, source.mimeType,") &&
+      source.includes("ensurePngTranscoder("),
+    "the row's image conversion moved — re-check imagePixelSource's era test (convertedImages)",
   );
+  const imageSource = readFileSync(join(resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "components/image.js")), "utf8");
   assert.ok(
-    source.includes("cached?.sourceData === img.data && cached.sourceMimeType === img.mimeType"),
-    "native image rendering no longer validates conversion source identity — re-check the pager's stale-image guard",
+    /caps\.images === "kitty" && this\.mimeType !== "image\/png"\) \{\s*this\.pngData \?\?= toPng\(/.test(imageSource),
+    "pi-tui Image no longer transcodes non-PNG for kitty — the pager would hand kitty raw JPEG",
   );
-  assert.ok(
-    /caps\.images === "kitty" && imageMimeType !== "image\/png"/.test(source),
-    "kitty PNG-only guard gone — re-verify the pager's mirrored guard",
-  );
-  // A tool without renderCall renders only its bold name; that bareness is why the
-  // pager renders the complete arguments itself (§9.13).
+  // A tool without renderCall renders its bold name plus a collapsed `key=value`
+  // preview cut at a fixed character budget (pi 0.99: formatToolCallWithArgs); the
+  // pager still renders the complete, aligned arguments itself (§9.13) because the
+  // preview is lossy.
   assert.ok(
     source.includes("createCallFallback() {") &&
-      source.includes("return new Text(theme.fg(\"toolTitle\", theme.bold(this.toolName)), 0, 0);"),
-    "call fallback no longer a bare tool name — revisit whether the argument grammar still owns this gap",
+      source.includes("return new Text(formatToolCallWithArgs(this.toolName, this.args, theme, this.expanded), 0, 0);"),
+    "call fallback shape drifted — revisit whether the argument grammar still owns this gap",
+  );
+  const renderUtils = readFileSync(join(piRoot, "dist/core/tools/render-utils.js"), "utf8");
+  assert.ok(
+    /const preview = pairs\.length > COLLAPSED_ARGS_CHARS \? `\$\{pairs\.slice\(0, COLLAPSED_ARGS_CHARS - 3\)\}\.\.\.` : pairs;/.test(renderUtils),
+    "collapsed fallback preview no longer lossy — the pager's argument grammar may be redundant",
   );
 });
 

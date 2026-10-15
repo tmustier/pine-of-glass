@@ -6,7 +6,7 @@
 // suite pins the real pi shapes (convertedImages, showImages, image result blocks).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
+import { getCapabilities, setCapabilities, setImageTranscoder, type TUI } from "@earendil-works/pi-tui";
 
 import { DrillPager } from "../../extensions/pi-traceline/drill-pager.ts";
 import { argumentLines, codeContextFor, imageFactLine, textBlockLines } from "../../extensions/pi-traceline/drill-pager-content.ts";
@@ -173,7 +173,7 @@ test("inline pixels are atomic: partial visibility shows the hint, full visibili
   assert.ok(!settled.map((line) => stripAnsi(line)).join("\n").includes("scroll to view"), "hint yields to pixels");
 });
 
-test("showImages false suppresses pixels; kitty draws only PNG, reusing pi's conversions", () => {
+test("showImages false suppresses pixels; on older Pi kitty draws only PNG, reusing pi's conversions", () => {
   setCapabilities({ images: "iterm2", trueColor: true, hyperlinks: false });
   const off = pagerFor([imageRow({ showImages: false })]).render(80).map((line) => stripAnsi(line)).join("\n");
   assert.match(off, /image · png/, "the fact line stays");
@@ -181,7 +181,7 @@ test("showImages false suppresses pixels; kitty draws only PNG, reusing pi's con
 
   setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
   const jpeg = { type: "image", data: pngBase64(100, 4000), mimeType: "image/jpeg" };
-  const unconverted = imageRow({ result: { content: [jpeg], isError: false } });
+  const unconverted = imageRow({ result: { content: [jpeg], isError: false }, convertedImages: new Map() });
   const kittyOff = pagerFor([unconverted]).render(80).map((line) => stripAnsi(line)).join("\n");
   assert.ok(!kittyOff.includes("scroll to view"), "kitty without a PNG conversion keeps the fact line only");
 
@@ -221,6 +221,22 @@ test("showImages false suppresses pixels; kitty draws only PNG, reusing pi's con
     process.stdout.write = originalWrite;
   }
   assert.ok(writes.some((chunk) => chunk.includes("a=d")), "dispose emits the kitty delete sequence");
+});
+
+test("on Pi 1.x kitty draws a non-PNG block through pi-tui's own transcoder", () => {
+  setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+  const jpeg = { type: "image", data: pngBase64(100, 4000), mimeType: "image/jpeg" };
+  const png = pngBase64(100, 4000);
+  setImageTranscoder((data, mimeType) => (data === jpeg.data && mimeType === "image/jpeg" ? png : null));
+  try {
+    const pager = pagerFor([imageRow({ result: { content: [jpeg], isError: false } })]);
+    pager.render(80);
+    pager.scrollBy(Number.MAX_SAFE_INTEGER);
+    assert.ok(pager.render(80).some((line) => line.includes("\x1b_G")), "the transcoded PNG renders through kitty");
+    pager.dispose();
+  } finally {
+    setImageTranscoder(undefined);
+  }
 });
 
 // --- the trace row's image what-fact (§9.7) ---------------------------------------------

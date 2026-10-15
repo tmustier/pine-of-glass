@@ -32,6 +32,8 @@ test(
     const temp = mkdtempSync(join(tmpdir(), "pog-codex-builder-"));
     const testBuilder = join(temp, "build-system-prompt.mjs");
     const piModule = pathToFileURL(join(piRoot, "dist/index.js")).href;
+    // The copy leaves the package tree, so its relative sibling imports resolve back
+    // to their original locations.
     writeFileSync(
       testBuilder,
       readFileSync(codexConversionBuilder, "utf8")

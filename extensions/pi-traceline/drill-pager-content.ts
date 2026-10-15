@@ -194,9 +194,10 @@ export function foreignBlockLine(theme: Theme | undefined, block: object): strin
 }
 
 // Pixels mirror pi's own native tool row (§9.13): the row's showImages setting is
-// honoured, terminal capabilities decide, and pi's async kitty PNG conversions
-// (tool-execution.ts convertedImages) are reused rather than redone. Kitty draws PNG
-// only; an unconverted block keeps its fact line, exactly as pi's row does.
+// honoured and terminal capabilities decide. Kitty draws PNG only. Pi 1.x hands the
+// source to pi-tui's Image, which transcodes for kitty itself, so the pager does the
+// same. Older Pi converted in the row (convertedImages): the pager reuses a matching
+// conversion, and an unconverted block keeps its fact line, as that row did.
 export function imagePixelSource(
   call: ToolRowLike,
   imageIndex: number,
@@ -218,6 +219,7 @@ export function imagePixelSource(
   const data = converted?.data ?? sourceData;
   const mimeType = converted?.mimeType ?? sourceMimeType;
   if (!data || !mimeType) return undefined;
-  if (caps.images === "kitty" && mimeType !== "image/png") return undefined;
+  const rowConverts = call.convertedImages instanceof Map;
+  if (rowConverts && caps.images === "kitty" && mimeType !== "image/png") return undefined;
   return { data, mimeType };
 }

@@ -157,9 +157,13 @@ try {
   pane = waitFor("compact mode", compactScanRow);
   check("compact mode renders the scan view", compactScanRow(pane));
 
+  // Pi 1.x redraws a changed block in place without keeping the old frames in
+  // scrollback, so the expanded tools note must fit on screen: grow the window for it.
+  run(["tmux", "resize-window", "-t", session, "-x", "120", "-y", "140"]);
   run(["tmux", "send-keys", "-t", session, "/contextimate expanded", "Enter"]);
   pane = waitFor("expanded mode", (text) => /readable view/.test(text));
   check("expanded mode renders the detail view", /readable view/.test(pane));
+  run(["tmux", "resize-window", "-t", session, "-x", "120", "-y", "45"]);
 
   // 3. /reload keeps exactly one estimator block (regression: duplicate insertion).
   // Back to summary first so the block fits the viewport, and count on the visible

@@ -105,7 +105,8 @@ test("mounted transcript retains the structure used to discover chat", () => {
     "loaded resources no longer precede chat",
   );
   assert.ok(/addLoadedSection[\s\S]{0,400}this\.loadedResourcesContainer\.addChild\(section\)/.test(source));
-  for (const name of ["Skills", "Prompts", "Extensions", "Themes"]) {
+  // Pi 0.99 dropped the startup [Themes] section; the remaining headers still anchor discovery.
+  for (const name of ["Skills", "Prompts", "Extensions"]) {
     assert.ok(source.includes(`"${name}"`), `startup section [${name}] renamed`);
   }
 });

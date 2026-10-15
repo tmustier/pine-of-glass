@@ -34,12 +34,13 @@ export function thinkingRoute(model: ExtensionContext["model"]): ThinkingRoute |
 }
 
 function routeOf(model: ActiveModel): ThinkingRoute {
+	// Pi types compat per API, and only some APIs declare the flag: read it as data.
+	const compat: unknown = model.compat;
 	return {
 		provider: model.provider,
 		model: model.id,
 		api: model.api,
-		supportsMidConvoEffort:
-			isJsonObject(model.compat) && model.compat.supportsMidConvoEffort === true,
+		supportsMidConvoEffort: isJsonObject(compat) && compat.supportsMidConvoEffort === true,
 	};
 }
 

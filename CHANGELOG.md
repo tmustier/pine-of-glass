@@ -11,6 +11,10 @@
   carries a summary: `passed 1731 tests`, `failed 2 of 1731 tests`,
   `found 3 type errors`. A command that exits 0 while its output reports a failed
   check (`pnpm test | tail -5`) gets a warning bullet instead of a success bullet.
+- Development and tests now run on Pi 1.2.0 instead of 0.87.1. The six contract
+  checks that failed on current Pi are re-pinned, and the minimum supported Pi is
+  unchanged. On Pi 1.x, Traceline's Drill viewer shows JPEG and other non-PNG images
+  on kitty-protocol terminals again, using Pi's own converter.
 
 ## 0.15.3 (2026-10-09)
 
