@@ -623,7 +623,8 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
 - facts chain in output order with the `·` separator; consecutive same-verb
   facts merge their data (`pushed main, v0.5.9`) only when their tones agree,
   so a forced push never hides inside a routine one
-- overflow drops whole facts, oldest first. Records take at most about a third
+- overflow drops whole facts, oldest first; a merged cell's data are separate
+  facts, so `pushed main, v0.5.9` narrows to `pushed v0.5.9`. Records take at most about a third
   of the row, so the command keeps its width; a mangled sha is worse than none
 - records wear the ink of what they state: the cell renders success-toned bold,
   verb and datum together (`pushed main`, `released v0.5.9`), because a refname,
@@ -649,16 +650,32 @@ fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
   `oxlint`, `ruff`, `prettier`) and the output must carry its summary line. A
   word in a file name (`cat test-log.txt`) does not count, and silence is not a
   pass: a quiet `tsc` earns no fact
-- recognised summaries: Vitest and Jest `Tests` lines, `node --test` pass/fail
-  counts, pytest and cargo result lines, `tsc` errors, ESLint, oxlint, ruff and
-  Biome problem counts, and Prettier's check verdict. Counts from several
-  summaries in one output add up, so a red-then-green comparison run reports
-  its failure
+- recognised summaries: Vitest and Jest `Tests` lines with their `Test Files` and
+  `Test Suites` lines, `node --test` pass/fail counts (spec `ℹ` or TAP `#`, on
+  their own lines or joined onto one), pytest and cargo result lines, `tsc`
+  errors, ESLint, oxlint, ruff and Biome problem counts, and Prettier's check
+  verdict
+- one summary is one run, and each run states its own fact. Counts never add up
+  across runs: agents rerun checks in loops, before and after an edit, and as
+  red-then-green comparisons, and a sum is a number no run printed (three runs
+  of 17 tests are not `passed 51 tests`). Runs chain in output order and merge
+  like records, so identical reruns collapse to `passed 17 tests` and a
+  comparison reads `failed 1 of 2 tests · passed 2 tests`. cargo prints one
+  result line per test target; the lines of one invocation are one run
+- a pass needs the summary to prove zero failures: a Vitest or Jest total, a
+  pytest line, a `node --test` `fail 0`. A run whose test files failed to load
+  is not a pass even when every collected test passed: `failed 1 of 5 test
+  files`. Nor is a Vitest run that reported unhandled errors:
+  `found 1 unhandled error`. Cancelled `node --test` tests count as failed.
+  When only the failure count survived the pipe, the fact states no total:
+  `failed 3 tests`
 - wording is verb-first: `passed 1731 tests`, `failed 3 of 1731 tests`,
-  `found 2 type errors`, `found 5 lint errors`, `found 4 lint warnings`,
-  `passed lint`, `passed format`, `found 2 unformatted files`. Without tsc's
-  `Found N errors` summary the fact reads `found type errors`: the diagnostics
-  prove failure, but a `| head` may have hidden some of them
+  `failed 3 tests`, `failed 1 of 5 test files`, `found 2 type errors`,
+  `found 5 lint errors`, `found 4 lint warnings`, `passed lint`,
+  `passed format`, `found 2 unformatted files`. tsc prints its
+  `Found N errors` summary only to a terminal, so a piped run (the usual agent
+  shape) shows diagnostics alone and the fact reads `found type errors`: the
+  diagnostics prove failure, but a `| head` may have hidden some of them
 - a pass is health, not news: it renders neutral bold (§9.2), never green. A
   failure renders error bold and a warning-only result renders warning bold.
   Principle 3 holds: the wall stays calm until a check fails
@@ -668,7 +685,11 @@ fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
   records, merge same-verb neighbours of the same tone
   (`passed 1731 tests, lint`), and obey the same one-third cap. On overflow a
   failed check is dropped last, so a cramped row keeps `found type errors` over
-  an older pass or warning
+  an older pass or warning, and a merged cell gives up its oldest datum before
+  the cell goes: `passed 30 tests, 13 tests` narrows to `passed 13 tests`. A
+  failure is the row's news and the only explanation of a warning bullet, so a
+  lone failed check may take up to half the row (agent default, not requested)
+  before it goes
 - check rows never repetition-fold (§9.9): their counts are row-specific
 
 ### 9.11 Collapsed thinking

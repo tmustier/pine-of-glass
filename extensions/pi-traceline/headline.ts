@@ -35,9 +35,13 @@ export function recordCellText(cell: RecordCellData): string {
 }
 
 // Records may take at most roughly a third of the row (§9.10), so the command keeps
-// its width: overflow drops whole facts oldest first (a failed check last, §9.10.1) —
+// its width: overflow drops whole facts oldest first (a failed check last, §9.10.1),
+// one datum of a merged cell at a time —
 // terminal state wins, a mangled sha is worse than none, Ctrl+T shows the rest.
 const RECORD_HEADLINE_SHARE = 1 / 3;
+// A failure is the row's news and the only explanation of its warning bullet (§9.10.1),
+// so a lone failed check may take this much before it goes.
+const LONE_FAILURE_SHARE = 1 / 2; // agent-default (not a user rule): 2026-10-15
 
 // Records wear the ink of what they state (§9.10): the cell renders bold in its
 // fact's tone — success for landed state, warning for a forced push — verb and datum
@@ -64,11 +68,19 @@ function inkRecordCell(theme: Theme | undefined, cell: RecordCellData): string {
 // success on a red row still headlines what landed. The headline survives truncation:
 // the middle cut (§9.8) lands in the command, never in the record.
 export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], available: number): string {
-  const cells = [...all];
+  const cells = all.map((cell) => ({ ...cell, data: [...cell.data] }));
   if (!cells.length) return "";
   const cap = Math.floor(available * RECORD_HEADLINE_SHARE);
-  while (cells.length && cells.map(recordCellText).join(SEP).length > cap) {
-    cells.splice(Math.max(0, cells.findIndex((cell) => cell.tone !== "error")), 1);
+  const loneFailureCap = Math.floor(available * LONE_FAILURE_SHARE);
+  const fits = () => {
+    const lone = cells.length === 1 && cells[0]!.data.length === 1 && cells[0]!.tone === "error";
+    return cells.map(recordCellText).join(SEP).length <= (lone ? loneFailureCap : cap);
+  };
+  // Each datum is a fact: a merged cell gives up its oldest datum before the cell goes.
+  while (cells.length && !fits()) {
+    const index = Math.max(0, cells.findIndex((cell) => cell.tone !== "error"));
+    if (cells[index]!.data.length > 1) cells[index]!.data.shift();
+    else cells.splice(index, 1);
   }
   return cells.map((cell) => inkRecordCell(theme, cell)).join(ink(theme, "dim", SEP));
 }

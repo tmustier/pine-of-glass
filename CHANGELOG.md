@@ -9,8 +9,12 @@
   into a subdirectory of the previous row's folds to `cd ⋯/sub`.
 - Test, type-check, lint and format runs lead with their outcome when the output
   carries a summary: `passed 1731 tests`, `failed 2 of 1731 tests`,
-  `found 3 type errors`. A command that exits 0 while its output reports a failed
-  check (`pnpm test | tail -5`) gets a warning bullet instead of a success bullet.
+  `found type errors`. Each run gets its own result, so three runs of the same 17
+  tests read `passed 17 tests`, not 51, and a before-and-after comparison reads
+  `failed 1 of 2 tests · passed 2 tests`. A Vitest run whose test file failed to
+  load reads `failed 1 of 5 test files`, not a pass. A command that exits 0 while
+  its output reports a failed check (`pnpm test | tail -5`) gets a warning bullet
+  instead of a success bullet.
 - Development and tests now run on Pi 1.2.0 instead of 0.87.1. The six contract
   checks that failed on current Pi are re-pinned, and the minimum supported Pi is
   unchanged. On Pi 1.x, Traceline's Drill viewer shows JPEG and other non-PNG images

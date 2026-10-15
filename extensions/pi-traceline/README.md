@@ -169,8 +169,16 @@ carries the checker's summary:
 ```
   ▏ › passed 1731 tests $ ⋯ pnpm test 2>&1 | grep -E "Test Files|Tests" | tail -30                   1.2k ch
   ▏ › failed 2 of 1731 tests $ ⋯ pnpm test | tail -5                                                 0.4k ch
-  ▏ › found 3 type errors $ ⋯ npx tsc --noEmit -p . 2>&1 | tail -3                                   0.8k ch
+  ▏ › found type errors $ ⋯ npx tsc --noEmit -p . 2>&1 | tail -3                                     0.8k ch
 ```
+
+Each run of a checker gets its own result, in output order. Counts never add up
+across runs, so a loop that runs the same 17 tests three times reads
+`passed 17 tests`, and a before-and-after comparison reads
+`failed 1 of 2 tests · passed 2 tests`. A test file that failed to load counts
+as a failure (`failed 1 of 5 test files`) even when every test that ran passed.
+`tsc` prints its error count only to a terminal, so piped type checks usually
+read `found type errors` without a number.
 
 A pass renders in neutral bold; failures and warnings use the error and warning
 colours. If a command exits 0 but its output reports a failed check, the bullet
