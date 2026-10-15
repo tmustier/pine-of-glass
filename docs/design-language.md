@@ -666,7 +666,9 @@ fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
   context, not porcelain about an event
 - check facts share the record headline: they chain in output order with
   records, merge same-verb neighbours of the same tone
-  (`passed 1731 tests, lint`), and obey the same one-third cap
+  (`passed 1731 tests, lint`), and obey the same one-third cap. On overflow a
+  failed check is dropped last, so a cramped row keeps `found type errors` over
+  an older pass or warning
 - check rows never repetition-fold (§9.9): their counts are row-specific
 
 ### 9.11 Collapsed thinking

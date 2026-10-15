@@ -486,8 +486,8 @@ function recordCells(comp: ToolRowDataLike): string[] {
 }
 
 // Records may take at most roughly a third of the row (§9.10), so the command keeps
-// its width: overflow drops whole facts oldest first — terminal state wins, a mangled
-// sha is worse than none, and the full output stays one Ctrl+T away.
+// its width: overflow drops whole facts oldest first (a failed check last, §9.10.1) —
+// terminal state wins, a mangled sha is worse than none, Ctrl+T shows the rest.
 const RECORD_HEADLINE_SHARE = 1 / 3;
 
 // Records wear the ink of what they state (§9.10): the cell renders bold in its
@@ -519,7 +519,7 @@ function recordHeadline(comp: ToolRowDataLike, available: number): string {
   const cells = recordCellData(comp);
   if (!cells.length) return "";
   const cap = Math.floor(available * RECORD_HEADLINE_SHARE);
-  while (cells.length && cells.map(recordCellText).join(SEP).length > cap) cells.shift();
+  while (cells.length && cells.map(recordCellText).join(SEP).length > cap) cells.splice(Math.max(0, cells.findIndex((c) => c.tone !== "error")), 1);
   return cells.map(inkRecordCell).join(dim(SEP));
 }
 

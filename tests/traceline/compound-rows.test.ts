@@ -151,3 +151,13 @@ test("check facts lead the row, keep the size cell, and a failed check under exi
   const lint = bash("pnpm lint && pnpm test", `Found 0 warnings and 0 errors.\n${VITEST_PASS}`);
   assert.deepEqual(recordCells(lint), ["passed lint, 1731 tests"]);
 });
+
+test("a headline over its cap drops other facts before a failed check (§9.10.1)", () => {
+  const output = "bad.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.\n" +
+    "Checking formatting...\n[warn] package.json\n[warn] Code style issues found in the above file. Run Prettier with --write to fix.\n";
+  const row = bash("cd pkg && (tsc --noEmit -p . 2>&1 | tail -15) ; npx prettier --check math.test.mjs package.json 2>&1 | tail -3", output);
+  const narrow = stripAnsi(oneLine(row, 100));
+  assert.match(narrow, /› found type errors \$/, narrow);
+  assert.doesNotMatch(narrow, /unformatted/, "the warning gives way to the failure");
+  assert.match(stripAnsi(oneLine(row, 200)), /› found type errors · found 1 unformatted file \$/, "both fit when there is room");
+});
