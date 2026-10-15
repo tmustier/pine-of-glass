@@ -35,7 +35,7 @@ function facts(command: string, output: string): string[] {
 
 const vitestRun = (tests: string, total: number) => ` Test Files  1 passed (1)\n      Tests  ${tests} (${total})\n   Duration  1.2s\n`;
 
-test("each run states its own fact; counts never add up across runs (§9.10.1)", () => {
+test("each run states its own fact; reruns never add up, different suites run once do (§9.10.1)", () => {
   const loop = "for i in 1 2 3; do npx vitest run a.test.ts; done";
   const three = vitestRun("17 passed", 17).repeat(3);
   assert.deepEqual(facts(loop, three), ["passed 17 tests", "passed 17 tests", "passed 17 tests"]);
@@ -47,6 +47,14 @@ test("each run states its own fact; counts never add up across runs (§9.10.1)",
 
   const labelled = "for tz in UTC Asia/Tokyo; do echo -n \"$tz \"; TZ=$tz npx vitest run 2>&1 | grep 'Tests '; done";
   assert.deepEqual(facts(labelled, "UTC          Tests  5 passed (5)\nAsia/Tokyo   Tests  1 failed | 4 passed (5)\n"), ["passed 5 tests", "failed 1 of 5 tests"]);
+
+  const verify = "npx vitest run && npx tsc --noEmit -p . && node --test legacy/ 2>&1 | grep -E '^ℹ (pass|fail)'";
+  const suites = " Test Files  3 passed (3)\n      Tests  8 passed (8)\nℹ pass 3\nℹ fail 0\n";
+  assert.deepEqual(facts(verify, suites), ["passed 11 tests"], "different runners once each are one check of several suites");
+  const mixed = " Test Files  3 passed (3)\n      Tests  8 passed (8)\nℹ pass 2\nℹ fail 1\n";
+  assert.deepEqual(facts(verify, mixed), ["failed 1 of 11 tests"]);
+  const rerun = vitestRun("1 failed | 7 passed", 8) + vitestRun("8 passed", 8) + "ℹ pass 3\nℹ fail 0\n";
+  assert.deepEqual(facts(verify, rerun), ["failed 1 of 8 tests", "passed 8 tests", "passed 3 tests"], "a rerun keeps every run separate");
 
   const cargo = "cargo test && cargo test --release";
   const finished = "    Finished `test` profile\ntest result: ok. 10 passed; 0 failed; 0 ignored\ntest result: ok. 3 passed; 0 failed; 0 ignored\n";
@@ -75,7 +83,7 @@ test("type, lint and format runs are separate facts too (§9.10.1)", () => {
   assert.deepEqual(facts("npx eslint a; npx eslint b", eslint), ["found 2 lint warnings", "found 1 lint error"]);
 });
 
-test("a crowded headline keeps the newest datum, and a lone failure keeps its place (§9.10.1)", () => {
+test("a crowded headline drops passes first, keeps the newest datum, and keeps a lone failure (§9.10.1)", () => {
   const command = "for p in a b c d e f; do npx vitest run --project $p 2>&1 | grep -E 'Tests '; done";
   const output = [15, 11, 13, 46, 226, 1731].map((n) => `      Tests  ${n} passed (${n})`).join("\n");
   const row = bash(command, output);
@@ -83,6 +91,13 @@ test("a crowded headline keeps the newest datum, and a lone failure keeps its pl
   const narrow = stripAnsi(oneLine(row, 80));
   assert.match(narrow, /› passed 1731 tests \$/, narrow);
   assert.match(stripAnsi(oneLine(row, 200)), /› passed (\d+ tests, )+1731 tests \$/, "wide rows keep more of the chain");
+
+  const landed = bash("git commit -m 'Add receipt' && npx vitest run && node --test legacy/",
+    "[main 96c35aa] Add receipt\n 3 files changed\n Test Files  3 passed (3)\n      Tests  8 passed (8)\nℹ pass 3\nℹ fail 0\n");
+  setTracelineChat({ children: [assistantBefore([landed]), landed] });
+  assert.match(stripAnsi(oneLine(landed, 200)), /› committed 96c35aa · passed 11 tests \$/);
+  const cramped = stripAnsi(oneLine(landed, 90));
+  assert.match(cramped, /› committed 96c35aa \$/, `a pass gives way to a record: ${cramped}`);
 
   const files = bash("export PATH=/opt/node/bin:$PATH; npm run typecheck | head; npx vitest run 2>&1 | tail -4", " Test Files  5 failed | 17 passed (22)\n      Tests  63 passed (63)\n");
   setTracelineChat({ children: [assistantBefore([files]), files] });

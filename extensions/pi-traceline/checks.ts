@@ -174,9 +174,30 @@ function testRunFact(run: TestRun): CheckFact | undefined {
   return undefined;
 }
 
+// One command that runs several different runners once each (vitest, then node --test)
+// checked several suites, not one suite several times, so their counts add up. The
+// same runner twice is a rerun and stays separate (§9.10.1).
+function oneCheckOfSuites(byRunner: TestRun[][]): TestRun[] {
+  const used = byRunner.filter((runs) => runs.length > 0);
+  const runs = used.flat();
+  if (used.length < 2 || used.some((runner) => runner.length > 1) || !runs.every((run) => run.proven)) return runs;
+  const sum = (count: (run: TestRun) => number | undefined) =>
+    runs.some((run) => count(run) !== undefined) ? runs.reduce((total, run) => total + (count(run) ?? 0), 0) : undefined;
+  const fileRuns = runs.flatMap((run) => (run.files ? [run.files] : []));
+  return [{
+    at: Math.min(...runs.map((run) => run.at)),
+    last: Math.max(...runs.map((run) => run.last)),
+    passed: sum((run) => run.passed),
+    failed: sum((run) => run.failed),
+    unhandled: sum((run) => run.unhandled),
+    files: fileRuns.length ? { failed: fileRuns.reduce((n, f) => n + f.failed, 0), total: fileRuns.reduce((n, f) => n + f.total, 0) } : undefined,
+    proven: true,
+  }];
+}
+
 function testFacts(out: string): CheckFact[] {
   const lines = linesOf(out);
-  const runs = [...joinRuns(suiteParts(lines)), ...joinRuns(nodeParts(lines)).map(settleNode), ...pytestRuns(lines), ...cargoRuns(lines)];
+  const runs = oneCheckOfSuites([joinRuns(suiteParts(lines)), joinRuns(nodeParts(lines)).map(settleNode), pytestRuns(lines), cargoRuns(lines)]);
   return runs.flatMap((run) => testRunFact(run) ?? []);
 }
 

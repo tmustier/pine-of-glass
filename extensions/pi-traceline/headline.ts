@@ -35,8 +35,8 @@ export function recordCellText(cell: RecordCellData): string {
 }
 
 // Records may take at most roughly a third of the row (§9.10), so the command keeps
-// its width: overflow drops whole facts oldest first (a failed check last, §9.10.1),
-// one datum of a merged cell at a time —
+// its width: overflow drops whole facts oldest first (a pass first and a failed check
+// last, §9.10.1), one datum of a merged cell at a time —
 // terminal state wins, a mangled sha is worse than none, Ctrl+T shows the rest.
 const RECORD_HEADLINE_SHARE = 1 / 3;
 // A failure is the row's news and the only explanation of its warning bullet (§9.10.1),
@@ -77,8 +77,10 @@ export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], ava
     return cells.map(recordCellText).join(SEP).length <= (lone ? loneFailureCap : cap);
   };
   // Each datum is a fact: a merged cell gives up its oldest datum before the cell goes.
+  // A pass goes first (health, not news), then records and warnings, then failures.
   while (cells.length && !fits()) {
-    const index = Math.max(0, cells.findIndex((cell) => cell.tone !== "error"));
+    const pass = cells.findIndex((cell) => cell.tone === "text");
+    const index = pass >= 0 ? pass : Math.max(0, cells.findIndex((cell) => cell.tone !== "error"));
     if (cells[index]!.data.length > 1) cells[index]!.data.shift();
     else cells.splice(index, 1);
   }

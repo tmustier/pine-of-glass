@@ -661,7 +661,10 @@ fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
   of 17 tests are not `passed 51 tests`). Runs chain in output order and merge
   like records, so identical reruns collapse to `passed 17 tests` and a
   comparison reads `failed 1 of 2 tests · passed 2 tests`. cargo prints one
-  result line per test target; the lines of one invocation are one run
+  result line per test target; the lines of one invocation are one run. A
+  command that runs several different runners once each (`vitest` then
+  `node --test`) checked several suites, not one suite several times, so their
+  counts add up: `passed 11 tests`
 - a pass needs the summary to prove zero failures: a Vitest or Jest total, a
   pytest line, a `node --test` `fail 0`. A run whose test files failed to load
   is not a pass even when every collected test passed: `failed 1 of 5 test
@@ -684,8 +687,10 @@ fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
 - check facts share the record headline: they chain in output order with
   records, merge same-verb neighbours of the same tone
   (`passed 1731 tests, lint`), and obey the same one-third cap. On overflow a
-  failed check is dropped last, so a cramped row keeps `found type errors` over
-  an older pass or warning, and a merged cell gives up its oldest datum before
+  pass goes first, because it is health, not news; then records and warnings,
+  oldest first; a failed check is dropped last. A cramped row keeps
+  `committed a4f21c9` over `passed 8 tests` and `found type errors` over an
+  older pass or warning, and a merged cell gives up its oldest datum before
   the cell goes: `passed 30 tests, 13 tests` narrows to `passed 13 tests`. A
   failure is the row's news and the only explanation of a warning bullet, so a
   lone failed check may take up to half the row (agent default, not requested)
