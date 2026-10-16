@@ -46,16 +46,11 @@ const LONE_FAILURE_SHARE = 1 / 2; // agent-default (not a user rule): 2026-10-15
 /** Fit whole facts ahead of the command; keep failed checks longest (§9.10.1). */
 export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], available: number): string {
   const cells = all.map((cell) => ({ ...cell, data: [...cell.data] }));
-  if (!cells.length) return "";
-  const cap = Math.floor(available * RECORD_HEADLINE_SHARE);
-  const loneFailureCap = Math.floor(available * LONE_FAILURE_SHARE);
-  const fits = () => {
-    const lone = cells.length === 1 && cells[0]!.data.length === 1 && cells[0]!.tone === "error";
-    return cells.map(recordCellText).join(SEP).length <= (lone ? loneFailureCap : cap);
-  };
-  // Each datum is a fact: a merged cell gives up its oldest datum before the cell goes.
-  // A pass goes first (health, not news), then records and warnings, then failures.
-  while (cells.length && !fits()) {
+  // Drop passes before records and warnings, and failures last, oldest datum first.
+  while (cells.length) {
+    const loneFailure = cells.length === 1 && cells[0]!.data.length === 1 && cells[0]!.tone === "error";
+    const cap = Math.floor(available * (loneFailure ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
+    if (cells.map(recordCellText).join(SEP).length <= cap) break;
     const pass = cells.findIndex((cell) => cell.tone === "text");
     const index = pass >= 0 ? pass : Math.max(0, cells.findIndex((cell) => cell.tone !== "error"));
     if (cells[index]!.data.length > 1) cells[index]!.data.shift();
