@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.0 (2026-10-17)
+
 - Traceline records more of what a session changes in git: `created worktree fix`,
   `created branch fix`, `rebased fix`, `deleted fix, origin/fix` for a branch deleted
   locally and on the remote, `removed worktree ./wt`, and `opened #14` for

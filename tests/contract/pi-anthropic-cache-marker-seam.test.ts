@@ -50,7 +50,7 @@ test("an aborted turn on a mid-conversation-effort model keeps the cached prefix
   const before = await payloadFor({ messages: [first] });
   const after = await payloadFor({ messages: [first, aborted, next] });
 
-  const route = { provider: opus.provider, model: opus.id, api: opus.api, supportsMidConvoEffort: true, signInWithChatGPT: false };
+  const route = { provider: opus.provider, model: opus.id, api: opus.api, appendOnlyEffort: true };
   assert.equal(
     diffFingerprints(fingerprintPayload(before, route), fingerprintPayload(after, route)),
     undefined,

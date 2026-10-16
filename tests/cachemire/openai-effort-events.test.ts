@@ -4,46 +4,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 
 import piCachemire from "../../extensions/pi-cachemire/index.ts";
 import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
 
-// Pi's catalogue record for direct OpenAI GPT-6.1 Sol: Pi 1.3 keeps request-level
-// effort fixed and appends configuration_update items, unless signed in with ChatGPT.
-const sol: Model<"openai-responses"> = {
-	id: "gpt-6.1-sol",
-	name: "GPT-6.1 Sol",
-	api: "openai-responses",
-	provider: "openai",
-	baseUrl: "https://api.openai.com/v1",
-	reasoning: true,
-	thinkingLevelMap: { off: null, minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
-	input: ["text", "image"],
-	cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
-	contextWindow: 500_000,
-	maxTokens: 128_000,
-	compat: { supportsMidConvoEffort: true },
-};
-
-function solPayload(efforts: string[]) {
-	return {
-		model: sol.id,
-		input: efforts.flatMap((effort, index) => [
-			{ role: "user", content: [{ type: "input_text", text: String(index) }] },
-			{ type: "configuration_update", reasoning: { effort } },
-		]),
-		reasoning: { effort: "medium", summary: "auto" },
-	};
-}
-
-function signInWithChatGPT(project: IsolatedProject): void {
-	const agentDir = join(project.home, ".pi", "agent");
-	mkdirSync(agentDir, { recursive: true });
-	writeFileSync(join(agentDir, "auth.json"), JSON.stringify({
-		openai: { type: "oauth", access: "fixture", refresh: "fixture", expires: Date.now() + 3_600_000 },
-	}));
-}
+const model = openaiProvider().getModels().find((model) => model.id === "gpt-6.1-sol");
+assert(model);
+const sol = model;
 
 function billed(usage: { input: number; cacheRead: number }): AssistantMessage {
 	return {
@@ -65,11 +34,18 @@ function billed(usage: { input: number; cacheRead: number }): AssistantMessage {
 }
 
 // One billed turn as Pi runs it: the user entry before the request, the assistant after.
-async function call(host: Awaited<ReturnType<typeof hostExtension>>, efforts: string[], message: AssistantMessage) {
+async function call(host: Awaited<ReturnType<typeof hostExtension>>, efforts: string[], message: AssistantMessage, signedIn: boolean) {
 	const runner = host.session.extensionRunner;
 	host.session.sessionManager.appendMessage({ role: "user", content: String(efforts.length), timestamp: Date.now() });
 	await runner.emitContext([]);
-	await runner.emitBeforeProviderRequest(solPayload(efforts));
+	await runner.emitBeforeProviderRequest({
+		model: sol.id,
+		input: efforts.flatMap((effort, index) => [
+			{ role: "user", content: [{ type: "input_text", text: String(index) }] },
+			...(signedIn ? [] : [{ type: "configuration_update", reasoning: { effort } }]),
+		]),
+		reasoning: { effort: signedIn ? efforts.at(-1) : "medium", summary: "auto" },
+	});
 	await runner.emitMessageEnd({ type: "message_end", message });
 	host.session.sessionManager.appendMessage(message);
 }
@@ -77,12 +53,18 @@ async function call(host: Awaited<ReturnType<typeof hostExtension>>, efforts: st
 // A low-to-high change that the bill shows kept the prefix; returns Cachemire's notices.
 async function noticesAfterHeldEffortChange(signedIn: boolean): Promise<string[]> {
 	const project = new IsolatedProject();
-	if (signedIn) signInWithChatGPT(project);
+	if (signedIn) {
+		const agentDir = join(project.home, ".pi", "agent");
+		mkdirSync(agentDir, { recursive: true });
+		writeFileSync(join(agentDir, "auth.json"), JSON.stringify({
+			openai: { type: "oauth", access: "fixture", refresh: "fixture", expires: Date.now() + 3_600_000 },
+		}));
+	}
 	const host = await hostExtension(piCachemire, { project, model: sol, thinkingLevel: "low" });
 	try {
-		await call(host, ["low"], billed({ input: 30_000, cacheRead: 0 }));
+		await call(host, ["low"], billed({ input: 30_000, cacheRead: 0 }), signedIn);
 		host.session.setThinkingLevel("high");
-		await call(host, ["low", "high"], billed({ input: 400, cacheRead: 29_800 }));
+		await call(host, ["low", "high"], billed({ input: 400, cacheRead: 29_800 }), signedIn);
 		return [...host.ui.notifications];
 	} finally {
 		await host.dispose();

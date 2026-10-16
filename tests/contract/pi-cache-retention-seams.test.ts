@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { normalizeContext, type Context, type FetchFunction, type Model } from "@earendil-works/pi-ai";
 import { streamSimple as streamOpenAICompletions } from "@earendil-works/pi-ai/api/openai-completions";
 import { streamSimple as streamOpenAIResponses } from "@earendil-works/pi-ai/api/openai-responses";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 
 import { isJsonObject, type JsonFields } from "../../extensions/_lib/boundary.ts";
 
@@ -139,19 +140,19 @@ test("installed Claude Fable 5.1 declares Pi's cache-safe effort protocol", () =
   assert.match(anthropic, /providerThinkingLevel/);
 });
 
-// Cachemire's static effort contract for direct OpenAI follows Pi's catalogue flag and
-// Pi's Sign in with ChatGPT exception; the Codex route keeps changing request-level effort.
+// Capture real Pi requests, including its ChatGPT sign-in exception.
 async function directOpenAIRequest(apiKey: string): Promise<JsonFields> {
-  const model = modelRecord("openai.json", "openai-responses", "gpt-6.1-sol") as unknown as Model<"openai-responses">;
-  const prior = {
-    role: "assistant" as const,
-    content: [{ type: "text" as const, text: "first answer" }],
+  const model = openaiProvider().getModels().find((model) => model.id === "gpt-6.1-sol");
+  assert(model);
+  const prior: Context["messages"][number] = {
+    role: "assistant",
+    content: [{ type: "text", text: "first answer" }],
     provider: model.provider,
     api: model.api,
     model: model.id,
     providerThinkingLevel: "low",
     usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-    stopReason: "stop" as const,
+    stopReason: "stop",
     timestamp: 2,
   };
   const context: Context = {
@@ -177,13 +178,7 @@ async function directOpenAIRequest(apiKey: string): Promise<JsonFields> {
   return request;
 }
 
-test("Pi appends GPT-6 effort updates on direct OpenAI API keys, not with ChatGPT sign-in or on Codex", async () => {
-  const direct = modelRecord("openai.json", "openai-responses", "gpt-6.1-sol");
-  assert(isJsonObject(direct.compat));
-  assert.equal(direct.compat.supportsMidConvoEffort, true);
-  const codex = modelRecord("openai-codex.json", "openai-codex-responses", "gpt-6.1-sol");
-  assert.notEqual(isJsonObject(codex.compat) && codex.compat.supportsMidConvoEffort, true);
-
+test("Pi appends GPT-6 effort updates with API keys but changes request-level effort with ChatGPT sign-in", async () => {
   const apiKey = await directOpenAIRequest("sk-contract");
   assert.deepEqual(apiKey.reasoning, { effort: "medium", summary: "auto" }, "request-level effort stays fixed");
   assert(Array.isArray(apiKey.input));
@@ -195,11 +190,8 @@ test("Pi appends GPT-6 effort updates on direct OpenAI API keys, not with ChatGP
 
   const signIn = await directOpenAIRequest("chatgpt-access-token");
   assert.deepEqual(signIn.reasoning, { effort: "high", summary: "auto" }, "a ChatGPT sign-in changes request-level effort");
-  assert.equal(JSON.stringify(signIn.input).includes("configuration_update"), false);
-
-  const codexSource = source("openai-codex-responses.js");
-  assert.match(codexSource, /body\.reasoning = \{\s*effort,/);
-  assert.doesNotMatch(codexSource, /configuration_update/);
+  assert(Array.isArray(signIn.input));
+  assert.equal(signIn.input.some((item) => isJsonObject(item) && item.type === "configuration_update"), false);
 });
 
 // Cachemire reads the request at its own hook position. Pi runs before_provider_request

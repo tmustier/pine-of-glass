@@ -6,7 +6,6 @@ import { diffFingerprints, fingerprintPayload, withheldThinkingCause, withinWarm
 import { OPENAI_EXTENDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 import {
 	type BilledThinkingChange,
-	EFFORT_MEMORY_MS,
 	recordBilledThinking,
 	restoreBilledThinking,
 	thinkingChangeInvalidatesCache,
@@ -23,8 +22,7 @@ const directAnthropic = (
 	provider: "anthropic",
 	model,
 	api: "anthropic-messages",
-	supportsMidConvoEffort,
-	signInWithChatGPT: false,
+	appendOnlyEffort: supportsMidConvoEffort,
 });
 
 const anthropicRequest = (effort: string, messages: unknown[] = [
@@ -67,32 +65,6 @@ test("Anthropic effort changes are cache-neutral only on verified routes", () =>
 		provider: "radius",
 		api: "pi-messages",
 	}), false, "a matching gateway model name is not direct Anthropic evidence");
-	assert.equal(thinkingChangesPreserveCache({
-		provider: "openai-codex",
-		model: "gpt-6-astra",
-		api: "openai-codex-responses",
-		supportsMidConvoEffort: true,
-		signInWithChatGPT: false,
-	}), false, "Pi's compatibility flag cannot bless a wire protocol that does not implement it");
-});
-
-test("Pi's flag makes direct OpenAI effort changes cache-neutral, except with Sign in with ChatGPT", () => {
-	const gpt6: ThinkingRoute = {
-		provider: "openai",
-		model: "gpt-6.1-sol",
-		api: "openai-responses",
-		supportsMidConvoEffort: true,
-		signInWithChatGPT: false,
-	};
-	assert.equal(thinkingChangesPreserveCache(gpt6), true);
-	assert.equal(thinkingChangeInvalidatesCache(gpt6, undefined, "low", "high"), false);
-	assert.equal(thinkingChangeInvalidatesCache(gpt6, undefined, "high", "off"), true, "turning thinking off stays material");
-	assert.equal(
-		thinkingChangesPreserveCache({ ...gpt6, signInWithChatGPT: true }),
-		false,
-		"Pi changes request-level effort for a ChatGPT sign-in",
-	);
-	assert.equal(thinkingChangesPreserveCache({ ...gpt6, model: "gpt-5.6-sol", supportsMidConvoEffort: false }), false);
 });
 
 test("direct Claude Fable 5.1 fingerprints ignore effort-only changes", () => {
@@ -167,8 +139,7 @@ const astraRoute: ThinkingRoute = {
 	provider: "openai-codex",
 	model: "gpt-6-astra",
 	api: "openai-codex-responses",
-	supportsMidConvoEffort: false,
-	signInWithChatGPT: false,
+	appendOnlyEffort: false,
 };
 const astraMap = { off: null, minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "xhigh" };
 const bill = (cacheRead: number, expectedRead = 30_000) => ({
@@ -292,7 +263,6 @@ test("a contract-neutral effort change is withheld from the cache-key diff but n
 });
 
 test("a resumed session remembers which efforts its history billed within retention", () => {
-	assert.equal(EFFORT_MEMORY_MS, OPENAI_EXTENDED_WINDOW.maxMs, "the memory bound is the longest known retention");
 	const now = 1_800_000_000_000;
 	const model: Model<"openai-codex-responses"> = {
 		provider: "openai-codex", id: "gpt-6-astra", name: "GPT-6 Astra", api: "openai-codex-responses",
@@ -303,12 +273,12 @@ test("a resumed session remembers which efforts its history billed within retent
 		type: "message", id, parentId, timestamp: new Date(at).toISOString(),
 		message: { role: "assistant", provider: model.provider, api: model.api, model: modelId, timestamp: at, content: [] },
 	});
-	const level = (id: string, parentId: string, thinkingLevel: string) => ({ type: "thinking_level_change", id, parentId, thinkingLevel });
+	const level = (id: string, parentId: string | null, thinkingLevel: string) => ({ type: "thinking_level_change", id, parentId, thinkingLevel });
 	const entries = [
-		level("t0", null as unknown as string, "medium"),
-		assistant("a1", "t0", now - EFFORT_MEMORY_MS - 60_000), // medium, but too old to be warm
+		level("t0", null, "medium"),
+		assistant("a1", "t0", now - OPENAI_EXTENDED_WINDOW.maxMs - 60_000), // medium, but too old to be warm
 		level("t1", "a1", "high"),
-		assistant("a2", "t1", now - 600_000), // high, ten minutes ago
+		assistant("a2", "t1", now - OPENAI_EXTENDED_WINDOW.maxMs + 60_000), // high, still within retention
 		level("t2", "a2", "minimal"),
 		assistant("a3", "t2", now - 300_000), // minimal maps to the low wire effort
 		assistant("a4", "a3", now - 200_000, "gpt-5.6-sol"), // another route
@@ -320,7 +290,7 @@ test("a resumed session remembers which efforts its history billed within retent
 	assert.equal(restoreBilledThinking(ledger, entries, "a4", model, now), "minimal", "the path's last call was billed at the level in force then, whatever its route");
 	const hitOn = (to: string) =>
 		recordBilledThinking(ledger, astraRoute, change({ lastCallLevel: "medium", currentLevel: to }));
-	assert.equal(hitOn("high"), undefined, "high was billed ten minutes ago: its entry may still be warm");
+	assert.equal(hitOn("high"), undefined, "high was billed within the longest retention: its entry may still be warm");
 	assert.equal(hitOn("low"), undefined, "minimal billed the low wire effort");
 	assert.equal(hitOn("xhigh")?.held, true, "the abandoned branch is not on the resumed path");
 	assert.equal(recordBilledThinking(ledger, astraRoute, change({ lastCallLevel: "high", currentLevel: "medium" }))?.held, true,

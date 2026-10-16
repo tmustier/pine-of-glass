@@ -52,7 +52,7 @@ export type ForeignThinking = "dropped" | "text";
 
 /** Pi 1.3 drops another model's thinking on a switch; earlier Pi sent it as plain text. */
 export function foreignThinkingFor(piVersion: string): ForeignThinking {
-  const [major = 0, minor = 0] = piVersion.split(".").map(Number);
+  const [major, minor] = piVersion.split(".").map(Number);
   return major > 1 || (major === 1 && minor >= 3) ? "dropped" : "text";
 }
 

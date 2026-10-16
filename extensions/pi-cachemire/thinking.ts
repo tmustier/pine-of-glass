@@ -16,9 +16,7 @@ type RouteIdentity = {
 };
 
 export interface ThinkingRoute extends RouteIdentity {
-	supportsMidConvoEffort: boolean;
-	/** OpenAI's own endpoint signed in with ChatGPT: Pi ignores the effort flag there. */
-	signInWithChatGPT: boolean;
+	appendOnlyEffort: boolean;
 }
 
 /** What this process has billed on one route: every wire effort ever billed there,
@@ -35,17 +33,17 @@ export type ThinkingEvidenceLedger = Map<string, RouteThinkingRecord>;
 export function thinkingRoute(ctx: Pick<ExtensionContext, "model" | "modelRegistry">): ThinkingRoute | undefined {
 	const { model } = ctx;
 	if (!model) return undefined;
-	// Pi types compat per API, and only some APIs declare the flag: read it as data.
-	const compat: unknown = model.compat;
+	const flagged = model.compat !== undefined && "supportsMidConvoEffort" in model.compat &&
+		model.compat.supportsMidConvoEffort === true;
+	// Pi disables effort updates on its direct OpenAI endpoint with ChatGPT sign-in.
+	const chatGPT = model.provider === "openai" && model.baseUrl === "https://api.openai.com/v1" &&
+		ctx.modelRegistry.isUsingOAuth(model);
 	return {
 		provider: model.provider,
 		model: model.id,
 		api: model.api,
-		supportsMidConvoEffort: isJsonObject(compat) && compat.supportsMidConvoEffort === true,
-		// Pi tells a ChatGPT token from an API key by its prefix; the stored credential
-		// type says the same without Cachemire reading the credential.
-		signInWithChatGPT: model.provider === "openai" && model.baseUrl === "https://api.openai.com/v1" &&
-			ctx.modelRegistry.isUsingOAuth(model),
+		appendOnlyEffort: flagged && (model.api === "anthropic-messages" ||
+			(model.api === "openai-responses" && !chatGPT)),
 	};
 }
 
@@ -74,21 +72,6 @@ export function wireThinkingEffort(
 	return "high";
 }
 
-// The static contract: Pi's catalogue flag on the two wire APIs that implement it.
-// Anthropic Messages appends per-turn effort markers. OpenAI Responses (Pi 1.3+) keeps
-// request-level effort fixed and appends configuration_update items, except with Sign
-// in with ChatGPT on OpenAI's own endpoint, which rejects them. The exact-model
-// fallback covers stale local overrides that shadow Pi's catalogue flag; direct Pi
-// 0.85.1 calls retained full message-heavy prefixes on both effort changes.
-function contractPreservesCache(route: ThinkingRoute): boolean {
-	if (route.api === "openai-responses") return route.supportsMidConvoEffort && !route.signInWithChatGPT;
-	if (route.api !== "anthropic-messages") return false;
-	return (
-		route.supportsMidConvoEffort ||
-		(route.provider === "anthropic" && route.model === "claude-fable-5-1")
-	);
-}
-
 /** The most recent billed verdict on the exact route wins over the contract either way. */
 export function thinkingChangesPreserveCache(
 	route: ThinkingRoute | undefined,
@@ -96,7 +79,9 @@ export function thinkingChangesPreserveCache(
 ): boolean {
 	if (!route) return false;
 	const verdict = ledger?.get(routeKey(route))?.verdict;
-	return verdict ? verdict.held : contractPreservesCache(route);
+	// The exact Fable fallback covers stale overrides that shadow Pi's catalogue flag.
+	return verdict?.held ?? (route.appendOnlyEffort ||
+		(route.api === "anthropic-messages" && route.provider === "anthropic" && route.model === "claude-fable-5-1"));
 }
 
 export function thinkingChangeInvalidatesCache(
@@ -147,18 +132,22 @@ export function recordBilledThinking(
 	change: BilledThinkingChange,
 ): ThinkingEvidence | undefined {
 	const record = routeRecord(ledger, route);
-	const verdict = thinkingVerdict(change, record.billedEfforts);
-	if (change.currentLevel !== undefined) {
-		record.billedEfforts.add(wireThinkingEffort(change.map, change.currentLevel));
-	}
-	if (verdict) record.verdict = verdict;
+	const to = change.currentLevel === undefined ? undefined : wireThinkingEffort(change.map, change.currentLevel);
+	const billedBefore = to !== undefined && record.billedEfforts.has(to);
+	if (to !== undefined) record.billedEfforts.add(to);
+	if (change.incomparable || change.lastCallLevel === undefined || to === undefined) return undefined;
+	const from = wireThinkingEffort(change.map, change.lastCallLevel);
+	if (from === to || from === "off" || to === "off") return undefined;
+	const hit = change.classification.kind === "hit";
+	if (hit && billedBefore) return undefined;
+	if (!hit && (change.classification.kind === "cold" || !change.thinkingNamedAtSend || !change.warmPromised)) return undefined;
+	const verdict = { from, to, cacheRead: change.usage.cacheRead, expectedRead: change.expectedRead, held: hit };
+	record.verdict = verdict;
 	return verdict;
 }
 
-/** The longest retention Cachemire knows (OpenAI extended, `OPENAI_EXTENDED_WINDOW` in
- * retention.ts, which this module cannot import without a cycle; a test pins the two):
- * an effort billed within it may still have a warm entry when a later process returns. */
-export const EFFORT_MEMORY_MS = 24 * 60 * 60 * 1000;
+// Longest known retention (OpenAI extended). Importing retention.ts here would cycle.
+const EFFORT_MEMORY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Replays the active path's persisted `thinking_level_change` entries: seeds the route
@@ -203,20 +192,4 @@ export function restoreBilledThinking(
 		record.billedEfforts.add(wireThinkingEffort(model.thinkingLevelMap, level));
 	}
 	return lastBilledLevel;
-}
-
-function thinkingVerdict(
-	change: BilledThinkingChange,
-	billedEfforts: ReadonlySet<string>,
-): ThinkingEvidence | undefined {
-	if (change.incomparable || change.lastCallLevel === undefined || change.currentLevel === undefined) {
-		return undefined;
-	}
-	const from = wireThinkingEffort(change.map, change.lastCallLevel);
-	const to = wireThinkingEffort(change.map, change.currentLevel);
-	if (from === to || from === "off" || to === "off") return undefined;
-	const verdict = { from, to, cacheRead: change.usage.cacheRead, expectedRead: change.expectedRead };
-	if (change.classification.kind === "hit") return billedEfforts.has(to) ? undefined : { ...verdict, held: true };
-	if (change.classification.kind === "cold") return undefined;
-	return change.thinkingNamedAtSend && change.warmPromised ? { ...verdict, held: false } : undefined;
 }
