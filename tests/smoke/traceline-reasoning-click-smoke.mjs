@@ -19,7 +19,7 @@ try {
     { type: "toolCall", id: "read-fixture", name: "read", arguments: { path: join(cwd, "fixture.txt") } },
   ], "toolUse"));
   append({ role: "toolResult", toolCallId: "read-fixture", toolName: "read", content: [{ type: "text", text: "fixture output" }], isError: false, timestamp });
-  launch(100, 35);
+  launch(100, 50); // Pi 1.x: fully expanded reasoning, tool output and the no-models warning must all fit
   wait((text) => text.includes("FIRST_REASONING · FIRST_NEWEST · FIRST_ADJACENT_BLOCK") && text.includes("SECOND_REASONING · SECOND_DETAIL"), "reasoning previews did not render");
   shot("01-compact");
   keys("M-t");

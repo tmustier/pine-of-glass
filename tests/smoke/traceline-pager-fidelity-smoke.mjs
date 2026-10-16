@@ -252,6 +252,7 @@ try {
   const command = [
     "exec env",
     `HOME=${shellQuote(fixtureHome)}`,
+    "PI_SKIP_VERSION_CHECK=1",
     pi.shell,
     "--no-extensions",
     "--no-skills",

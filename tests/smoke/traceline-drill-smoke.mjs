@@ -219,6 +219,7 @@ try {
   const command = [
     "exec env",
     `HOME=${shellQuote(fixtureHome)}`,
+    "PI_SKIP_VERSION_CHECK=1",
     pi.shell,
     "--no-extensions",
     "--no-skills",
@@ -229,7 +230,9 @@ try {
     "--session",
     shellQuote(sessionFile),
   ].join(" ");
-  const launch = run(["tmux", "new-session", "-d", "-s", tmuxSession, "-x", "110", "-y", "32", command]);
+  // Pi 1.x redraws in place without leaving old frames in scrollback, so both expanded
+  // results must fit on screen at once: a tall window, not the -S capture, keeps alpha visible.
+  const launch = run(["tmux", "new-session", "-d", "-s", tmuxSession, "-x", "110", "-y", "60", command]);
   if (launch.status !== 0) throw new Error(`tmux launch failed: ${launch.stderr?.trim()}`);
 
   const pidResult = run(["tmux", "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"], { timeoutMs: 2_000 });

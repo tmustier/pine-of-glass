@@ -126,7 +126,7 @@ let pane = "";
 try {
   const launch = run([
     "tmux", "new-session", "-d", "-s", session, "-x", "120", "-y", "45",
-    `cd ${JSON.stringify(fixtureDir)} && HOME=${JSON.stringify(fixtureHome)} ${pi.shell} --no-session`,
+    `cd ${JSON.stringify(fixtureDir)} && HOME=${JSON.stringify(fixtureHome)} PI_SKIP_VERSION_CHECK=1 ${pi.shell} --no-session`,
   ]);
   if (launch.status !== 0) {
     console.error(`tmux session failed to start: ${launch.stderr}`);

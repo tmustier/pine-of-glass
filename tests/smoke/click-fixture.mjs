@@ -23,6 +23,10 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
   mkdirSync(agent, { recursive: true });
   writeFileSync(join(agent, "settings.json"), JSON.stringify({ hideThinkingBlock: true, defaultProvider: "openai-codex", defaultModel: "gpt-5.6-sol", fullscreenExitOutput: "none" }));
   writeFileSync(join(agent, "trust.json"), JSON.stringify({ [cwd]: true, [root]: true }));
+  // Own tmux config: extended-keys on silences Pi 1.x's startup warning about it, which
+  // would otherwise take viewport rows the fixtures count on. The user's config stays out.
+  const tmuxConf = join(home, "tmux.conf");
+  writeFileSync(tmuxConf, "set -g extended-keys on\nset -g extended-keys-format csi-u\n");
 
   const iso = new Date().toISOString(), timestamp = Date.now();
   const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -69,8 +73,8 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
   function launch(width, height) {
     const sessionFile = join(cwd, "session.jsonl");
     writeFileSync(sessionFile, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
-    tmux("-f", "/dev/null", "new-session", "-d", "-s", session, "-x", String(width), "-y", String(height), "-c", cwd,
-      `exec env HOME=${shellQuote(home)} ${pi.shell} --tui-mode fullscreen --no-extensions --no-skills --no-prompt-templates --no-themes -e ${shellQuote(extension)} --session ${shellQuote(sessionFile)}`);
+    tmux("-f", tmuxConf, "new-session", "-d", "-s", session, "-x", String(width), "-y", String(height), "-c", cwd,
+      `exec env HOME=${shellQuote(home)} PI_SKIP_VERSION_CHECK=1 ${pi.shell} --tui-mode fullscreen --no-extensions --no-skills --no-prompt-templates --no-themes -e ${shellQuote(extension)} --session ${shellQuote(sessionFile)}`);
     launched = true;
     console.log(`Monitor: ${monitor}`);
   }
