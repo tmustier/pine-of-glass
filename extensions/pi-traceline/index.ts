@@ -80,7 +80,7 @@ import { installThinkingPreviews } from "./thinking-preview.ts";
 import { captureCallLines } from "./call-capture.ts";
 import { summarizeCallLines } from "./call-summary.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
-import { isSpacerRow, isThinkingToggleStatusRow, suppressThinkingToggleStatus } from "./status-line.ts";
+import { suppressThinkingToggleStatus } from "./status-line.ts";
 import { createTracelineTuiOwner } from "./tui-owner.ts";
 
 /** Compact trace rendering; see docs/design-language.md §9. */
@@ -1405,10 +1405,6 @@ export const internals = {
     renderCache.withoutCache(() => renderTraceRow(row, width)),
   renderCacheWorkCounts: (reset = false) => renderCache.workCounts(reset),
   resetRenderCache: () => renderCache.reset(),
-  // Ctrl+T status-line suppression (status-line.ts)
-  isThinkingToggleStatusRow,
-  isSpacerRow,
-  suppressThinkingToggleStatus: () => suppressThinkingToggleStatus(chatChildren()),
 };
 
 export default function piTraceline(pi: ExtensionAPI) {
@@ -1488,23 +1484,20 @@ export default function piTraceline(pi: ExtensionAPI) {
   // Nested calls (§9.14) never get rows of their own; their live events are the only
   // source of a nested result's size, so capture what the row grammar needs and
   // re-render the parent row that owns them.
-  const captureNested = (parentToolCallId: string, record: () => void) => {
-    try {
-      record();
-      for (const row of chatChildren() ?? []) if (isToolRow(row) && row.toolCallId === parentToolCallId) renderCache.dirty(row);
-      g.__tracelineTui?.requestRender();
-    } catch {
-      /* Traceline display work must never block nested execution. */
-    }
+  const invalidateParent = (parentToolCallId: string) => {
+    for (const row of chatChildren() ?? []) if (isToolRow(row) && row.toolCallId === parentToolCallId) renderCache.dirty(row);
+    g.__tracelineTui?.requestRender();
   };
   pi.on("tool_execution_start", (event, ctx) => {
     if (!tuiOwner.owns() || ctx.mode !== "tui") return;
-    if (event.parentToolCallId) captureNested(event.parentToolCallId, () => recordNestedStart(event.toolCallId, event.toolName, event.args));
-    else schedulePatches();
+    if (!event.parentToolCallId) return schedulePatches();
+    recordNestedStart(event.toolCallId, event.args);
+    invalidateParent(event.parentToolCallId);
   });
   pi.on("tool_execution_end", (event, ctx) => {
     if (!tuiOwner.owns() || ctx.mode !== "tui" || !event.parentToolCallId) return;
-    captureNested(event.parentToolCallId, () => recordNestedEnd(event.toolCallId, event.toolName, event.result, event.isError));
+    recordNestedEnd(event.toolCallId, event.result, event.isError);
+    invalidateParent(event.parentToolCallId);
   });
   pi.on("session_tree", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
   pi.on("tool_call", (event, ctx) => {

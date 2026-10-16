@@ -8,7 +8,6 @@ import { homedir } from "node:os";
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import { isLedgerRevealed, resetRevealedFolds, setLedgerRevealed } from "../../extensions/pi-traceline/click.ts";
 import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStart } from "../../extensions/pi-traceline/nested-calls.ts";
-import { splitToolName } from "../../extensions/pi-traceline/nested-rows.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantBefore, composedRow, type NestedFixture } from "./runtime-fixtures.ts";
 
@@ -122,12 +121,6 @@ test("wall time appears from 10s and names the member that explains it", () => {
   assert.ok(!line(quick).includes("0.5s"), line(quick));
 });
 
-test("a namespaced tool keeps the path grammar: dim prefix, bold discriminator", () => {
-  assert.deepEqual(splitToolName("mcp__monaco__get_account"), { prefix: "monaco/", tool: "get_account" });
-  assert.deepEqual(splitToolName("mcp__superhuman-mail__list_threads"), { prefix: "superhuman-mail/", tool: "list_threads" });
-  assert.deepEqual(splitToolName("linear_search_issues"), { prefix: "", tool: "linear_search_issues" });
-});
-
 test("the revealed ledger lists every call in order, indented under the parent, in its tool's grammar", () => {
   const row = composedRow([
     { name: "read", args: { path: `${cwd}/docs/a.md`, offset: 1, limit: 40 }, durationMs: 23 },
@@ -163,9 +156,9 @@ test("nested result sizes are live-only: captured from nested events, absent on 
   const restored = composedRow(reads(["docs/a.md", "docs/b.md"]), { cwd, restored: true });
   mount([live, restored]);
   const facts = composedFactsOf(live)!;
-  recordNestedStart(facts.calls[0]!.id, "read", { path: `${cwd}/docs/a.md` });
-  recordNestedEnd(facts.calls[0]!.id, "read", { content: [{ type: "text", text: "y".repeat(12_400) }] }, false);
-  recordNestedEnd(facts.calls[1]!.id, "read", { content: [{ type: "image", data: "", mimeType: "image/png" }, { type: "text", text: "note" }] }, false);
+  recordNestedStart(facts.calls[0]!.id, { path: `${cwd}/docs/a.md` });
+  recordNestedEnd(facts.calls[0]!.id, { content: [{ type: "text", text: "y".repeat(12_400) }] }, false);
+  recordNestedEnd(facts.calls[1]!.id, { content: [{ type: "image", data: "", mimeType: "image/png" }, { type: "text", text: "note" }] }, false);
   resetRenderCache();
   setLedgerRevealed(live, true);
   setLedgerRevealed(restored, true);
@@ -182,7 +175,7 @@ test("a live nested error observed by event overrides an optimistic streamed sta
   const row = composedRow([{ name: "bash", args: { command: "false" } }], { cwd });
   mount([row]);
   const id = composedFactsOf(row)!.calls[0]!.id;
-  recordNestedEnd(id, "bash", { content: [{ type: "text", text: "exit 1" }] }, true);
+  recordNestedEnd(id, { content: [{ type: "text", text: "exit 1" }] }, true);
   resetRenderCache();
   assert.ok(line(row).includes("$ false ✗1") || line(row).includes("$ ✗1"), line(row));
 });
