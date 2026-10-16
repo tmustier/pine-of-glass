@@ -747,13 +747,45 @@ which is the list of what traceline records. An entry has:
 - `records`: completion-output rules, each an output pattern with named groups,
   the verb, a datum template over those groups (`PR #{number}`), and optionally a
   warning tone or an opaque datum
-- `examples`: real output with the records it must yield, including near misses
-  that must yield none. The test suite runs every example, so an entry's examples
-  are its specification
+- `examples`: real output with the records the entry must yield from it,
+  including near misses that must yield none, and at least one that yields a
+  record. An entry loads only when every example holds with the entry alone, so
+  an entry's examples are its specification
 
-A pattern can only read output. What it cannot say is code keyed by the entry's
-`id`: a datum qualified by the command (`origin/fix`), a decoded release tag, and
-the observed-state and quiet-success sources above.
+A pattern can only read output. What it cannot say is code that belongs to a
+built-in entry: a datum qualified by the command (`origin/fix`), a decoded
+release tag, and the observed-state and quiet-success sources above.
+
+Vocabulary comes in layers, applied in order: the built-ins, then entries other
+extensions send, then the user's `~/.pi/agent/pi-traceline.json`, then the
+project's `.pi/pi-traceline.json`. Each layer can:
+
+- add an entry with a new `id`
+- replace an entry by reusing its `id`. A replacement is the layer's data only,
+  so a replaced `gh.pr.merge` no longer reads observed state or quiet success
+- turn entries off with `disableVocabulary`, a list of ids. A later layer can
+  add an entry with that id again
+
+Only built-in entries carry code. Observed state and quiet success are safe only
+because code reads the shell around the operation, so a layer of plain data can
+only read completion output.
+
+A problem leaves out only what it touches: a file that is not JSON, an entry
+that does not parse, an example that does not hold, an id that no layer
+defines. Traceline notifies once per problem, naming the layer and the entry
+(`~/.pi/agent/pi-traceline.json: kubectl.apply: example 2 should yield nothing
+but yields applied deployment.apps/web`), and the rest of the vocabulary loads.
+The built-ins pass the same example check when traceline loads.
+
+A project's vocabulary follows Pi's trust decision for the project: when the
+user has told Pi not to trust it, its vocabulary is left out, because its
+patterns run on every bash result. Pi asks only about projects that carry Pi's
+own resources (`.pi/settings.json`, extensions, skills); a project whose `.pi`
+holds only `pi-traceline.json` counts as trusted, so its vocabulary loads like
+its other traceline settings. Another extension
+sends a layer on Pi's event bus from its `session_start` handler or later,
+`pi.events.emit("traceline:vocabulary", { source: "pi-kubectl", vocabulary:
+[…] })`, and a later message from the same source replaces its earlier one.
 
 - a worktree's datum is its branch, from git's line; a detached worktree shows
   its sha, dim like a commit's. A worktree removed shows its path as typed

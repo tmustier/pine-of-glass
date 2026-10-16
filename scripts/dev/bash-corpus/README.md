@@ -53,7 +53,8 @@ node scripts/dev/bash-corpus/records.ts --samples 3
 
 Adding an entry: write it in `extensions/pi-traceline/vocabulary.ts` with examples
 copied from `out/results.jsonl` (real output, positive and near miss), then run the
-census before and after.
+census before and after. An entry whose examples do not hold stops traceline loading,
+with the entry and example named.
 
 Comparing a vocabulary change: run `records.ts` with distinct `--census` and
 `--dump` paths before and after the edit, then join the dumps on `row`. Read every

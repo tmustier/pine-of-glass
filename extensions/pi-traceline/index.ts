@@ -65,6 +65,7 @@ import { ledgerEntries, ledgerLines } from "./ledger.ts";
 import { composedBody } from "./nested-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, resultText } from "./records.ts";
+import { installVocabulary } from "./vocabulary-layers.ts";
 import { wrapReadCells } from "./read-fold.ts";
 import { TraceRenderCache } from "./render-cache.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun, readPlan, repetitionPlan } from "./repetition-fold.ts";
@@ -1287,12 +1288,9 @@ export const internals = {
 };
 
 export default function piTraceline(pi: ExtensionAPI) {
-  const config: TracelineConfig = Object.assign(
-    {},
-    ...configPaths("pi-traceline", process.cwd()).map(
-      (path) => readJsonConfig(path, parseTracelineConfig) ?? {},
-    ),
-  );
+  const config: TracelineConfig = Object.assign({}, ...configPaths("pi-traceline", process.cwd()).map(
+    (path) => readJsonConfig(path, parseTracelineConfig) ?? {},
+  ));
   let patchTimer: ReturnType<typeof setTimeout> | undefined;
   const tuiOwner = createTracelineTuiOwner();
   let inputUnsubscribe: (() => void) | undefined;
@@ -1414,6 +1412,8 @@ export default function piTraceline(pi: ExtensionAPI) {
     });
   });
 
+  // Vocabulary layers (§9.10) apply after the claim above; a change re-renders every row.
+  installVocabulary(pi, tuiOwner.owns, () => { renderCache.reset(); g.__tracelineTui?.requestRender(); });
   pi.on("session_shutdown", () => {
     if (!tuiOwner.release()) return;
     inputUnsubscribe?.();
