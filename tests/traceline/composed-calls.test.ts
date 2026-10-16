@@ -11,27 +11,10 @@ import { Container } from "@earendil-works/pi-tui";
 
 import piTraceline from "../../extensions/pi-traceline/index.ts";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
-import type { JsonObject } from "../../extensions/_lib/boundary.ts";
 import { assistantMessage } from "../helpers.ts";
 import { hostExtension, IsolatedProject, RecordedUi, type HostedExtension } from "../harness/extension-host.ts";
 import { mouseViewport } from "../fixtures/mouse-viewport.ts";
-
-type NestedFixture = {
-  name: string;
-  args: JsonObject;
-  status?: "ok" | "error" | "running" | "cancelled";
-  durationMs?: number;
-  error?: string;
-};
-type ComposedOptions = {
-  cwd?: string;
-  output?: string;
-  wallSeconds?: number;
-  trimmed?: boolean;
-  failed?: boolean;
-  running?: boolean;
-  restored?: boolean;
-};
+import { composedCall, type NestedFixture, type ComposedOptions } from "./runtime-fixtures.ts";
 
 let project: IsolatedProject;
 let viewport: ReturnType<typeof mouseViewport>;
@@ -45,34 +28,9 @@ const ENOENT = "ENOENT: no such file or directory, access '/x/README.md'";
 // suite runs codemode itself; these rows exercise their visible SDK component output.
 function composedRow(nested: NestedFixture[], options: ComposedOptions = {}): ToolExecutionComponent {
   const id = `composed-${toolCalls.size}`;
-  const args = { code: "await Promise.allSettled(paths.map(async (path) => text(await tools.read({ path }))));" };
+  const { args, result } = composedCall(id, nested, options);
   const row = new ToolExecutionComponent("codemode", id, args, {}, undefined, viewport.view, options.cwd ?? project.dir);
   toolCalls.set(row, { type: "toolCall", id, name: "codemode", arguments: args });
-  const calls = nested.map((call, index) => ({
-    id: `${id}/${index + 1}`,
-    name: call.name,
-    status: call.status ?? "ok",
-    arguments: call.args,
-    durationMs: call.durationMs ?? 20,
-    ...(call.error ? { error: call.error } : {}),
-  }));
-  const output = options.output ?? "x".repeat(200);
-  const notice = options.trimmed
-    ? `Warning: truncated output (original token count: ${Math.ceil(output.length / 4)})\nTotal output lines: 3\n\n`
-    : "";
-  const header = `Script ${options.failed ? "failed" : "completed"}\nWall time ${(options.wallSeconds ?? 0.4).toFixed(1)} seconds\nOutput:\n`;
-  const result = {
-    content: options.running ? [] : [{ type: "text", text: header }, { type: "text", text: `${notice}${output}` }],
-    isError: options.failed === true,
-    details: {
-      ...(!options.restored ? { calls: calls.map(({ arguments: arguments_, ...call }) => ({
-        ...call,
-        args: JSON.stringify(arguments_).slice(0, 200),
-      })) } : {}),
-      ...(options.trimmed ? { fullOutputPath: "/tmp/pi-codemode-fixture.txt" } : {}),
-    },
-    ...(!options.running ? { nestedCalls: { calls, complete: true } } : {}),
-  };
   row.updateResult(result, options.running === true);
   return row;
 }

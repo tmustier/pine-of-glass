@@ -19,6 +19,8 @@ export interface ToolArgsLike {
 export interface ToolResultDetailsLike {
   diff?: unknown;
   patch?: unknown;
+  calls?: unknown;
+  fullOutputPath?: unknown;
 }
 
 export interface ToolResultLike {
