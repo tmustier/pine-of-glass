@@ -245,7 +245,7 @@ The commands Traceline knows are a list of entries, and you can add to it in `~/
 
 That row then reads `applied deployment.apps/web $ kubectl apply -f web.yaml`.
 
-- `output` is a regular expression matched against the result, where `^` and `$` mark the start and end of a line. `{name}` in `datum` reads the pattern's named group. Add `"tone": "warning"` for a riskier outcome, or `"opaque": true` to keep the datum dim, as commit hashes are.
+- `output` is a regular expression matched against the result, where `^` and `$` mark the start and end of a line. `{name}` in `datum` reads the pattern's named group. Add `"tone": "warning"` for a riskier outcome, or `"opaque": true` to keep the datum dim, as commit hashes are. Keep patterns simple: they run on every bash result, and a pattern that backtracks badly slows rendering.
 - `requires` lists options of which one must be present, such as `["-b"]` for a new branch. `unless` lists options that rule the command out. A dry run should always be in `unless`.
 - An entry loads only when each example yields exactly its records. Include a near miss that must yield nothing, such as unchanged or failed output.
 - Reusing a built-in `id` replaces that entry, and `disableVocabulary` turns entries off. The built-in entries and their ids are in [`vocabulary.ts`](./vocabulary.ts).
