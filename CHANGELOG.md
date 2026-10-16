@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Traceline's edit and write rows are one short line again: `edit ./src/price.ts +1 -1`.
+  Since 0.12.0 they had pulled in the diff or file preview Pi draws under the header,
+  which hid the change count and left the full path. The preview stays in the
+  expanded row.
 - Traceline keeps every command visible in a long compound bash row. A row that
   overflows now shortens each command instead of cutting out the middle, so
   `cd … && git add && pnpm lint && pnpm typecheck` no longer hides the lint and type

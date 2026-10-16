@@ -716,21 +716,20 @@ function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): s
   return `${ink(currentTheme(), verbTone(comp), `${BOLD}${prefix}${BOLD_OFF}`)}${rest}`;
 }
 
-// Borrow the complete native call grammar, including continuation lines (§9.6).
+// Borrow the complete native call grammar, including continuation lines (§9.6), but a
+// path row is Pi's header alone: the diff or file preview under it is content (§9.5).
 // Results stay separate. Re-ink the verb neutral bold (error rows error).
 function nativeInvocationLine(comp: ToolRowLike): string | undefined {
   return renderCache.memo(comp, `native-invocation:${objectCacheKey(currentTheme())}`, () => {
     const captured = captureCallLines(comp.callRendererComponent, comp.args);
     if (!captured) return undefined;
-    const lines = captured.map(stripTrailingExpandHint)
-      .filter((line) => stripAnsi(line).trim().length > 0);
-    const line = summarizeCallLines(lines);
+    const visible = captured.map(stripTrailingExpandHint).filter((line) => stripAnsi(line).trim().length > 0);
+    const line = summarizeCallLines(PATH_VERBS.has(toolLabel(comp.toolName)) ? visible.slice(0, 1) : visible);
     // Demote after verb re-inking, which strips foregrounds from the prefix region;
     // doing it first would lose the dim opener and leave its body at terminal default.
     if (!line) return undefined;
     const styled = dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(line)));
-    // Path reconstruction is lossless only for a single native call line.
-    return lines.length === 1 ? pathEmphasisLine(comp, styled) ?? styled : styled;
+    return pathEmphasisLine(comp, styled) ?? styled;
   });
 }
 

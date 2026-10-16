@@ -464,6 +464,10 @@ Read, edit and write rows dim what is boring and bolden what discriminates:
   neutral
 - read `:line-range` spans stay warning-coloured, so scoped file reads remain
   visible
+- a path row is Pi's header line alone. Pi draws an edit or write call with a
+  preview under the header (the diff, or the first lines of the new file). The
+  preview is content, not invocation, so it never joins the row the way §9.6
+  joins other tools' continuation lines; the inline `+N -M` stands in for it
 - edit and write rows carry their `+N -M` diff inline on the basename the same
   way, add-green / remove-red with the zero side dropped (§9.7). The magnitude
   rides the file it changed instead of drifting to a right column, and both
