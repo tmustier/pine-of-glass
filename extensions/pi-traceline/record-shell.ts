@@ -8,41 +8,23 @@
 
 /** One shell word, unquoted. `literal`: no expansion can change it at run time. */
 export type ShellWord = { text: string; literal: boolean };
-export type ShellSeparator = "start" | "&&" | "||" | ";" | "|";
+type ShellSeparator = "start" | "&&" | "||" | ";" | "|";
 /**
  * A simple command: its words without leading `NAME=value` assignments or redirects,
  * the separator before it, and whether it carries a redirect.
  */
-export type ShellCommand = { words: ShellWord[]; before: ShellSeparator; redirected: boolean };
+export type ShellCommand = { head: ShellWord; args: ShellWord[]; before: ShellSeparator; redirected: boolean };
 /**
  * `commands` run in the row's shell, in order. `nested` ran inside `$(…)`, backticks or
  * `<(…)`: their output may reach the result, but their status never is the row's.
  */
-export type ShellScript = { commands: ShellCommand[]; nested: ShellCommand[]; flat: boolean };
+type ShellScript = { commands: ShellCommand[]; nested: ShellCommand[]; statusOwner: ShellCommand | undefined };
 
 // Reserved words and `!` lead into the command that follows them (`do gh issue close`),
 // and make the row compound.
 const COMPOUND_WORDS = new Set(["if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "select", "function", "{", "}", "!"]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const GLOB = /[*?[{]/;
-
-// `env`, `command` and `time` run the words after them as the command and keep its exit
-// status: `env -u SECRET git push` is a push.
-function unwrapped(words: ShellWord[]): ShellWord[] {
-  let i = 0;
-  for (;;) {
-    const head = words[i];
-    if (!head?.literal) return words.slice(i);
-    if (head.text === "time" || (head.text === "command" && !words[i + 1]?.text.startsWith("-"))) i++;
-    else if (head.text === "env") {
-      for (i++; i < words.length; i++) {
-        const { text } = words[i]!;
-        if (text === "-u") i++;
-        else if (!(text === "-i" || text === "-" || /^-u./.test(text) || text.startsWith("--unset=") || ASSIGNMENT.test(text))) break;
-      }
-    } else return words.slice(i);
-  }
-}
 
 export function readShell(source: string): ShellScript {
   const commands: ShellCommand[] = [];
@@ -93,9 +75,22 @@ export function readShell(source: string): ShellScript {
   };
   const endCommand = (separator: ShellSeparator) => {
     endWord();
-    words = unwrapped(words);
-    if (words.length > 0) {
-      commands.push({ words, before, redirected });
+    // Wrappers keep the wrapped command's exit status.
+    let i = 0;
+    while (words[i]?.literal) {
+      const name = words[i]!.text;
+      if (name === "time" || (name === "command" && !words[i + 1]?.text.startsWith("-"))) i++;
+      else if (name === "env") {
+        for (i++; i < words.length; i++) {
+          const { text } = words[i]!;
+          if (text === "-u") i++;
+          else if (!(text === "-i" || text === "-" || /^-u./.test(text) || text.startsWith("--unset=") || ASSIGNMENT.test(text))) break;
+        }
+      } else break;
+    }
+    const [head, ...args] = words.slice(i);
+    if (head) {
+      commands.push({ head, args, before, redirected });
       before = separator;
     } else if (separator !== ";") {
       before = separator; // `) || next`, `&&` before a line break keeps its meaning
@@ -255,39 +250,23 @@ export function readShell(source: string): ShellScript {
   }
   endCommand(";");
   if (heredoc !== "none") flat = false;
-  return { commands, nested, flat };
+  const last = commands.at(-1);
+  const disarmed = commands.slice(0, -1).some(({ head, args }) => {
+    if (!head.literal) return true;
+    const name = head.text === "builtin" ? args[0]?.text : head.text;
+    if (DISARMING.has(name ?? "")) return true;
+    if (name !== "set") return false;
+    for (let i = 0; i < args.length; i++) {
+      const { text } = args[i]!;
+      if (!/^[-+][euxo]+$/.test(text)) return true;
+      if (text.includes("o") && !SAFE_SET_OPTIONS.has(args[++i]?.text ?? "")) return true;
+    }
+    return false;
+  });
+  const statusOwner = flat && !disarmed && last && !last.redirected && last.before !== "||" && last.before !== "|" ? last : undefined;
+  return { commands, nested, statusOwner };
 }
 
 // Builtins that end the shell, change how it runs, or run other text.
 const DISARMING = new Set(["exit", "return", "exec", "eval", "source", ".", "trap", "alias", "shopt", "enable"]);
 const SAFE_SET_OPTIONS = new Set(["pipefail", "errexit", "nounset", "xtrace"]);
-
-// `set -e`, `-u`, `-x` and `-o pipefail` keep every command running; `set -n` does not.
-function safeSet(args: ShellWord[]): boolean {
-  for (let i = 0; i < args.length; i++) {
-    const { text } = args[i]!;
-    if (!/^[-+][euxo]+$/.test(text)) return false;
-    if (text.includes("o") && !SAFE_SET_OPTIONS.has(args[++i]?.text ?? "")) return false;
-  }
-  return true;
-}
-
-function disarmsShell(command: ShellCommand): boolean {
-  const [head, ...rest] = command.words;
-  if (!head?.literal) return true;
-  const name = head.text === "builtin" ? rest[0]?.text : head.text;
-  if (name !== undefined && DISARMING.has(name)) return true;
-  return name === "set" && !safeSet(rest);
-}
-
-/**
- * Whether the row's exit status is command `index`'s own (§9.10 quiet success): a flat
- * row whose last command it is, reached by `&&`, `;` or a line break, without a
- * redirect, after no command that ends or disarms the shell.
- */
-export function ownsRowStatus(script: ShellScript, index: number): boolean {
-  const command = script.commands[index];
-  if (!script.flat || !command || index !== script.commands.length - 1) return false;
-  if (command.redirected || command.before === "||" || command.before === "|") return false;
-  return !script.commands.slice(0, index).some(disarmsShell);
-}

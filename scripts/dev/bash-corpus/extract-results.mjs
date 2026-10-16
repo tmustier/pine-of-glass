@@ -14,6 +14,7 @@ import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resultText } from "../../../extensions/pi-traceline/records.ts";
 
 const args = process.argv.slice(2);
 function argValue(flag, fallback) {
@@ -27,30 +28,12 @@ const outPath = argValue("--out", join(here, "out", "results.jsonl"));
 const VOCABULARY = /\b(?:git|gh|npm)\b/;
 
 function* sessionFiles(root) {
-  let entries;
-  try {
-    entries = readdirSync(root);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
+  for (const entry of readdirSync(root)) {
     const full = join(root, entry);
-    let stat;
-    try {
-      stat = statSync(full);
-    } catch {
-      continue;
-    }
+    const stat = statSync(full);
     if (stat.isDirectory()) yield* sessionFiles(full);
     else if (entry.endsWith(".jsonl")) yield full;
   }
-}
-
-function resultText(content) {
-  if (!Array.isArray(content)) return "";
-  let text = "";
-  for (const block of content) if (block?.type === "text" && typeof block.text === "string") text += `${block.text}\n`;
-  return text;
 }
 
 mkdirSync(dirname(outPath), { recursive: true });
@@ -78,7 +61,7 @@ for (const file of sessionFiles(sessionsRoot)) {
       const cmd = pending.get(message.toolCallId);
       if (cmd === undefined) continue;
       pending.delete(message.toolCallId);
-      out.write(`${JSON.stringify({ cmd, text: resultText(message.content), isError: message.isError === true })}\n`);
+      out.write(`${JSON.stringify({ cmd, text: resultText({ result: message }), isError: message.isError === true })}\n`);
       rows++;
       continue;
     }

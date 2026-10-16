@@ -10,6 +10,7 @@
 // Comparing a rule change: run with distinct --census/--dump paths before and after
 // the edit, then join the dumps on `row` to find records gained and lost.
 
+import assert from "node:assert/strict";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,37 +18,32 @@ import { isJsonObject } from "../../../extensions/_lib/boundary.ts";
 import { recordFacts } from "../../../extensions/pi-traceline/records.ts";
 
 const args = process.argv.slice(2);
-function argValue(flag: string, fallback?: string): string | undefined {
+function argValue(flag: string, fallback = ""): string {
   const i = args.indexOf(flag);
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const resultsPath = argValue("--results", join(here, "out", "results.jsonl"))!;
-const censusPath = argValue("--census", join(here, "out", "records-census.json"))!;
+const resultsPath = argValue("--results", join(here, "out", "results.jsonl"));
+const censusPath = argValue("--census", join(here, "out", "records-census.json"));
 const dumpPath = argValue("--dump");
 const samples = Number(argValue("--samples", "0"));
 
 type Harvested = { cmd: string; text: string; isError: boolean };
 
-function parseHarvested(line: string): Harvested | undefined {
-  try {
-    const value: unknown = JSON.parse(line);
-    if (!isJsonObject(value)) return undefined;
-    const { cmd, text, isError } = value;
-    return typeof cmd === "string" && typeof text === "string" ? { cmd, text, isError: isError === true } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 // Forked sessions repeat their parent's calls; count each command+result once.
 const seen = new Set<string>();
 const rows: Harvested[] = [];
 for (const line of readFileSync(resultsPath, "utf8").split("\n")) {
-  const row = line ? parseHarvested(line) : undefined;
-  if (!row || seen.has(`${row.cmd}\0${row.text}`)) continue;
-  seen.add(`${row.cmd}\0${row.text}`);
+  if (!line) continue;
+  const value: unknown = JSON.parse(line);
+  assert(isJsonObject(value), "Expected a harvested bash result");
+  const { cmd, text, isError } = value;
+  assert(typeof cmd === "string" && typeof text === "string" && typeof isError === "boolean", "Invalid harvested bash result");
+  const row = { cmd, text, isError };
+  const key = JSON.stringify(row);
+  if (seen.has(key)) continue;
+  seen.add(key);
   rows.push(row);
 }
 
@@ -64,11 +60,14 @@ rows.forEach((row, index) => {
   if (facts.length === 0) return;
   recordRows++;
   dump.push(JSON.stringify({ row: index, records: facts.map((fact) => `${fact.verb} ${fact.datum} [${fact.evidence}]`) }));
-  for (const key of new Set(facts.map((fact) => `${fact.verb} [${fact.evidence}]`))) {
+  const counted = new Set<string>();
+  for (const fact of facts) {
+    const key = `${fact.verb} [${fact.evidence}]`;
+    if (counted.has(key)) continue;
+    counted.add(key);
     const entry = byRecord.get(key) ?? { rows: 0, examples: [] };
     entry.rows++;
     if (entry.examples.length < samples) {
-      const fact = facts.find((candidate) => `${candidate.verb} [${candidate.evidence}]` === key)!;
       entry.examples.push(`${fact.verb} ${fact.datum} $ ${row.cmd.replace(/\s*\n\s*/g, " \u21b5 ").slice(0, 160)}`);
     }
     byRecord.set(key, entry);

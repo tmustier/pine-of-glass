@@ -1,7 +1,7 @@
 import { stripAnsi } from "../_lib/ansi.ts";
 import { isJsonObject } from "../_lib/boundary.ts";
-import type { ToolRowDataLike } from "../_lib/chat.ts";
-import { ownsRowStatus, readShell, type ShellCommand, type ShellScript, type ShellWord } from "./record-shell.ts";
+import type { ToolResultLike, ToolRowDataLike } from "../_lib/chat.ts";
+import { readShell, type ShellCommand, type ShellWord } from "./record-shell.ts";
 
 // Records of consequence (design language §9.10): a table of vocabulary entries, each
 // naming its command and the evidence it accepts. Rendering stays in index.ts because
@@ -11,44 +11,30 @@ export type RecordTone = "success" | "warning";
 export type RecordEvidence = "output" | "state" | "quiet";
 export type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence };
 
-/** An invocation of an entry's command: its arguments and its index in the row's commands (-1 when nested). */
-type Operation = { args: ShellWord[]; index: number };
-type Row = { out: string; script: ShellScript; succeeded: boolean };
-type QuietRecord = { verb: string; datum: string };
-
+type Operation = { args: ShellWord[]; command: ShellCommand };
 type Entry = {
-  commands: readonly (readonly string[])[];
-  /** False for an invocation that cannot change state, such as a dry run. */
+  commands: readonly (readonly [string, ...string[]])[];
   qualifies?: (args: ShellWord[]) => boolean;
-  output?: (out: string, ops: Operation[]) => RecordFact[];
-  state?: (row: Row, ops: Operation[]) => RecordFact[];
-  /** The record a quiet success states; must cite why the CLI's exit 0 means the change happened. */
-  quiet?: (op: Operation) => QuietRecord | undefined;
-};
+} & (
+  | { output: (out: string, ops: Operation[]) => RecordFact[]; fallback?: "merge" }
+  | { fallback: "worktree"; output?: never }
+);
 
 function factsFrom(
   out: string,
   pattern: RegExp,
   verb: string,
-  datum: (m: RegExpMatchArray) => string,
-  options: { opaque?: (m: RegExpMatchArray) => boolean; tone?: (m: RegExpMatchArray) => RecordTone } = {},
+  datum: (m: RegExpExecArray) => string,
+  options: { opaque?: (m: RegExpExecArray) => boolean; tone?: (m: RegExpExecArray) => RecordTone } = {},
 ): RecordFact[] {
   return [...out.matchAll(pattern)].map((m) => ({
     verb,
     datum: datum(m),
-    at: m.index ?? 0,
+    at: m.index,
     tone: options.tone?.(m) ?? "success",
     opaque: options.opaque?.(m) ?? false,
     evidence: "output",
   }));
-}
-
-function decodedTag(raw: string): string {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
 }
 
 // --- invocations -------------------------------------------------------------------
@@ -57,10 +43,10 @@ function decodedTag(raw: string): string {
 const GIT_GLOBAL_VALUE = new Set(["-c", "-C", "--git-dir", "--work-tree", "--namespace", "--config-env"]);
 const GIT_GLOBAL_FLAG = /^(?:--no-pager|-P|-p|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--(?:git-dir|work-tree|namespace|exec-path|config-env)=.*)$/;
 
-function operationArgs(command: ShellCommand, path: readonly string[]): ShellWord[] | undefined {
-  const { words } = command;
-  if (!words[0]?.literal || words[0].text !== path[0]) return undefined;
-  let i = 1;
+function operationArgs(command: ShellCommand, path: readonly [string, ...string[]]): ShellWord[] | undefined {
+  const { head, args: words } = command;
+  if (!head.literal || head.text !== path[0]) return undefined;
+  let i = 0;
   if (path[0] === "git") {
     while (i < words.length && (GIT_GLOBAL_VALUE.has(words[i]!.text) || GIT_GLOBAL_FLAG.test(words[i]!.text))) {
       i += GIT_GLOBAL_VALUE.has(words[i]!.text) ? 2 : 1;
@@ -94,13 +80,6 @@ function positionals(args: ShellWord[], valueOptions: ReadonlySet<string>): Shel
   return found;
 }
 
-// --- quiet success (§9.10) ---------------------------------------------------------
-
-function quietOperation(row: Row, ops: Operation[]): Operation | undefined {
-  if (!row.succeeded || row.out.trim() !== "(no output)" || ops.length !== 1) return undefined;
-  return ownsRowStatus(row.script, ops[0]!.index) ? ops[0] : undefined;
-}
-
 // --- gh pull requests ----------------------------------------------------------------
 
 const GH_PR_VALUE_OPTIONS = new Set(["--author-email", "--body", "--body-file", "--match-head-commit", "--repo", "--subject", "-A", "-b", "-F", "-R", "--jq", "--json", "--template", "-q", "-t"]);
@@ -117,51 +96,6 @@ function prTarget(args: ShellWord[]): PrTarget | undefined {
   const i = args.findIndex(({ text }) => text === "--repo" || text === "-R");
   const option = i >= 0 ? args[i + 1]?.text : args.find(({ text }) => text.startsWith("--repo="))?.text.slice("--repo=".length);
   return { number, repo: (option ?? url?.[1])?.toLowerCase() };
-}
-
-function viewJsonFields(args: ShellWord[]): Set<string> {
-  const fields = new Set<string>();
-  args.forEach(({ text }, i) => {
-    const list = text === "--json" ? args[i + 1]?.text : text.startsWith("--json=") ? text.slice("--json=".length) : undefined;
-    for (const field of list?.split(",") ?? []) fields.add(field);
-  });
-  return fields;
-}
-
-function mergedStateAt(out: string): number | undefined {
-  const trimmed = out.trim();
-  if (/^MERGED(?:\s+[0-9a-f]{7,40})?$/.test(trimmed)) return out.indexOf(trimmed);
-  if (!trimmed.startsWith("{")) return undefined;
-  try {
-    const state: unknown = JSON.parse(trimmed);
-    return isJsonObject(state) && state.state === "MERGED" ? out.indexOf(trimmed) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-// Observed state (§9.10): a later `gh pr view` of the same PR, not behind `||`, with no
-// `cd` in between, whose whole output is the merged state.
-function mergedPrState(row: Row, ops: Operation[]): RecordFact[] {
-  const at = mergedStateAt(row.out);
-  const targeted = ops.flatMap((op) => {
-    const target = prTarget(op.args);
-    return target ? [{ op, target }] : [];
-  });
-  if (at === undefined || targeted.length !== 1) return [];
-  const { op, target } = targeted[0]!;
-  const { commands } = row.script;
-  for (let j = op.index + 1; j < commands.length; j++) {
-    const between = commands.slice(op.index + 1, j + 1);
-    if (between.some((command) => command.before === "||") || between.slice(0, -1).some((command) => ["cd", "pushd", "popd"].includes(command.words[0]!.text))) break;
-    const view = operationArgs(commands[j]!, ["gh", "pr", "view"]);
-    const viewed = view && prTarget(view);
-    const sameRepo = viewed?.repo === undefined || target.repo === undefined || viewed.repo === target.repo;
-    if (view && viewed?.number === target.number && sameRepo && viewJsonFields(view).has("state")) {
-      return [{ verb: "merged", datum: `PR #${target.number}`, at, tone: "success", opaque: false, evidence: "state" }];
-    }
-  }
-  return [];
 }
 
 // --- the vocabulary ------------------------------------------------------------------
@@ -227,10 +161,7 @@ const ENTRIES: Entry[] = [
     // `git worktree remove` prints nothing and exits 0 only once the working tree and
     // its administrative files are gone; a dirty or locked tree exits 128 (git-worktree(1)).
     commands: [["git", "worktree", "remove"]],
-    quiet: (op) => {
-      const [path] = positionals(op.args, new Set());
-      return path?.literal ? { verb: "removed worktree", datum: path.text } : undefined;
-    },
+    fallback: "worktree",
   },
   {
     // A progress line may share the line through `\r`: `Rebasing (1/1)\rSuccessfully …`.
@@ -240,14 +171,8 @@ const ENTRIES: Entry[] = [
   {
     commands: [["gh", "pr", "merge"]],
     output: (out) => factsFrom(out, /(?:Merged|Squashed and merged|Rebased and merged) pull request \S*?#(\d+)/g, "merged", (m) => `PR #${m[1]}`),
-    state: mergedPrState,
-    // Without a terminal, `gh pr merge` prints nothing and exits 0 once the merge API
-    // call succeeds. `--auto` exits 0 having only armed a merge, and `--disable-auto`
-    // having only disarmed one.
-    quiet: (op) => {
-      const target = prTarget(op.args);
-      return target && !hasOption(op.args, ["--auto", "--disable-auto"]) ? { verb: "merged", datum: `PR #${target.number}` } : undefined;
-    },
+    // Exit 0 means merged unless --auto or --disable-auto only changed merge settings.
+    fallback: "merge",
   },
   {
     commands: [["gh", "pr", "close"]],
@@ -268,7 +193,13 @@ const ENTRIES: Entry[] = [
   },
   {
     commands: [["gh", "release", "create"]],
-    output: (out) => factsFrom(out, /\/releases\/tag\/([^\s/]+)/g, "released", (m) => decodedTag(m[1]!)),
+    output: (out) => factsFrom(out, /\/releases\/tag\/([^\s/]+)/g, "released", (m) => {
+      try {
+        return decodeURIComponent(m[1]!);
+      } catch {
+        return m[1]!;
+      }
+    }),
   },
   {
     // npm's publish porcelain: `+ pine-of-glass@0.5.10`
@@ -277,29 +208,6 @@ const ENTRIES: Entry[] = [
     output: (out) => factsFrom(out, /^\+ \S+@([^\s@]+)\s*$/gm, "published", (m) => m[1]!),
   },
 ];
-
-// Each source answers only when the one before it found nothing: an operation's own
-// completion line, then observed state, then quiet success.
-function entryFacts(entry: Entry, row: Row): RecordFact[] {
-  const invocations = (commands: ShellCommand[], nested: boolean): Operation[] =>
-    commands.flatMap((command, index) =>
-      entry.commands.flatMap((path) => {
-        const args = operationArgs(command, path);
-        return args && (entry.qualifies?.(args) ?? true) ? [{ args, index: nested ? -1 : index }] : [];
-      }));
-  const ops = invocations(row.script.commands, false);
-  const all = [...ops, ...invocations(row.script.nested, true)];
-  if (all.length === 0) return [];
-  // A nested command's output can reach the result; its status and order never are the row's.
-  const output = entry.output?.(row.out, all) ?? [];
-  if (output.length > 0 || ops.length === 0) return output;
-  const state = entry.state?.(row, ops) ?? [];
-  if (state.length > 0) return state;
-  if (!entry.quiet) return [];
-  const op = quietOperation(row, ops);
-  const quiet = op && entry.quiet(op);
-  return quiet ? [{ ...quiet, at: 0, tone: "success", opaque: false, evidence: "quiet" }] : [];
-}
 
 export function resultText(comp: ToolRowDataLike | undefined): string {
   const content = comp?.result?.content;
@@ -313,17 +221,74 @@ export function resultText(comp: ToolRowDataLike | undefined): string {
 
 // Facts depend only on the row's own command+result, so they cache against the result
 // object identity (rows re-render every frame; porcelain never changes once settled).
-const recordFactCache = new WeakMap<object, { result: unknown; facts: RecordFact[] }>();
+const recordFactCache = new WeakMap<ToolRowDataLike, { result: ToolResultLike; facts: RecordFact[] }>();
 
 export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
-  if (comp?.toolName !== "bash") return [];
-  const command = comp?.args?.command;
-  if (typeof command !== "string" || !comp?.result || typeof comp.result !== "object") return [];
+  if (comp.toolName !== "bash") return [];
+  const command = comp.args?.command;
+  const { result } = comp;
+  if (typeof command !== "string" || !result) return [];
   const cached = recordFactCache.get(comp);
-  if (cached && cached.result === comp.result) return cached.facts;
+  if (cached && cached.result === result) return cached.facts;
   const out = stripAnsi(resultText(comp));
-  const row: Row = { out, script: readShell(command), succeeded: comp.result.isError === false };
-  const facts = out ? ENTRIES.flatMap((entry) => entryFacts(entry, row)).sort((a, b) => a.at - b.at) : [];
-  recordFactCache.set(comp, { result: comp.result, facts });
+  const script = readShell(command);
+  const trimmed = out.trim();
+  const facts = ENTRIES.flatMap((entry): RecordFact[] => {
+    const invocations = (commands: ShellCommand[]): Operation[] => commands.flatMap((command) =>
+      entry.commands.flatMap((path) => {
+        const args = operationArgs(command, path);
+        return args && (entry.qualifies?.(args) ?? true) ? [{ args, command }] : [];
+      }));
+    const ops = invocations(script.commands);
+    const all = [...ops, ...invocations(script.nested)];
+    if (all.length === 0) return [];
+    const output = entry.output?.(out, all) ?? [];
+    if (output.length || !entry.fallback) return output;
+
+    if (entry.fallback === "merge" && trimmed !== "(no output)") {
+      let merged = /^MERGED(?:\s+[0-9a-f]{7,40})?$/.test(trimmed);
+      if (trimmed.startsWith("{")) {
+        try {
+          const state: unknown = JSON.parse(trimmed);
+          merged = isJsonObject(state) && state.state === "MERGED";
+        } catch {
+          return [];
+        }
+      }
+      if (!merged) return [];
+      const targeted = ops.flatMap((op) => {
+        const target = prTarget(op.args);
+        return target ? [{ op, target }] : [];
+      });
+      if (targeted.length !== 1) return [];
+      const { op, target } = targeted[0]!;
+      for (const command of script.commands.slice(script.commands.indexOf(op.command) + 1)) {
+        if (command.before === "||") break;
+        const view = operationArgs(command, ["gh", "pr", "view"]);
+        const viewed = view && prTarget(view);
+        const sameRepo = viewed?.repo === undefined || target.repo === undefined || viewed.repo === target.repo;
+        const hasState = view?.some(({ text }, i) =>
+          (text === "--json" ? view[i + 1]?.text : text.startsWith("--json=") ? text.slice("--json=".length) : undefined)?.split(",").includes("state"));
+        if (viewed?.number === target.number && sameRepo && hasState) {
+          return [{ verb: "merged", datum: `PR #${target.number}`, at: out.indexOf(trimmed), tone: "success", opaque: false, evidence: "state" }];
+        }
+        if (["cd", "pushd", "popd"].includes(command.head.text)) break;
+      }
+      return [];
+    }
+
+    if (result.isError !== false || trimmed !== "(no output)" || ops.length !== 1) return [];
+    const op = ops[0]!;
+    if (op.command !== script.statusOwner) return [];
+    if (entry.fallback === "worktree") {
+      const [path] = positionals(op.args, new Set());
+      return path?.literal ? [{ verb: "removed worktree", datum: path.text, at: 0, tone: "success", opaque: false, evidence: "quiet" }] : [];
+    }
+    const target = prTarget(op.args);
+    return target && !hasOption(op.args, ["--auto", "--disable-auto"])
+      ? [{ verb: "merged", datum: `PR #${target.number}`, at: 0, tone: "success", opaque: false, evidence: "quiet" }]
+      : [];
+  }).sort((a, b) => a.at - b.at);
+  recordFactCache.set(comp, { result, facts });
   return facts;
 }
