@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Traceline's record vocabulary is plain data in `extensions/pi-traceline/vocabulary.ts`.
+  An entry names its commands, the options it requires or rules out, its output
+  patterns, and examples of real output with the records they must yield; the test
+  suite runs every example. Adding a command means adding an entry. No record changes.
+
 ## 0.17.0 (2026-10-17)
 
 - Traceline records more of what a session changes in git: `created worktree fix`,

@@ -2,40 +2,42 @@ import { stripAnsi } from "../_lib/ansi.ts";
 import { isJsonObject } from "../_lib/boundary.ts";
 import type { ToolResultLike, ToolRowDataLike } from "../_lib/chat.ts";
 import { readShell, type ShellCommand, type ShellWord } from "./record-shell.ts";
+import { BUILT_IN_VOCABULARY } from "./vocabulary.ts";
 
-// Records of consequence (design language §9.10): a table of vocabulary entries, each
-// naming its command and the evidence it accepts. Rendering stays in index.ts because
-// it depends on live theme ink and row fitting.
+// Records of consequence (design language §9.10): vocabulary entries are plain data
+// (vocabulary.ts), parsed here at the boundary. What a pattern cannot say is code keyed
+// by entry id. Rendering stays in index.ts because it depends on live theme ink and row
+// fitting.
 export type RecordTone = "success" | "warning";
 /** Which of §9.10's evidence sources produced the fact. */
 export type RecordEvidence = "output" | "state" | "quiet";
 export type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence };
 
-type Operation = { args: ShellWord[]; command: ShellCommand };
-type Entry = {
-  commands: readonly (readonly [string, ...string[]])[];
-  qualifies?: (args: ShellWord[]) => boolean;
-} & (
-  | { output: (out: string, ops: Operation[]) => RecordFact[]; fallback?: "merge" }
-  | { fallback: "worktree"; output?: never }
-);
+/** A vocabulary entry as written (§9.10): plain data, the shape a JSON file would hold. */
+export type VocabularyEntryInput = {
+  id: string;
+  commands: string[];
+  requires?: string[];
+  unless?: string[];
+  records?: { output: string; verb: string; datum: string; tone?: RecordTone; opaque?: boolean }[];
+  examples: { command: string; output: string; error?: boolean; records: string[] }[];
+};
+type Options = { long: string[]; short: string };
+type RecordRule = { pattern: RegExp; verb: string; datum: string; tone: RecordTone; opaque: boolean };
+export type VocabularyEntry = {
+  id: string;
+  commands: [string, ...string[]][];
+  requires: Options | undefined;
+  unless: Options;
+  records: RecordRule[];
+  examples: VocabularyEntryInput["examples"];
+};
 
-function factsFrom(
-  out: string,
-  pattern: RegExp,
-  verb: string,
-  datum: (m: RegExpExecArray) => string,
-  options: { opaque?: (m: RegExpExecArray) => boolean; tone?: (m: RegExpExecArray) => RecordTone } = {},
-): RecordFact[] {
-  return [...out.matchAll(pattern)].map((m) => ({
-    verb,
-    datum: datum(m),
-    at: m.index,
-    tone: options.tone?.(m) ?? "success",
-    opaque: options.opaque?.(m) ?? false,
-    evidence: "output",
-  }));
-}
+export type ParsedVocabulary = { entries: VocabularyEntry[]; problems: string[] };
+
+type Operation = { args: ShellWord[]; command: ShellCommand };
+/** What a pattern cannot say about an entry: an extra qualification, a datum the command qualifies, a non-output evidence source. */
+type EntryCode = { qualifies?: (args: ShellWord[]) => boolean; datum?: (datum: string, ops: Operation[]) => string; fallback?: "merge" | "worktree" };
 
 // --- invocations -------------------------------------------------------------------
 
@@ -100,114 +102,124 @@ function prTarget(args: ShellWord[]): PrTarget | undefined {
 
 // --- the vocabulary ------------------------------------------------------------------
 
-const GIT_PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--receive-pack", "--exec", "--repo"]);
-const notDryRun = (args: ShellWord[]) => !hasOption(args, ["--dry-run"]);
-const notDryRunPush = (args: ShellWord[]) => !hasOption(args, ["--dry-run"], "n");
+const OPTION = /^(?:--[A-Za-z0-9][\w-]*|-[A-Za-z])$/;
+const PLACEHOLDER = /\{(\w+)\}/g;
 
-// Completion output only, unless an entry says otherwise. Push failures
-// (`! [rejected] main -> main`) have neither a hex range nor a `[new ...]` head, so they
-// never match; `Everything up-to-date` contributes nothing.
-const ENTRIES: Entry[] = [
-  {
-    // `[main a4f21c9]`, `[main (root-commit) a4f21c9]`, `[detached HEAD a4f21c9]`. The sha
-    // is opaque audit data (§9.10): the verb wears the ink, the sha stays dim.
-    commands: [["git", "commit"]],
-    qualifies: notDryRun,
-    output: (out) => factsFrom(out, /^\[[^\n\]]*?([0-9a-f]{7,40})\]/gm, "committed", (m) => m[1]!, { opaque: () => true }),
-  },
-  {
-    // `1c75c2a..50cf33f main -> main`, `+ ... (forced update)`, `* [new tag] ...`
-    commands: [["git", "push"]],
-    qualifies: notDryRunPush,
-    output: (out) =>
-      factsFrom(out, /^\s*(?:\+?\s?[0-9a-f]+\.\.\.?[0-9a-f]+|\* \[new (?:branch|tag)\])\s+\S+\s+->\s+(\S+)/gm, "pushed", (m) => m[1]!, {
-        tone: (m) => (m[0].trimStart().startsWith("+") ? "warning" : "success"),
-      }),
-  },
-  {
-    // ` - [deleted]  fix`: the output names the ref, the command names the remote.
-    commands: [["git", "push"]],
-    qualifies: (args) => notDryRunPush(args) && (hasOption(args, ["--delete"], "d") || positionals(args, GIT_PUSH_VALUE_OPTIONS).slice(1).some(({ text }) => text.startsWith(":"))),
-    output: (out, ops) => {
+function stringList(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
+}
+
+function optionSet(value: unknown, field: string): Options {
+  const options = value === undefined ? [] : stringList(value);
+  if (!options || options.some((option) => !OPTION.test(option))) throw new Error(`${field} must list options such as --dry-run or -n`);
+  return { long: options.filter((option) => option.startsWith("--")), short: options.filter((option) => !option.startsWith("--")).map((option) => option[1]).join("") };
+}
+
+function recordRule(value: unknown): RecordRule {
+  if (!isJsonObject(value) || typeof value.output !== "string" || typeof value.verb !== "string" || !value.verb || typeof value.datum !== "string") {
+    throw new Error("each record needs output, verb and datum strings");
+  }
+  const pattern = new RegExp(value.output, "gm");
+  const groups = new Set([...value.output.matchAll(/\(\?<(\w+)>/g)].map((m) => m[1]));
+  const missing = [...value.datum.matchAll(PLACEHOLDER)].map((m) => m[1]!).find((name) => !groups.has(name));
+  if (missing) throw new Error(`datum {${missing}} names no group in its output pattern`);
+  if (value.tone !== undefined && value.tone !== "success" && value.tone !== "warning") throw new Error("tone must be success or warning");
+  if (value.opaque !== undefined && typeof value.opaque !== "boolean") throw new Error("opaque must be true or false");
+  return { pattern, verb: value.verb, datum: value.datum, tone: value.tone ?? "success", opaque: value.opaque ?? false };
+}
+
+function example(value: unknown): VocabularyEntryInput["examples"][number] {
+  const records = isJsonObject(value) ? stringList(value.records) : undefined;
+  if (!isJsonObject(value) || typeof value.command !== "string" || typeof value.output !== "string" || !records || (value.error !== undefined && typeof value.error !== "boolean")) {
+    throw new Error("each example needs command, output and records");
+  }
+  return { command: value.command, output: value.output, error: value.error === true, records };
+}
+
+/**
+ * Parse vocabulary entries at the boundary (§9.10). An entry with any problem is left
+ * out whole and reported, so one bad entry never takes the others down.
+ */
+export function parseVocabulary(value: unknown): ParsedVocabulary {
+  if (!Array.isArray(value)) return { entries: [], problems: ["vocabulary must be a list of entries"] };
+  const entries: VocabularyEntry[] = [];
+  const problems: string[] = [];
+  value.forEach((item: unknown, index) => {
+    const id = isJsonObject(item) && typeof item.id === "string" && item.id ? item.id : undefined;
+    try {
+      if (!isJsonObject(item) || !id) throw new Error("needs an id");
+      if (entries.some((entry) => entry.id === id)) throw new Error("repeats an earlier id");
+      const commands = stringList(item.commands)?.map((command) => command.trim().split(/\s+/));
+      if (!commands?.length || commands.some((path) => !path[0])) throw new Error("needs commands such as \"git push\"");
+      if (item.records !== undefined && !Array.isArray(item.records)) throw new Error("records must be a list");
+      if (!Array.isArray(item.examples) || item.examples.length === 0) throw new Error("needs examples");
+      entries.push({
+        id,
+        commands: commands.map((path) => [path[0]!, ...path.slice(1)]),
+        requires: item.requires === undefined ? undefined : optionSet(item.requires, "requires"),
+        unless: optionSet(item.unless, "unless"),
+        records: (item.records ?? []).map(recordRule),
+        examples: item.examples.map(example),
+      });
+    } catch (error) {
+      problems.push(`${id ?? `entry ${index + 1}`}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
+  return { entries, problems };
+}
+
+const GIT_PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--receive-pack", "--exec", "--repo"]);
+
+// What a pattern cannot say (§9.10), keyed by entry id: an extra qualification, a datum
+// the command qualifies, and the observed-state and quiet-success sources.
+const CODE = new Map<string, EntryCode>([
+  ["git.push.delete", {
+    qualifies: (args) => hasOption(args, ["--delete"], "d") || positionals(args, GIT_PUSH_VALUE_OPTIONS).slice(1).some(({ text }) => text.startsWith(":")),
+    datum: (ref, ops) => {
       const remotes = new Set(ops.map((op) => positionals(op.args, GIT_PUSH_VALUE_OPTIONS)[0]).map((word) => (word?.literal ? word.text : undefined)));
       const [remote] = remotes.size === 1 ? [...remotes] : [undefined];
-      return factsFrom(out, /^\s*- \[deleted\]\s+(\S+)\s*$/gm, "deleted", (m) => (remote ? `${remote}/${m[1]}` : m[1]!));
+      return remote ? `${remote}/${ref}` : ref;
     },
-  },
-  {
-    commands: [["git", "branch"]],
-    qualifies: (args) => hasOption(args, ["--delete"], "dD"),
-    output: (out) => factsFrom(out, /^Deleted branch (\S+) \(was [0-9a-f]+\)\.$/gm, "deleted", (m) => m[1]!),
-  },
-  {
-    commands: [["git", "checkout"], ["git", "switch"]],
-    qualifies: (args) => hasOption(args, ["--create", "--force-create"], "bBcC"),
-    output: (out) => factsFrom(out, /^Switched to a new branch '([^'\n]+)'$/gm, "created branch", (m) => m[1]!),
-  },
-  {
-    // `Preparing worktree (…)` announces the work; `HEAD is now at` completes it. Git's
-    // tracking note and checkout progress may sit between them; `fatal:` never does.
-    commands: [["git", "worktree", "add"]],
-    output: (out) =>
-      factsFrom(
-        out,
-        /^Preparing worktree \((?:new branch '([^'\n]+)'|checking out '([^'\n]+)'|detached HEAD ([0-9a-f]+))\)\n(?:branch '[^'\n]+' set up to track [^\n]+\n|Updating files:[^\n]*\n)*HEAD is now at [0-9a-f]+/gm,
-        "created worktree",
-        (m) => m[1] ?? m[2] ?? m[3]!,
-        { opaque: (m) => m[3] !== undefined },
-      ),
-  },
-  {
-    // `git worktree remove` prints nothing and exits 0 only once the working tree and
-    // its administrative files are gone; a dirty or locked tree exits 128 (git-worktree(1)).
-    commands: [["git", "worktree", "remove"]],
-    fallback: "worktree",
-  },
-  {
-    // A progress line may share the line through `\r`: `Rebasing (1/1)\rSuccessfully …`.
-    commands: [["git", "rebase"]],
-    output: (out) => factsFrom(out, /Successfully rebased and updated refs\/heads\/(\S+?)\.(?=\s|$)/g, "rebased", (m) => m[1]!),
-  },
-  {
-    commands: [["gh", "pr", "merge"]],
-    output: (out) => factsFrom(out, /(?:Merged|Squashed and merged|Rebased and merged) pull request \S*?#(\d+)/g, "merged", (m) => `PR #${m[1]}`),
-    // Exit 0 means merged unless --auto or --disable-auto only changed merge settings.
-    fallback: "merge",
-  },
-  {
-    commands: [["gh", "pr", "close"]],
-    output: (out) => factsFrom(out, /Closed pull request \S*?#(\d+)/g, "closed", (m) => `PR #${m[1]}`),
-  },
-  {
-    commands: [["gh", "pr", "create"]],
-    qualifies: notDryRun,
-    output: (out) => factsFrom(out, /\/pull\/(\d+)\b/g, "opened", (m) => `PR #${m[1]}`),
-  },
-  {
-    commands: [["gh", "issue", "create"]],
-    output: (out) => factsFrom(out, /github\.com\/[^/\s]+\/[^/\s]+\/issues\/(\d+)\b/g, "opened", (m) => `#${m[1]}`),
-  },
-  {
-    commands: [["gh", "issue", "close"]],
-    output: (out) => factsFrom(out, /Closed issue \S*?#(\d+)/g, "closed", (m) => `#${m[1]}`),
-  },
-  {
-    commands: [["gh", "release", "create"]],
-    output: (out) => factsFrom(out, /\/releases\/tag\/([^\s/]+)/g, "released", (m) => {
+  }],
+  ["git.worktree.remove", { fallback: "worktree" }],
+  ["gh.pr.merge", { fallback: "merge" }],
+  ["gh.release.create", {
+    datum: (tag) => {
       try {
-        return decodeURIComponent(m[1]!);
+        return decodeURIComponent(tag);
       } catch {
-        return m[1]!;
+        return tag;
       }
-    }),
-  },
-  {
-    // npm's publish porcelain: `+ pine-of-glass@0.5.10`
-    commands: [["npm", "publish"]],
-    qualifies: notDryRun,
-    output: (out) => factsFrom(out, /^\+ \S+@([^\s@]+)\s*$/gm, "published", (m) => m[1]!),
-  },
-];
+    },
+  }],
+]);
+
+const BUILT_IN = parseVocabulary(BUILT_IN_VOCABULARY);
+if (BUILT_IN.problems.length > 0) throw new Error(`traceline's built-in vocabulary is invalid: ${BUILT_IN.problems.join("; ")}`);
+const unknownCode = [...CODE.keys()].filter((id) => !BUILT_IN.entries.some((entry) => entry.id === id));
+if (unknownCode.length > 0) throw new Error(`traceline record code names no vocabulary entry: ${unknownCode.join(", ")}`);
+/** The built-in entries, examples included, for the suite that runs them. */
+export const BUILT_IN_ENTRIES: readonly VocabularyEntry[] = BUILT_IN.entries;
+
+function outputFacts(entry: VocabularyEntry, out: string, ops: Operation[]): RecordFact[] {
+  const adjust = CODE.get(entry.id)?.datum;
+  return entry.records.flatMap((rule) => [...out.matchAll(rule.pattern)].flatMap((m): RecordFact[] => {
+    let complete = true;
+    const datum = rule.datum.replace(PLACEHOLDER, (_, name: string) => {
+      const value = m.groups?.[name];
+      if (value === undefined) complete = false;
+      return value ?? "";
+    });
+    if (!complete) return [];
+    return [{ verb: rule.verb, datum: adjust ? adjust(datum, ops) : datum, at: m.index, tone: rule.tone, opaque: rule.opaque, evidence: "output" }];
+  }));
+}
+
+function qualifies(entry: VocabularyEntry, args: ShellWord[]): boolean {
+  if (entry.requires && !hasOption(args, entry.requires.long, entry.requires.short)) return false;
+  if (hasOption(args, entry.unless.long, entry.unless.short)) return false;
+  return CODE.get(entry.id)?.qualifies?.(args) ?? true;
+}
 
 export function resultText(comp: ToolRowDataLike | undefined): string {
   const content = comp?.result?.content;
@@ -233,19 +245,20 @@ export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
   const out = stripAnsi(resultText(comp));
   const script = readShell(command);
   const trimmed = out.trim();
-  const facts = ENTRIES.flatMap((entry): RecordFact[] => {
+  const facts = BUILT_IN.entries.flatMap((entry): RecordFact[] => {
     const invocations = (commands: ShellCommand[]): Operation[] => commands.flatMap((command) =>
       entry.commands.flatMap((path) => {
         const args = operationArgs(command, path);
-        return args && (entry.qualifies?.(args) ?? true) ? [{ args, command }] : [];
+        return args && qualifies(entry, args) ? [{ args, command }] : [];
       }));
     const ops = invocations(script.commands);
     const all = [...ops, ...invocations(script.nested)];
     if (all.length === 0) return [];
-    const output = entry.output?.(out, all) ?? [];
-    if (output.length || !entry.fallback) return output;
+    const output = outputFacts(entry, out, all);
+    const fallback = CODE.get(entry.id)?.fallback;
+    if (output.length || !fallback) return output;
 
-    if (entry.fallback === "merge" && trimmed !== "(no output)") {
+    if (fallback === "merge" && trimmed !== "(no output)") {
       let merged = /^MERGED(?:\s+[0-9a-f]{7,40})?$/.test(trimmed);
       if (trimmed.startsWith("{")) {
         try {
@@ -280,7 +293,7 @@ export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
     if (result.isError !== false || trimmed !== "(no output)" || ops.length !== 1) return [];
     const op = ops[0]!;
     if (op.command !== script.statusOwner) return [];
-    if (entry.fallback === "worktree") {
+    if (fallback === "worktree") {
       const [path] = positionals(op.args, new Set());
       return path?.literal ? [{ verb: "removed worktree", datum: path.text, at: 0, tone: "success", opaque: false, evidence: "quiet" }] : [];
     }
