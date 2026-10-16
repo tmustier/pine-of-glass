@@ -12,6 +12,7 @@ import {
   type ExtensionUIContext,
   SessionManager,
   type SessionStartEvent,
+  SettingsManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 
@@ -82,6 +83,12 @@ export class IsolatedProject {
     writeFileSync(join(this.dir, ".pi", `${name}.json`), JSON.stringify(config));
   }
 
+  /** `~/.pi/agent/<name>.json`; a string is written as is, so a test can write broken JSON. */
+  writeUserConfig(name: string, config: JsonObject | string): void {
+    mkdirSync(join(this.home, ".pi", "agent"), { recursive: true });
+    writeFileSync(join(this.home, ".pi", "agent", `${name}.json`), typeof config === "string" ? config : JSON.stringify(config));
+  }
+
   dispose(): void {
     process.chdir(this.#previousCwd);
     if (this.#previousHome === undefined) delete process.env.HOME;
@@ -110,12 +117,15 @@ export async function hostExtension(
     noTools?: CreateAgentSessionOptions["noTools"];
     /** A pre-populated session to resume, as Pi does from a session file. */
     sessionManager?: SessionManager;
+    /** Whether Pi trusts the project, as `/trust` decides; Pi's SDK defaults to trusted. */
+    projectTrusted?: boolean;
   },
 ): Promise<HostedExtension> {
   const { project, interactive = true, reason = "startup", model, thinkingLevel, noTools = "all" } = options;
   const cwd = project.dir;
   const agentDir = join(project.home, ".pi", "agent");
-  const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
+  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: options.projectTrusted ?? true });
+  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager, extensionFactories: [factory] });
   await loader.reload();
   const loadErrors = loader.getExtensions().errors;
   if (loadErrors.length > 0) throw new Error(loadErrors.map((entry) => entry.error).join("\n"));
@@ -124,6 +134,7 @@ export async function hostExtension(
     cwd,
     agentDir,
     resourceLoader: loader,
+    settingsManager,
     sessionManager: options.sessionManager ?? SessionManager.inMemory(cwd),
     model,
     thinkingLevel,

@@ -5,9 +5,10 @@ import { readShell, type ShellCommand, type ShellWord } from "./record-shell.ts"
 import { BUILT_IN_VOCABULARY } from "./vocabulary.ts";
 
 // Records of consequence (design language §9.10): vocabulary entries are plain data
-// (vocabulary.ts), parsed here at the boundary. What a pattern cannot say is code keyed
-// by entry id. Rendering stays in index.ts because it depends on live theme ink and row
-// fitting.
+// (vocabulary.ts), parsed here at the boundary, and an entry loads only when its examples
+// hold. What a pattern cannot say is code that belongs to a built-in entry. Layering
+// lives in vocabulary-layers.ts; rendering stays in index.ts because it depends on live
+// theme ink and row fitting.
 export type RecordTone = "success" | "warning";
 /** Which of §9.10's evidence sources produced the fact. */
 export type RecordEvidence = "output" | "state" | "quiet";
@@ -31,6 +32,8 @@ export type VocabularyEntry = {
   unless: Options;
   records: RecordRule[];
   examples: VocabularyEntryInput["examples"];
+  /** Only built-in entries carry code (§9.10). */
+  code: EntryCode | undefined;
 };
 
 export type ParsedVocabulary = { entries: VocabularyEntry[]; problems: string[] };
@@ -136,11 +139,24 @@ function example(value: unknown): VocabularyEntryInput["examples"][number] {
   return { command: value.command, output: value.output, error: value.error === true, records };
 }
 
+const label = ({ verb, datum }: RecordFact) => `${verb} ${datum}`;
+const listed = (records: string[]) => (records.length ? records.join(", ") : "nothing");
+
+/** An entry's examples are its specification: each must yield exactly its records with the entry alone. */
+function exampleProblem(entry: VocabularyEntry): string | undefined {
+  for (const [index, { command, output, error, records }] of entry.examples.entries()) {
+    const yields = factsFor([entry], command, `${output}\n`, error !== true).map(label);
+    if (yields.join("\n") !== records.join("\n")) return `example ${index + 1} should yield ${listed(records)} but yields ${listed(yields)}`;
+  }
+  return undefined;
+}
+
 /**
- * Parse vocabulary entries at the boundary (§9.10). An entry with any problem is left
- * out whole and reported, so one bad entry never takes the others down.
+ * Parse vocabulary entries at the boundary (§9.10). An entry with any problem, a failing
+ * example included, is left out whole and reported, so one bad entry never takes the
+ * others down. Only the built-ins pass `code`.
  */
-export function parseVocabulary(value: unknown): ParsedVocabulary {
+export function parseVocabulary(value: unknown, code: ReadonlyMap<string, EntryCode> = new Map()): ParsedVocabulary {
   if (!Array.isArray(value)) return { entries: [], problems: ["vocabulary must be a list of entries"] };
   const entries: VocabularyEntry[] = [];
   const problems: string[] = [];
@@ -153,14 +169,19 @@ export function parseVocabulary(value: unknown): ParsedVocabulary {
       if (!commands?.length || commands.some((path) => !path[0])) throw new Error("needs commands such as \"git push\"");
       if (item.records !== undefined && !Array.isArray(item.records)) throw new Error("records must be a list");
       if (!Array.isArray(item.examples) || item.examples.length === 0) throw new Error("needs examples");
-      entries.push({
+      const entry: VocabularyEntry = {
         id,
         commands: commands.map((path) => [path[0]!, ...path.slice(1)]),
         requires: item.requires === undefined ? undefined : optionSet(item.requires, "requires"),
         unless: optionSet(item.unless, "unless"),
         records: (item.records ?? []).map(recordRule),
         examples: item.examples.map(example),
-      });
+        code: code.get(id),
+      };
+      if (!entry.examples.some(({ records }) => records.length > 0)) throw new Error("needs an example that yields a record");
+      const problem = exampleProblem(entry);
+      if (problem) throw new Error(problem);
+      entries.push(entry);
     } catch (error) {
       problems.push(`${id ?? `entry ${index + 1}`}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -170,8 +191,9 @@ export function parseVocabulary(value: unknown): ParsedVocabulary {
 
 const GIT_PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--receive-pack", "--exec", "--repo"]);
 
-// What a pattern cannot say (§9.10), keyed by entry id: an extra qualification, a datum
-// the command qualifies, and the observed-state and quiet-success sources.
+// What a pattern cannot say (§9.10), attached to the built-in entry of that id: an extra
+// qualification, a datum the command qualifies, and the observed-state and quiet-success
+// sources. A layer that replaces the entry replaces it with data only.
 const CODE = new Map<string, EntryCode>([
   ["git.push.delete", {
     qualifies: (args) => hasOption(args, ["--delete"], "d") || positionals(args, GIT_PUSH_VALUE_OPTIONS).slice(1).some(({ text }) => text.startsWith(":")),
@@ -194,15 +216,8 @@ const CODE = new Map<string, EntryCode>([
   }],
 ]);
 
-const BUILT_IN = parseVocabulary(BUILT_IN_VOCABULARY);
-if (BUILT_IN.problems.length > 0) throw new Error(`traceline's built-in vocabulary is invalid: ${BUILT_IN.problems.join("; ")}`);
-const unknownCode = [...CODE.keys()].filter((id) => !BUILT_IN.entries.some((entry) => entry.id === id));
-if (unknownCode.length > 0) throw new Error(`traceline record code names no vocabulary entry: ${unknownCode.join(", ")}`);
-/** The built-in entries, examples included, for the suite that runs them. */
-export const BUILT_IN_ENTRIES: readonly VocabularyEntry[] = BUILT_IN.entries;
-
 function outputFacts(entry: VocabularyEntry, out: string, ops: Operation[]): RecordFact[] {
-  const adjust = CODE.get(entry.id)?.datum;
+  const adjust = entry.code?.datum;
   return entry.records.flatMap((rule) => [...out.matchAll(rule.pattern)].flatMap((m): RecordFact[] => {
     let complete = true;
     const datum = rule.datum.replace(PLACEHOLDER, (_, name: string) => {
@@ -218,7 +233,7 @@ function outputFacts(entry: VocabularyEntry, out: string, ops: Operation[]): Rec
 function qualifies(entry: VocabularyEntry, args: ShellWord[]): boolean {
   if (entry.requires && !hasOption(args, entry.requires.long, entry.requires.short)) return false;
   if (hasOption(args, entry.unless.long, entry.unless.short)) return false;
-  return CODE.get(entry.id)?.qualifies?.(args) ?? true;
+  return entry.code?.qualifies?.(args) ?? true;
 }
 
 export function resultText(comp: ToolRowDataLike | undefined): string {
@@ -231,21 +246,11 @@ export function resultText(comp: ToolRowDataLike | undefined): string {
   return out;
 }
 
-// Facts depend only on the row's own command+result, so they cache against the result
-// object identity (rows re-render every frame; porcelain never changes once settled).
-const recordFactCache = new WeakMap<ToolRowDataLike, { result: ToolResultLike; facts: RecordFact[] }>();
-
-export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
-  if (comp.toolName !== "bash") return [];
-  const command = comp.args?.command;
-  const { result } = comp;
-  if (typeof command !== "string" || !result) return [];
-  const cached = recordFactCache.get(comp);
-  if (cached && cached.result === result) return cached.facts;
-  const out = stripAnsi(resultText(comp));
+function factsFor(entries: readonly VocabularyEntry[], command: string, text: string, cleanExit: boolean): RecordFact[] {
+  const out = stripAnsi(text);
   const script = readShell(command);
   const trimmed = out.trim();
-  const facts = BUILT_IN.entries.flatMap((entry): RecordFact[] => {
+  return entries.flatMap((entry): RecordFact[] => {
     const invocations = (commands: ShellCommand[]): Operation[] => commands.flatMap((command) =>
       entry.commands.flatMap((path) => {
         const args = operationArgs(command, path);
@@ -255,7 +260,7 @@ export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
     const all = [...ops, ...invocations(script.nested)];
     if (all.length === 0) return [];
     const output = outputFacts(entry, out, all);
-    const fallback = CODE.get(entry.id)?.fallback;
+    const fallback = entry.code?.fallback;
     if (output.length || !fallback) return output;
 
     if (fallback === "merge" && trimmed !== "(no output)") {
@@ -290,7 +295,7 @@ export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
       return [];
     }
 
-    if (result.isError !== false || trimmed !== "(no output)" || ops.length !== 1) return [];
+    if (!cleanExit || trimmed !== "(no output)" || ops.length !== 1) return [];
     const op = ops[0]!;
     if (op.command !== script.statusOwner) return [];
     if (fallback === "worktree") {
@@ -302,6 +307,35 @@ export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
       ? [{ verb: "merged", datum: `PR #${target.number}`, at: 0, tone: "success", opaque: false, evidence: "quiet" }]
       : [];
   }).sort((a, b) => a.at - b.at);
+}
+
+const BUILT_IN = parseVocabulary(BUILT_IN_VOCABULARY, CODE);
+if (BUILT_IN.problems.length > 0) throw new Error(`traceline's built-in vocabulary is invalid: ${BUILT_IN.problems.join("; ")}`);
+const unknownCode = [...CODE.keys()].filter((id) => !BUILT_IN.entries.some((entry) => entry.id === id));
+if (unknownCode.length > 0) throw new Error(`traceline record code names no vocabulary entry: ${unknownCode.join(", ")}`);
+/** The built-in entries, examples included and checked: the first layer of every vocabulary. */
+export const BUILT_IN_ENTRIES: readonly VocabularyEntry[] = BUILT_IN.entries;
+
+let active: readonly VocabularyEntry[] = BUILT_IN_ENTRIES;
+// Facts depend only on the row's own command+result and the active vocabulary, so they
+// cache against the result object identity until the vocabulary changes (rows re-render
+// every frame; porcelain never changes once settled).
+let recordFactCache = new WeakMap<ToolRowDataLike, { result: ToolResultLike; facts: RecordFact[] }>();
+
+/** Make `entries` the vocabulary every later recordFacts call reads (vocabulary-layers.ts). */
+export function useVocabulary(entries: readonly VocabularyEntry[]): void {
+  active = entries;
+  recordFactCache = new WeakMap();
+}
+
+export function recordFacts(comp: ToolRowDataLike): RecordFact[] {
+  if (comp.toolName !== "bash") return [];
+  const command = comp.args?.command;
+  const { result } = comp;
+  if (typeof command !== "string" || !result) return [];
+  const cached = recordFactCache.get(comp);
+  if (cached && cached.result === result) return cached.facts;
+  const facts = factsFor(active, command, resultText(comp), result.isError === false);
   recordFactCache.set(comp, { result, facts });
   return facts;
 }

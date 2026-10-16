@@ -153,12 +153,18 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   Pi's exact `(no output)` result; auto modes, status masks and later commands do not.
   Same-row state verification accepts bare or JSON `MERGED` state and matches the
   explicit merge and view targets.
-- **Record vocabulary** (`vocabulary.test.ts`, design language §9.10): every entry in
-  `extensions/pi-traceline/vocabulary.ts` carries examples of real output and the
-  records they must yield, and the suite runs all of them through `recordFacts`. An
-  entry must show at least one record it earns; near misses (dry runs, failures,
-  announcements) belong beside it with `records: []`. The parser reports a bad entry
-  and leaves it out whole.
+- **Record vocabulary** (`vocabulary.test.ts`, design language §9.10): every entry
+  carries examples of real output and the records it must yield, and an entry loads
+  only when every example holds with the entry alone. A built-in that breaks its
+  examples stops traceline loading, so every suite that imports it fails with the
+  entry and example named. An entry needs an example that earns a record; near misses
+  (dry runs, failures, announcements) belong beside it with `records: []`. Records that
+  several entries state in one row are `record-vocabulary.test.ts` cases.
+- **Vocabulary layers** (`vocabulary-layers.test.ts`, §9.10): hosted through the SDK
+  with real config files, Pi's project trust and a second extension on Pi's event bus.
+  The user's and the project's files and extension layers add, replace and turn off
+  entries in their order; a replaced built-in loses its code; each problem is notified
+  once with its layer.
 - **Composed calls** (`composed-calls.test.ts`, design language §9.14): a codemode row
   folds nested calls by tool with counts, one target per member, `✗N` for nested
   failures inside a completed script, `trimmed` ahead of the size cell, wall time from

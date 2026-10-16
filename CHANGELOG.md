@@ -17,6 +17,13 @@
   An entry names its commands, the options it requires or rules out, its output
   patterns, and examples of real output with the records they must yield; the test
   suite runs every example. Adding a command means adding an entry. No record changes.
+- Add your own outcomes. A `vocabulary` list in `~/.pi/agent/pi-traceline.json` or a
+  project's `.pi/pi-traceline.json` (unless you told Pi not to trust the project) adds entries in the same format, replaces
+  a built-in by reusing its id, and `disableVocabulary` turns entries off. Other
+  extensions send entries on Pi's event bus (`traceline:vocabulary`). An entry loads
+  only when each of its examples yields exactly its records; anything wrong shows as a
+  notification naming the file or extension and the entry, and the rest still loads.
+  Your entries read command output only: silent successes stay built in.
 
 ## 0.17.0 (2026-10-17)
 

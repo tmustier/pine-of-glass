@@ -219,6 +219,48 @@ the checker's exit code. Traceline needs the summary in the output: a silent
 
 Traceline requires result evidence, not just a command. A successful terminal `gh pr merge <number>` qualifies when Pi reports `(no output)`; auto modes do not. On merge-queue repositories, add a same-row `gh pr view <number> --json state` check when queued versus landed matters.
 
+### Add your own outcomes
+
+The commands Traceline knows are a list of entries, and you can add to it in `~/.pi/agent/pi-traceline.json` or `<project>/.pi/pi-traceline.json`. An entry names its commands, the output line that proves success, the words for the outcome, and examples of real output:
+
+```json
+{
+  "vocabulary": [
+    {
+      "id": "kubectl.apply",
+      "commands": ["kubectl apply"],
+      "unless": ["--dry-run"],
+      "records": [
+        { "output": "^(?<name>\\S+/\\S+) (?:created|configured)$", "verb": "applied", "datum": "{name}" }
+      ],
+      "examples": [
+        { "command": "kubectl apply -f web.yaml", "output": "deployment.apps/web configured\n", "records": ["applied deployment.apps/web"] },
+        { "command": "kubectl apply -f web.yaml", "output": "deployment.apps/web unchanged\n", "records": [] }
+      ]
+    }
+  ],
+  "disableVocabulary": ["git.rebase"]
+}
+```
+
+That row then reads `applied deployment.apps/web $ kubectl apply -f web.yaml`.
+
+- `output` is a regular expression matched against the result, where `^` and `$` mark the start and end of a line. `{name}` in `datum` reads the pattern's named group. Add `"tone": "warning"` for a riskier outcome, or `"opaque": true` to keep the datum dim, as commit hashes are.
+- `requires` lists options of which one must be present, such as `["-b"]` for a new branch. `unless` lists options that rule the command out. A dry run should always be in `unless`.
+- An entry loads only when each example yields exactly its records. Include a near miss that must yield nothing, such as unchanged or failed output.
+- Reusing a built-in `id` replaces that entry, and `disableVocabulary` turns entries off. The built-in entries and their ids are in [`vocabulary.ts`](./vocabulary.ts).
+- Your entries can only read a command's output. Commands that succeed in silence, such as `gh pr merge` and `git worktree remove`, need code, so they stay built in. If you replace one of those built-ins, your entry reads output only.
+- If you tell Pi not to trust a project, Traceline ignores that project's vocabulary too. Pi only asks about projects that have their own Pi settings, extensions or skills, so in any other project the file is read like the rest of `pi-traceline.json`.
+- If something is wrong, Traceline shows a notification naming the file and entry, and loads everything else.
+
+Another extension can send entries in the same format from its `session_start` handler. A later message from the same `source` replaces the earlier one, and your own files still win:
+
+```ts
+pi.on("session_start", () => {
+  pi.events.emit("traceline:vocabulary", { source: "pi-kubectl", vocabulary: [/* entries */] });
+});
+```
+
 ## See what a script did
 
 Pi's `codemode` tool runs a JavaScript script that calls other tools. Only the script's output reaches the model, so a native row shows the code and Pi's own call list. Traceline shows what the script did instead:

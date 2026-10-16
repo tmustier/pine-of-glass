@@ -38,6 +38,16 @@ test("completion output counts from substitutions, loops and wrappers", () => {
   assert.deepEqual(factLabels("env -u PINET_MESH_SECRET git push", "To github.com:o/r.git\n   1c75c2a..50cf33f  main -> main\n"), ["pushed main"]);
 });
 
+test("entries combine in one row: each states its own fact, in output order", () => {
+  assert.deepEqual(
+    factLabels(
+      "git worktree remove .worktrees/fix && git branch -D fix && git push origin --delete fix",
+      "Deleted branch fix (was a4f21c9).\nTo github.com:o/r.git\n - [deleted]         fix\n",
+    ),
+    ["deleted fix", "deleted origin/fix"],
+  );
+});
+
 test("quiet success: a silent worktree removal is its own row's status", () => {
   const [removed] = recordFacts(bash("set -euo pipefail\ncd ~/projects/pine-of-glass\ngit worktree remove .worktrees/fix", SILENT));
   assert.deepEqual([removed?.verb, removed?.datum, removed?.evidence], ["removed worktree", ".worktrees/fix", "quiet"]);

@@ -1,31 +1,54 @@
-// The record vocabulary format (design language §9.10): entries are plain data, and
-// each entry's examples are its specification. This suite runs every built-in example
-// through the public records interface and pins how the parser treats bad entries.
+// The record vocabulary format (design language §9.10): entries are plain data, and an
+// entry loads only when each of its examples yields exactly its records with the entry
+// alone. The built-ins pass that check when records.ts loads; this suite pins what the
+// check accepts and how the parser treats bad entries.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { BUILT_IN_ENTRIES, parseVocabulary, recordFacts } from "../../extensions/pi-traceline/records.ts";
+import { BUILT_IN_ENTRIES, parseVocabulary } from "../../extensions/pi-traceline/records.ts";
+import { BUILT_IN_VOCABULARY } from "../../extensions/pi-traceline/vocabulary.ts";
 
-const labels = (command: string, output: string, error: boolean) =>
-  recordFacts({ toolName: "bash", args: { command }, result: { content: [{ type: "text", text: output }], isError: error } })
-    .map(({ verb, datum }) => `${verb} ${datum}`);
+test("every built-in entry loads, so every built-in example holds", () => {
+  assert.deepEqual(BUILT_IN_ENTRIES.map(({ id }) => id), BUILT_IN_VOCABULARY.map(({ id }) => id));
+});
 
-for (const entry of BUILT_IN_ENTRIES) {
-  test(`${entry.id}: every example yields exactly its records`, () => {
-    assert.ok(entry.examples.some((example) => example.records.length > 0), "an entry shows at least one record it earns");
-    for (const example of entry.examples) {
-      assert.deepEqual(labels(example.command, example.output, example.error === true), example.records, example.command);
-    }
-  });
-}
+test("built-in code does not travel with an entry's data", () => {
+  // The same data without the built-ins' code fails exactly the examples code proves:
+  // the remote on a deletion, quiet success and observed state, a decoded tag.
+  const { entries, problems } = parseVocabulary(BUILT_IN_VOCABULARY);
+  assert.deepEqual(problems.map((problem) => problem.split(":")[0]), ["git.push.delete", "git.worktree.remove", "gh.pr.merge", "gh.release.create"]);
+  assert.equal(entries.length, BUILT_IN_VOCABULARY.length - 4);
+});
 
 const valid = {
   id: "kubectl.apply",
   commands: ["kubectl apply"],
   unless: ["--dry-run"],
   records: [{ output: String.raw`^(?<name>\S+/\S+) (?:created|configured)$`, verb: "applied", datum: "{name}" }],
-  examples: [{ command: "kubectl apply -f web.yaml", output: "deployment.apps/web configured\n", records: ["applied deployment.apps/web"] }],
+  examples: [
+    { command: "kubectl apply -f web.yaml", output: "deployment.apps/web configured\n", records: ["applied deployment.apps/web"] },
+    { command: "kubectl apply -f web.yaml", output: "deployment.apps/web unchanged\n", records: [] },
+    { command: "kubectl apply --dry-run=client -f web.yaml", output: "deployment.apps/web configured (dry run)\n", records: [] },
+  ],
 };
+
+test("an entry loads only when each example yields exactly its records", () => {
+  const loaded = parseVocabulary([valid]);
+  assert.deepEqual([loaded.entries.map(({ id }) => id), loaded.problems], [["kubectl.apply"], []]);
+  const wrongDatum = { ...valid, id: "wrong.datum", records: [{ ...valid.records[0], datum: "web" }] };
+  const tooEager = { ...valid, id: "too.eager", records: [{ ...valid.records[0], output: String.raw`^(?<name>\S+/\S+) \w+$` }] };
+  const noDryRun = { ...valid, id: "no.dry.run", unless: [], records: [{ ...valid.records[0], output: String.raw`^(?<name>\S+/\S+) (?:created|configured)` }] };
+  const onlyNearMisses = { ...valid, id: "only.near.misses", examples: valid.examples.slice(1) };
+  assert.deepEqual(parseVocabulary([wrongDatum, tooEager, noDryRun, onlyNearMisses]), {
+    entries: [],
+    problems: [
+      "wrong.datum: example 1 should yield applied deployment.apps/web but yields applied web",
+      "too.eager: example 2 should yield nothing but yields applied deployment.apps/web",
+      "no.dry.run: example 3 should yield nothing but yields applied deployment.apps/web",
+      "only.near.misses: needs an example that yields a record",
+    ],
+  });
+});
 
 test("a bad entry is reported and left out whole; the rest still parse", () => {
   const { entries, problems } = parseVocabulary([
@@ -55,9 +78,10 @@ test("a bad entry is reported and left out whole; the rest still parse", () => {
 });
 
 test("a parsed entry keeps its commands, options and rules", () => {
-  const [entry] = parseVocabulary([{ ...valid, commands: ["git checkout", "git switch"], requires: ["--create", "-b", "-c"] }]).entries;
-  assert.deepEqual(entry?.commands, [["git", "checkout"], ["git", "switch"]]);
-  assert.deepEqual(entry?.requires, { long: ["--create"], short: "bc" });
+  const [entry] = parseVocabulary([{ ...valid, commands: ["kubectl apply", "kubectl create"], requires: ["--filename", "-f", "-k"] }]).entries;
+  assert.deepEqual(entry?.commands, [["kubectl", "apply"], ["kubectl", "create"]]);
+  assert.deepEqual(entry?.requires, { long: ["--filename"], short: "fk" });
   assert.deepEqual(entry?.unless, { long: ["--dry-run"], short: "" });
   assert.deepEqual(entry?.records.map(({ verb, datum, tone, opaque }) => ({ verb, datum, tone, opaque })), [{ verb: "applied", datum: "{name}", tone: "success", opaque: false }]);
+  assert.equal(entry?.code, undefined);
 });

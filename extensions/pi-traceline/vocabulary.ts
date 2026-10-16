@@ -1,8 +1,8 @@
 // The built-in record vocabulary (design language §9.10): plain data, parsed by
 // records.ts's parseVocabulary like any other vocabulary. Patterns are strings matched
 // with the `g` and `m` flags; `{name}` in a datum reads the pattern's named group.
-// Every entry's examples run in the test suite: copy them from real porcelain, and add
-// the near misses that must earn nothing.
+// An entry loads only when each example yields exactly its records with the entry alone:
+// copy examples from real porcelain, and add the near misses that must earn nothing.
 import type { VocabularyEntryInput } from "./records.ts";
 
 const SILENT = "(no output)";
@@ -59,7 +59,7 @@ export const BUILT_IN_VOCABULARY = [
       {
         command: "git worktree remove .worktrees/fix && git branch -D fix && git push origin --delete fix",
         output: "Deleted branch fix (was a4f21c9).\nTo github.com:o/r.git\n - [deleted]         fix\n",
-        records: ["deleted fix", "deleted origin/fix"],
+        records: ["deleted origin/fix"],
       },
       { command: "git push origin --delete fix; git fetch --prune", output: " - [deleted]         (none)     -> origin/stale\n", records: [] },
     ],
