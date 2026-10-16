@@ -145,12 +145,13 @@ try {
   check("harness total row rendered", pane.includes("Total harness"));
   check("no extension error surfaced", !/Error loading extension|extension error/i.test(pane));
 
-  // Expand the startup resource listing and prove both repo extensions are the loaded ones.
-  run(["tmux", "send-keys", "-t", session, "C-o"]);
-  pane = waitFor("startup resources", (text) => /pi-traceline/.test(text));
-  check("repo contextimate extension loaded", pane.includes("pi-contextimate"));
-  check("repo traceline extension loaded", pane.includes("pi-traceline"));
-  check("repo meantime extension loaded", pane.includes("pi-meantime"));
+  // This isolated HOME loads only checkout extensions. Their compact startup list
+  // fits in the pane; the expanded list of full paths does not.
+  pane = waitFor("startup extension list", (text) => /\[Extensions\]\n\s*\S/.test(text));
+  const extensions = /\[Extensions\]\n\s*(.+)/.exec(pane)?.[1] ?? "";
+  check("repo contextimate extension loaded", extensions.includes("pi-contextimate"));
+  check("repo traceline extension loaded", extensions.includes("pi-traceline"));
+  check("repo meantime extension loaded", extensions.includes("pi-meantime"));
 
   // 2. Mode switching via the slash command actually changes the rendered block.
   run(["tmux", "send-keys", "-t", session, "/contextimate compact", "Enter"]);

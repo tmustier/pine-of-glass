@@ -4,7 +4,9 @@
 // the cwd-relative and nested `cd` context, and check facts parsed from runner output.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { homedir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import { fitCompoundCommand } from "../../extensions/pi-traceline/compound-fit.ts";
@@ -127,6 +129,31 @@ test("leading cd prints relative to the row cwd (§9.4)", () => {
   const comp = bash(`cd ${homedir()}/repo/.worktrees/fix && npm test`, "ok", { cwd: `${homedir()}/repo` });
   setTracelineChat({ children: [assistantBefore([comp]), comp] });
   assert.match(stripAnsi(oneLine(comp, 120)), /\$ cd \.\/\.worktrees\/fix && npm test/);
+});
+
+test("a leading cd through a symlink still prints relative to the resolved cwd (§9.4, §9.5)", () => {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "traceline-cd-")));
+  const cwd = join(scratch, "repo"), alias = join(scratch, "alias");
+  try {
+    mkdirSync(join(cwd, "packages/pricing"), { recursive: true });
+    const command = `cd ${alias}/packages/pricing && npx vitest run`;
+    const missing = bash(command, "ok", { cwd });
+    setTracelineChat({ children: [assistantBefore([missing]), missing] });
+    assert.ok(stripAnsi(oneLine(missing, 240)).includes(command));
+    symlinkSync(cwd, alias);
+    for (const [target, shown] of [
+      [`${alias}/packages/pricing`, "./packages/pricing"],
+      [alias, "."],
+      [scratch, scratch],
+      [`${alias}/gone/later`, "./gone/later"],
+    ]) {
+      const row = bash(`cd ${target} && ls`, "ok", { cwd });
+      setTracelineChat({ children: [assistantBefore([row]), row] });
+      assert.equal(stripAnsi(oneLine(row, 240)), `  ▏ › $ cd ${shown} && ls`);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
 
 test("a cd below the previous row's cd folds the shared part into ⋯ (§9.4)", () => {

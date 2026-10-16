@@ -1,4 +1,6 @@
+import { realpathSync } from "node:fs";
 import type { ToolArgsLike, ToolRowDataLike } from "../_lib/chat.ts";
+import { expandHomePath } from "../_lib/config.ts";
 import { tildify } from "../_lib/style.ts";
 
 export function lineRange(args: ToolArgsLike | undefined): string {
@@ -18,12 +20,37 @@ export function readDirKey(path: string): string {
   return path.slice(0, path.lastIndexOf("/") + 1);
 }
 
+function resolveFolder(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+// The part of `path` below `dir` ("" for `dir` itself), or undefined when it lies
+// outside (design language §9.5). "Below" is about the folder, not its spelling: if the
+// text does not match, an existing ancestor that resolves to `dir` counts, so
+// `/tmp/demo/a.ts` is below `/private/tmp/demo`. The tail keeps the caller's spelling.
+// Both may be tildified.
+export function pathBelow(path: string, dir: string): string | undefined {
+  const target = expandHomePath(path).replace(/\/+$/, "");
+  const root = expandHomePath(dir).replace(/\/+$/, "");
+  if (root.length === 0) return undefined;
+  if (target === root) return "";
+  if (target.startsWith(`${root}/`)) return target.slice(root.length + 1);
+  const real = target.startsWith("/") ? resolveFolder(root) : undefined;
+  if (real === undefined) return undefined;
+  for (let cut = target.length; cut > 0; cut = target.lastIndexOf("/", cut - 1)) {
+    if (resolveFolder(target.slice(0, cut)) === real) return target.slice(cut + 1);
+  }
+  return undefined;
+}
+
 export function cwdRelativePath(comp: ToolRowDataLike | undefined, rawPath: string): string {
-  const tilde = tildify(rawPath);
   const cwd = typeof comp?.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : undefined;
-  if (!cwd) return tilde;
-  const cwdPrefix = `${tildify(cwd).replace(/\/+$/, "")}/`;
-  return tilde.startsWith(cwdPrefix) ? `./${tilde.slice(cwdPrefix.length)}` : tilde;
+  const tail = cwd === undefined ? undefined : pathBelow(rawPath, cwd);
+  return tail ? `./${tail}` : tildify(rawPath);
 }
 
 export function commonDirSegments(paths: string[]): string[] {

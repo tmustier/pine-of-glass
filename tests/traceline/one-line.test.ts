@@ -732,12 +732,11 @@ test("hyperlinked read rows (OSC 8, ST-terminated): text survives stripAnsi, URL
 });
 
 test("native invocation drops per-line expand hints and retains continuation text", () => {
-  const comp = toolComp({
-    callRendererComponent: { render: () => ["read ~/projects/demo/file.ts:1-40 (ctrl+o to expand)", "  body line"] },
-  });
+  const render = () => ["grep /receipt/ in src (ctrl+o to expand)", "  body line"];
+  const comp = toolComp({ toolName: "grep", callRendererComponent: { render } });
   const visible = stripAnsi(oneLine(comp, 80));
   assert.ok(!visible.includes("to expand"), visible);
-  assert.ok(visible.includes("file.ts:1-40 · body line"), visible);
+  assert.ok(visible.includes("grep /receipt/ in src · body line"), visible);
 });
 
 test("tool-group spacing: blank before a group, tight within it, connectors skipped", () => {
