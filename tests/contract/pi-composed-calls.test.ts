@@ -103,8 +103,10 @@ test("codemode's nested calls reach traceline through details.calls, nestedCalls
     const ends = nestedEvents.filter((event) => event.type === "tool_execution_end");
     assert.equal(ends.length, 4);
     assert.equal(ends[3]!.isError, true);
-    const firstRead = ends[0]!.result.content[0];
-    assert.ok(firstRead?.type === "text" && firstRead.text.length >= 2_400, "nested result text is the full read, never persisted");
+    const readResult: unknown = ends[0]!.result;
+    assert.ok(isJsonObject(readResult) && Array.isArray(readResult.content));
+    const firstRead: unknown = readResult.content[0];
+    assert.ok(isJsonObject(firstRead) && firstRead.type === "text" && typeof firstRead.text === "string" && firstRead.text.length >= 2_400, "nested result text is the full read, never persisted");
 
     // 3. traceline's parser sees one ledger with live sizes overlaid from those events.
     const row = { toolName: "codemode", toolCallId: toolCall.id, args: toolCall.arguments, result: { ...result, details }, isPartial: false };

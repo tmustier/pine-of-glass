@@ -25,6 +25,7 @@ import { cwdRelativePath } from "./path-rows.ts";
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
 const PATH_VERBS = new Set(["read", "edit", "write"]);
+const STATUS_TONES = { ok: "success", error: "error", running: "running", cancelled: "dim" } as const;
 /** Wall time earns a cell once it clears this (agent-default, not a user rule: 2026-09-30). */
 const WALL_FLOOR_MS = 10_000;
 const CHAR_SUFFIX_FLOOR = 100;
@@ -130,13 +131,6 @@ export function composedBody(
   return visibleWidth(full) <= available ? full : body(false);
 }
 
-/** The suffix with the trimmed fact ahead of the size cell (§9.14). */
-export function composedSuffix(theme: Theme | undefined, facts: ComposedFacts, sizeCell: string): string {
-  if (!facts.trimmed) return sizeCell;
-  const trimmed = ink(theme, "warning", "trimmed");
-  return sizeCell ? `${trimmed}${dim(theme, SEP)}${sizeCell}` : trimmed;
-}
-
 // --- the ledger -----------------------------------------------------------------------------
 
 const LEDGER_INDENT = "  ";
@@ -194,8 +188,7 @@ export function ledgerLines(
     } else if (call.status === "cancelled") {
       body += `${dim(theme, SEP)}${dim(theme, "cancelled")}`;
     }
-    const tones = { ok: "success", error: "error", running: "running", cancelled: "dim" } as const;
-    const bullet = ink(theme, tones[call.status], GLYPH.tool);
+    const bullet = ink(theme, STATUS_TONES[call.status], GLYPH.tool);
     const prefix = `${LEDGER_INDENT}${rail}${LEDGER_NEST}${bullet} `;
     const fitted = rightAlignSuffix(body, suffixes[index]!, available, theme, reserve);
     return truncateToWidth(`${prefix}${fitted}`, Math.max(1, width), ELLIPSIS);

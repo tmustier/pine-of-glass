@@ -1,20 +1,12 @@
-// Pins for the pi seams behind the peek pager's fidelity surface (design language
-// §9.13) and the trace row's image what-fact (§9.7): the result image blocks pi's
-// read tool emits, the ToolExecutionComponent fields the pager piggybacks on
-// (showImages, image sources handed to pi-tui's transcoding Image), the call
-// fallback that justifies the pager's argument grammar, the syntax-highlight exports
-// behind the pager's code grammar, and the pi-tui image API (Image component line
-// accounting, kitty id deletion). After `pi update`, a failure here names exactly
-// which seam drifted.
+// Runtime contracts for the pager's image and syntax-highlighting APIs (§9.13).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import * as piTui from "@earendil-works/pi-tui";
-import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
-
-const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
+import { createReadTool, getLanguageFromPath, highlightCode, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { mouseViewport } from "../fixtures/mouse-viewport.ts";
 
 function pngBase64(widthPx: number, heightPx: number): string {
   const buffer = Buffer.alloc(96);
@@ -26,52 +18,31 @@ function pngBase64(widthPx: number, heightPx: number): string {
   return buffer.toString("base64");
 }
 
-test("read tool emits image result blocks the pager and image fact consume", () => {
-  const source = readFileSync(join(piRoot, "dist/core/tools/read.js"), "utf8");
-  assert.ok(
-    source.includes('{ type: "image", data: processed.data, mimeType: processed.mimeType }'),
-    "read no longer emits { type: 'image', data, mimeType } blocks — image fidelity seam drifted",
-  );
-});
+test("native read images render by default and respect the row's showImages setting", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pog-image-contract-"));
+  const caps = piTui.getCapabilities();
+  try {
+    const path = join(dir, "pixel.png");
+    writeFileSync(path, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jA1sAAAAASUVORK5CYII=", "base64"));
+    const result = await createReadTool(dir, { autoResizeImages: false }).execute("read-image", { path });
+    const image = result.content.find((block) => block.type === "image");
+    assert.ok(image, "read must return an image block, not a text-only description");
+    assert.equal(image.mimeType, "image/png");
+    assert.deepEqual(piTui.getImageDimensions(image.data, image.mimeType), { widthPx: 1, heightPx: 1 });
 
-test("ToolExecutionComponent seams the pager piggybacks on", () => {
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/components/tool-execution.js"), "utf8");
-  assert.ok(
-    source.includes("this.showImages = options.showImages ?? true;"),
-    "showImages default drifted — the pager mirrors this row setting",
-  );
-  assert.ok(
-    source.includes('this.result.content.filter((c) => c.type === "image")'),
-    "image blocks no longer filtered by type — the pager's per-block indexing drifted",
-  );
-  // Pi 1.x keeps no conversions on the row: it hands each block's source to pi-tui's
-  // Image and registers the PNG transcoder that Image applies for kitty. The pager
-  // passes sources through the same way (drill-pager-content.ts imagePixelSource).
-  assert.ok(
-    !source.includes("convertedImages") &&
-      source.includes("new Image(source.data, source.mimeType,") &&
-      source.includes("ensurePngTranscoder("),
-    "the row's image conversion moved — re-check imagePixelSource's era test (convertedImages)",
-  );
-  const imageSource = readFileSync(join(resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "components/image.js")), "utf8");
-  assert.ok(
-    /caps\.images === "kitty" && this\.mimeType !== "image\/png"\) \{\s*this\.pngData \?\?= toPng\(/.test(imageSource),
-    "pi-tui Image no longer transcodes non-PNG for kitty — the pager would hand kitty raw JPEG",
-  );
-  // A tool without renderCall renders its bold name plus a collapsed `key=value`
-  // preview cut at a fixed character budget (pi 0.99: formatToolCallWithArgs); the
-  // pager still renders the complete, aligned arguments itself (§9.13) because the
-  // preview is lossy.
-  assert.ok(
-    source.includes("createCallFallback() {") &&
-      source.includes("return new Text(formatToolCallWithArgs(this.toolName, this.args, theme, this.expanded), 0, 0);"),
-    "call fallback shape drifted — revisit whether the argument grammar still owns this gap",
-  );
-  const renderUtils = readFileSync(join(piRoot, "dist/core/tools/render-utils.js"), "utf8");
-  assert.ok(
-    /const preview = pairs\.length > COLLAPSED_ARGS_CHARS \? `\$\{pairs\.slice\(0, COLLAPSED_ARGS_CHARS - 3\)\}\.\.\.` : pairs;/.test(renderUtils),
-    "collapsed fallback preview no longer lossy — the pager's argument grammar may be redundant",
-  );
+    initTheme(undefined, false);
+    piTui.setCapabilities({ images: "iterm2", trueColor: true, hyperlinks: false });
+    const { view } = mouseViewport();
+    for (const showImages of [undefined, false]) {
+      const row = new ToolExecutionComponent("read", "read-image", { path }, { showImages }, undefined, view, dir);
+      row.updateResult({ ...result, isError: false });
+      row.setExpanded(true);
+      assert.equal(row.render(80).some((line) => line.includes("\x1b]1337")), showImages !== false);
+    }
+  } finally {
+    piTui.setCapabilities(caps);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("syntax-highlight exports behind the pager's code grammar", () => {

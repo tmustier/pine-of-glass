@@ -61,7 +61,7 @@ import {
   objectCacheKey,
 } from "./cache-hooks.ts";
 import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStart } from "./nested-calls.ts";
-import { composedBody, composedSuffix, ledgerLines } from "./nested-rows.ts";
+import { composedBody, ledgerLines } from "./nested-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts } from "./records.ts";
 import { TraceRenderCache } from "./render-cache.ts";
@@ -420,9 +420,6 @@ function mutationInlineDiffInk(comp: ToolRowDataLike): string {
 
 // --- records of consequence (design language §9.10) -----------------------------------
 
-// Parsing lives in records.ts; rendering stays here because it depends on the live
-// theme, record headline fitting, and row suffix policy.
-
 function recordCellData(comp: ToolRowDataLike): RecordCellData[] {
   return renderCache.memo(comp, "records", () => mergeHeadlineFacts(recordFacts(comp), checkFacts(comp)));
 }
@@ -454,8 +451,9 @@ function recordCharSuffix(comp: ToolRowDataLike): string {
 // char count; a composed call's `trimmed` fact rides ahead of it (§9.14).
 function sizeBerthCell(comp: ToolRowDataLike, sizeColumnLive: boolean): string {
   const base = recordRow(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || charSuffix(resultTextCharCount(comp), sizeColumnLive);
-  const composed = composedFacts(comp);
-  return composed ? composedSuffix(currentTheme(), composed, base) : base;
+  if (!composedFacts(comp)?.trimmed) return base;
+  const trimmed = ink(currentTheme(), "warning", "trimmed");
+  return base ? `${trimmed}${dim(SEP)}${base}` : trimmed;
 }
 
 function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {

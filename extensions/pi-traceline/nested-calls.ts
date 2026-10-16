@@ -12,13 +12,12 @@
 //   source of a nested result's size.
 //
 // Everything here is parsing; ink and layout live in nested-rows.ts.
-import type { ToolExecutionEndEvent } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, nonNegativeNumberValue, stringValue } from "../_lib/boundary.ts";
-import { resultTextCharCount, type ToolRowDataLike } from "../_lib/chat.ts";
+import { resultTextCharCount, type ToolRowDataLike, type ToolResultLike } from "../_lib/chat.ts";
 import { resultImageFact } from "./image-fact.ts";
 import { lineRange } from "./path-rows.ts";
 
-export type NestedStatus = "ok" | "error" | "running" | "cancelled";
+type NestedStatus = "ok" | "error" | "running" | "cancelled";
 
 type ParsedArguments = { kind: "parsed"; path: string | undefined; command: string | undefined; range: string; text: string };
 type NestedArguments = ParsedArguments | { kind: "preview"; path?: never; command?: never; range?: never; text: string };
@@ -77,7 +76,7 @@ export function recordNestedStart(toolCallId: string, args: unknown): void {
   }
 }
 
-export function recordNestedEnd(toolCallId: string, result: ToolExecutionEndEvent["result"], isError: boolean): void {
+export function recordNestedEnd(toolCallId: string, result: ToolResultLike, isError: boolean): void {
   const existing = captures.get(toolCallId);
   const resultRow = { result };
   captures.set(toolCallId, {
