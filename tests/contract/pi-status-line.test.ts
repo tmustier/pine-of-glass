@@ -1,79 +1,54 @@
-// Contract: the Ctrl+T status line traceline suppresses (design language §9.11).
-// pi's toggleThinkingBlockVisibility ends with showStatus(`Thinking blocks: …`), which
-// appends a Spacer + status Text pair to chatContainer. Traceline drops exactly that
-// trailing pair; if the message text or the pair shape drifts, the caption reappears
-// silently, so this contract names the seam against the installed pi.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { InteractiveMode, SettingsManager, initTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Text } from "@earendil-works/pi-tui";
+import { suppressThinkingToggleStatus } from "../../extensions/pi-traceline/status-line.ts";
 
-import * as piTui from "@earendil-works/pi-tui";
+initTheme(undefined, false);
 
-import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
+// SAFETY: these private Pi methods own the native status pair and toggle caption.
+// Calling them here catches drift through behaviour, not source-text matching.
+const native = InteractiveMode.prototype as unknown as {
+  toggleThinkingBlockVisibility: (this: unknown) => void;
+  updateThinkingBlockVisibility: (this: unknown) => void;
+  showStatus: (this: unknown, message: string) => void;
+};
 
-const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
-
-test("Ctrl+T status line: pi's showStatus tail shape traceline suppresses", async () => {
-  // pi's toggleThinkingBlockVisibility ends with showStatus(`Thinking blocks: …`),
-  // which appends a Spacer(1) + Text pair to chatContainer. Traceline drops exactly
-  // that trailing pair (design language §9.11); if the message text or the pair
-  // shape drifts, the status line reappears silently — this contract names it.
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
-  assert.ok(
-    source.includes('`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`'),
-    "Ctrl+T status message text drifted — THINKING_TOGGLE_STATUS no longer matches",
-  );
-  // Since pi 0.99 the status text is a ThemedText: a Text subclass whose string is
-  // built lazily by `build()` on first render, so it is still empty when traceline's
-  // post-toggle microtask runs. The duck type must read the builder.
-  assert.ok(
-    /showStatus\(message\)\s*\{[\s\S]{0,900}?new Spacer\(1\);[\s\S]{0,200}?new ThemedText\(\(\) => theme\.fg\("dim", this\.lastStatusMessage\)[\s\S]{0,300}?addChild\(spacer\);[\s\S]{0,100}?addChild\(text\);/.test(source),
-    "showStatus no longer appends a Spacer + lazily built dim ThemedText pair to the chat — suppression seam drifted",
-  );
-  const themedTextSource = readFileSync(join(piRoot, "dist/modes/interactive/components/themed-text.js"), "utf8");
-  assert.ok(
-    themedTextSource.includes("export class ThemedText extends Text") && themedTextSource.includes("this.setText(this.build());"),
-    "ThemedText no longer a lazily built Text — the status duck type's build() fallback drifted",
-  );
-
-  // The real pi-tui components satisfy (and only the right one satisfies) the duck
-  // types. The text is stored ANSI-styled (theme.fg("dim", message)); the duck type
-  // strips ANSI, so any dim wrapper stands in for the live theme's.
-  const text = new piTui.Text("\x1b[90mThinking blocks: hidden\x1b[0m", 1, 0);
-  const spacer = new piTui.Spacer(1);
-  assert.equal(traceline.isThinkingToggleStatusRow(text), true, "real Text no longer matches the status duck type");
-  const themedText = await import(pathToFileURL(join(piRoot, "dist/modes/interactive/components/themed-text.js")).href) as {
-    ThemedText: new (build: () => string, paddingX?: number, paddingY?: number) => piTui.Text;
+function mode() {
+  const chatContainer = new Container();
+  chatContainer.addChild(new Text("assistant prose", 0, 0));
+  return {
+    chatContainer,
+    hideThinkingBlock: false,
+    settingsManager: SettingsManager.inMemory(),
+    ui: { requestRender() {} },
+    updateThinkingBlockVisibility: native.updateThinkingBlockVisibility,
+    showStatus: native.showStatus,
   };
-  const lazy = new themedText.ThemedText(() => "\x1b[90mThinking blocks: hidden\x1b[0m", 1, 0);
-  assert.equal(traceline.isThinkingToggleStatusRow(lazy), true, "unrendered ThemedText no longer matches the status duck type");
-  assert.equal(
-    traceline.isThinkingToggleStatusRow(new themedText.ThemedText(() => "\x1b[90mForked to new session\x1b[0m", 1, 0)),
-    false,
-  );
-  assert.equal(traceline.isSpacerRow(spacer), true, "real Spacer no longer matches the spacer duck type");
-  assert.equal(traceline.isSpacerRow(text), false);
-  assert.equal(traceline.isThinkingToggleStatusRow(spacer), false);
-  assert.equal(
-    traceline.isThinkingToggleStatusRow(new piTui.Text("\x1b[90mForked to new session\x1b[0m", 1, 0)),
-    false,
-    "other showStatus messages must pass through",
-  );
+}
 
-  // End-to-end against a real Container: mimic the toggle's tail, then suppress.
-  const container = new piTui.Container();
-  const keep = new piTui.Text("assistant prose", 1, 0);
-  container.addChild(keep);
-  container.addChild(spacer);
-  container.addChild(text);
-  const previousChat = traceline.getTracelineChat();
-  traceline.setTracelineChat(container as never);
-  try {
-    traceline.suppressThinkingToggleStatus();
-    assert.deepEqual(container.children, [keep], "trailing Spacer + Text status pair must be removed");
-  } finally {
-    traceline.setTracelineChat(previousChat);
+test("both native thinking toggles lose their status pair, not the preceding prose", () => {
+  const receiver = mode();
+  const keep = [...receiver.chatContainer.children];
+  for (const hidden of [true, false]) {
+    native.toggleThinkingBlockVisibility.call(receiver);
+    assert.equal(receiver.settingsManager.getHideThinkingBlock(), hidden);
+    assert.equal(receiver.chatContainer.children.length, keep.length + 2);
+    assert.equal(suppressThinkingToggleStatus(receiver.chatContainer.children), true);
+    assert.deepEqual(receiver.chatContainer.children, keep);
   }
+});
+
+test("unrelated native statuses and historical toggle captions survive", () => {
+  const receiver = mode();
+  native.showStatus.call(receiver, "Forked to new session");
+  const keep = [...receiver.chatContainer.children];
+  assert.equal(suppressThinkingToggleStatus(receiver.chatContainer.children), false);
+  assert.deepEqual(receiver.chatContainer.children, keep);
+
+  native.toggleThinkingBlockVisibility.call(receiver);
+  receiver.chatContainer.addChild(new Text("later prose", 0, 0));
+  const history = [...receiver.chatContainer.children];
+  assert.equal(suppressThinkingToggleStatus(receiver.chatContainer.children), false);
+  assert.deepEqual(receiver.chatContainer.children, history);
 });

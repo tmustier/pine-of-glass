@@ -100,11 +100,21 @@ test("a leading cd through a symlink still prints relative to the resolved cwd (
   const cwd = join(scratch, "repo"), alias = join(scratch, "alias");
   try {
     mkdirSync(join(cwd, "packages/pricing"), { recursive: true });
+    const command = `cd ${alias}/packages/pricing && npx vitest run`;
+    const missing = bash(command, "ok", { cwd });
+    setTracelineChat({ children: [assistantBefore([missing]), missing] });
+    assert.ok(stripAnsi(oneLine(missing, 240)).includes(command));
     symlinkSync(cwd, alias);
-    assert.equal(relativizeContextCd(`cd ${alias}/packages/pricing && npx vitest run`, cwd), "cd ./packages/pricing && npx vitest run");
-    assert.equal(relativizeContextCd(`cd ${alias} && git status`, cwd), "cd . && git status");
-    assert.equal(relativizeContextCd(`cd ${scratch} && ls`, cwd), `cd ${scratch} && ls`, "a parent is not under the cwd");
-    assert.equal(relativizeContextCd(`cd ${alias}/gone/later && ls`, cwd), "cd ./gone/later && ls", "a missing tail keeps its spelling");
+    for (const [target, shown] of [
+      [`${alias}/packages/pricing`, "./packages/pricing"],
+      [alias, "."],
+      [scratch, scratch],
+      [`${alias}/gone/later`, "./gone/later"],
+    ]) {
+      const row = bash(`cd ${target} && ls`, "ok", { cwd });
+      setTracelineChat({ children: [assistantBefore([row]), row] });
+      assert.equal(stripAnsi(oneLine(row, 240)), `  ▏ › $ cd ${shown} && ls`);
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

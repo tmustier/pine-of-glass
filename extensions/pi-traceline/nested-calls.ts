@@ -12,19 +12,20 @@
 //   source of a nested result's size.
 //
 // Everything here is parsing; ink and layout live in nested-rows.ts.
-import { isJsonObject, nonNegativeNumberValue, stringValue, type JsonFields } from "../_lib/boundary.ts";
-import { resultTextCharCount, type ToolRowDataLike } from "../_lib/chat.ts";
+import { isJsonObject, nonNegativeNumberValue, stringValue } from "../_lib/boundary.ts";
+import { resultTextCharCount, type ToolRowDataLike, type ToolResultLike } from "../_lib/chat.ts";
 import { resultImageFact } from "./image-fact.ts";
+import { lineRange } from "./path-rows.ts";
 
-export type NestedStatus = "ok" | "error" | "running" | "cancelled";
+type NestedStatus = "ok" | "error" | "running" | "cancelled";
+
+type ParsedArguments = { kind: "parsed"; path: string | undefined; command: string | undefined; range: string; text: string };
+type NestedArguments = ParsedArguments | { kind: "preview"; path?: never; command?: never; range?: never; text: string };
 
 export interface NestedCall {
   id: string;
   name: string;
-  /** Typed arguments when pi recorded them or a live event supplied them. */
-  args: JsonFields | undefined;
-  /** Codemode's JSON preview when the typed arguments are unknown (may be cut). */
-  argsPreview: string | undefined;
+  args: NestedArguments;
   status: NestedStatus;
   durationMs: number | undefined;
   error: string | undefined;
@@ -46,8 +47,7 @@ export interface ComposedFacts {
 // --- live capture -----------------------------------------------------------------------
 
 interface NestedCapture {
-  name: string;
-  args: JsonFields | undefined;
+  args: ParsedArguments | undefined;
   resultChars: number | undefined;
   imageFact: string | undefined;
   isError: boolean | undefined;
@@ -63,27 +63,23 @@ export function clearNestedCaptures(): void {
   captures.clear();
 }
 
-export function recordNestedStart(toolCallId: string, toolName: string, args: unknown): void {
+export function recordNestedStart(toolCallId: string, args: unknown): void {
   const existing = captures.get(toolCallId);
   captures.set(toolCallId, {
-    name: toolName,
-    args: isJsonObject(args) ? args : existing?.args,
+    args: parseArguments(args) ?? existing?.args,
     resultChars: existing?.resultChars,
     imageFact: existing?.imageFact,
     isError: existing?.isError,
   });
   if (captures.size > CAPTURE_CAP) {
-    const oldest = captures.keys().next().value;
-    if (oldest !== undefined) captures.delete(oldest);
+    captures.delete(captures.keys().next().value!);
   }
 }
 
-export function recordNestedEnd(toolCallId: string, toolName: string, result: unknown, isError: boolean): void {
+export function recordNestedEnd(toolCallId: string, result: ToolResultLike, isError: boolean): void {
   const existing = captures.get(toolCallId);
-  // SAFETY: the pi event carries the tool's AgentToolResult; only its text/image blocks are read, through the same guarded readers trace rows use.
-  const resultRow = { result: result as ToolRowDataLike["result"] };
+  const resultRow = { result };
   captures.set(toolCallId, {
-    name: toolName,
     args: existing?.args,
     resultChars: resultTextCharCount(resultRow),
     imageFact: resultImageFact(resultRow) || undefined,
@@ -93,48 +89,16 @@ export function recordNestedEnd(toolCallId: string, toolName: string, result: un
 
 // --- parsing ------------------------------------------------------------------------------
 
-function statusValue(value: unknown): NestedStatus | undefined {
-  switch (value) {
-    case "ok":
-      return "ok";
-    case "error":
-      return "error";
-    case "running":
-      return "running";
-    case "cancelled":
-    case "unfinished":
-      return "cancelled";
-    default:
-      return undefined;
-  }
-}
-
-function parsePreview(preview: string): JsonFields | undefined {
-  try {
-    const parsed: unknown = JSON.parse(preview);
-    return isJsonObject(parsed) ? parsed : undefined;
-  } catch {
-    return undefined; // a cut preview is not JSON; the row keeps the preview text
-  }
-}
-
-function fromRecord(value: unknown): NestedCall | undefined {
+function parseArguments(value: unknown): ParsedArguments | undefined {
   if (!isJsonObject(value)) return undefined;
-  const name = stringValue(value.name);
-  const status = statusValue(value.status);
-  if (name === undefined || status === undefined) return undefined;
-  const preview = stringValue(value.args);
-  const args = isJsonObject(value.arguments) ? value.arguments : preview !== undefined ? parsePreview(preview) : undefined;
+  const path = value.path ?? value.file_path;
+  const command = value.command;
   return {
-    id: stringValue(value.id) ?? "",
-    name,
-    args,
-    argsPreview: args === undefined ? preview : undefined,
-    status,
-    durationMs: nonNegativeNumberValue(value.durationMs),
-    error: stringValue(value.error),
-    resultChars: undefined,
-    imageFact: undefined,
+    kind: "parsed",
+    path: typeof path === "string" && path.length > 0 ? path : undefined,
+    command: typeof command === "string" && command.trim().length > 0 ? command : undefined,
+    range: lineRange(value),
+    text: JSON.stringify(value),
   };
 }
 
@@ -142,8 +106,30 @@ function parseCalls(value: unknown): NestedCall[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const calls: NestedCall[] = [];
   for (const entry of value) {
-    const call = fromRecord(entry);
-    if (call) calls.push(call);
+    if (!isJsonObject(entry)) continue;
+    const name = stringValue(entry.name);
+    const status = entry.status === "unfinished" ? "cancelled" : entry.status;
+    if (name === undefined || (status !== "ok" && status !== "error" && status !== "running" && status !== "cancelled")) continue;
+    const preview = stringValue(entry.args);
+    let args = parseArguments(entry.arguments);
+    if (!args && preview !== undefined) {
+      try {
+        const parsed: unknown = JSON.parse(preview);
+        args = parseArguments(parsed);
+      } catch {
+        // Codemode cuts previews mid-JSON; retain the text below.
+      }
+    }
+    calls.push({
+      id: stringValue(entry.id) ?? "",
+      name,
+      args: args ?? { kind: "preview", text: preview ?? "" },
+      status,
+      durationMs: nonNegativeNumberValue(entry.durationMs),
+      error: stringValue(entry.error),
+      resultChars: undefined,
+      imageFact: undefined,
+    });
   }
   return calls;
 }
@@ -151,26 +137,6 @@ function parseCalls(value: unknown): NestedCall[] | undefined {
 // Codemode's result opens with its own header; the wall time is pi's observation.
 const SCRIPT_HEADER = /^Script (?:completed|failed)\nWall time ([\d.]+) seconds\n/;
 const TRUNCATION_NOTICE = /^Warning: truncated output \(original token count: \d+\)/m;
-
-function firstText(row: ToolRowDataLike): string | undefined {
-  const content = row.result?.content;
-  if (!Array.isArray(content)) return undefined;
-  for (const block of content) {
-    if (!isJsonObject(block)) continue;
-    if (block.type === "text" && typeof block.text === "string") return block.text;
-  }
-  return undefined;
-}
-
-function allText(row: ToolRowDataLike): string {
-  const content = row.result?.content;
-  if (!Array.isArray(content)) return "";
-  let text = "";
-  for (const block of content) {
-    if (isJsonObject(block) && block.type === "text" && typeof block.text === "string") text += block.text;
-  }
-  return text;
-}
 
 /** The composed-call facts of a row, or undefined when it is an ordinary call. A
  * codemode row is always composed (its native row would otherwise show code); any
@@ -192,25 +158,24 @@ export function composedFactsOf(row: ToolRowDataLike | undefined): ComposedFacts
   for (const call of persisted ?? []) if (call.id) byId.set(call.id, call);
   for (const call of calls) {
     const record = call.id ? byId.get(call.id) : undefined;
-    if (record?.args && !call.args) {
-      call.args = record.args;
-      call.argsPreview = undefined;
-    }
+    if (record?.args.kind === "parsed" && call.args.kind === "preview") call.args = record.args;
     const live = call.id ? captures.get(call.id) : undefined;
     if (live) {
-      if (live.args && !call.args) {
-        call.args = live.args;
-        call.argsPreview = undefined;
-      }
+      if (live.args && call.args.kind === "preview") call.args = live.args;
       call.resultChars = live.resultChars;
       call.imageFact = live.imageFact;
       if (call.status === "ok" && live.isError) call.status = "error";
     }
   }
   const complete = nested?.complete !== false;
-  const text = firstText(row);
-  const wall = text ? SCRIPT_HEADER.exec(text)?.[1] : undefined;
+  const texts: string[] = [];
+  if (Array.isArray(result?.content)) {
+    for (const block of result.content) {
+      if (isJsonObject(block) && block.type === "text" && typeof block.text === "string") texts.push(block.text);
+    }
+  }
+  const wall = SCRIPT_HEADER.exec(texts[0] ?? "")?.[1];
   const wallMs = wall !== undefined ? Math.round(Number(wall) * 1000) : undefined;
-  const trimmed = typeof details?.fullOutputPath === "string" || TRUNCATION_NOTICE.test(allText(row));
+  const trimmed = typeof details?.fullOutputPath === "string" || TRUNCATION_NOTICE.test(texts.join(""));
   return { calls, complete, wallMs: Number.isFinite(wallMs) ? wallMs : undefined, trimmed };
 }

@@ -4,25 +4,27 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createEditToolDefinition, createWriteToolDefinition, initTheme, ToolExecutionComponent,
-  type EditToolInput, type WriteToolInput,
+  createEditTool, createWriteTool, createEditToolDefinition, createWriteToolDefinition,
+  initTheme, ToolExecutionComponent, type EditToolInput, type WriteToolInput,
 } from "@earendil-works/pi-coding-agent";
+import { ProcessTerminal, TuiMainScreen } from "@earendil-works/pi-tui";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import type { TraceMousePrototype } from "../../extensions/pi-traceline/click.ts";
 import { internals as trace } from "../../extensions/pi-traceline/index.ts";
 import { assistantBefore } from "../traceline/runtime-fixtures.ts";
 
 initTheme(undefined, false);
+// SAFETY: Pi's private row fields satisfy Traceline's structural adapter; this
+// contract test exercises that seam through the SDK's real component and renderers.
 trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);
 afterEach(() => trace.setTracelineChat(undefined));
 
-type Definition = ConstructorParameters<typeof ToolExecutionComponent>[4];
+const ui = new TuiMainScreen(new ProcessTerminal());
 type Result = Parameters<ToolExecutionComponent["updateResult"]>[0];
 
 // Pi's real edit and write tools run against real files, so each row carries the
 // preview Pi draws under its header: the diff, or the first lines of the new file.
-function painted(name: string, cwd: string, args: EditToolInput | WriteToolInput, definition: Definition, result: Result) {
-  const comp = new ToolExecutionComponent(name, `${name}-1`, args, {}, definition, { requestRender() {} } as never, cwd);
+function painted(comp: ToolExecutionComponent, result: Result) {
   comp.setArgsComplete();
   comp.markExecutionStarted();
   comp.updateResult(result);
@@ -44,18 +46,20 @@ test("edit and write rows are Pi's header line, never its preview, and read ./ t
       path: join(alias, "src/price.ts"),
       edits: [{ oldText: "(amount * percent) / 10;", newText: "(amount * percent) / 100;" }],
     };
-    const editResult = await editTool.execute("edit-1", editArgs, undefined, undefined, {} as never);
-    assert.deepEqual(painted("edit", cwd, editArgs, editTool, { ...editResult, isError: false }), ["  ▏ › edit ./src/price.ts +1 -1"]);
+    const editResult = await createEditTool(cwd).execute("edit-1", editArgs);
+    const edit = new ToolExecutionComponent("edit", "edit-1", editArgs, {}, editTool, ui, cwd);
+    assert.deepEqual(painted(edit, { ...editResult, isError: false }), ["  ▏ › edit ./src/price.ts +1 -1"]);
 
     const writeTool = createWriteToolDefinition(cwd);
     const writeArgs: WriteToolInput = {
       path: join(alias, "src/receipt.ts"),
       content: "export function receipt() {\n  return \"Total: £0.00\";\n}\n",
     };
-    const writeResult = await writeTool.execute("write-1", writeArgs, undefined, undefined, {} as never);
+    const writeResult = await createWriteTool(cwd).execute("write-1", writeArgs);
+    const write = new ToolExecutionComponent("write", "write-1", writeArgs, {}, writeTool, ui, cwd);
     // A write's +N -M needs the live pre-write snapshot (one-line.test.ts covers it);
     // a resumed row has none, so the header stands alone.
-    assert.deepEqual(painted("write", cwd, writeArgs, writeTool, { ...writeResult, isError: false }), ["  ▏ › write ./src/receipt.ts"]);
+    assert.deepEqual(painted(write, { ...writeResult, isError: false }), ["  ▏ › write ./src/receipt.ts"]);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

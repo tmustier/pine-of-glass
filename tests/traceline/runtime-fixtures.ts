@@ -122,8 +122,7 @@ let nextComposedId = 0;
 // A codemode row exactly as pi's ToolExecutionComponent holds it: the streamed
 // `details.calls` ledger (args as a JSON preview string), the persisted `nestedCalls`
 // record (typed arguments), and a result opening with the "Script completed" header.
-export function composedRow(nested: NestedFixture[], options: ComposedOptions = {}): ToolRowLike {
-  const id = `fixture-composed-${++nextComposedId}`;
+export function composedCall(id: string, nested: NestedFixture[], options: ComposedOptions = {}) {
   const calls = nested.map((call, index) => ({
     id: `${id}/${index + 1}`,
     name: call.name,
@@ -135,25 +134,31 @@ export function composedRow(nested: NestedFixture[], options: ComposedOptions = 
   type StreamedCall = { id: string; name: string; args: string; status: string; durationMs: number; error?: string };
   const details: { calls?: StreamedCall[]; fullOutputPath?: string } = options.restored
     ? {}
-    : { calls: calls.map((call) => ({ id: call.id, name: call.name, args: JSON.stringify(call.arguments), status: call.status, durationMs: call.durationMs, ...(call.error ? { error: call.error } : {}) })) };
+    : { calls: calls.map((call) => ({ id: call.id, name: call.name, args: JSON.stringify(call.arguments).slice(0, 200), status: call.status, durationMs: call.durationMs, ...(call.error ? { error: call.error } : {}) })) };
   const output = options.output ?? "x".repeat(200);
   const notice = options.trimmed
     ? `Warning: truncated output (original token count: ${Math.ceil(output.length / 4)})\nTotal output lines: 3\n\n`
     : "";
   if (options.trimmed) details.fullOutputPath = "/tmp/pi-codemode-fixture.txt";
   const header = `Script ${options.failed ? "failed" : "completed"}\nWall time ${(options.wallSeconds ?? 0.4).toFixed(1)} seconds\nOutput:\n`;
-  const row = {
-    toolName: "codemode",
-    toolCallId: id,
-    cwd: options.cwd,
+  return {
     args: { code: "await Promise.allSettled(paths.map(async (path) => text(await tools.read({ path }))));" },
     result: options.running
       ? { content: [], isError: false, details }
       : { content: [{ type: "text", text: header }, { type: "text", text: `${notice}${output}` }], isError: options.failed === true, details, nestedCalls: { calls, complete: true } },
+  };
+}
+
+export function composedRow(nested: NestedFixture[], options: ComposedOptions = {}): ToolRowLike {
+  const id = `fixture-composed-${++nextComposedId}`;
+  return {
+    toolName: "codemode",
+    toolCallId: id,
+    cwd: options.cwd,
+    ...composedCall(id, nested, options),
     isPartial: options.running === true,
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => ["codemode"] },
-  } as unknown as ToolRowLike;
-  return row;
+  };
 }

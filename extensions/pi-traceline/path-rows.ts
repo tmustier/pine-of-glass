@@ -20,17 +20,12 @@ export function readDirKey(path: string): string {
   return path.slice(0, path.lastIndexOf("/") + 1);
 }
 
-// Resolved folders, memoised: a render must not repeat filesystem calls. null: missing.
-const resolved = new Map<string, string | null>();
 function resolveFolder(path: string): string | undefined {
-  if (!resolved.has(path)) {
-    try {
-      resolved.set(path, realpathSync(path));
-    } catch {
-      resolved.set(path, null);
-    }
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
   }
-  return resolved.get(path) ?? undefined;
 }
 
 // The part of `path` below `dir` ("" for `dir` itself), or undefined when it lies
@@ -46,10 +41,10 @@ export function pathBelow(path: string, dir: string): string | undefined {
   if (target.startsWith(`${root}/`)) return target.slice(root.length + 1);
   const real = target.startsWith("/") ? resolveFolder(root) : undefined;
   if (real === undefined) return undefined;
-  for (let cut = target.lastIndexOf("/"); cut > 0; cut = target.lastIndexOf("/", cut - 1)) {
+  for (let cut = target.length; cut > 0; cut = target.lastIndexOf("/", cut - 1)) {
     if (resolveFolder(target.slice(0, cut)) === real) return target.slice(cut + 1);
   }
-  return resolveFolder(target) === real ? "" : undefined;
+  return undefined;
 }
 
 export function cwdRelativePath(comp: ToolRowDataLike | undefined, rawPath: string): string {

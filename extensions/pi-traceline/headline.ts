@@ -43,46 +43,22 @@ const RECORD_HEADLINE_SHARE = 1 / 3;
 // so a lone failed check may take this much before it goes.
 const LONE_FAILURE_SHARE = 1 / 2; // agent-default (not a user rule): 2026-10-15
 
-// Records wear the ink of what they state (§9.10): the cell renders bold in its
-// fact's tone — success for landed state, warning for a forced push — verb and datum
-// as one chunk, because the refname/tag/version/PR number is the event's identity.
-// Opaque audit data (a commit sha) stays dim: copy-paste material, not news. The tone
-// is per-fact, not per-row: a failed row keeps its surviving facts success-toned —
-// red discriminators beside a green `committed` is exactly "committed, demonstrably
-// not landed" (§9.10); separators stay at the supporting grey and the size cell
-// keeps its severity ink.
-function inkRecordCell(theme: Theme | undefined, cell: RecordCellData): string {
-  if (cell.opaque) {
-    const verb = ink(theme, cell.tone, `${BOLD}${cell.verb}${BOLD_OFF}`);
-    return `${verb}${ink(theme, "dim", ` ${cell.data.join(", ")}`)}`;
-  }
-  return ink(theme, cell.tone, `${BOLD}${recordCellText(cell)}${BOLD_OFF}`);
-}
-
-// A bash row that landed real shared state graduates to a verb-led outcome row
-// (§9.10): the record leads — `pushed main $ git push` — joining the verb-first
-// family (read, edit, write, `$`), and the command trails as provenance behind its
-// `$`, which keeps its promise that what follows ran in a shell (a record never sits
-// between `$` and the command). Records exist only when success porcelain appeared,
-// so a row leads with an outcome exactly when there demonstrably was one; a partial
-// success on a red row still headlines what landed. The headline survives truncation:
-// the middle cut (§9.8) lands in the command, never in the record.
+/** Fit whole facts ahead of the command; keep failed checks longest (§9.10.1). */
 export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], available: number): string {
   const cells = all.map((cell) => ({ ...cell, data: [...cell.data] }));
-  if (!cells.length) return "";
-  const cap = Math.floor(available * RECORD_HEADLINE_SHARE);
-  const loneFailureCap = Math.floor(available * LONE_FAILURE_SHARE);
-  const fits = () => {
-    const lone = cells.length === 1 && cells[0]!.data.length === 1 && cells[0]!.tone === "error";
-    return cells.map(recordCellText).join(SEP).length <= (lone ? loneFailureCap : cap);
-  };
-  // Each datum is a fact: a merged cell gives up its oldest datum before the cell goes.
-  // A pass goes first (health, not news), then records and warnings, then failures.
-  while (cells.length && !fits()) {
+  // Drop passes before records and warnings, and failures last, oldest datum first.
+  while (cells.length) {
+    const loneFailure = cells.length === 1 && cells[0]!.data.length === 1 && cells[0]!.tone === "error";
+    const cap = Math.floor(available * (loneFailure ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
+    if (cells.map(recordCellText).join(SEP).length <= cap) break;
     const pass = cells.findIndex((cell) => cell.tone === "text");
     const index = pass >= 0 ? pass : Math.max(0, cells.findIndex((cell) => cell.tone !== "error"));
     if (cells[index]!.data.length > 1) cells[index]!.data.shift();
     else cells.splice(index, 1);
   }
-  return cells.map((cell) => inkRecordCell(theme, cell)).join(ink(theme, "dim", SEP));
+  return cells.map((cell) => {
+    if (!cell.opaque) return ink(theme, cell.tone, `${BOLD}${recordCellText(cell)}${BOLD_OFF}`);
+    const verb = ink(theme, cell.tone, `${BOLD}${cell.verb}${BOLD_OFF}`);
+    return `${verb}${ink(theme, "dim", ` ${cell.data.join(", ")}`)}`;
+  }).join(ink(theme, "dim", SEP));
 }

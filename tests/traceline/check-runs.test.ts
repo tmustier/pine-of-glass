@@ -1,36 +1,23 @@
-// Check facts per run (design language §9.10.1): agents rerun checks in loops, before
-// and after an edit, and as red-then-green comparisons, and a sum across those runs is
-// a number no run printed. These tests pin one fact per run, the summaries that prove
-// a pass, and how a crowded headline keeps the newest fact and any failure.
-import { test, beforeEach } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-traceline/index.ts";
+import { AssistantMessageComponent, createBashToolDefinition, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
+
+import piTraceline from "../../extensions/pi-traceline/index.ts";
 import { checkFacts } from "../../extensions/pi-traceline/checks.ts";
-import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
-import { assistantBefore, nativeBashLines } from "./runtime-fixtures.ts";
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
+import { assistantMessage } from "../helpers.ts";
+import { hostExtension, IsolatedProject, RecordedUi } from "../harness/extension-host.ts";
+import { mouseViewport } from "../fixtures/mouse-viewport.ts";
 
-const { stripAnsi, oneLine, recordCells, setTracelineChat, setTracelineThemeGetter } = internals;
-
-beforeEach(() => {
-  setTracelineChat(undefined);
-  setTracelineThemeGetter(undefined);
-});
-
-function bash(command: string, output: string): ToolRowLike {
-  return {
+function facts(command: string, output: string): string[] {
+  return checkFacts({
     toolName: "bash",
     args: { command },
     result: { content: [{ type: "text", text: output }], isError: false },
     isPartial: false,
-    render: () => [],
-    setExpanded: () => {},
-    callRendererComponent: { render: () => nativeBashLines(command) },
-  } as ToolRowLike;
-}
-
-function facts(command: string, output: string): string[] {
-  return checkFacts(bash(command, output)).map((fact) => `${fact.verb} ${fact.datum}`);
+  }).map((fact) => `${fact.verb} ${fact.datum}`);
 }
 
 const vitestRun = (tests: string, total: number) => ` Test Files  1 passed (1)\n      Tests  ${tests} (${total})\n   Duration  1.2s\n`;
@@ -39,11 +26,10 @@ test("each run states its own fact; reruns never add up, different suites run on
   const loop = "for i in 1 2 3; do npx vitest run a.test.ts; done";
   const three = vitestRun("17 passed", 17).repeat(3);
   assert.deepEqual(facts(loop, three), ["passed 17 tests", "passed 17 tests", "passed 17 tests"]);
-  assert.deepEqual(recordCells(bash(loop, three)), ["passed 17 tests"], "identical reruns collapse; no `51 tests`");
 
   const comparison = "npx vitest run a.test.ts; git stash; npx vitest run a.test.ts";
   const redGreen = vitestRun("1 failed | 1 passed", 2) + "Saved working directory\n" + vitestRun("2 passed", 2);
-  assert.deepEqual(recordCells(bash(comparison, redGreen)), ["failed 1 of 2 tests", "passed 2 tests"], "a comparison reads in output order");
+  assert.deepEqual(facts(comparison, redGreen), ["failed 1 of 2 tests", "passed 2 tests"], "a comparison reads in output order");
 
   const labelled = "for tz in UTC Asia/Tokyo; do echo -n \"$tz \"; TZ=$tz npx vitest run 2>&1 | grep 'Tests '; done";
   assert.deepEqual(facts(labelled, "UTC          Tests  5 passed (5)\nAsia/Tokyo   Tests  1 failed | 4 passed (5)\n"), ["passed 5 tests", "failed 1 of 5 tests"]);
@@ -83,24 +69,45 @@ test("type, lint and format runs are separate facts too (§9.10.1)", () => {
   assert.deepEqual(facts("npx eslint a; npx eslint b", eslint), ["found 2 lint warnings", "found 1 lint error"]);
 });
 
-test("a crowded headline drops passes first, keeps the newest datum, and keeps a lone failure (§9.10.1)", () => {
-  const command = "for p in a b c d e f; do npx vitest run --project $p 2>&1 | grep -E 'Tests '; done";
-  const output = [15, 11, 13, 46, 226, 1731].map((n) => `      Tests  ${n} passed (${n})`).join("\n");
-  const row = bash(command, output);
-  setTracelineChat({ children: [assistantBefore([row]), row] });
-  const narrow = stripAnsi(oneLine(row, 80));
-  assert.match(narrow, /› passed 1731 tests \$/, narrow);
-  assert.match(stripAnsi(oneLine(row, 200)), /› passed (\d+ tests, )+1731 tests \$/, "wide rows keep more of the chain");
+test("headlines collapse identical reruns and keep the newest datum, records and failures when crowded (§9.10.1)", async () => {
+  initTheme(undefined, false);
+  const project = new IsolatedProject();
+  const { view } = mouseViewport();
+  const chat = new Container();
+  view.addChild(chat);
 
-  const landed = bash("git commit -m 'Add receipt' && npx vitest run && node --test legacy/",
+  function row(command: string, output: string): ToolExecutionComponent {
+    const id = `check-${chat.children.length}`;
+    const args = { command };
+    const comp = new ToolExecutionComponent("bash", id, args, {}, createBashToolDefinition(project.dir), view, project.dir);
+    comp.updateResult({ content: [{ type: "text", text: output }], isError: false });
+    chat.addChild(new AssistantMessageComponent(assistantMessage([
+      { type: "toolCall", id, name: "bash", arguments: args },
+    ]), true));
+    chat.addChild(comp);
+    return comp;
+  }
+  const repeated = row("for i in 1 2 3; do npx vitest run a.test.ts; done", vitestRun("17 passed", 17).repeat(3));
+  const comparison = row("npx vitest run a.test.ts; git stash; npx vitest run a.test.ts",
+    vitestRun("1 failed | 1 passed", 2) + "Saved working directory\n" + vitestRun("2 passed", 2));
+  const crowded = row("for p in a b c d e f; do npx vitest run --project $p 2>&1 | grep -E 'Tests '; done",
+    [15, 11, 13, 46, 226, 1731].map((n) => `      Tests  ${n} passed (${n})`).join("\n"));
+  const landed = row("git commit -m 'Add receipt' && npx vitest run && node --test legacy/",
     "[main 96c35aa] Add receipt\n 3 files changed\n Test Files  3 passed (3)\n      Tests  8 passed (8)\nℹ pass 3\nℹ fail 0\n");
-  setTracelineChat({ children: [assistantBefore([landed]), landed] });
-  assert.match(stripAnsi(oneLine(landed, 200)), /› committed 96c35aa · passed 11 tests \$/);
-  const cramped = stripAnsi(oneLine(landed, 90));
-  assert.match(cramped, /› committed 96c35aa \$/, `a pass gives way to a record: ${cramped}`);
-
-  const files = bash("export PATH=/opt/node/bin:$PATH; npm run typecheck | head; npx vitest run 2>&1 | tail -4", " Test Files  5 failed | 17 passed (22)\n      Tests  63 passed (63)\n");
-  setTracelineChat({ children: [assistantBefore([files]), files] });
-  const failure = stripAnsi(oneLine(files, 80));
-  assert.match(failure, /› failed 5 of 22 test files \$/, failure);
+  const files = row("export PATH=/opt/node/bin:$PATH; npm run typecheck | head; npx vitest run 2>&1 | tail -4",
+    " Test Files  5 failed | 17 passed (22)\n      Tests  63 passed (63)\n");
+  const host = await hostExtension(piTraceline, { project, ui: new RecordedUi(undefined, view) });
+  const painted = (comp: ToolExecutionComponent, width: number) => stripAnsi(comp.render(width).join("\n"));
+  try {
+    assert.match(painted(repeated, 200), /› passed 17 tests \$/, "identical reruns collapse; no `51 tests`");
+    assert.match(painted(comparison, 200), /› failed 1 of 2 tests · passed 2 tests \$/, "a comparison reads in output order");
+    assert.match(painted(crowded, 80), /› passed 1731 tests \$/);
+    assert.match(painted(crowded, 200), /› passed (\d+ tests, )+1731 tests \$/, "wide rows keep more of the chain");
+    assert.match(painted(landed, 200), /› committed 96c35aa · passed 11 tests \$/);
+    assert.match(painted(landed, 90), /› committed 96c35aa \$/, "a pass gives way to a record");
+    assert.match(painted(files, 80), /› failed 5 of 22 test files \$/);
+  } finally {
+    await host.dispose();
+    project.dispose();
+  }
 });

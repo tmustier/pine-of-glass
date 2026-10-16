@@ -1,8 +1,5 @@
-// Leading-preamble reclaim for bash rows (design language §9.4): the string
-// grammar that splits a flattened bash body into top-level segments and classifies
-// its leading run. Rendering (the `⋯` fold, previous-row comparison, family ink)
-// stays in index.ts; everything here is plain text in, plain facts out, except that
-// a `cd` target asks path-rows whether its folder lies under the cwd (§9.5).
+// Leading bash preambles (design language §9.4): classify setup segments and
+// relativize cd targets. Rendering and previous-row folding stay in index.ts.
 
 import { pathBelow } from "./path-rows.ts";
 
@@ -110,8 +107,6 @@ export function classifyBashSegment(text: string): BashSegmentClass {
 // tildified, so `cd ~/repo/x` under cwd `~/repo` becomes `cd ./x`.
 export function relativizeContextCd(body: string, cwd: string | undefined): string {
   if (!cwd) return body;
-  const root = cwd.replace(/\/+$/, "");
-  if (root.length === 0) return body;
   const edits: { start: number; end: number; text: string }[] = [];
   for (const seg of bashTopLevelSegments(body)) {
     const cls = classifyBashSegment(seg.text);
@@ -119,11 +114,10 @@ export function relativizeContextCd(body: string, cwd: string | undefined): stri
     if (cls !== "context") continue;
     const target = /^cd\s+(\S+)$/.exec(seg.text)?.[1];
     if (target === undefined) continue;
-    const tail = pathBelow(target, root);
-    const shown = tail === undefined ? undefined : tail === "" ? "." : `./${tail}`;
-    if (shown === undefined) continue;
+    const tail = pathBelow(target, cwd);
+    if (tail === undefined) continue;
     const start = seg.start + seg.text.length - target.length;
-    edits.push({ start, end: start + target.length, text: shown });
+    edits.push({ start, end: start + target.length, text: tail ? `./${tail}` : "." });
   }
   let out = body;
   for (const edit of edits.reverse()) out = `${out.slice(0, edit.start)}${edit.text}${out.slice(edit.end)}`;
