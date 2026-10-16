@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Traceline failed rows say why. The suffix carries a failure fact in the error
+  colour, read from the result the model received: `exit 2`, `timeout 30s`,
+  `aborted` for bash, `no matches` for a lone `rg`/`grep` that exited 1 in silence,
+  the thrown error's first line for a `codemode` script (`ReferenceError: paths is
+  not defined`), and the last line of the error for any other tool. The fact takes
+  the size cell's place below the warning threshold, and is capped at 40 columns or a
+  third of the row.
+- Traceline wraps a long compound bash row at command boundaries instead of shortening
+  every command to a bare name. Five `rg` calls in one command used to read
+  `rg -… rg -… rg … rg …`; they now continue on rail-only lines under the first
+  command, up to four lines, with the size cell on the first. The leading `cd` is
+  shortened to its final directory before any command loses a character, also when it
+  stands in front of a single command, so a worktree path can no longer eat the row.
+- Traceline shows a `codemode` script's ledger by default: one line per nested call,
+  folded like ordinary rows (sibling reads into one dir line, paged reads into one
+  range list, identical calls into `×N`), with a nested failure's reason and
+  `cancelled` in the suffix, and ledger bash lines fitted like top-level ones. A
+  ledger past 12 lines after folding starts folded; `revealLedgers` and
+  `ledgerMaxLines` in the family config change both. The composed row's colour is per
+  member: a script that died on one nested `edit` reads red `codemode`, neutral
+  `read · write`, red `edit ✗1`, instead of painting every member red.
 - Traceline keeps every command visible in a long compound bash row. A row that
   overflows now shortens each command instead of cutting out the middle, so
   `cd … && git add && pnpm lint && pnpm typecheck` no longer hides the lint and type

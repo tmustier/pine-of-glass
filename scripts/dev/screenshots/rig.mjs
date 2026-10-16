@@ -81,7 +81,8 @@ function makeFixture({ extensions, withAuth = false }) {
 function launchPi({ home, cwd, args = "", cols = 120, rows = 45 }) {
   const launch = tmux(
     "new-session", "-d", "-s", session, "-x", String(cols), "-y", String(rows),
-    `cd ${JSON.stringify(cwd)} && HOME=${JSON.stringify(home)} COLORTERM=truecolor ${JSON.stringify(process.execPath)} ${JSON.stringify(piCli)} ${args}`,
+    // PI_SKIP_VERSION_CHECK: Pi's "Update Available" banner is housekeeping, not the shot.
+    `cd ${JSON.stringify(cwd)} && HOME=${JSON.stringify(home)} COLORTERM=truecolor PI_SKIP_VERSION_CHECK=1 ${JSON.stringify(process.execPath)} ${JSON.stringify(piCli)} ${args}`,
   );
   if (launch.status !== 0) throw new Error(`tmux launch failed: ${launch.stderr}`);
 }
@@ -302,8 +303,9 @@ function meantimeShot() {
 // enabled, works through a fixture project by script; pi records the session with real
 // nested calls, a real ENOENT, a real capped output. Stage 2 replays that session in the
 // TUI twice: without traceline (the native codemode rows: the "before") and with it (the
-// "after"), then reveals a ledger by click in fullscreen mode and opens the drill pager.
-// Nothing in the transcript is crafted; the model chose the scripts.
+// "after", ledgers shown by default), then folds the first ledger by click in fullscreen
+// mode and opens the drill pager. Nothing in the transcript is crafted; the model chose
+// the scripts.
 function codemodeShot() {
   const fixture = makeFixture({ extensions: ["pi-traceline"], withAuth: true });
   const fixtureSettings = JSON.parse(readFileSync(join(fixture.cwd, ".pi", "settings.json"), "utf8"));
@@ -331,7 +333,7 @@ function codemodeShot() {
   // Stage 1: live. `pi -p` runs the real agent loop with codemode active and records the session.
   // No shell: the prompt carries backticks that a shell would substitute.
   const live = run(["pi", "-p", "--model", "openai-codex/gpt-6.1-sol:medium", "--session-dir", sessionDir, prompt], {
-    cwd: fixture.cwd, env: { ...process.env, HOME: fixture.home }, timeout: 600000,
+    cwd: fixture.cwd, env: { ...process.env, HOME: fixture.home, PI_SKIP_VERSION_CHECK: "1" }, timeout: 600000,
   });
   if (live.status !== 0) throw new Error(`live stage failed: ${live.stderr}\n${live.stdout}`);
   console.log(`live reply: ${live.stdout.trim().split("\n").at(-1)}`);
@@ -374,13 +376,13 @@ function codemodeShot() {
     waitFor("native codemode rows", (t) => t.includes("codemode"), 15000);
     shoot("pi-traceline-codemode-before", { trimTo: "Use codemode scripts" });
   }, { traceline: false });
-  // Stage 2b: after. Traceline's composed rows; then click the first row to reveal
-  // its ledger (fullscreen mode owns the mouse), then drill into it.
+  // Stage 2b: after. Traceline's composed rows with their ledgers shown; then click the
+  // first row's ▾ to fold its ledger (fullscreen mode owns the mouse), then drill into it.
   replay("--tui-mode fullscreen", () => {
-    waitFor("composed rows", (t) => /▸ codemode \d+ calls/.test(t), 30000);
+    waitFor("composed rows", (t) => /▾ codemode \d+ calls/.test(t), 30000);
     shoot("pi-traceline-codemode-after", { trimTo: "Use codemode scripts" });
     const text = captureText();
-    const y = text.split("\n").findIndex((line) => /▸ codemode \d+ calls/.test(line));
+    const y = text.split("\n").findIndex((line) => /▾ codemode \d+ calls/.test(line));
     if (y < 0) throw new Error("no composed row on screen");
     // SGR 1006 mouse press+release at the row's bullet cell, the same raw path the
     // click smoke tests use (tests/smoke/click-fixture.mjs).
@@ -390,9 +392,9 @@ function codemodeShot() {
     };
     raw(5, y + 1, false);
     raw(5, y + 1, true);
-    waitFor("revealed ledger", (t) => /▾ codemode \d+ calls/.test(t), 10000);
+    waitFor("folded ledger", (t) => /▸ codemode \d+ calls/.test(t), 10000);
     sleep(1500);
-    shoot("pi-traceline-codemode-ledger", { trimTo: "Use codemode scripts" });
+    shoot("pi-traceline-codemode-folded", { trimTo: "Use codemode scripts" });
     send("Escape");
     send("/drill", "Enter");
     waitFor("drill", (t) => t.includes("[Traceline] drill"), 10000);

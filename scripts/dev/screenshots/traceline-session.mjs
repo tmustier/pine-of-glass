@@ -105,7 +105,7 @@ export function buildTracelineSession(cwd) {
   result(editNav, `Successfully replaced 1 block(s) in ${cwd}/src/components/NavBar.astro.`, { details: { diff: diff(2, 2) } });
   msg({
     role: "toolResult", toolCallId: buildFail.id, toolName: "bash",
-    content: [{ type: "text", text: `src/components/PricingTable.astro:96:3: unexpected closing tag </div>\n  94 |     </ul>\n  95 |   </div>\n> 96 |   </div>\nbuild failed in 0.82s` }],
+    content: [{ type: "text", text: `src/components/PricingTable.astro:96:3: unexpected closing tag </div>\n  94 |     </ul>\n  95 |   </div>\n> 96 |   </div>\nbuild failed in 0.82s\n\nCommand exited with code 1` }],
     isError: true,
   });
 

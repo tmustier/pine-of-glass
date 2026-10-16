@@ -153,7 +153,28 @@ When a row runs several commands and does not fit, Traceline shortens each comma
   ▏ › $ cd ⋯/slack-bridge && git add -A && (pnpm lint 2>&1 | … pnpm typecheck 2>… npx prettier --c…  0.7k ch
 ```
 
+A leading `cd` gives way first: it shortens to its final directory (`cd …/slack-bridge`) before any command loses a character, also when it is the only thing in front of a single command. When shortening would leave a command with fewer than 24 columns, the row wraps at command boundaries instead, so every search pattern and argument stays readable. Continuation lines line up under the first command; the size cell stays on the first line:
+
+```
+  ▏ › $ cd ./.worktrees/verification-presentation && rg -n "quotePack" src/features --type ts &&     3.2k ch
+  ▏     rg -n "doorServices" src/features && rg -n "tenderDesk" src &&
+  ▏     rg -n "presentation" src/features/cowork && rg -n "contract" src/server
+```
+
+Wrapping stops at four lines; a longer chain packs the rest onto the last line, shortened by command. `Ctrl+T` shows the complete command.
+
 A leading `cd` into the working directory prints relative to it (`cd ./.worktrees/fix`). A `cd` into a subdirectory of the previous row's directory prints as `cd ⋯/slack-bridge`.
+
+A failed row says why. The reason sits where the size cell would be, in the error colour, read from the result the model received:
+
+```
+  ▏ › $ rg -n "legacyQuote" src/                                                    no matches
+  ▏ › $ npm run build                                                                   exit 2
+  ▏ › $ sleep 90                                                                   timeout 30s
+  ▏ › read ./docs/upstream.md                      ENOENT: no such fi…s '/docs/upstream.md'
+```
+
+For bash, Traceline restates Pi's status line (`exit 2`, `timeout 30s`, `aborted`). A single `rg` or `grep` that exited 1 and printed nothing reads `no matches`, because both tools use that exit code for a search that found nothing. Other tools show the last line of their error, shortened to at most 40 columns or a third of the row. The size cell returns only when the error output itself grows past the warning threshold.
 
 Successful commands can lead with a verified outcome:
 
@@ -192,7 +213,7 @@ Traceline requires result evidence, not just a command. A successful terminal `g
 
 Pi's `codemode` tool runs a JavaScript script that calls other tools. Only the script's output reaches the model, so a native row shows the code and Pi's own call list. Traceline shows what the script did instead:
 
-![Three codemode scripts as one line each](../../docs/img/pi-traceline-codemode-after.png)
+![Three codemode scripts with their ledgers](../../docs/img/pi-traceline-codemode-after.png)
 
 ```
   ▏ ▸ codemode 7 calls · read ×6 ✗1 ./docs/ · $ find                 trimmed · 40.3k ch
@@ -202,13 +223,31 @@ Pi's `codemode` tool runs a JavaScript script that calls other tools. Only the s
 
 - nested calls fold by tool in the order they first ran, with a count when repeated. A file tool shows its one path, or the directory several files share; a namespaced tool (`mcp__monaco__get_account`) shows `monaco/get_account`
 - a nested call that failed inside a script that completed shows `✗N` in warning colour; the bullet still says the script completed
+- colour is per member. When a script dies because one nested call threw, `codemode` turns red and so does the member that failed; the members that succeeded stay neutral, because their work landed. The row's suffix quotes what the script threw (`Error: Could not find oldText…`, `ReferenceError: paths is not defined`)
 - `trimmed` means the script's output hit codemode's cap and Pi cut the middle: the model saw less than it asked for. The size cell stays what reached the model
 - wall time appears from 10 seconds, and the nested call that explains it wears its own duration (`superhuman-mail/query_email_and_calendar 2m02s`)
 - while the script runs, the row counts up from Pi's streamed ledger
 
-A script row with calls wears `▸`. In fullscreen mode, click it to reveal the ledger: one line per nested call, in call order, in that tool's own grammar, with its duration and (for calls made in this session) its result size. Click the `▾` to fold it away; click the row's body to open Pi's native row with the script, Pi's call list and the output. Nested result sizes come from live tool events and are not stored in the session, so a resumed session shows durations only.
+A script row with calls shows its ledger by default: one line per nested call, in call order, in that tool's own grammar, with its duration and (for calls made in this session) its result size. The ledger is the trace; `codemode` is only how the model batched it. Consecutive reads of sibling files fold into one line, paged reads of one file merge their ranges, and identical calls fold with `×N`, so a four-file sweep is two lines, not four. A nested call that failed carries its reason in the suffix, like any failed row; a call cut off by the script ending reads `cancelled`. A ledger bash line prints its leading `cd` relative to the working directory and shortens it first, so the command it ran stays visible.
 
-![A revealed ledger](../../docs/img/pi-traceline-codemode-ledger.png)
+```
+  ▏ ▾ codemode 4 calls · read ×3 ✗1 ./docs/ · $ find                        trimmed · 40.3k ch
+  ▏   › read ./docs/ design-language.md:1-120, testing.md
+  ▏   › read ./docs/upstream.md                       ENOENT: no such fi…s '/docs/upstream.md'
+  ▏   › $ cd . && find docs -name '*.md' | head -20                                       0.5s
+```
+
+A ledger that would still run past 12 lines after folding starts folded behind `▸`. In fullscreen mode, click the `▾` to fold a ledger away and the `▸` to reveal one; click the row's body to open Pi's native row with the script, Pi's call list and the output. Nested result sizes come from live tool events and are not stored in the session, so a resumed session shows durations only.
+
+Both knobs live in the same config file as the size thresholds:
+
+```json
+{ "revealLedgers": false, "ledgerMaxLines": 20 }
+```
+
+`revealLedgers: false` starts every ledger folded; `ledgerMaxLines` moves the cap.
+
+![The first ledger folded by a click](../../docs/img/pi-traceline-codemode-folded.png)
 
 In drill mode, the pager shows the complete script with syntax highlighting, the ledger under a `calls` label, then the output.
 
@@ -254,7 +293,8 @@ Traceline shortens rows before they reach the terminal edge. It:
 The `›` bullet uses Pi's accent colour while running, success colour after success
 and error colour after failure. Group controls (`▸` and `▾`) use the same roles.
 Failed rows also colour the action and main target, so the failure does not depend
-on one small glyph. The selected theme, including `system`, controls the colours.
+on one small glyph, and they say why in the suffix (see "Read command rows"). The
+selected theme, including `system`, controls the colours.
 
 The dim `▏` rail joins consecutive tool calls into a visible block. Traceline uses theme-derived colours rather than fixed terminal colours.
 

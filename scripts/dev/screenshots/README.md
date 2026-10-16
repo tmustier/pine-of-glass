@@ -121,8 +121,9 @@ small docs fixture, asking for three scripts: a parallel fan-out read with one m
 file plus a `find`, a small read-and-`wc` script, and one with no tool calls. Pi records
 the session with real nested calls, a real ENOENT and real durations. Stage 2 replays it in
 the TUI without this repo's extension (stock pi's codemode renderer: `-before`), then with
-Traceline in fullscreen mode (`-after`), clicks the first composed row's bullet through raw
-SGR mouse input to reveal its ledger (`-ledger`), and drills into it (`-pager`). The prompt
+Traceline in fullscreen mode (`-after`, ledgers shown by default), clicks the first composed
+row's `▾` through raw SGR mouse input to fold its ledger (`-folded`), and drills into it
+(`-pager`). The prompt
 is passed to `pi` without a shell so its backticks survive. Expect the scripts to vary run
 to run; the model writes them.
 

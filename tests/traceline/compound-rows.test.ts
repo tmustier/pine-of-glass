@@ -14,7 +14,7 @@ import { bashCrownedHeads } from "../../extensions/pi-traceline/bash-crowns.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantBefore, nativeBashLines } from "./runtime-fixtures.ts";
 
-const { stripAnsi, oneLine, recordCells, setTracelineChat, setTracelineThemeGetter } = internals;
+const { stripAnsi, oneLine, renderTraceRow, recordCells, setTracelineChat, setTracelineThemeGetter } = internals;
 
 beforeEach(() => {
   setTracelineChat(undefined);
@@ -39,8 +39,8 @@ function render(body: string, pieces: FitPiece[]): string {
 }
 
 function fit(body: string, budget: number): string | undefined {
-  const pieces = fitCompoundCommand(body, bashCrownedHeads(body), budget);
-  return pieces ? render(body, pieces) : undefined;
+  const fitted = fitCompoundCommand(body, bashCrownedHeads(body), budget);
+  return fitted ? render(body, fitted.pieces) : undefined;
 }
 
 const SCREENSHOT_BODY =
@@ -69,18 +69,59 @@ test("a compound row's context keeps its final directory; git keeps its subcomma
   assert.match(fitted, /git log/, fitted);
 });
 
-test("rows that fit, single commands and impossible budgets keep the old path (§9.8)", () => {
+test("rows that fit, bare single commands and impossible budgets keep the old path (§9.8)", () => {
   assert.equal(fit("git status && git diff", 80), undefined, "a fitting row is untouched");
-  assert.equal(fit(`python3 -c '${"x".repeat(200)}' | tail -2`, 60), undefined, "one crowned head keeps the middle cut");
+  assert.equal(fit(`python3 -c '${"x".repeat(200)}' | tail -2`, 60), undefined, "one crowned head and no context keeps the middle cut");
   assert.equal(fit(SCREENSHOT_BODY, 20), undefined, "bare heads that overflow fall back");
 });
 
-test("rendered compound rows keep every command visible inside the block grid", () => {
+test("the leading context gives first: it sits at its floor before any command loses a column (§9.8)", () => {
+  const body = `cd ~/projects/garage-demo-may-26/.worktrees/verification-presentation && rg -n "doorServices" --glob '{view*,rows*,door-services*}*' garage/frontends/quotation-agent/src/features/quote`;
+  const shown = fit(body, 100)!;
+  assert.match(shown, /^cd …\/verification-presentation && rg -n "doorServices" --glob '\{view\*,rows\*,door-services\*\}\*' garag…$/, shown);
+  // Two commands behind a long context: the commands share the width, the context stays at its floor.
+  const two = fit(`cd ~/projects/garage-demo-may-26/.worktrees/verification-presentation && rg -n "a" src/features/cowork/canvas && rg -n "b" src/features/cowork/server`, 90)!;
+  assert.match(two, /^cd …\/verification-presentation && rg -n "a" src\/features\/cowo… rg -n "b" src\/features\/cow…$/, two);
+});
+
+test("a wrapped row keeps every command whole across rail-only continuation lines (§9.8)", () => {
   const comp = bash(SCREENSHOT_BODY.replace("~", homedir()), "x".repeat(700));
-  const line = stripAnsi(oneLine(comp, 110));
-  for (const head of ["git", "pnpm lint", "pnpm typecheck", "npx"]) assert.ok(line.includes(head.split(" ").at(-1)!), line);
-  assert.ok(line.endsWith("0.7k ch"), line);
-  assert.equal(line.length, 110 - 2, "row honours the two-column right inset");
+  setTracelineChat({ children: [assistantBefore([comp]), comp] });
+  const lines = renderTraceRow(comp, 110).map(stripAnsi);
+  assert.equal(lines[0], "", "a group opens with its blank line");
+  assert.equal(lines.length, 4, lines.join("\n"));
+  assert.match(lines[1]!, /^ {2}▏ › \$ cd ~\/projects\/pinet\/\.worktrees\/review-1068\/slack-bridge && git add -A && \( {2,}0\.7k ch$/, lines[1]);
+  assert.match(lines[2]!, /^ {2}▏ {5}pnpm lint 2>&1 \| grep -v "npm notice" \| tail -15\) && \(pnpm typecheck 2>&1 \| tail -4\) &&$/, lines[2]);
+  assert.match(lines[3]!, /^ {2}▏ {5}npx prettier --check slack-bridge\/host-runner\.ts slack-bridge\/join-profile\.ts 2>&1 \| ta…$/, "a lone unit wider than its line is cut, never dropped");
+  for (const line of lines) assert.ok(line.length <= 110, line);
+  assert.equal(lines[1]!.length, 110 - 2, "the bullet line honours the two-column right inset");
+});
+
+test("five searches in one call wrap so every pattern survives; a wide terminal needs no wrap", () => {
+  const cwd = `${homedir()}/projects/garage`;
+  const command = `cd ${cwd}/.worktrees/verification-presentation && rg -n "quotePack" src/features --type ts && rg -n "doorServices" src/features && rg -n "tenderDesk" src && rg -n "presentation" src/features/cowork && rg -n "contract" src/server`;
+  const comp = bash(command, "x".repeat(3_200), { cwd });
+  setTracelineChat({ children: [assistantBefore([comp]), comp] });
+  const narrow = renderTraceRow(comp, 80).map(stripAnsi).slice(1);
+  assert.equal(narrow.length, 4, narrow.join("\n"));
+  assert.match(narrow[0]!, /^ {2}▏ › \$ cd \.\/\.worktrees\/verification-presentation && {2,}3\.2k ch$/, "the cd reads relative to cwd; cutting it would not have fitted the first command, so it keeps its path");
+  for (const pattern of ['"quotePack"', '"doorServices"', '"tenderDesk"']) assert.ok(narrow.join("\n").includes(pattern), pattern);
+  assert.match(narrow[3]!, /^ {2}▏ {5}rg -n "tenderDesk" src && rg -n "presentat… rg -n "contract"…$/, "the capped last line packs the remainder by command");
+  const wide = renderTraceRow(comp, 220).map(stripAnsi).slice(1);
+  assert.equal(wide.length, 1, "a row that fits never wraps");
+  assert.match(wide[0]!, /rg -n "contract" src\/server {2,}3\.2k ch$/);
+});
+
+test("a folded repetition of a long compound row stays one line: it fits by command, never wraps", () => {
+  const command = `rg -n "quotePack" src/features --type ts && rg -n "doorServices" src/features && rg -n "tenderDesk" src && rg -n "presentation" src/features/cowork`;
+  const a = bash(command, "ok");
+  const b = bash(command, "ok");
+  setTracelineChat({ children: [assistantBefore([a, b]), a, b] });
+  const folded = renderTraceRow(a, 80).map(stripAnsi);
+  assert.equal(folded.length, 2, `two identical calls fold into one ×2 row: ${folded.join("\n")}`);
+  assert.match(folded[1]!, /^ {2}▏ ▸ \$ rg -n "quotePac… rg -n "doorServ… rg -n "tenderDe… rg -n "presenta… ×2$/, folded[1]);
+  assert.match(folded[1]!, / ×2$/, folded[1]);
+  assert.deepEqual(renderTraceRow(b, 80), []);
 });
 
 test("leading cd prints relative to the row cwd (§9.4)", () => {

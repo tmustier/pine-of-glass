@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type KeyId, type TUI } from "@earendil-works/pi-tui";
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
-import { positiveNumberValue, isJsonObject, stringValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
 import {
   findChatContainer,
@@ -39,8 +38,9 @@ import {
   type BashPreambleRun,
 } from "./bash-preamble.ts";
 import { checkFacts, checkFailed } from "./checks.ts";
+import { failureFact, failureFactWidth } from "./failure.ts";
 import { fitHeadline, mergeHeadlineFacts, recordCellText, type RecordCellData } from "./headline.ts";
-import { fitCompoundCommand, type FitPiece } from "./compound-fit.ts";
+import { fitBashLines, inkBashBody as inkBashBodyWithTone, type BashLines } from "./bash-lines.ts";
 import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
   drillDecorateNativeRow,
@@ -52,7 +52,7 @@ import {
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact as rawResultImageFact } from "./image-fact.ts";
-import { isLedgerRevealed, isRevealed, resetRevealedFolds, revealRenderKey, revealedBullet, type LedgerView, type TraceMousePrototype } from "./click.ts";
+import { isRevealed, ledgerOverride, resetRevealedFolds, revealRenderKey, revealedBullet, type LedgerView, type TraceMousePrototype } from "./click.ts";
 import {
   cachedIntrinsic,
   installAssistantCacheHook,
@@ -61,9 +61,10 @@ import {
   objectCacheKey,
 } from "./cache-hooks.ts";
 import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStart } from "./nested-calls.ts";
-import { composedBody, ledgerLines } from "./nested-rows.ts";
+import { ledgerEntries, ledgerLines } from "./ledger.ts";
+import { composedBody } from "./nested-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
-import { recordFacts } from "./records.ts";
+import { recordFacts, resultText } from "./records.ts";
 import { TraceRenderCache } from "./render-cache.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun, readPlan, repetitionPlan } from "./repetition-fold.ts";
 import { TraceTopology, isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./topology.ts";
@@ -81,7 +82,9 @@ import { captureCallLines } from "./call-capture.ts";
 import { summarizeCallLines } from "./call-summary.ts";
 import { handleThinkingToggleTerminalInput } from "./thinking-toggle.ts";
 import { suppressThinkingToggleStatus } from "./status-line.ts";
+import { dimUnstyledSpans, stripSgrBackgrounds, stripSgrForegrounds } from "./sgr.ts";
 import { createTracelineTuiOwner } from "./tui-owner.ts";
+import { DEFAULT_LEDGER_POLICY, parseTracelineConfig, type LedgerPolicy, type TracelineConfig } from "./traceline-config.ts";
 
 /** Compact trace rendering; see docs/design-language.md §9. */
 
@@ -135,6 +138,12 @@ const mutationDiffStats = cachedIntrinsic(renderCache, "mutation-diff", rawMutat
 // Composed-call facts (§9.14) re-derive whenever the row's result changes: the streamed
 // ledger and a live capture both land through updateResult, which dirties the row.
 const composedFacts = cachedIntrinsic(renderCache, "composed", composedFactsOf);
+// The failure fact (§9.2.1): why a failed call failed, read from the result it returned.
+const rowFailureFact = cachedIntrinsic(renderCache, "failure", (row) => {
+  if (!row.result?.isError) return undefined;
+  const command = row.args?.command;
+  return failureFact(toolLabel(row.toolName), resultText(row), typeof command === "string" ? command : undefined);
+});
 // --- chat container (holds assistant + tool rows as siblings) -------------------------
 // Structural detection (isToolRow / isAssistantRow / findChatContainer) lives in _lib
 // and is shared across the extension family.
@@ -230,29 +239,19 @@ function formatCharCount(value: number): string {
 // (~/.pi/agent/pi-traceline.json / <cwd>/.pi/pi-traceline.json).
 let sizeThresholds: SizeThresholds = SIZE_THRESHOLDS;
 
-type TracelineConfig = {
-  sizeWarningChars?: number;
-  sizeErrorChars?: number;
-  drillKey?: string;
-};
-
-function parseTracelineConfig(value: unknown): TracelineConfig {
-  if (!isJsonObject(value)) return {};
-  const sizeWarningChars = positiveNumberValue(value.sizeWarningChars);
-  const sizeErrorChars = positiveNumberValue(value.sizeErrorChars);
-  const drillKey = stringValue(value.drillKey);
-  const config: TracelineConfig = {};
-  if (sizeWarningChars !== undefined) config.sizeWarningChars = Math.floor(sizeWarningChars);
-  if (sizeErrorChars !== undefined) config.sizeErrorChars = Math.floor(sizeErrorChars);
-  if (drillKey !== undefined && drillKey.length > 0) config.drillKey = drillKey;
-  return config;
-}
+// The ledger is the trace (§9.14): a composed row reveals its ledger by default unless
+// it would run past the cap even after folding. Both knobs live in the family config.
+let ledgerPolicy: LedgerPolicy = DEFAULT_LEDGER_POLICY;
 
 function configureSizeThresholds(config: TracelineConfig | undefined): void {
   renderCache.reset();
   const warning = config?.sizeWarningChars ?? SIZE_THRESHOLDS.warning;
   const error = config?.sizeErrorChars ?? SIZE_THRESHOLDS.error;
   sizeThresholds = { warning, error: Math.max(error, warning) };
+  ledgerPolicy = {
+    reveal: config?.revealLedgers ?? DEFAULT_LEDGER_POLICY.reveal,
+    maxLines: config?.ledgerMaxLines ?? DEFAULT_LEDGER_POLICY.maxLines,
+  };
 }
 
 // A fact suffix must carry a fact (design language §9.7): results smaller than one
@@ -328,9 +327,9 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
       if (composedFacts(c)?.trimmed) return true; // a trimmed output is warning severity (§9.14)
       const chars = resultTextCharCount(c);
       if (chars === undefined) return false;
-      // Record rows (§9.10) suppress their size cell below warning severity, so only
-      // a ballooning record output lights the column.
-      if (recordRow(c)) return chars >= sizeThresholds.warning;
+      // Record rows (§9.10) and failed rows (§9.2.1) suppress their size cell below
+      // warning severity, so only a ballooning output lights the column.
+      if (recordRow(c) || rowFailureFact(c)) return chars >= sizeThresholds.warning;
       return chars >= CHAR_SUFFIX_FLOOR;
     });
     let plus = 0;
@@ -375,7 +374,7 @@ function blockSuffixReserve(rows: ToolRowLike[], facts: BlockFacts, available: n
       const suffix = read
         ? foldedReadSuffix(read.rows, facts)
         : repeated
-          ? charSuffix(combinedResultChars(repeated.rows), facts.sizeColumnLive)
+          ? foldedRepetitionSuffix(repeated.rows, facts, available)
           : toolFactSuffix(row, available, facts);
       widest = Math.max(widest, visibleWidth(suffix));
     }
@@ -447,10 +446,21 @@ function recordCharSuffix(comp: ToolRowDataLike): string {
   return charSuffix(chars);
 }
 
-// The row's size-berth cell: a record's suppressed cell, an image what-fact, or the
-// char count; a composed call's `trimmed` fact rides ahead of it (§9.14).
+// A failed row's failure fact cell (§9.2.1): error ink; free text middle-cut to its
+// share of the row so one verbose error cannot push the block's bodies aside.
+function failureCell(comp: ToolRowDataLike | undefined, available: number): string {
+  const fact = rowFailureFact(comp);
+  if (!fact) return "";
+  const theme = currentTheme();
+  const inked = ink(theme, "error", fact.text);
+  return fact.parsed ? inked : middleTruncate(inked, failureFactWidth(available), theme);
+}
+
+// The row's size-berth cell: a record's or a failed row's suppressed cell (§9.10,
+// §9.2.1), an image what-fact, or the char count; a composed call's `trimmed` fact
+// rides ahead of it (§9.14).
 function sizeBerthCell(comp: ToolRowDataLike, sizeColumnLive: boolean): string {
-  const base = recordRow(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || charSuffix(resultTextCharCount(comp), sizeColumnLive);
+  const base = recordRow(comp) || rowFailureFact(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || charSuffix(resultTextCharCount(comp), sizeColumnLive);
   if (!composedFacts(comp)?.trimmed) return base;
   const trimmed = ink(currentTheme(), "warning", "trimmed");
   return base ? `${trimmed}${dim(SEP)}${base}` : trimmed;
@@ -466,6 +476,9 @@ function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY,
   const inline = inlineMutationRow(comp);
   const diff = inline ? undefined : mutationDiffStats(comp);
   const chars = inline ? "" : sizeBerthCell(comp, facts.sizeColumnLive);
+  // A failed row leads its facts with why (§9.2.1).
+  const failure = failureCell(comp, available);
+  if (failure) parts.push(failure);
   if (diff) {
     // The diff cell right-aligns within the block's sign columns, and the size cell
     // pads left to the block's widest, so each diff column's right edge and the `·`
@@ -505,98 +518,6 @@ function flattenInvocationLines(lines: string[]): string | undefined {
     .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
   if (visible.length === 0) return undefined;
   return visible.join(` ${LINE_BREAK_MARK} `);
-}
-
-function filterSgrParams(
-  text: string,
-  shouldDrop: (n: number, params: string[], index: number) => number | undefined,
-): string {
-  return text.replace(/\x1b\[([0-9;]*)m/g, (_seq, rawParams: string) => {
-    const params = rawParams === "" ? ["0"] : rawParams.split(";");
-    const kept: string[] = [];
-    for (let i = 0; i < params.length; i++) {
-      const n = Number(params[i]);
-      const skipTo = shouldDrop(n, params, i);
-      if (skipTo !== undefined) {
-        i = skipTo;
-        continue;
-      }
-      kept.push(params[i]);
-    }
-    return kept.length ? `\x1b[${kept.join(";")}m` : "";
-  });
-}
-
-function stripSgrBackgrounds(text: string): string {
-  return filterSgrParams(text, (n, params, i) => {
-    if (n === 48) {
-      const mode = Number(params[i + 1]);
-      if (mode === 2) return i + 4; // 48;2;r;g;b
-      if (mode === 5) return i + 2; // 48;5;n
-      return i;
-    }
-    if (n === 49 || (n >= 40 && n <= 47) || (n >= 100 && n <= 107)) return i;
-    return undefined;
-  });
-}
-
-function stripSgrForegrounds(text: string): string {
-  return filterSgrParams(text, (n, params, i) => {
-    if (n === 38) {
-      const mode = Number(params[i + 1]);
-      if (mode === 2) return i + 4; // 38;2;r;g;b
-      if (mode === 5) return i + 2; // 38;5;n
-      return i;
-    }
-    if (n === 39 || (n >= 30 && n <= 37) || (n >= 90 && n <= 97)) return i;
-    return undefined;
-  });
-}
-
-// ansiEndIndex / rawIndexAtVisibleIndex / rawIndexBeforeVisibleIndex live in _lib/ansi.ts.
-
-// No plain ink in native rows (design language §9.6): every span a native renderer
-// leaves unstyled would render at the terminal default — prose ink inside a trace row,
-// the §9.3 problem alive on grep/web_search/fetch/mcp rows. Demote such spans to
-// L3-dim; spans with a deliberate foreground, and bold/faint-only spans (§9.3's
-// white), pass through untouched. OSC sequences (hyperlinks, zone marks) are copied
-// verbatim and never counted as text.
-const SGR_OR_OSC = /\x1b\[([0-9;]*)m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-
-function dimUnstyledSpans(line: string): string {
-  let out = "";
-  let last = 0;
-  let fg = false;
-  let weight = false;
-  const emit = (text: string) => {
-    if (!text) return;
-    out += fg || weight || !/\S/.test(text) ? text : dim(text);
-  };
-  SGR_OR_OSC.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SGR_OR_OSC.exec(line))) {
-    emit(line.slice(last, match.index));
-    out += match[0];
-    last = match.index + match[0].length;
-    const rawParams = match[1];
-    if (rawParams === undefined) continue; // OSC: no SGR state change
-    const params = rawParams === "" ? ["0"] : rawParams.split(";");
-    for (let i = 0; i < params.length; i++) {
-      const n = Number(params[i]);
-      if (n === 0) {
-        fg = false;
-        weight = false;
-      } else if (n === 1 || n === 2) weight = true;
-      else if (n === 22) weight = false;
-      else if (n === 39) fg = false;
-      else if (n === 38) {
-        fg = true;
-        i += Number(params[i + 1]) === 2 ? 4 : 2; // 38;2;r;g;b / 38;5;n
-      } else if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97)) fg = true;
-    }
-  }
-  emit(line.slice(last));
-  return out;
 }
 
 function trimLeadingVisibleWhitespace(line: string): string {
@@ -646,47 +567,23 @@ function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefin
   }) : undefined;
 }
 
-// Emission splices the crowns into dim runs: everything between crowned head words —
-// arguments, operators, marks, quoted scripts, demoted glue — dims in maximal spans
-// (middleTruncate replays the active ink after a cut, §5, so a long dim run
-// survives truncation), and each crowned word takes the discriminator ink (§9.3;
-// §9.2's error tint on failed rows). The visible text is untouched.
+// Crowns bold in the row's discriminator tone, everything else dim (§9.3; §9.2's error
+// tint on failed rows). The fitting and ink live in bash-lines.ts, shared with the ledger.
 function inkBashBody(body: string, comp?: ToolRowDataLike): string {
-  let out = "";
-  let cursor = 0;
-  for (const crown of bashCrownedHeads(body)) {
-    if (crown.start > cursor) out += dim(body.slice(cursor, crown.start));
-    out += discriminatorInk(comp, body.slice(crown.start, crown.end));
-    cursor = crown.end;
-  }
-  if (cursor < body.length) out += dim(body.slice(cursor));
-  return out;
+  return inkBashBodyWithTone(currentTheme(), verbTone(comp), body);
 }
 
-// A compound row that overflows `budget` fits by command (§9.8): the kept ranges ink
-// with the crowns computed on the whole body, and each cut wears a dim `…`.
-function inkFittedBashBody(body: string, pieces: FitPiece[], comp?: ToolRowDataLike): string {
-  const crowns = bashCrownedHeads(body);
-  let out = "";
-  for (const piece of pieces) {
-    let cursor = piece.start;
-    for (const crown of crowns) {
-      if (crown.start < piece.start || crown.end > piece.end) continue;
-      if (crown.start > cursor) out += dim(body.slice(cursor, crown.start));
-      out += discriminatorInk(comp, body.slice(crown.start, crown.end));
-      cursor = crown.end;
-    }
-    if (cursor < piece.end) out += dim(body.slice(cursor, piece.end));
-    if (piece.mark) out += dim(piece.mark);
-  }
-  return out;
+// A bash row's body laid out against its budget (§9.8): whole, fitted by command, or,
+// when `contBudget` is given and the fit would starve a command, wrapped at command
+// boundaries onto continuation lines at the command column.
+function bashRowLines(comp: ToolRowDataLike | undefined, text: string, budget = Number.POSITIVE_INFINITY, contBudget?: number): BashLines {
+  if (!text.startsWith("$ ")) return { first: dim(text), continuations: [] };
+  const lines = fitBashLines(currentTheme(), verbTone(comp), text.slice(2), budget - 2, contBudget);
+  return { first: `${verbInk(comp, "$")} ${lines.first}`, continuations: lines.continuations };
 }
 
 function inkBashRow(comp: ToolRowDataLike | undefined, text: string, budget = Number.POSITIVE_INFINITY): string {
-  if (!text.startsWith("$ ")) return dim(text);
-  const body = text.slice(2);
-  const pieces = body.length + 2 > budget ? fitCompoundCommand(body, bashCrownedHeads(body), budget - 2) : undefined;
-  return `${verbInk(comp, "$")} ${pieces ? inkFittedBashBody(body, pieces, comp) : inkBashBody(body, comp)}`;
+  return bashRowLines(comp, text, budget).first;
 }
 
 function commandPrefixLength(comp: ToolRowDataLike | undefined, line: string): number {
@@ -726,7 +623,7 @@ function nativeInvocationLine(comp: ToolRowLike): string | undefined {
     // Demote after verb re-inking, which strips foregrounds from the prefix region;
     // doing it first would lose the dim opener and leave its body at terminal default.
     if (!line) return undefined;
-    const styled = dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(line)));
+    const styled = dimUnstyledSpans(colourCommandPrefix(comp, stripSgrBackgrounds(line)), currentTheme());
     // Path reconstruction is lossless only for a single native call line.
     return lines.length === 1 ? pathEmphasisLine(comp, styled) ?? styled : styled;
   });
@@ -833,8 +730,8 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
 // re-inked verb; tools without a renderer fall back to a plain verb+args line.
 // `bodyBudget` is the width the row's body may use beside its suffix; a compound bash
 // row fits itself to it by command (§9.8). Other rows leave the cut to rightAlignSuffix.
-function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, bodyBudget = Number.POSITIVE_INFINITY): string {
-  return renderCache.memo(comp, `invocation:${available}:${bodyBudget}:${objectCacheKey(currentTheme())}`, () => {
+function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, bodyBudget = Number.POSITIVE_INFINITY, wrap = false): string {
+  return renderCache.memo(comp, `invocation:${available}:${bodyBudget}:${wrap}:${objectCacheKey(currentTheme())}`, () => {
     // A composed call states its effects, never its script (§9.14).
     const composed = composedFacts(comp);
     if (composed) {
@@ -844,16 +741,28 @@ function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, 
       const budget = available - blockSuffixReserve(rows, facts, available);
       return composedBody(currentTheme(), comp, composed, toolStatus(comp) === "error", budget);
     }
-    if (toolLabel(comp?.toolName) === "bash") {
-      const plain = bashInvocationText(comp);
-      if (plain === undefined) return inkedFallbackLine(comp);
-      const headline = recordHeadline(comp, available);
-      const headlineWidth = headline ? visibleWidth(headline) + 1 : 0;
-      const body = inkBashRow(comp, foldBashPreamble(comp, bashDisplayLine(comp, plain)), bodyBudget - headlineWidth);
-      return headline ? `${headline} ${body}` : body;
-    }
+    if (toolLabel(comp?.toolName) === "bash") return bashInvocationPlan(comp, available, bodyBudget, wrap).first;
     const native = nativeInvocationLine(comp);
     return native ? tildify(native) : inkedFallbackLine(comp);
+  });
+}
+
+// A bash row's lines (§9.8): the record headline and `$ body` on the first, and, when
+// `wrap` allows it, continuation lines at the command column. The continuation
+// column sits after the headline and the `$ `, so wrapped commands share one left edge.
+type BashRowPlan = BashLines & { commandColumn: number };
+
+function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: number, wrap: boolean): BashRowPlan {
+  return renderCache.memo(comp, `bash-plan:${available}:${bodyBudget}:${wrap}:${objectCacheKey(currentTheme())}`, () => {
+    const plain = bashInvocationText(comp);
+    if (plain === undefined) return { first: inkedFallbackLine(comp), continuations: [], commandColumn: 0 };
+    const headline = recordHeadline(comp, available);
+    const headlineWidth = headline ? visibleWidth(headline) + 1 : 0;
+    const commandColumn = headlineWidth + 2;
+    const budget = bodyBudget - headlineWidth;
+    const text = foldBashPreamble(comp, bashDisplayLine(comp, plain));
+    const lines = bashRowLines(comp, text, budget, wrap ? budget - 2 : undefined);
+    return { first: headline ? `${headline} ${lines.first}` : lines.first, continuations: lines.continuations, commandColumn };
   });
 }
 
@@ -871,29 +780,46 @@ function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string
   return comp ? renderCache.memo(comp, key, fit) : fit();
 }
 
-// A composed row with a ledger is an aggregate (§9.14): `▸` folded, `▾` revealed.
+// A composed row with a ledger is an aggregate (§9.14): `▸` folded, `▾` revealed. The
+// reader's click wins; otherwise the ledger shows unless it would run past the cap.
 function ledgerView(comp: ToolRowDataLike): LedgerView | undefined {
   const composed = composedFacts(comp);
   if (!composed || composed.calls.length === 0) return undefined;
-  return isLedgerRevealed(comp) ? "revealed" : "folded";
+  const shown = ledgerOverride(comp) ?? (ledgerPolicy.reveal && ledgerEntries(comp, composed, sizeThresholds.warning).length <= ledgerPolicy.maxLines);
+  return shown ? "revealed" : "folded";
 }
 
 function oneLine(comp: ToolRowLike, width: number): string {
+  return rowLines(comp, width)[0]!;
+}
+
+// One row's lines: the bullet line, then a wrapped bash row's continuation lines (§9.8)
+// at the command column, rail-only like a dir fold's (§9.9).
+function rowLines(comp: ToolRowLike, width: number): string[] {
   const rows = blockToolRows(comp);
   const facts = blockFacts(rows);
   const available = traceRowAvailable(width);
   const suffix = toolFactSuffix(comp, available, facts);
   const reserve = blockSuffixReserve(rows, facts, available);
   const ledger = ledgerView(comp);
-  return fitTraceRow(
+  const bodyBudget = suffixBodyWidth(suffix, available, reserve);
+  const bash = toolLabel(comp.toolName) === "bash" && !composedFacts(comp);
+  const plan = bash ? bashInvocationPlan(comp, available, bodyBudget, true) : undefined;
+  const body = plan ? plan.first : invocationInk(comp, available, bodyBudget);
+  const line = fitTraceRow(
     comp,
     statusTone(comp),
-    invocationInk(comp, available, suffixBodyWidth(suffix, available, reserve)),
+    body,
     suffix,
     reserve,
     width,
     ledger === "revealed" ? "▾" : ledger === "folded" ? "▸" : undefined,
   );
+  if (!plan || plan.continuations.length === 0) return [line];
+  const contPrefix = `${TOOL_INDENT}${dim(TOOL_RAIL)}${" ".repeat(TOOL_PREFIX_VISIBLE_WIDTH - TOOL_INDENT.length - 1 + plan.commandColumn)}`;
+  const contBudget = Math.max(1, bodyBudget - plan.commandColumn);
+  return [line, ...plan.continuations.map((text) =>
+    truncateToWidth(`${contPrefix}${middleTruncate(text, contBudget, currentTheme())}`, Math.max(1, width), ELLIPSIS))];
 }
 
 // --- repetition folding + preamble reclaim (issue #14, design language §9.4/§9.9) ---
@@ -1091,11 +1017,24 @@ function foldedRepetitionLine(rows: ToolRowLike[], width: number): string {
   const facts = blockFacts(blockRows);
   const available = traceRowAvailable(width);
   const count = ` ×${rows.length}`;
-  const suffix = charSuffix(combinedResultChars(rows), facts.sizeColumnLive);
+  const suffix = foldedRepetitionSuffix(rows, facts, available);
   const reserve = blockSuffixReserve(blockRows, facts, available);
   const budget = suffixBodyWidth(suffix, available, reserve) - count.length;
   const body = `${invocationInk(failed ?? carrier, available, budget)}${dim(count)}`;
   return fitTraceRow(carrier, status, body, suffix, reserve, width, "▸");
+}
+
+// A folded repetition sums its landed sizes; the first failed member lends the fold
+// its failure fact (§9.2.1), so a red `×N` row still says why, and the fact takes the
+// size cell's place below warning severity as it does on a single row.
+function foldedRepetitionSuffix(rows: ToolRowLike[], facts: BlockFacts, available: number): string {
+  const failed = rows.find((row) => toolStatus(row) === "error");
+  const total = combinedResultChars(rows);
+  const size = failed
+    ? total !== undefined && total >= sizeThresholds.warning ? charSuffix(total) : ""
+    : charSuffix(total, facts.sizeColumnLive);
+  const cells = [failureCell(failed, available), size];
+  return cells.filter((cell) => cell.length > 0).join(dim(SEP));
 }
 
 function foldedReadSuffix(rows: ToolRowDataLike[], facts: BlockFacts): string {
@@ -1259,10 +1198,10 @@ function renderTraceRow(comp: ToolRowLike, width: number): string[] {
     const line = foldedRepetitionLine(repeated.rows, width);
     return leadingBlank(comp) ? ["", line] : [line];
   }
-  const line = oneLine(comp, width);
+  const lines = rowLines(comp, width);
   const composed = composedFacts(comp);
-  const ledger = composed && isLedgerRevealed(comp) ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
-  return leadingBlank(comp) ? ["", line, ...ledger] : [line, ...ledger];
+  const ledger = composed && ledgerView(comp) === "revealed" ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
+  return leadingBlank(comp) ? ["", ...lines, ...ledger] : [...lines, ...ledger];
 }
 
 // --- collapsed thinking previews (issue #14, pi-native rendering) ----------------------
@@ -1352,7 +1291,7 @@ export const internals = {
   stripAnsi,
   stripSgrBackgrounds,
   stripSgrForegrounds,
-  dimUnstyledSpans,
+  dimUnstyledSpans: (line: string) => dimUnstyledSpans(line, currentTheme()),
   rawIndexAtVisibleIndex,
   rawIndexBeforeVisibleIndex,
   middleTruncate,
@@ -1445,7 +1384,7 @@ export default function piTraceline(pi: ExtensionAPI) {
       const read = readRun(comp);
       if (read?.index === 0) return foldedReadLines(read.rows, width);
       const repeated = repetitionRun(comp);
-      return repeated?.index === 0 ? [foldedRepetitionLine(repeated.rows, width)] : [oneLine(comp, width)];
+      return repeated?.index === 0 ? [foldedRepetitionLine(repeated.rows, width)] : rowLines(comp, width);
     },
     runRows: (comp) => {
       const read = readRun(comp);
@@ -1457,9 +1396,10 @@ export default function piTraceline(pi: ExtensionAPI) {
     hiddenByFold: (comp) =>
       displayMode() === "oneLine" && ((readRun(comp)?.index ?? 0) > 0 || (repetitionRun(comp)?.index ?? 0) > 0),
     statusTone,
+    // The pager is the fidelity surface (§9.13): every call, unfolded.
     ledgerLines: (comp, width) => {
       const composed = composedFacts(comp);
-      return composed && composed.calls.length > 0 ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
+      return composed && composed.calls.length > 0 ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds, false) : [];
     },
   });
   const startDrill = (ctx: { ui: ExtensionUIContext; hasUI: boolean }) => {

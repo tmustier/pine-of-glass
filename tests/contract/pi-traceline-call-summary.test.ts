@@ -28,10 +28,13 @@ function painted(comp: ToolExecutionComponent, width = 100) {
 }
 
 test("status-only call headers retain their command for every execution state", () => {
-  for (const state of ["success", "running", "error"] as const) {
+  for (const state of ["success", "running"] as const) {
     const verb = state === "running" ? "Running" : "Ran";
     assert.deepEqual(painted(row(`• ${verb}\n  └ surf tabs.list`, state)), [`  ▏ › ${verb} · surf tabs.list`]);
   }
+  // A failed call keeps its header and carries its failure fact in the suffix (§9.2.1):
+  // the error's last line, in the size cell's place.
+  assert.match(painted(row("• Ran\n  └ surf tabs.list", "error"))[0]!, /^ {2}▏ › Ran · surf tabs\.list {2,}SECRET_OUTPUT$/);
 });
 
 test("code and exploration calls retain every non-empty call line, not results", () => {

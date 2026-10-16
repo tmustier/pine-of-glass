@@ -1,8 +1,11 @@
 // Visual regression net for the one-line trace grammar (design language §11):
 // a realistic scripted sequence — repeated cd preambles, a dropped set-hygiene run, a
-// newline-preamble context fold, a grouped multiline thinking preview, and a paginated
+// newline-preamble context fold, a grouped multiline thinking preview, a paginated
 // read run with a sibling-file dir fold (wrapping at 80 columns), healthy and ballooned
-// outputs, and a flattened multiline command, rendered at 80 and 120 columns.
+// outputs, a flattened multiline command, failed rows with their failure facts, a
+// search chain that wraps at command boundaries, and composed rows with a revealed
+// ledger, a folded fan-out and a script that died on one nested call, rendered at 80
+// and 120 columns.
 // Colour is not under test (see docs/testing.md); structure, alignment, folding, and
 // wording are. Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
 import { test, beforeEach } from "node:test";
@@ -17,7 +20,6 @@ import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantMessage, expectGolden } from "../helpers.ts";
 import { assistantBefore, completedWriteRow, composedRow, nativeBashLines } from "./runtime-fixtures.ts";
-import { setLedgerRevealed } from "../../extensions/pi-traceline/click.ts";
 
 const {
   renderTraceRow,
@@ -29,12 +31,13 @@ const {
 
 function bash(
   command: string,
-  options: { timeout?: number; chars?: number; text?: string; error?: boolean; running?: boolean } = {},
+  options: { timeout?: number; chars?: number; text?: string; error?: boolean; running?: boolean; cwd?: string } = {},
 ): ToolRowLike {
   const timeout = options.timeout ?? 30;
   return {
     toolName: "bash",
     args: { command, timeout },
+    cwd: options.cwd,
     result: options.running
       ? undefined
       : { content: [{ type: "text", text: options.text ?? "x".repeat(options.chars ?? 200) }], isError: options.error === true },
@@ -106,7 +109,17 @@ test("one-line trace goldens at 80 and 120 columns", () => {
       { timeout: 120, chars: 2_050 },
     );
     const pythonCommand = ["python3 -c '", "  import json", "  print(json.dumps(cfg))", "  ' | tail -2"].join("\n");
-    const python = bash(pythonCommand, { timeout: 70, chars: 56_300, error: true });
+    const python = bash(pythonCommand, {
+      timeout: 70, error: true,
+      text: `${"x".repeat(56_180)}\nTraceback (most recent call last):\n  File "<string>", line 3, in <module>\nNameError: name 'cfg' is not defined\n\nCommand exited with code 1`,
+    });
+    // A search chain: five patterns in one call wrap at command boundaries (§9.8), and a
+    // lone search that found nothing says so instead of merely turning red (§9.2.1).
+    const searches = bash(
+      `cd ${repo}/.worktrees/verification-presentation && rg -n "quotePack" src/features --type ts && rg -n "doorServices" src/features && rg -n "tenderDesk" src && rg -n "presentation" src/features/cowork && rg -n "contract" src/server`,
+      { chars: 3_200, cwd: repo },
+    );
+    const fruitless = bash(`cd ${repo}/.worktrees/verification-presentation && rg -n "legacyQuote" src/`, { text: "Command exited with code 1", error: true, cwd: repo });
     const rigEdit = edit(`${repo}/scripts/dev/screenshots/rig.mjs`, `${"+x\n".repeat(4)}${"-x\n".repeat(9)}`, 210);
     const ansiEdit = edit(`${repo}/scripts/dev/screenshots/ansi2html.mjs`, "-x\n", 180);
     const worklogWrite = completedWriteRow(writeCwd, "worklog/2026-07-02-rig-fix.md", "x\n".repeat(18));
@@ -116,7 +129,8 @@ test("one-line trace goldens at 80 and 120 columns", () => {
     const merge = bash("gh pr merge 87 --squash --delete-branch", { text: "(no output)" });
     const status = bash("git status --short", { running: true });
     // Composed calls (§9.14): a recon script whose output hit the cap with one nested
-    // miss, a long fan-out naming its slow child, and a revealed ledger.
+    // miss (ledger revealed by default), a long fan-out naming its slow child (past the
+    // cap, so folded), and a script that died on one nested edit, red only where it failed.
     const recon = composedRow([
       { name: "read", args: { path: `${repo}/docs/design-language.md`, offset: 1, limit: 120 }, durationMs: 23 },
       { name: "read", args: { path: `${repo}/docs/testing.md` }, durationMs: 19 },
@@ -129,7 +143,12 @@ test("one-line trace goldens at 80 and 120 columns", () => {
       { name: "mcp__superhuman-mail__query_email_and_calendar", args: { question: "…" }, durationMs: 41_300 },
       { name: "write", args: { path: "/tmp/audit/accounts.json", content: "…" }, durationMs: 3 },
     ], { cwd: repo, output: "x".repeat(9_100), wallSeconds: 44.2 });
-    setLedgerRevealed(recon, true);
+    const editError = "Could not find oldText in extensions/pi-traceline/index.ts";
+    const died = composedRow([
+      { name: "read", args: { path: `${repo}/extensions/pi-traceline/index.ts`, offset: 1, limit: 80 }, durationMs: 21 },
+      { name: "write", args: { path: `${repo}/extensions/pi-traceline/failure.ts`, content: "…" }, durationMs: 4 },
+      { name: "edit", args: { path: `${repo}/extensions/pi-traceline/index.ts`, oldText: "a", newText: "b" }, status: "error", error: editError, durationMs: 3 },
+    ], { cwd: repo, failed: true, output: `Script error:\nError: ${editError}\n    at <anonymous>:4:3\n\nTool calls made before the failure (they are not undone): read (ok), write (ok), edit (error)` });
 
     const children = [
       prose("Let me look at the failing suite.", [testRun]),
@@ -151,6 +170,9 @@ test("one-line trace goldens at 80 and 120 columns", () => {
       censusAfter,
       prose("The typecheck output looks wrong — checking the runner script.", [python]),
       python,
+      prose("Searching the quote-pack code paths.", [searches, fruitless]),
+      searches,
+      fruitless,
       prose("The runner mangles the config — patching it and logging the pass.", [rigEdit, ansiEdit, worklogWrite]),
       rigEdit,
       ansiEdit,
@@ -159,9 +181,10 @@ test("one-line trace goldens at 80 and 120 columns", () => {
       commit,
       merge,
       status,
-      prose("Auditing the docs and the account list in one script each.", [recon, fanOut]),
+      prose("Auditing the docs and the account list in one script each.", [recon, fanOut, died]),
       recon,
       fanOut,
+      died,
     ];
     setTracelineChat({ children });
 

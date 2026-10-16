@@ -12,12 +12,20 @@ Checking the typecheck before the ne…s noisy. · Reading the paginated file ne
 
 Measuring the bash-corpus census before and after the rule change.
 
-  ▏ › $ cd ~/projects/pine-of-glas…report.ts --census out/before.json  2.1k ch
-  ▏ › $ ⋯ uv run scripts/dev/bash-…/report.ts --census out/after.json  2.0k ch
+  ▏ › $ cd …/pine-of-glass ↵ uv run scripts/dev/bash-corpus/report.t…  2.1k ch
+  ▏ › $ ⋯ uv run scripts/dev/bash-corpus/report.ts --census out/afte…  2.0k ch
 
 The typecheck output looks wrong — checking the runner script.
 
-  ▏ › $ python3 -c ' ↵ import json…nt(json.dumps(cfg)) ↵ ' | tail -2  56.3k ch
+  ▏ › $ python3 -c ' ↵ import …on.dumps(cfg)) ↵ ' | tail -2  exit 1 · 56.3k ch
+
+Searching the quote-pack code paths.
+
+  ▏ › $ cd ./.worktrees/verification-presentation &&                   3.2k ch
+  ▏     rg -n "quotePack" src/features --type ts &&
+  ▏     rg -n "doorServices" src/features &&
+  ▏     rg -n "tenderDesk" src && rg -n "presenta… rg -n "contrac…
+  ▏ › $ ⋯ rg -n "legacyQuote" src/                                  no matches
 
 The runner mangles the config — patching it and logging the pass.
 
@@ -27,15 +35,20 @@ The runner mangles the config — patching it and logging the pass.
 
 Fixed — committing and shipping the release.
 
-  ▏ › pushed main $ cd …/pine-of-glass && git add -A && git … commit… git push
+  ▏ › pushed main $ cd ~/projects/pine-of-glass && git add -A &&
+  ▏                 git … commit -m "traceline: records of consequen… git push
   ▏ › merged PR #87 $ gh pr merge 87 --squash --delete-branch
   ▏ › $ git status --short
 
 Auditing the docs and the account list in one script each.
 
   ▏ ▾ codemode 4 calls · read ×3 ✗1 ./docs/ · $ find        trimmed · 40.3k ch
-  ▏   › read ./docs/design-language.md:1-120
-  ▏   › read ./docs/testing.md
-  ▏   › read ./docs/upstream.md · ENO…h file or directory, access '/doc…
-  ▏   › $ cd ~/projects/pine-of-glass… find docs -name '*.md' | head -20  0.5s
-  ▏ ▸ codemode 27 calls · 44s…ail_and_calendar 41s · write             9.1k ch
+  ▏   › read ./docs/ design-language.md:1-120,
+  ▏          testing.md
+  ▏   › read ./docs/upstream.md                        ENOENT: no…upstream.md'
+  ▏   › $ cd . && find docs -name '*.md' | head -20                       0.5s
+  ▏ ▸ codemode 27 calls · 4…and_calendar 41s · write                   9.1k ch
+  ▏ ▾ codemode 3 calls · read · write · edit ✗1       Error: Coul…ine/index.ts
+  ▏   › read ./extensions/pi-traceline/index.ts:1-80
+  ▏   › write ./extensions/pi-traceline/failure.ts
+  ▏   › edit ./extensions/pi-traceline/index.ts        Could not …ine/index.ts

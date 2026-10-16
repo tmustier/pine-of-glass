@@ -104,7 +104,13 @@ test("same-step repeated calls follow changed sibling status without touching an
   complete(b, 2_300, true);
   assert.equal(misses(() => equal([c])), 0);
   equal([a, b]);
-  assert.ok(text(a).includes("2.3k ch"));
+  // The fold follows its failed member (§9.2.1): its failure fact takes the size cell's
+  // place below warning severity, and the 2.3k error text is not pulled context.
+  assert.match(text(a), /×2 {2,}x{8,}…x+$/);
+  assert.ok(!text(a).includes("2.3k ch"));
+  complete(b, 12_300, true);
+  equal([a, b]);
+  assert.match(text(a), /x · 12\.3k ch$/, "a ballooned error output re-earns the cell");
 });
 
 test("bash preamble context crosses collapsed thinking until it becomes prose", () => {

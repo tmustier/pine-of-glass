@@ -366,6 +366,38 @@ output stay one zoom away (§9.12).
   healthy columns are never green
 - a failed row tints its whole discriminator set (verb, bash heads, basename) in
   error ink, still bold. Supporting text stays dim; healthy rows are untouched
+
+#### 9.2.1 Failure facts
+
+Red ink says that a call failed; it does not say why, and "why" is the one thing a
+reader wants from a failed row before deciding whether to expand it. So a failed row
+carries a failure fact in its suffix, ahead of the size cell, in error ink, the way a
+composed row carries `trimmed` (§9.14): `$ rg TODO src/   no matches · 0.0k ch`.
+It is a suffix fact, not a headline: records and checks (§9.10) are outcomes of a
+command that ran; a failure is the fate of the call, and fates sit with the other
+facts about the result. The fact is read from the result the model received, never
+invented:
+
+- bash: pi closes a failed result with a status line, and the fact restates it in
+  the §4 grammar: `exit 1`, `timeout 30s`, `aborted`. A single-command `rg`/`grep`
+  that exited 1 reads `no matches`, because both tools document that code as
+  "nothing found": a red bullet alone makes a fruitless search look like a crash
+- a composed call (§9.14): the first line after pi's `Script error:` label, which
+  is the thrown error's own first line (`Error: ENOENT…`, `ReferenceError: x is not
+  defined`). The error class is enough to tell a script that broke from a nested
+  call that failed inside a sound script; `Script timed out` reads `timeout`
+- any other tool: the last non-empty line of its error text. Diagnostics end with
+  their diagnosis (`: No such file or directory`, `: command not found`), so the
+  last line beats the first
+- a free-text fact middle-truncates to 40 columns or a third of the row, whichever
+  is less (agent default, not a user rule: 2026-10-20), §9.10's share: the suffix
+  column is block-wide, so one verbose error must not push every neighbour's body
+  aside. The parsed bash and script facts are already short
+- the fact takes the size cell's place below warning severity (§6), exactly as a
+  record does (§9.10): a failure's result is diagnostic text about the event, not
+  pulled context, and `exit 1 · 0.0k ch` says nothing `exit 1` did not. An error
+  output that balloons re-earns the cell. The fact itself never lights the block's
+  size column
 - a bash row that exited 0 while its output reports a failed check (§9.10.1)
   wears a warning bullet. Pipelines such as `npm test | tail -5` return the
   filter's exit code, so success at the tool level is not success of the check
@@ -540,10 +572,28 @@ row that overflows its budget fits by command instead:
   `…` in a cut command, so `git … commit` keeps its subcommand
 - the row still ends flush at the suffix column, so the right edge holds; only
   the interior ellipses wander, one per cut command
-- when even bare heads do not fit, the row falls back to the single middle cut
+- the leading context gives first. It carries no signal the row's cwd did not
+  already carry (§9.4), so before any command loses a column the context is cut
+  to its floor (`cd …/slack-bridge && `), and spare width returns to it last. A
+  row of one command behind a leading context fits by unit on the same terms: the
+  context is cut before the command, and the single middle cut is never allowed to
+  land on the command because a `cd` spent the budget
+- water-filling has a floor. A command cut below 24 columns (agent default, not a
+  user rule: 2026-10-20) is a crown with no story: `rg -… rg -… rg … rg …` says
+  "searched four times" and nothing else. When the plan would cut any command below
+  the floor, the row wraps at command boundaries instead, exactly as a dir fold
+  wraps at file boundaries (§9.9): a wrapped row is never lossier than the rows it
+  replaced. Continuation lines keep the rail but not the bullet, indent to the
+  command column (after `$ `), and a wrapped line ends with its dim connector so
+  the command visibly continues. The fact suffix stays on the bullet line, so the
+  block's fact column stays aligned against bullets. Lines share the block's body
+  budget (§9.8); a lone command longer than a line still middle-cuts
+- wrapping is capped at 4 lines (agent default, not a user rule: 2026-10-20). A
+  row with more commands than that packs the remainder onto its last line with the
+  by-command fit above, so every head still shows; the rest is one zoom away
 
-A single-command row keeps the middle cut: its tail (the target file, the
-final filter) is usually what discriminates it.
+A single-command row with no leading context keeps the middle cut: its tail (the
+target file, the final filter) is usually what discriminates it.
 
 ### 9.9 Repetition folds
 
@@ -913,10 +963,15 @@ The row:
   dim, basename bold, a read's warning `:range`), or the one shared directory when
   several files sit in it; otherwise no target. A fold compresses only the boring,
   and a row cannot carry twenty paths
-- a nested failure inside a call that completed is a partial state (§2): the member
-  wears a warning `✗N` after its count. The composed call's own failure tints the
-  row's discriminators error (§9.2); the `✗N` marks stay, so a red row still says
-  which member failed
+- tone is per member, not per row (§9.10's rule): the verb wears the composed
+  call's own status, and each member wears its own. A nested failure inside a call
+  that completed is a partial state (§2): the member wears a warning `✗N` after its
+  count, and its name tints error only when every one of its calls failed. A script
+  that died on an uncaught nested rejection therefore reads red `codemode`, neutral
+  `read · write`, red `edit ✗1`: the script failed because edit failed, and the
+  write it made first is still on disk. Tinting every member red would claim three
+  failures where there was one. The row's failure fact (§9.2.1) says what the
+  script threw
 - wall time is a tempo fact pi reports (`Wall time N seconds`, an event-boundary
   observation per §10.1), so a composed row may carry it: dim, after the count,
   only once it clears 10s (agent default, not a user rule: 2026-09-30). When one
@@ -933,28 +988,49 @@ The row:
 
 The ledger:
 
-- a composed row with at least one nested call is an aggregate (§9.12.1) and wears
-  `▸`. Revealing it shows the ledger: one compact line per nested call, in call
-  order, indented one gutter under the parent (`  ▏   › body`) so the rail still
-  fuses the block. The parent keeps its line and wears `▾`; clicking that glyph
-  refolds. Clicking the parent's body or a ledger line opens the parent at z1 (pi's
-  native row, which shows the script, pi's own call list and the output), because a
-  nested call has no row of its own to expand
+- the ledger is the trace. `codemode` is a batching mechanism, not an action: the
+  rows a reader wants are the reads, edits and commands the script made, exactly
+  the rows the model would have produced without it. So a composed row with at
+  least one nested call reveals its ledger by default: one compact line per nested
+  call, in call order, indented one gutter under the parent (`  ▏   › body`) so the
+  rail still fuses the block. The parent keeps its line as the header (its bullet
+  the script's status, its size cell what reached the model) and wears `▾`
+- the ledger compresses only the boring, with §9.9's folds: consecutive reads of
+  one file merge their ranges, consecutive reads of sibling files fold into one
+  dir line (`read ./docs/ a.md, b.md:1-40`, wrapping at file boundaries), and
+  identical invocations fold with a dim `×N`. A failed call never folds and splits
+  the run, as in §9.9. A folded line sums its live sizes and drops its duration
+  cell: nested calls run concurrently, so a sum is a number no event reported
+  (§10.1)
+- a ledger that would still run past 12 lines after folding (agent default, not a
+  user rule: 2026-10-20; `ledgerMaxLines` in the family config) starts folded
+  behind `▸`, because a 40-line ledger under every fan-out script is a wall, not
+  a trace. `revealLedgers: false` in the config starts every ledger folded. The
+  parent's `▾` refolds a revealed ledger and the `▸` reveals a folded one; clicking
+  the parent's body or a ledger line opens the parent at z1 (pi's native row, which
+  shows the script, pi's own call list and the output), because a nested call has
+  no row of its own to expand
 - each ledger line speaks its tool's grammar: `read` with the §9.5 path treatment,
   `$` with crowns (§9.4), a namespaced name with its dim prefix, and otherwise the
-  fallback `name` plus dim compact arguments. Its bullet carries that call's status;
-  an error line tints its discriminators and trails its error's first line, dim,
-  after a `·`. A call cut off by the script ending or a timeout reads `cancelled`
+  fallback `name` plus dim compact arguments. A bash line relativizes its leading
+  `cd` against the parent's cwd (§9.4) and fits by unit under §9.8, so a worktree
+  `cd` can never spend the budget the command needed. Its bullet carries that
+  call's status; an error line tints its discriminators and carries its failure
+  fact (§9.2.1) in the ledger's suffix, error ink; a call cut off by the script
+  ending or a timeout carries `cancelled` there, dim
 - the ledger's fact column is duration (§4 latency grammar, dim) and, when known,
   result size. Nested result sizes are observed live from `tool_execution_end`
   events; pi does not persist them, so a resumed session's ledger shows durations
   only, exactly as a resumed session's calls are simply not timed (§10.1). A live
-  size cell follows §6 severity and §9.7's column rule within the ledger
+  size cell follows §6 severity and §9.7's column rule within the ledger. Codemode
+  caps the error text it persists, so a nested failure fact is read from the live
+  event when there is one and from the persisted preview otherwise
 - ledger lines share one body budget (§9.8) and one right edge; middle truncation
   protects each line's operative tail
-- the reveal is transient view state like §9.12.1's revealed membership: kept through
-  redraws and streaming, reset on reload or session replacement. Drill mode numbers
-  the composed row as one target; its pager shows the complete script with pi's
+- a click on the parent's bullet is transient view state like §9.12.1's revealed
+  membership: kept through redraws and streaming, reset on reload or session
+  replacement, after which the default applies again. Drill mode numbers the
+  composed row as one target; its pager shows the complete script with pi's
   syntax ink, the full ledger under a `calls` label, then the result
 
 ## 10. Tempo facts

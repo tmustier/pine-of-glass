@@ -4,15 +4,17 @@ import { drillState } from "./drill.ts";
 
 // View-only fold state. Output expansion always belongs to Pi's setExpanded().
 let revealed = new WeakMap<ToolRowDataLike, ToolRowLike[]>();
-// A composed row's revealed ledger (§9.14): the same transient view state, per row.
-let revealedLedgers = new WeakSet<ToolRowDataLike>();
+// A composed row's ledger click (§9.14): the same transient view state, per row. It
+// overrides the reveal default index.ts derives from the ledger and the family config.
+let ledgerOverrides = new WeakMap<ToolRowDataLike, boolean>();
 let revealRevision = 0;
-export function resetRevealedFolds(): void { revealed = new WeakMap(); revealedLedgers = new WeakSet(); revealRevision++; }
+export function resetRevealedFolds(): void { revealed = new WeakMap(); ledgerOverrides = new WeakMap(); revealRevision++; }
 export function revealRenderKey(): number { return revealRevision; }
 export function isRevealed(comp: ToolRowDataLike): boolean { return revealed.has(comp); }
-export function isLedgerRevealed(comp: ToolRowDataLike): boolean { return revealedLedgers.has(comp); }
+/** The reader's own choice for a ledger, when they have clicked it; else undefined. */
+export function ledgerOverride(comp: ToolRowDataLike): boolean | undefined { return ledgerOverrides.get(comp); }
 export function setLedgerRevealed(comp: ToolRowDataLike, shown: boolean): void {
-  if (shown) revealedLedgers.add(comp); else revealedLedgers.delete(comp);
+  ledgerOverrides.set(comp, shown);
   revealRevision++;
 }
 export function revealedBullet(comp: ToolRowDataLike | undefined): string | undefined {
