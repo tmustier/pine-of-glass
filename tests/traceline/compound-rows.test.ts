@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { homedir } from "node:os";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
-import { fitCompoundCommand, type FitPiece } from "../../extensions/pi-traceline/compound-fit.ts";
+import { fitCompoundCommand } from "../../extensions/pi-traceline/compound-fit.ts";
 import { checkFacts } from "../../extensions/pi-traceline/checks.ts";
 import { relativizeContextCd } from "../../extensions/pi-traceline/bash-preamble.ts";
 import { bashCrownedHeads } from "../../extensions/pi-traceline/bash-crowns.ts";
@@ -34,13 +34,9 @@ function bash(command: string, output = "ok", options: { cwd?: string; error?: b
   } as ToolRowLike;
 }
 
-function render(body: string, pieces: FitPiece[]): string {
-  return pieces.map((piece) => `${body.slice(piece.start, piece.end)}${piece.mark ?? ""}`).join("");
-}
-
 function fit(body: string, budget: number): string | undefined {
   const fitted = fitCompoundCommand(body, bashCrownedHeads(body), budget);
-  return fitted ? render(body, fitted.pieces) : undefined;
+  return fitted?.pieces.map((piece) => `${body.slice(piece.start, piece.end)}${piece.mark ?? ""}`).join("");
 }
 
 const SCREENSHOT_BODY =
@@ -120,7 +116,6 @@ test("a folded repetition of a long compound row stays one line: it fits by comm
   const folded = renderTraceRow(a, 80).map(stripAnsi);
   assert.equal(folded.length, 2, `two identical calls fold into one ×2 row: ${folded.join("\n")}`);
   assert.match(folded[1]!, /^ {2}▏ ▸ \$ rg -n "quotePac… rg -n "doorServ… rg -n "tenderDe… rg -n "presenta… ×2$/, folded[1]);
-  assert.match(folded[1]!, / ×2$/, folded[1]);
   assert.deepEqual(renderTraceRow(b, 80), []);
 });
 

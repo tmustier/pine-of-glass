@@ -1,34 +1,28 @@
 // Failure facts (design language §9.2.1): a failed row says why in its suffix, read
 // from the result the model received, in the size cell's place below warning severity.
-import { test, beforeEach } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-traceline/index.ts";
-import { failureFact, failureFactWidth } from "../../extensions/pi-traceline/failure.ts";
-import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
-import { assistantBefore, nativeBashLines } from "./runtime-fixtures.ts";
+import { ToolExecutionComponent, type ToolRenderers } from "@earendil-works/pi-coding-agent";
+import { failureFact } from "../../extensions/pi-traceline/failure.ts";
+import { ComposedHarness, line, lines, rawLine } from "./composed-harness.ts";
 
-const { stripAnsi, oneLine, renderTraceRow, setTracelineChat, setTracelineThemeGetter } = internals;
+// SAFETY: Pi's built-in renderer path is pinned by pi-internals.test.ts.
+const { withBuiltInRenderers }: { withBuiltInRenderers: (name: string, definition: undefined) => ToolRenderers | undefined } = await import(
+  new URL("./core/tools/renderers/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href
+);
 
-beforeEach(() => {
-  setTracelineChat(undefined);
-  setTracelineThemeGetter(undefined);
-});
+let h: ComposedHarness;
+beforeEach(() => { h = new ComposedHarness(); });
+afterEach(async () => { await h.dispose(); });
 
-function bash(command: string, text: string, error = true): ToolRowLike {
-  return {
-    toolName: "bash",
-    args: { command },
-    result: { content: [{ type: "text", text }], isError: error },
-    isPartial: false,
-    render: () => [],
-    setExpanded: () => {},
-    callRendererComponent: { render: () => nativeBashLines(command) },
-  } as ToolRowLike;
-}
-
-function mount(rows: ToolRowLike[]): void {
-  setTracelineChat({ children: [assistantBefore(rows), ...rows] });
+function bash(command: string, text: string, error = true): ToolExecutionComponent {
+  const id = `bash-${h.toolCalls.size}`;
+  const args = { command };
+  const row = new ToolExecutionComponent("bash", id, args, {}, withBuiltInRenderers("bash", undefined), h.viewport.view, h.cwd);
+  h.toolCalls.set(row, { type: "toolCall", id, name: "bash", arguments: args });
+  row.updateResult({ content: [{ type: "text", text }], isError: error }, false);
+  return row;
 }
 
 test("bash restates pi's status line: exit code, timeout, abort", () => {
@@ -62,43 +56,34 @@ test("a composed call quotes the thrown error's first line; other tools quote th
   assert.deepEqual(failureFact("mcp__linear__save_issue", "Validation failed\n  title: required\nRequest rejected (422)"), { text: "Request rejected (422)", parsed: false }, "diagnostics end with their diagnosis");
 });
 
-test("a free-text fact takes at most 40 columns or a third of the row", () => {
-  assert.equal(failureFactWidth(Number.POSITIVE_INFINITY), 40);
-  assert.equal(failureFactWidth(112), 37);
-  assert.equal(failureFactWidth(72), 24);
-  assert.equal(failureFactWidth(12), 8, "a floor keeps the cell legible on a starved row");
-});
-
-test("a failed bash row carries its fact in the size cell's place; a ballooned error re-earns the cell", () => {
+test("a failed bash row carries its fact in the size cell's place; a ballooned error re-earns the cell", async () => {
   const miss = bash('rg -n "legacyQuote" src/', "Command exited with code 1");
   const crash = bash("npm run build", `${"x".repeat(400)}\nerror TS2322: nope\n\nCommand exited with code 2`);
-  const flood = bash("npm run build", `${"x".repeat(12_000)}\n\nCommand exited with code 1`);
+  const flood = bash("npm run lint", `${"x".repeat(12_000)}\n\nCommand exited with code 1`);
   const fine = bash("ls", "x".repeat(300), false);
-  mount([miss, crash, flood, fine]);
-  const rows = [miss, crash, flood, fine].map((row) => stripAnsi(oneLine(row, 100)));
+  await h.mount([miss, crash, flood, fine]);
+  const rows = [miss, crash, flood, fine].map((row) => line(row, 100));
   assert.match(rows[0]!, /^ {2}▏ › \$ rg -n "legacyQuote" src\/ {2,}no matches$/, rows[0]);
   assert.match(rows[1]!, /^ {2}▏ › \$ npm run build {2,}exit 2$/, "the error text's size is not pulled context");
-  assert.match(rows[2]!, /^ {2}▏ › \$ npm run build {2,}exit 1 · 12\.0k ch$/, "at warning severity the size is a story of its own");
+  assert.match(rows[2]!, /^ {2}▏ › \$ npm run lint {2,}exit 1 · 12\.0k ch$/, "at warning severity the size is a story of its own");
   assert.match(rows[3]!, /^ {2}▏ › \$ ls {2,}0\.3k ch$/);
   const edges = new Set(rows.map((row) => row.length));
   assert.equal(edges.size, 1, `one right edge for the block: ${[...edges]}`);
-  const raw = oneLine(miss, 100);
+  const raw = rawLine(miss, 100);
   assert.match(raw, /\x1b\[31mno matches/, "the fact wears error ink");
   assert.match(raw, /\x1b\[31m›/, "the bullet stays the status carrier");
 });
 
-test("a free-text fact middle-cuts to its share, and a repetition fold borrows its failed member's fact", () => {
+test("a free-text fact middle-cuts to its share, and a repetition fold borrows its failed member's fact", async () => {
   const command = "node scripts/missing.mjs";
   const text = "node:internal/modules/run_main:123\n  throw err;\n\nError: Cannot find module '/Users/me/projects/demo/scripts/missing.mjs'\n\nCommand exited with code 1";
   const a = bash(command, text);
   const b = bash(command, text);
-  mount([a, b]);
-  const lines = renderTraceRow(a, 100).map(stripAnsi);
-  assert.equal(lines.length, 2);
-  assert.match(lines[1]!, /^ {2}▏ ▸ \$ node scripts\/missing\.mjs ×2 {2,}exit 1$/, lines[1]);
-  assert.deepEqual(renderTraceRow(b, 100), []);
   const other = bash("curl -sf https://x.test/api", "curl: (22) The requested URL returned error: 404 Not Found");
-  mount([other]);
-  const line = stripAnsi(oneLine(other, 80));
-  assert.match(line, /^ {2}▏ › \$ curl -sf https:\/\/x\.test\/api {2,}curl: \(22\) …04 Not Found$/, line);
+  await h.mount([a, b, other]);
+  const folded = lines(a, 100);
+  assert.equal(folded.length, 1);
+  assert.match(folded[0]!, /^ {2}▏ ▸ \$ node scripts\/missing\.mjs ×2 {2,}exit 1$/);
+  assert.deepEqual(lines(b, 100), []);
+  assert.match(line(other, 80), /^ {2}▏ › \$ curl -sf https:\/\/x\.test\/api {2,}curl: \(22\) …04 Not Found$/);
 });

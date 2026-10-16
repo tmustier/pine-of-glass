@@ -87,17 +87,14 @@ export function recordNestedEnd(toolCallId: string, result: ToolResultLike, isEr
     resultChars: resultTextCharCount(resultRow),
     imageFact: resultImageFact(resultRow) || undefined,
     isError,
-    error: isError ? textOf(result) || undefined : undefined,
+    error: isError ? resultTexts(result).join("\n") || undefined : undefined,
   });
 }
 
-function textOf(result: ToolResultLike): string {
-  if (!Array.isArray(result.content)) return "";
-  let out = "";
-  for (const block of result.content) {
-    if (isJsonObject(block) && block.type === "text" && typeof block.text === "string") out += `${block.text}\n`;
-  }
-  return out;
+function resultTexts(result: ToolResultLike | undefined): string[] {
+  if (!Array.isArray(result?.content)) return [];
+  return result.content.flatMap((block) =>
+    isJsonObject(block) && block.type === "text" && typeof block.text === "string" ? [block.text] : []);
 }
 
 // --- parsing ------------------------------------------------------------------------------
@@ -182,12 +179,7 @@ export function composedFactsOf(row: ToolRowDataLike | undefined): ComposedFacts
     }
   }
   const complete = nested?.complete !== false;
-  const texts: string[] = [];
-  if (Array.isArray(result?.content)) {
-    for (const block of result.content) {
-      if (isJsonObject(block) && block.type === "text" && typeof block.text === "string") texts.push(block.text);
-    }
-  }
+  const texts = resultTexts(result);
   const wall = SCRIPT_HEADER.exec(texts[0] ?? "")?.[1];
   const wallMs = wall !== undefined ? Math.round(Number(wall) * 1000) : undefined;
   const trimmed = typeof details?.fullOutputPath === "string" || TRUNCATION_NOTICE.test(texts.join(""));

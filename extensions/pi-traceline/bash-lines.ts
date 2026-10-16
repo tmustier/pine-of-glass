@@ -1,7 +1,7 @@
 // Bash body ink and line fitting (design language §9.3, §9.4, §9.8): crowns bold in the
 // row's discriminator tone, everything else at the one supporting grey, and a body that
 // overflows its budget fitted by command or wrapped at command boundaries. Shared by the
-// top-level bash row (index.ts) and the ledger's bash lines (nested-rows.ts).
+// top-level bash row (index.ts) and the composed ledger (ledger.ts).
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { ink, type Tone } from "../_lib/style.ts";
 import { bashCrownedHeads, type BashHead } from "./bash-crowns.ts";
@@ -9,10 +9,6 @@ import { fitCompoundCommand, wrapCompoundCommand, type FitPiece } from "./compou
 
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
-
-function crownInk(theme: Theme | undefined, tone: Tone, text: string): string {
-  return ink(theme, tone, `${BOLD}${text}${BOLD_OFF}`);
-}
 
 // Emission splices the crowns into dim runs: everything between crowned head words
 // (arguments, operators, marks, quoted scripts, demoted glue) dims in maximal spans, and
@@ -30,21 +26,13 @@ function inkPieces(theme: Theme | undefined, tone: Tone, body: string, crowns: r
     for (const crown of crowns) {
       if (crown.start < piece.start || crown.end > piece.end) continue;
       if (crown.start > cursor) out += ink(theme, "dim", body.slice(cursor, crown.start));
-      out += crownInk(theme, tone, body.slice(crown.start, crown.end));
+      out += ink(theme, tone, `${BOLD}${body.slice(crown.start, crown.end)}${BOLD_OFF}`);
       cursor = crown.end;
     }
     if (cursor < piece.end) out += ink(theme, "dim", body.slice(cursor, piece.end));
     if (piece.mark) out += ink(theme, "dim", piece.mark);
   }
   return out;
-}
-
-// A wrapped line's painted text ends at its connector; the whitespace after it is dropped.
-function trimPieces(body: string, pieces: FitPiece[]): FitPiece[] {
-  const last = pieces[pieces.length - 1];
-  if (!last || last.mark) return pieces;
-  const trailing = /\s*$/.exec(body.slice(last.start, last.end))?.[0].length ?? 0;
-  return trailing ? [...pieces.slice(0, -1), { ...last, end: last.end - trailing }] : pieces;
 }
 
 /** A bash body laid out in lines: the first beside the `$`, continuations at the command column. */
@@ -64,7 +52,11 @@ export function fitBashLines(theme: Theme | undefined, tone: Tone, body: string,
   if (contBudget !== undefined && (!fit || fit.starved)) {
     const wrapped = wrapCompoundCommand(body, crowns, budget, contBudget);
     if (wrapped) {
-      const [first, ...rest] = wrapped.map((pieces) => inkPieces(theme, tone, body, crowns, trimPieces(body, pieces)));
+      const [first, ...rest] = wrapped.map((pieces) => {
+        const last = pieces[pieces.length - 1]!;
+        if (!last.mark) last.end -= /\s*$/.exec(body.slice(last.start, last.end))![0].length;
+        return inkPieces(theme, tone, body, crowns, pieces);
+      });
       return { first: first!, continuations: rest };
     }
   }

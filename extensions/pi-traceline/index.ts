@@ -65,6 +65,7 @@ import { ledgerEntries, ledgerLines } from "./ledger.ts";
 import { composedBody } from "./nested-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, resultText } from "./records.ts";
+import { wrapReadCells } from "./read-fold.ts";
 import { TraceRenderCache } from "./render-cache.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun, readPlan, repetitionPlan } from "./repetition-fold.ts";
 import { TraceTopology, isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./topology.ts";
@@ -1084,68 +1085,32 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   const dirEnd = shown.lastIndexOf("/") + 1;
   const shownDir = shown.slice(0, dirEnd);
   const boring = dirEnd > 0 ? boringPrefix(last, shown) : "";
-  const headPlain = dirEnd > 0 ? `read ${shownDir}` : "read";
   const headInk =
     dirEnd > 0
       ? `${verbInk(last, "read")} ${dim(boring)}${discriminatorInk(last, shownDir.slice(boring.length))}`
       : verbInk(last, "read");
 
-  type FoldCell = { ink: string; plain: string };
-  const cells: FoldCell[] = adjacentReadGroups(rows).map((group) => {
+  const cells = adjacentReadGroups(rows).map((group) => {
     const base = group.path.slice(group.path.lastIndexOf("/") + 1);
     const ranges = group.rows
       .map((row) => lineRange(row.args).slice(1))
       .filter(Boolean)
       .join(",");
     const rangeText = ranges ? `:${ranges}` : "";
-    return {
-      ink: `${discriminatorInk(last, base)}${ink(theme, "warning", rangeText)}`,
-      plain: `${base}${rangeText}`,
-    };
+    return `${discriminatorInk(last, base)}${ink(theme, "warning", rangeText)}`;
   });
 
-  // Pack cells into lines: the fold wraps at file boundaries rather than truncating
-  // basenames away — a fold must not be lossier than the rows it replaced (§9.9).
-  // Every line shares the block's body budget (§9.8); continuation lines start at
-  // the directory cell's column, so their budget shrinks by that indent. A wrapped
-  // line keeps its trailing dim comma: the entity visibly continues. Acceptance
-  // reserves one column for that comma on every non-final cell.
   const bodyBudget = Math.max(1, available - Math.max(visibleWidth(suffix) + 2, reserve));
   const contBudget = Math.max(1, bodyBudget - FOLD_CONT_INDENT);
-  type FoldLine = { ink: string; plain: string; continuation: boolean; hasCell: boolean };
-  const lines: FoldLine[] = [];
-  let cur: FoldLine = { ink: headInk, plain: headPlain, continuation: false, hasCell: false };
-  for (let i = 0; i < cells.length; i++) {
-    const cell = cells[i]!;
-    const sepPlain = cur.hasCell ? ", " : " ";
-    const budget = cur.continuation ? contBudget : bodyBudget;
-    const commaRoom = i < cells.length - 1 ? 1 : 0;
-    const fits = visibleWidth(cur.plain) + sepPlain.length + visibleWidth(cell.plain) + commaRoom <= budget;
-    // A lone cell longer than a fresh continuation line stays put and middle-truncates
-    // below; wrapping never emits an empty line.
-    if (fits || (cur.continuation && !cur.hasCell)) {
-      cur.ink += `${cur.hasCell ? dim(", ") : " "}${cell.ink}`;
-      cur.plain += `${sepPlain}${cell.plain}`;
-      cur.hasCell = true;
-      continue;
-    }
-    if (cur.hasCell) {
-      cur.ink += dim(",");
-      cur.plain += ",";
-    }
-    lines.push(cur);
-    cur = { ink: cell.ink, plain: cell.plain, continuation: true, hasCell: true };
-  }
-  lines.push(cur);
+  const [first, ...continuations] = wrapReadCells(theme, headInk, cells, bodyBudget, contBudget);
 
   // The bullet line carries the suffix (§9.9), so the block's fact column stays
   // aligned against bullets; continuation lines keep the rail but not the bullet.
   const contPrefix = `${TOOL_INDENT}${dim(TOOL_RAIL)}${" ".repeat(TOOL_PREFIX_VISIBLE_WIDTH - TOOL_INDENT.length - 1 + FOLD_CONT_INDENT)}`;
-  return lines.map((line) =>
-    line.continuation
-      ? truncateToWidth(`${contPrefix}${middleTruncate(line.ink, contBudget, theme)}`, Math.max(1, width), ELLIPSIS)
-      : fitTraceRow(rows[0], tone, line.ink, suffix, reserve, width, "▸"),
-  );
+  return [
+    fitTraceRow(rows[0], tone, first, suffix, reserve, width, "▸"),
+    ...continuations.map((line) => truncateToWidth(`${contPrefix}${middleTruncate(line, contBudget, theme)}`, Math.max(1, width), ELLIPSIS)),
+  ];
 }
 
 function componentLocation(comp: ToolRowDataLike): { sibs: unknown[]; index: number } | undefined {

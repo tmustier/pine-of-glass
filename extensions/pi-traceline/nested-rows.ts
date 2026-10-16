@@ -50,11 +50,6 @@ export function pathInk(theme: Theme | undefined, tone: Tone, row: ToolRowDataLi
   return `${dim(theme, shown.slice(0, slash))}${bold(theme, tone, shown.slice(slash))}${ink(theme, "warning", range)}`;
 }
 
-// Tone is per member (§9.14): a member tints error only when every one of its calls failed.
-function memberTone(calls: readonly NestedCall[]): Tone {
-  return calls.every((call) => call.status === "error") ? "error" : "text";
-}
-
 // --- the z0 body ----------------------------------------------------------------------------
 
 /** The composed row's body after the bullet: verb, count, wall, members (§9.14). The
@@ -84,8 +79,8 @@ export function composedBody(
   const body = (targets: boolean) => {
     const summary = [...grouped].map(([name, calls]) => {
       const count = calls.length;
-      const tone = memberTone(calls);
       const failed = calls.filter((call) => call.status === "error").length;
+      const tone: Tone = failed === count ? "error" : "text";
       const cells: string[] = [];
       if (name === "bash") {
         const command = count === 1 ? flattenCommand(calls[0].args.command ?? "") : "";

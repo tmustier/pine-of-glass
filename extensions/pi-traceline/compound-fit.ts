@@ -35,15 +35,14 @@ const GIT_GLOBAL_VALUE = new Set(["-c", "-C", "--git-dir", "--work-tree", "--nam
 const GIT_GLOBAL_FLAG = /^(?:--no-pager|-P|-p|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--(?:git-dir|work-tree|namespace|exec-path|config-env)=\S*)$/;
 
 type Unit = {
-  kind: "prefix" | "command";
   start: number;
   end: number; // full source range, trailing connector included
-  contentEnd: number; // where the trailing connector starts
-  floor: number; // content chars a cut always keeps
-  lead: number; // prefix only: chars kept before the middle cut
-  skip?: { start: number; end: number; headEnd: number }; // git global options
-  last: boolean;
-};
+  contentEnd: number;
+  floor: number;
+} & (
+  | { kind: "prefix"; lead: number }
+  | { kind: "command"; last: boolean; skip?: { start: number; end: number } }
+);
 
 // One shell word at `i`, quote-aware; returns its end.
 function wordEnd(body: string, i: number, limit: number): number {
@@ -61,36 +60,11 @@ function wordEnd(body: string, i: number, limit: number): number {
   return Math.min(i, limit);
 }
 
-function gitSkip(body: string, headEnd: number, limit: number): { skip: Unit["skip"]; subEnd: number } | undefined {
-  let i = headEnd;
-  let optionsEnd: number | undefined;
-  while (i < limit) {
-    while (i < limit && /\s/.test(body[i]!)) i++;
-    if (i >= limit) return undefined;
-    const end = wordEnd(body, i, limit);
-    const word = body.slice(i, end);
-    if (GIT_GLOBAL_VALUE.has(word)) {
-      let j = end;
-      while (j < limit && /\s/.test(body[j]!)) j++;
-      if (j >= limit) return undefined;
-      i = optionsEnd = wordEnd(body, j, limit);
-      continue;
-    }
-    if (GIT_GLOBAL_FLAG.test(word)) {
-      i = optionsEnd = end;
-      continue;
-    }
-    if (optionsEnd === undefined) return undefined;
-    return { skip: { start: headEnd, end: optionsEnd, headEnd }, subEnd: end };
-  }
-  return undefined;
-}
-
 // Content length when the unit is cut: a git command loses its global options to a
 // two-column ` …`; everything else counts its own source.
 function cutContentLength(unit: Unit): number {
   const length = unit.contentEnd - unit.start;
-  return unit.skip ? length - (unit.skip.end - unit.skip.start) + 2 : length;
+  return unit.kind === "command" && unit.skip ? length - (unit.skip.end - unit.skip.start) + 2 : length;
 }
 
 function fullWidth(unit: Unit): number {
@@ -108,15 +82,11 @@ function unitWidth(unit: Unit, keep: number): number {
   return cut > full - MIN_CUT_SAVING ? full : cut;
 }
 
-function keepAt(unit: Unit, level: number): number {
-  return Math.max(level, unit.floor);
-}
-
 // The leading context gives first (§9.8): it sits at its floor while commands share
 // the level, and only regains width from what the commands leave over.
 function totalWidth(units: Unit[], level: number): number {
   let total = 0;
-  for (const unit of units) total += unitWidth(unit, unit.kind === "prefix" ? unit.floor : keepAt(unit, level));
+  for (const unit of units) total += unitWidth(unit, unit.kind === "prefix" ? unit.floor : Math.max(level, unit.floor));
   return total;
 }
 
@@ -137,10 +107,10 @@ function pieces(body: string, unit: Unit, keep: number): FitPiece[] {
   }
   const mark = unit.last ? CUT_MARK : `${CUT_MARK} `;
   if (!unit.skip) return [{ start: unit.start, end: safeCut(body, unit.start + keep), mark }];
-  const headLength = unit.skip.headEnd - unit.start;
+  const headLength = unit.skip.start - unit.start;
   const rest = keep - headLength - 2;
   return [
-    { start: unit.start, end: unit.skip.headEnd, mark: ` ${CUT_MARK}` },
+    { start: unit.start, end: unit.skip.start, mark: ` ${CUT_MARK}` },
     { start: unit.skip.end, end: safeCut(body, unit.skip.end + rest), mark },
   ];
 }
@@ -157,20 +127,36 @@ function buildUnits(body: string, heads: readonly FitHead[]): Unit[] {
     // or about ten chars when that segment is missing or very long.
     const slash = text.lastIndexOf("/", contentEnd - 1);
     const finalSegment = slash >= lead && contentEnd - slash <= 32 ? contentEnd - slash : 10; // agent-default (not a user rule): 2026-10-15
-    units.push({ kind: "prefix", start: 0, end: first, contentEnd, floor: Math.min(contentEnd, lead + finalSegment), lead, last: false });
+    units.push({ kind: "prefix", start: 0, end: first, contentEnd, floor: Math.min(contentEnd, lead + finalSegment), lead });
   }
   heads.forEach((head, index) => {
     const end = index + 1 < heads.length ? heads[index + 1]!.start : body.length;
     const text = body.slice(head.start, end);
     const last = index === heads.length - 1;
     const contentEnd = end - (last ? (/\s*$/.exec(text)?.[0].length ?? 0) : (TRAILING_CONNECTOR.exec(text)?.[0].length ?? 0));
-    const unit: Unit = { kind: "command", start: head.start, end, contentEnd, floor: head.end - head.start, lead: 0, last };
+    const unit: Unit = { kind: "command", start: head.start, end, contentEnd, floor: head.end - head.start, last };
     if (body.slice(head.start, head.end) === "git") {
-      const git = gitSkip(body, head.end, contentEnd);
-      if (git) {
-        unit.skip = git.skip;
-        // keep `git … <subcommand>` at the least
-        unit.floor = head.end - head.start + 2 + (git.subEnd - git.skip!.end);
+      let i = head.end;
+      let optionsEnd: number | undefined;
+      while (i < contentEnd) {
+        while (i < contentEnd && /\s/.test(body[i]!)) i++;
+        if (i >= contentEnd) break;
+        const end = wordEnd(body, i, contentEnd);
+        const word = body.slice(i, end);
+        if (GIT_GLOBAL_VALUE.has(word)) {
+          i = end;
+          while (i < contentEnd && /\s/.test(body[i]!)) i++;
+          if (i >= contentEnd) break;
+          i = optionsEnd = wordEnd(body, i, contentEnd);
+        } else if (GIT_GLOBAL_FLAG.test(word)) {
+          i = optionsEnd = end;
+        } else {
+          if (optionsEnd !== undefined) {
+            unit.skip = { start: head.end, end: optionsEnd };
+            unit.floor = head.end - head.start + 2 + end - optionsEnd;
+          }
+          break;
+        }
       }
     }
     units.push(unit);
@@ -199,7 +185,7 @@ function fitUnits(body: string, units: Unit[], budget: number): CompoundFit | un
     if (totalWidth(units, mid) <= budget) low = mid;
     else high = mid - 1;
   }
-  const keeps = units.map((unit) => (unit.kind === "prefix" ? unit.floor : keepAt(unit, low)));
+  const keeps = units.map((unit) => (unit.kind === "prefix" ? unit.floor : Math.max(low, unit.floor)));
   // Hand leftover columns to cut units so the row ends flush: commands left to right,
   // the context last (§9.8).
   const order = [...units.keys()].sort((a, b) => Number(units[a]!.kind === "prefix") - Number(units[b]!.kind === "prefix"));
@@ -288,7 +274,7 @@ export function wrapCompoundCommand(
     }
     // The last allowed line, or a unit wider than a fresh line: fit the remainder by
     // command into what this line has left.
-    const rest = units.slice(index).map((u) => ({ ...u }));
+    const rest = units.slice(index);
     const fit = fitUnits(body, rest, lineBudget - used);
     lines.push([...line, ...(fit ? fit.pieces : [{ start: rest[0]!.start, end: body.length }])]);
     return lines.length > 1 ? lines : undefined;
