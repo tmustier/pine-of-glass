@@ -455,7 +455,11 @@ Read, edit and write rows dim what is boring and bolden what discriminates:
   basename-only emphasis
 - a path under the row's cwd collapses to a dim `./` plus the cwd-relative tail.
   Paths outside cwd keep their tildified absolute form; the asymmetry is itself
-  information (in-repo against out-of-repo). `./` counts like `~` for emphasis:
+  information (in-repo against out-of-repo). "Under" is about the folder, not
+  its spelling: when the text does not match, a symlinked ancestor that resolves
+  to the cwd still counts, so `/tmp/demo/src/a.ts` under cwd `/private/tmp/demo`
+  (macOS links `/tmp` there) reads `./src/a.ts`. The tail keeps the call's own
+  spelling. The same rule decides a `cd` target (§9.4). `./` counts like `~` for emphasis:
   alone it is a trivial root marker, while `./src/` is a meaningful shared prefix
 - Pi's compact `read docs <path>` and `read resource <path>` forms keep their
   useful classification word as dim apparatus, but the displayed path follows the

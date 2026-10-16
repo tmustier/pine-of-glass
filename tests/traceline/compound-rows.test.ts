@@ -4,7 +4,9 @@
 // the cwd-relative and nested `cd` context, and check facts parsed from runner output.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { homedir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import { fitCompoundCommand, type FitPiece } from "../../extensions/pi-traceline/compound-fit.ts";
@@ -91,6 +93,21 @@ test("leading cd prints relative to the row cwd (§9.4)", () => {
   const comp = bash(`cd ${homedir()}/repo/.worktrees/fix && npm test`, "ok", { cwd: `${homedir()}/repo` });
   setTracelineChat({ children: [assistantBefore([comp]), comp] });
   assert.match(stripAnsi(oneLine(comp, 120)), /\$ cd \.\/\.worktrees\/fix && npm test/);
+});
+
+test("a leading cd through a symlink still prints relative to the resolved cwd (§9.4, §9.5)", () => {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "traceline-cd-")));
+  const cwd = join(scratch, "repo"), alias = join(scratch, "alias");
+  try {
+    mkdirSync(join(cwd, "packages/pricing"), { recursive: true });
+    symlinkSync(cwd, alias);
+    assert.equal(relativizeContextCd(`cd ${alias}/packages/pricing && npx vitest run`, cwd), "cd ./packages/pricing && npx vitest run");
+    assert.equal(relativizeContextCd(`cd ${alias} && git status`, cwd), "cd . && git status");
+    assert.equal(relativizeContextCd(`cd ${scratch} && ls`, cwd), `cd ${scratch} && ls`, "a parent is not under the cwd");
+    assert.equal(relativizeContextCd(`cd ${alias}/gone/later && ls`, cwd), "cd ./gone/later && ls", "a missing tail keeps its spelling");
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
 
 test("a cd below the previous row's cd folds the shared part into ⋯ (§9.4)", () => {

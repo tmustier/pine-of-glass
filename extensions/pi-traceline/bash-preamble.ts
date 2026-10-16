@@ -1,7 +1,10 @@
-// Leading-preamble reclaim for bash rows (design language §9.4): the pure string
+// Leading-preamble reclaim for bash rows (design language §9.4): the string
 // grammar that splits a flattened bash body into top-level segments and classifies
 // its leading run. Rendering (the `⋯` fold, previous-row comparison, family ink)
-// stays in index.ts; everything here is plain text in, plain facts out.
+// stays in index.ts; everything here is plain text in, plain facts out, except that
+// a `cd` target asks path-rows whether its folder lies under the cwd (§9.5).
+
+import { pathBelow } from "./path-rows.ts";
 
 /** ↵ — marks a real newline in a flattened invocation (design language §1). */
 export const LINE_BREAK_MARK = "\u21b5";
@@ -116,7 +119,8 @@ export function relativizeContextCd(body: string, cwd: string | undefined): stri
     if (cls !== "context") continue;
     const target = /^cd\s+(\S+)$/.exec(seg.text)?.[1];
     if (target === undefined) continue;
-    const shown = target === root ? "." : target.startsWith(`${root}/`) ? `./${target.slice(root.length + 1)}` : undefined;
+    const tail = pathBelow(target, root);
+    const shown = tail === undefined ? undefined : tail === "" ? "." : `./${tail}`;
     if (shown === undefined) continue;
     const start = seg.start + seg.text.length - target.length;
     edits.push({ start, end: start + target.length, text: shown });

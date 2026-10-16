@@ -1,6 +1,6 @@
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -30,14 +30,18 @@ function painted(name: string, cwd: string, args: EditToolInput | WriteToolInput
   return comp.render(120).map(trace.stripAnsi).filter((line) => line.trim());
 }
 
-test("edit and write rows are Pi's header line, never its preview (§9.5)", async () => {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "traceline-mutation-")));
+test("edit and write rows are Pi's header line, never its preview, and read ./ through a symlink (§9.5)", async () => {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "traceline-mutation-")));
+  // The model names the repo through a symlink (macOS `/tmp` is `/private/tmp`) while
+  // Pi's cwd is the resolved folder: the rows still read ./ (§9.5).
+  const cwd = join(scratch, "repo"), alias = join(scratch, "alias");
   try {
-    mkdirSync(join(cwd, "src"));
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    symlinkSync(cwd, alias);
     writeFileSync(join(cwd, "src/price.ts"), "export const discount = (amount: number, percent: number) =>\n  amount - (amount * percent) / 10;\n");
     const editTool = createEditToolDefinition(cwd);
     const editArgs: EditToolInput = {
-      path: join(cwd, "src/price.ts"),
+      path: join(alias, "src/price.ts"),
       edits: [{ oldText: "(amount * percent) / 10;", newText: "(amount * percent) / 100;" }],
     };
     const editResult = await editTool.execute("edit-1", editArgs, undefined, undefined, {} as never);
@@ -45,7 +49,7 @@ test("edit and write rows are Pi's header line, never its preview (§9.5)", asyn
 
     const writeTool = createWriteToolDefinition(cwd);
     const writeArgs: WriteToolInput = {
-      path: join(cwd, "src/receipt.ts"),
+      path: join(alias, "src/receipt.ts"),
       content: "export function receipt() {\n  return \"Total: £0.00\";\n}\n",
     };
     const writeResult = await writeTool.execute("write-1", writeArgs, undefined, undefined, {} as never);
@@ -53,6 +57,6 @@ test("edit and write rows are Pi's header line, never its preview (§9.5)", asyn
     // a resumed row has none, so the header stands alone.
     assert.deepEqual(painted("write", cwd, writeArgs, writeTool, { ...writeResult, isError: false }), ["  ▏ › write ./src/receipt.ts"]);
   } finally {
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true });
   }
 });

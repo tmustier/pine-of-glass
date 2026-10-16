@@ -145,12 +145,17 @@ try {
   check("harness total row rendered", pane.includes("Total harness"));
   check("no extension error surfaced", !/Error loading extension|extension error/i.test(pane));
 
-  // Expand the startup resource listing and prove both repo extensions are the loaded ones.
+  // Pi's startup listing names every loaded extension on one line, and the fixture HOME
+  // loads them only from this checkout. Read it before ctrl+o: the expanded listing puts
+  // one full path per extension, outgrows the 45-row pane, and Pi's redraw clears the
+  // scrollback, so the first names are gone by then.
+  pane = waitFor("startup extension list", (text) => /\[Extensions\]\n\s*\S/.test(text));
+  const extensions = /\[Extensions\]\n\s*(.+)/.exec(pane)?.[1] ?? "";
+  check("repo contextimate extension loaded", extensions.includes("pi-contextimate"));
+  check("repo traceline extension loaded", extensions.includes("pi-traceline"));
+  check("repo meantime extension loaded", extensions.includes("pi-meantime"));
   run(["tmux", "send-keys", "-t", session, "C-o"]);
   pane = waitFor("startup resources", (text) => /pi-traceline/.test(text));
-  check("repo contextimate extension loaded", pane.includes("pi-contextimate"));
-  check("repo traceline extension loaded", pane.includes("pi-traceline"));
-  check("repo meantime extension loaded", pane.includes("pi-meantime"));
 
   // 2. Mode switching via the slash command actually changes the rendered block.
   run(["tmux", "send-keys", "-t", session, "/contextimate compact", "Enter"]);
