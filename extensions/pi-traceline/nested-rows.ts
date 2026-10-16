@@ -108,10 +108,10 @@ export function composedBody(
       if (failed > 0) cells.push(ink(theme, "warning", `✗${failed}`));
       if (targets && PATH_VERBS.has(name)) {
         const paths = [...new Set(calls.flatMap((call) => call.args.path ?? []))];
-        if (paths.length === 1) {
+        if (paths.length === 1 && calls[0].args.path !== undefined) {
           const ranges = name === "read" ? calls.map((call) => (call.args.range ?? "").slice(1)).filter(Boolean).join(",") : "";
-          cells.push(pathInk(theme, tone, row, paths[0]!, ranges ? `:${ranges}` : ""));
-        } else {
+          cells.push(pathInk(theme, tone, row, calls[0].args.path, ranges ? `:${ranges}` : ""));
+        } else if (paths.length > 1) {
           const dirs = new Set(paths.map((path) => {
             const shown = cwdRelativePath(row, path);
             return shown.slice(0, shown.lastIndexOf("/") + 1);

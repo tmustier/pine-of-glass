@@ -89,22 +89,6 @@ export function recordNestedEnd(toolCallId: string, result: ToolResultLike, isEr
 
 // --- parsing ------------------------------------------------------------------------------
 
-function statusValue(value: unknown): NestedStatus | undefined {
-  switch (value) {
-    case "ok":
-      return "ok";
-    case "error":
-      return "error";
-    case "running":
-      return "running";
-    case "cancelled":
-    case "unfinished":
-      return "cancelled";
-    default:
-      return undefined;
-  }
-}
-
 function parseArguments(value: unknown): ParsedArguments | undefined {
   if (!isJsonObject(value)) return undefined;
   const path = value.path ?? value.file_path;
@@ -124,8 +108,8 @@ function parseCalls(value: unknown): NestedCall[] | undefined {
   for (const entry of value) {
     if (!isJsonObject(entry)) continue;
     const name = stringValue(entry.name);
-    const status = statusValue(entry.status);
-    if (name === undefined || status === undefined) continue;
+    const status = entry.status === "unfinished" ? "cancelled" : entry.status;
+    if (name === undefined || (status !== "ok" && status !== "error" && status !== "running" && status !== "cancelled")) continue;
     const preview = stringValue(entry.args);
     let args = parseArguments(entry.arguments);
     if (!args && preview !== undefined) {
