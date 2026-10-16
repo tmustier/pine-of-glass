@@ -104,7 +104,6 @@ const renderCache = g.__tracelineRenderCache ??= new TraceRenderCache();
 const topology = new TraceTopology(renderCache);
 function topologyChanged(): void { if (g.__tracelineChat) topology.changed(g.__tracelineChat); }
 function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
-function getTracelineChat(): ContainerLike | undefined { return g.__tracelineChat; }
 function setTracelineThemeGetter(getTheme: (() => Theme | undefined) | undefined): void { g.__tracelineGetTheme = getTheme; }
 
 const RESET = "\x1b[0m";
@@ -1276,15 +1275,11 @@ export const internals = {
   foldedReadLines,
   // repetition folding + preamble reclaim + thinking-label preview/dedupe (issue #14)
   bashPreambleRun,
-  bashPreambleRunOf,
   foldBashPreamble,
-  previousBashRow,
   readRun,
   // typed test/dev accessors for traceline's Pi seam globals
   setTracelineChat,
-  getTracelineChat,
   setTracelineThemeGetter,
-  cachedRenderTraceRow: (row: ToolRowLike, width: number) => cachedLayout(row, width).lines,
   uncachedRenderTraceRow: (row: ToolRowLike, width: number) =>
     renderCache.withoutCache(() => renderTraceRow(row, width)),
   renderCacheWorkCounts: (reset = false) => renderCache.workCounts(reset),

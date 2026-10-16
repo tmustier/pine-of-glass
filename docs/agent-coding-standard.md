@@ -122,6 +122,12 @@ The lint also protects existing repo rules:
 - Tests do not assert the absence of an external tag by literal (POG013). A producer
   rename makes `assert.ok(!remainder.includes("<codex_skills>"))` pass while the block is
   no longer stripped; assert the absence of the parser's returned `content` instead.
+- A private function's parameter is not constant at every call site (POG014): a
+  defaulted parameter no caller passes, or one every caller (two or more) sets to the
+  same literal, is a branch nobody takes. Remove it with the branch, or vary it. Only
+  functions declared and called by name within one file are judged.
+- Every `internals` entry has a reader under `tests/` or `scripts/` (POG015). An entry
+  nothing reads keeps otherwise-dead code alive behind the "it is exported" excuse.
 
 ## Baseline policy
 

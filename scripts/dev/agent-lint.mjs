@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseSync } from "oxc-parser";
 
 const ROOT = process.cwd();
 const BASELINE_PATH = join(ROOT, "scripts", "dev", "agent-lint-baseline.json");
 const DEFAULT_TS_MAX_LINES = 350;
-const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012", "POG013"]);
+const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012", "POG013", "POG014", "POG015"]);
 
 const RULE_MESSAGES = {
   POG001: [
@@ -68,6 +68,16 @@ const RULE_MESSAGES = {
     "negative assertion names an external tag literal.",
     "When the producer renames its tag, `!text.includes(\"<tag>\")` passes without the block being stripped.",
     "Assert absence of what the parser returned (its `content`) so the check drifts with the format.",
+  ],
+  POG014: [
+    "parameter is constant at every call site.",
+    "A private function's parameter that no caller sets, or that every caller sets to the same literal, is a branch nobody takes.",
+    "Remove the parameter and the dead branch, or make a caller vary it.",
+  ],
+  POG015: [
+    "`internals` entry is unused.",
+    "Nothing under tests/ or scripts/ reads this entry, so it only keeps otherwise-dead code alive.",
+    "Remove it (and what it exported, if that is now unreferenced); internals only shrink.",
   ],
 };
 
@@ -284,6 +294,155 @@ function internalsEntryCount(file, text) {
   return entries;
 }
 
+// --- POG014: a private function parameter every caller leaves constant -----------------
+// Only functions declared and called by name within one file are judged, and only when
+// every reference to the name is a direct call: an exported, re-exported or passed-around
+// function has callers this file cannot see.
+
+function walkAst(node, visit) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const item of node) walkAst(item, visit);
+    return;
+  }
+  if (typeof node.type === "string") visit(node);
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "type" || key === "span" || key === "loc") continue;
+    if (value && typeof value === "object") walkAst(value, visit);
+  }
+}
+
+function literalKey(node) {
+  if (!node) return "omitted";
+  if (node.type === "Literal" || node.type === "BooleanLiteral" || node.type === "NumericLiteral" || node.type === "StringLiteral" || node.type === "NullLiteral") {
+    return `${node.type}:${String(node.value)}`;
+  }
+  if (node.type === "Identifier" && node.name === "undefined") return "omitted";
+  return undefined;
+}
+
+function lineOf(text, offset) {
+  return text.slice(0, offset).split("\n").length;
+}
+
+function scanConstantParameters(file, text, findings) {
+  const { program, errors } = parseSync(file, text);
+  if (errors.length > 0) throw new Error(`Could not parse ${file}: ${errors[0].message}`);
+  const exported = new Set();
+  const declared = new Map();
+  for (const statement of program.body) {
+    if (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration") {
+      walkAst(statement, (node) => { if (node.type === "Identifier") exported.add(node.name); });
+    }
+    if (statement.type === "FunctionDeclaration" && statement.id) declared.set(statement.id.name, statement);
+  }
+  const calls = new Map();
+  const otherUses = new Set();
+  walkAst(program, (node) => {
+    if (node.type === "CallExpression" && node.callee.type === "Identifier" && declared.has(node.callee.name)) {
+      calls.set(node.callee.name, [...(calls.get(node.callee.name) ?? []), node]);
+      return;
+    }
+    if (node.type === "FunctionDeclaration") return;
+    for (const value of Object.values(node)) {
+      if (value?.type === "Identifier" && declared.has(value.name) && !(node.type === "CallExpression" && node.callee === value)) otherUses.add(value.name);
+    }
+  });
+  for (const [name, fn] of declared) {
+    if (exported.has(name) || otherUses.has(name)) continue;
+    const sites = calls.get(name) ?? [];
+    if (sites.length === 0) continue;
+    fn.params.forEach((param, index) => {
+      const target = param.type === "AssignmentPattern" ? param.left : param;
+      if (target.type !== "Identifier") return;
+      const keys = new Set(sites.map((site) => literalKey(site.arguments[index])));
+      if (keys.size !== 1 || keys.has(undefined)) return;
+      const omitted = [...keys][0] === "omitted";
+      // A required parameter nobody passes is a type error, not this rule's; one caller
+      // passing a literal is just one caller.
+      if (omitted ? param.type !== "AssignmentPattern" : sites.length < 2) return;
+      const lines = text.split(/\r?\n/);
+      const line = lineOf(text, param.start);
+      if (hasDisable(lines, line - 1, "POG014")) return;
+      findings.push(makeFinding("POG014", file, line, lines[line - 1], `${messageFor("POG014")}\n${name}(${target.name}) is always ${omitted ? "left to its default" : "the same literal"} across ${sites.length} call(s).`));
+    });
+  }
+}
+
+// --- POG015: an `internals` entry nothing outside extensions/ reads ----------------------
+
+function internalsEntries(file, text) {
+  const { program, errors } = parseSync(file, text);
+  if (errors.length > 0) throw new Error(`Could not parse ${file} while reading internals: ${errors[0].message}`);
+  const entries = [];
+  for (const statement of program.body) {
+    if (statement.type !== "ExportNamedDeclaration") continue;
+    const declaration = statement.declaration;
+    if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
+    for (const item of declaration.declarations) {
+      if (item.id.type !== "Identifier" || item.id.name !== "internals" || item.init?.type !== "ObjectExpression") continue;
+      for (const property of item.init.properties) {
+        if (property.type === "Property" && property.key.type === "Identifier") entries.push({ name: property.key.name, start: property.key.start });
+      }
+    }
+  }
+  return entries;
+}
+
+// The names each consumer file reads from each extension's `internals`, by resolved path.
+function internalsReads(absPath, text) {
+  const file = rel(absPath);
+  const { program, errors } = parseSync(file, text);
+  if (errors.length > 0) throw new Error(`Could not parse ${file} while reading internals uses: ${errors[0].message}`);
+  const locals = new Map();
+  for (const statement of program.body) {
+    if (statement.type !== "ImportDeclaration") continue;
+    for (const specifier of statement.specifiers) {
+      if (specifier.type === "ImportSpecifier" && specifier.imported.name === "internals") {
+        locals.set(specifier.local.name, rel(resolve(dirname(absPath), statement.source.value)));
+      }
+    }
+  }
+  const reads = new Map();
+  const add = (local, name) => {
+    const target = locals.get(local);
+    if (!target) return;
+    if (!reads.has(target)) reads.set(target, new Set());
+    reads.get(target).add(name);
+  };
+  walkAst(program, (node) => {
+    if (node.type === "MemberExpression" && node.object.type === "Identifier" && !node.computed) add(node.object.name, node.property.name);
+    if (node.type === "VariableDeclarator" && node.init?.type === "Identifier" && node.id.type === "ObjectPattern") {
+      for (const property of node.id.properties) if (property.type === "Property" && property.key.type === "Identifier") add(node.init.name, property.key.name);
+    }
+  });
+  return reads;
+}
+
+function scanInternalsUses(files, findings) {
+  const used = new Map();
+  for (const absPath of files) {
+    const file = rel(absPath);
+    if (!file.endsWith(".ts") || !(inPath(file, "tests") || inPath(file, "scripts"))) continue;
+    for (const [target, names] of internalsReads(absPath, readText(absPath))) {
+      if (!used.has(target)) used.set(target, new Set());
+      for (const name of names) used.get(target).add(name);
+    }
+  }
+  for (const absPath of files) {
+    const file = rel(absPath);
+    if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
+    const text = readText(absPath);
+    const lines = text.split(/\r?\n/);
+    for (const entry of internalsEntries(file, text)) {
+      if (used.get(file)?.has(entry.name)) continue;
+      const line = lineOf(text, entry.start);
+      if (hasDisable(lines, line - 1, "POG015")) continue;
+      findings.push(makeFinding("POG015", file, line, lines[line - 1], `${messageFor("POG015")}\ninternals.${entry.name} has no reader under tests/ or scripts/.`));
+    }
+  }
+}
+
 function scanInternalsBudgets(files, baseline, findings) {
   const budgets = baseline.internalsBudgets ?? {};
   const seen = new Set();
@@ -422,10 +581,12 @@ function collectFindings(files, baseline) {
   for (const absPath of files) {
     const file = rel(absPath);
     if (isTsLike(file)) scanTsFile(absPath, findings);
+    if (file.endsWith(".ts") && inPath(file, "extensions")) scanConstantParameters(file, readText(absPath), findings);
     if (isMarkdown(file)) scanMarkdownFile(absPath, findings);
   }
   scanFileBudgets(files, baseline, findings);
   scanInternalsBudgets(files, baseline, findings);
+  scanInternalsUses(files, findings);
   scanStructural(findings);
   scanWithOxlint(findings);
   return findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.code.localeCompare(b.code));

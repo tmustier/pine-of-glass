@@ -139,10 +139,10 @@ function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): s
   });
 }
 
-function joinLeftRight(left: string, right: string, width: number, gap = 2): string {
+function joinLeftRight(left: string, right: string, width: number): string {
   if (!right) return left;
   const used = stripAnsi(left).length + stripAnsi(right).length;
-  return `${left}${" ".repeat(Math.max(gap, width - used))}${right}`;
+  return `${left}${" ".repeat(Math.max(2, width - used))}${right}`;
 }
 
 function wrapPlainText(text: string, width: number, maxLines: number): string[] {
@@ -733,7 +733,6 @@ export const internals = {
   renderSummary,
   renderCompact,
   renderExpanded,
-  stripAnsi,
 };
 
 export type {

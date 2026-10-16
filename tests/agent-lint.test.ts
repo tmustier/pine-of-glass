@@ -125,6 +125,8 @@ test("anti-slop findings join the migration ledger under their rule id and ratch
 test("test-only internals exports may shrink but not grow through --update-baseline", () => {
   const dir = fixtureRepo();
   const source = join(dir, "extensions", "demo", "index.ts");
+  mkdirSync(join(dir, "tests"), { recursive: true });
+  writeFileSync(join(dir, "tests", "demo.test.ts"), 'import { internals } from "../extensions/demo/index.ts";\nconst { a, b, c } = internals;\n');
   writeFileSync(source, "const a = 1;\nexport const internals = { a, b: 2 };\n");
 
   assert.match(runLint(dir).stderr, /internals-entries:2 budget:0/);
@@ -192,4 +194,40 @@ test("the repo policy allows boundary parsing but rejects untyped or typeof-prob
   const untyped = runLint(dir);
   assert.notEqual(untyped.status, 0);
   assert.match(untyped.stderr, /render.ts:1 anti-slop\(no-unknown-parameters\)/);
+});
+
+test("a private function's parameter that every caller leaves constant is flagged (POG014)", () => {
+  const dir = fixtureRepo();
+  const source = join(dir, "extensions", "demo", "index.ts");
+  writeBaseline(dir);
+  const render = (calls: string) => writeFileSync(source, `function row(text: string, wrap = false): string { return wrap ? text : text.trim(); }\n${calls}\nexport const rows = () => [${calls.split("\n").length}];\n`);
+  render("row('a');\nrow('b');\nrow('c');");
+  const dead = runLint(dir);
+  assert.notEqual(dead.status, 0);
+  assert.match(dead.stderr, /index\.ts:1 POG014 parameter is constant/);
+  assert.match(dead.stderr, /row\(wrap\) is always left to its default across 3 call\(s\)/);
+  render("row('a', true);\nrow('b', true);");
+  assert.match(runLint(dir).stderr, /row\(wrap\) is always the same literal across 2 call\(s\)/);
+  render("row('a', true);\nrow('b');");
+  assert.equal(runLint(dir).status, 0, "a caller that varies it clears the finding");
+  render("row('a', true);");
+  assert.equal(runLint(dir).status, 0, "one caller passing a literal is just one caller");
+  // A function whose name escapes as a value has callers the file cannot see.
+  writeFileSync(source, "function row(text: string, wrap = false): string { return wrap ? text : text.trim(); }\nrow('a');\nexport const api = { row };\n");
+  assert.equal(runLint(dir).status, 0);
+});
+
+test("an internals entry no test or script reads is flagged (POG015)", () => {
+  const dir = fixtureRepo();
+  const source = join(dir, "extensions", "demo", "index.ts");
+  writeFileSync(source, "const a = 1;\nconst b = 2;\nexport const internals = { a, b };\n");
+  writeBaseline(dir, { internalsBudgets: { "extensions/demo/index.ts": 2 } });
+  const unread = runLint(dir);
+  assert.notEqual(unread.status, 0);
+  assert.match(unread.stderr, /index\.ts:3 POG015 `internals` entry is unused\./);
+  assert.match(unread.stderr, /internals\.a has no reader/);
+  assert.match(unread.stderr, /internals\.b has no reader/);
+  mkdirSync(join(dir, "tests"), { recursive: true });
+  writeFileSync(join(dir, "tests", "demo.test.ts"), 'import { internals as demo } from "../extensions/demo/index.ts";\nconst { a } = demo;\nconsole.log(a, demo.b);\n');
+  assert.equal(runLint(dir).status, 0, "a destructure and a member read under tests/ both count");
 });
