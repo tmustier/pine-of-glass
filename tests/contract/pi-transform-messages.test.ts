@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import type { Message, Model, Api } from "@earendil-works/pi-ai";
+import { VERSION } from "@earendil-works/pi-coding-agent";
 
 import {
   ESTIMATED_IMAGE_CHARS,
   forecastHistoryForTarget,
+  foreignThinkingFor,
   type ForecastMessage,
 } from "../../extensions/_lib/forecast.ts";
 import { assistantMessage } from "../helpers.ts";
@@ -55,13 +57,14 @@ function materialCharsOfTransform(messages: Message[]): number {
   return chars;
 }
 
+// The forecast applies the installed Pi's rule for another model's readable thinking.
 function materialCharsOfForecast(messages: Message[], model: Model<Api>): number {
   const forecast = forecastHistoryForTarget(messages as unknown as ForecastMessage[], {
     provider: model.provider,
     id: model.id,
     api: model.api,
     input: model.input,
-  });
+  }, foreignThinkingFor(VERSION));
   return forecast.textChars + forecast.keptReasoningChars + forecast.imageChars;
 }
 

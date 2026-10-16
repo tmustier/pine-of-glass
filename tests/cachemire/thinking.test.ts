@@ -24,6 +24,7 @@ const directAnthropic = (
 	model,
 	api: "anthropic-messages",
 	supportsMidConvoEffort,
+	signInWithChatGPT: false,
 });
 
 const anthropicRequest = (effort: string, messages: unknown[] = [
@@ -49,7 +50,7 @@ test("thinking levels use Pi's adaptive effort mapping", () => {
 	assert.equal(thinkingChangeInvalidatesCache(undefined, fableMap, "low", "medium"), true);
 });
 
-test("only verified Anthropic routes make effort changes cache-neutral", () => {
+test("Anthropic effort changes are cache-neutral only on verified routes", () => {
 	const fable = directAnthropic("claude-fable-5-1");
 	assert.equal(thinkingChangesPreserveCache(fable), true);
 	assert.equal(thinkingChangeInvalidatesCache(fable, undefined, "low", "high"), false);
@@ -71,7 +72,27 @@ test("only verified Anthropic routes make effort changes cache-neutral", () => {
 		model: "gpt-6-astra",
 		api: "openai-codex-responses",
 		supportsMidConvoEffort: true,
-	}), false, "Pi's Anthropic compatibility flag cannot bless another wire protocol");
+		signInWithChatGPT: false,
+	}), false, "Pi's compatibility flag cannot bless a wire protocol that does not implement it");
+});
+
+test("Pi's flag makes direct OpenAI effort changes cache-neutral, except with Sign in with ChatGPT", () => {
+	const gpt6: ThinkingRoute = {
+		provider: "openai",
+		model: "gpt-6.1-sol",
+		api: "openai-responses",
+		supportsMidConvoEffort: true,
+		signInWithChatGPT: false,
+	};
+	assert.equal(thinkingChangesPreserveCache(gpt6), true);
+	assert.equal(thinkingChangeInvalidatesCache(gpt6, undefined, "low", "high"), false);
+	assert.equal(thinkingChangeInvalidatesCache(gpt6, undefined, "high", "off"), true, "turning thinking off stays material");
+	assert.equal(
+		thinkingChangesPreserveCache({ ...gpt6, signInWithChatGPT: true }),
+		false,
+		"Pi changes request-level effort for a ChatGPT sign-in",
+	);
+	assert.equal(thinkingChangesPreserveCache({ ...gpt6, model: "gpt-5.6-sol", supportsMidConvoEffort: false }), false);
 });
 
 test("direct Claude Fable 5.1 fingerprints ignore effort-only changes", () => {
@@ -147,6 +168,7 @@ const astraRoute: ThinkingRoute = {
 	model: "gpt-6-astra",
 	api: "openai-codex-responses",
 	supportsMidConvoEffort: false,
+	signInWithChatGPT: false,
 };
 const astraMap = { off: null, minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "xhigh" };
 const bill = (cacheRead: number, expectedRead = 30_000) => ({

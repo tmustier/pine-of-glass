@@ -238,11 +238,11 @@ export default function piCachemire(pi: ExtensionAPI): void {
   // wire params for this model against the level its last call was billed at; cycling
   // back before the next call revives the cache. Routes whose contract or billed
   // evidence keeps the prefix stay neutral.
-  const markThinkingChange = (model: ExtensionContext["model"]) => {
-    s.thinkingChanged = s.expectedRead > 0 && model?.reasoning === true &&
+  const markThinkingChange = (ctx: ExtensionContext) => {
+    s.thinkingChanged = s.expectedRead > 0 && ctx.model?.reasoning === true &&
       thinkingChangeInvalidatesCache(
-        thinkingRoute(model),
-        model.thinkingLevelMap,
+        thinkingRoute(ctx),
+        ctx.model.thinkingLevelMap,
         s.lastCallThinkingLevel,
         s.currentThinkingLevel,
         s.thinkingEvidence,
@@ -256,7 +256,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const lastBilledLevel = restoreBilledThinking(s.thinkingEvidence, entries, leafId, ctx.model, Date.now());
     s.currentThinkingLevel = pi.getThinkingLevel();
     s.lastCallThinkingLevel = lastBilledLevel ?? s.currentThinkingLevel;
-    markThinkingChange(ctx.model);
+    markThinkingChange(ctx);
   };
 
   pi.on("session_start", async (event, ctx) => {
@@ -345,7 +345,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (!ownsState()) return;
     if (!s.requestArmed) return;
     s.requestArmed = false;
-    s.pendingFingerprint = fingerprintPayload(event.payload, thinkingRoute(ctx.model));
+    s.pendingFingerprint = fingerprintPayload(event.payload, thinkingRoute(ctx));
     const requestAt = Date.now();
     const entries = ctx.sessionManager.getEntries();
     hydrateLineageResponseIds(s.lineages, entries);
@@ -393,7 +393,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         window: s.pendingPreviousWindow ?? s.window,
         expectedRead: s.expectedRead,
         fingerprintCause: s.pendingFingerprintCause,
-        thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx.model), s.thinkingEvidence),
+        thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx), s.thinkingEvidence),
         rates: s.rates,
         switchForecast: s.switchForecast === undefined ? undefined : {
           ...s.switchForecast,
@@ -450,7 +450,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // call so far used — a baseline that needs no session_start timing assumptions.
     s.lastCallThinkingLevel ??= event.previousLevel;
     s.currentThinkingLevel = event.level;
-    markThinkingChange(ctx.model);
+    markThinkingChange(ctx);
     updateWidget();
   });
 
@@ -529,7 +529,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // The billed verdict on an effort change, whatever the payload looked like at
     // Cachemire's hook: a later extension or provider may have transformed it.
     const thinkingBreakExpected = s.thinkingChanged;
-    const route = thinkingRoute(ctx.model);
+    const route = thinkingRoute(ctx);
     const thinkingChange = route && recordBilledThinking(s.thinkingEvidence, route, {
       map: ctx.model?.thinkingLevelMap,
       lastCallLevel: s.lastCallThinkingLevel,

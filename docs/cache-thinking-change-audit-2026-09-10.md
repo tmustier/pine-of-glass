@@ -169,6 +169,22 @@ regression on the positive Astra scenario (Cachemire before `pi-codex-conversion
 reproduced the earlier result; the negative paths cannot be forced on a real provider
 and stay hosted.
 
+## Addendum, 2026-10-17: Pi 1.3 direct OpenAI
+
+Pi 1.3.0 implements OpenAI's append-only protocol on direct OpenAI Responses. For a
+model whose catalogue entry sets `supportsMidConvoEffort` (GPT-6 Astra, Luna, Sol and
+6.1 Sol), Pi keeps request-level `reasoning.effort` at `medium`, replays each earlier
+turn's effort as a `configuration_update` item before that turn, and appends the
+current effort as the last input item. Earlier requests stay a strict prefix. Pi skips
+this with Sign in with ChatGPT on `https://api.openai.com/v1`, which rejects the items,
+and the OpenAI Codex route still changes request-level effort.
+
+Cachemire's static contract now follows that flag on `openai-responses`, minus the
+ChatGPT sign-in case, which it reads from the stored credential type. A contract test
+builds real Pi 1.3 requests for an API key and a ChatGPT token and pins both shapes.
+No billed check was run: no OpenAI API key was available. The bill still outranks the
+contract, so a miss on that route reinstates the expectation.
+
 ## Sources
 
 - OpenAI, [Reasoning models](https://developers.openai.com/api/docs/guides/reasoning),

@@ -217,7 +217,11 @@ test("showExtensionCustom seam: editor swap/restore + overlay close drill mode r
   ]) {
     assert.ok(custom.includes(anchor), `editor restore step gone (${anchor}) — drill exit strands the editor`);
   }
-  assert.ok(custom.includes("this.ui.hideOverlay()"), "overlay close no longer hides — the pager would never leave the screen");
+  // Pi 1.3 hides the closing overlay's own handle; earlier Pi hid the topmost overlay.
+  assert.ok(
+    custom.includes("overlayHandle?.hide()") || custom.includes("this.ui.hideOverlay()"),
+    "overlay close no longer hides — the pager would never leave the screen",
+  );
 
   const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
   assert.ok(declarations.includes("registerShortcut(shortcut: KeyId"), "registerShortcut signature drifted — the alt+t entry point dies");

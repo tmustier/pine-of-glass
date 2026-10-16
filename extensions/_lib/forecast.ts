@@ -47,7 +47,20 @@ interface HistoryForecast {
 const NON_VISION_USER_PLACEHOLDER_CHARS = "(image omitted: model does not support images)".length;
 const NON_VISION_TOOL_PLACEHOLDER_CHARS = "(tool image omitted: model does not support images)".length;
 
-export function forecastHistoryForTarget(messages: readonly ForecastMessage[], target: TargetModel): HistoryForecast {
+/** What Pi's transformMessages does with readable thinking written by another model. */
+export type ForeignThinking = "dropped" | "text";
+
+/** Pi 1.3 drops another model's thinking on a switch; earlier Pi sent it as plain text. */
+export function foreignThinkingFor(piVersion: string): ForeignThinking {
+  const [major = 0, minor = 0] = piVersion.split(".").map(Number);
+  return major > 1 || (major === 1 && minor >= 3) ? "dropped" : "text";
+}
+
+export function forecastHistoryForTarget(
+  messages: readonly ForecastMessage[],
+  target: TargetModel,
+  foreignThinking: ForeignThinking,
+): HistoryForecast {
   const visionTarget = target.input?.includes("image") ?? true;
   const forecast: HistoryForecast = { textChars: 0, keptReasoningChars: 0, imageChars: 0 };
   for (const message of messages) {
@@ -65,7 +78,7 @@ export function forecastHistoryForTarget(messages: readonly ForecastMessage[], t
           if (isSame) {
             if (signature !== undefined) forecast.keptReasoningChars += signature.length;
             else if (readable.trim().length > 0) forecast.keptReasoningChars += readable.length;
-          } else if (readable.trim().length > 0) {
+          } else if (foreignThinking === "text" && readable.trim().length > 0) {
             forecast.textChars += readable.length;
           }
           continue;
@@ -106,9 +119,10 @@ export function forecastTargetPrompt(args: {
   systemPromptChars: number;
   tools: ToolDefinition[];
   target: TargetModel;
+  foreignThinking: ForeignThinking;
 }) {
   const heuristic = builtInHeuristicForModel(args.target) ?? fallbackHeuristicNumbers();
-  const counts = forecastHistoryForTarget(args.history, args.target);
+  const counts = forecastHistoryForTarget(args.history, args.target, args.foreignThinking);
   const historyChars = counts.textChars + counts.keptReasoningChars + counts.imageChars;
   return {
     tokens:

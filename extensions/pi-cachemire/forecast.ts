@@ -1,9 +1,9 @@
 // Estimate switched prompts in the target model's currency and find any
 // path-compatible cache entry from an earlier call to that target.
 
-import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, convertToLlm, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { forecastTargetPrompt, type ForecastMessage } from "../_lib/forecast.ts";
+import { forecastTargetPrompt, foreignThinkingFor, type ForecastMessage } from "../_lib/forecast.ts";
 import type { ToolDefinition } from "../_lib/tool-payloads.ts";
 import { cacheRefreshedAt, findBranchBaseline, pathContainsCompaction } from "./lineage.ts";
 import type { CacheLineageSnapshot, CacheWindow } from "./types.ts";
@@ -71,6 +71,7 @@ export function computeSwitchForecast(args: {
       systemPromptChars: args.systemPromptChars,
       tools: args.tools,
       target: args.target,
+      foreignThinking: foreignThinkingFor(VERSION),
     });
     forecast.estTokens = prompt.tokens;
   }

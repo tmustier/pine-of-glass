@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   forecastHistoryForTarget,
   forecastTargetPrompt,
+  foreignThinkingFor,
   type ForecastBlock,
   type ForecastMessage,
   type TargetModel,
@@ -38,7 +39,7 @@ function solTurn(content: ForecastBlock[], overrides: Partial<ForecastMessage> =
   };
 }
 
-test("cross-model: readable thinking counts as text, encrypted payloads vanish", () => {
+test("cross-model: Pi 1.3+ drops readable thinking; older Pi sent it as text; encrypted payloads vanish", () => {
   const history: ForecastMessage[] = [
     { role: "user", content: "hello there" }, // 11 chars
     solTurn([
@@ -47,9 +48,20 @@ test("cross-model: readable thinking counts as text, encrypted payloads vanish",
       { type: "text", text: "answer" },
     ]),
   ];
-  const forecast = forecastHistoryForTarget(history, luna);
-  assert.equal(forecast.textChars, 11 + "readable summary".length + "answer".length);
-  assert.equal(forecast.keptReasoningChars, 0, "both encrypted payloads drop for the foreign target");
+  const dropped = forecastHistoryForTarget(history, luna, "dropped");
+  assert.equal(dropped.textChars, 11 + "answer".length);
+  assert.equal(dropped.keptReasoningChars, 0, "both encrypted payloads drop for the foreign target");
+  const text = forecastHistoryForTarget(history, luna, "text");
+  assert.equal(text.textChars, 11 + "readable summary".length + "answer".length);
+  assert.equal(text.keptReasoningChars, 0, "both encrypted payloads drop for the foreign target");
+});
+
+test("Pi 1.3.0 is where another model's thinking stops reaching the target", () => {
+  assert.equal(foreignThinkingFor("0.86.0"), "text");
+  assert.equal(foreignThinkingFor("1.2.0"), "text");
+  assert.equal(foreignThinkingFor("1.3.0"), "dropped");
+  assert.equal(foreignThinkingFor("1.10.0"), "dropped");
+  assert.equal(foreignThinkingFor("2.0.0"), "dropped");
 });
 
 test("same-model: signature payloads are kept, readable summary is not double-counted", () => {
@@ -60,15 +72,15 @@ test("same-model: signature payloads are kept, readable summary is not double-co
     ]),
   ];
   const target: TargetModel = { ...luna, id: "gpt-5.6-sol" };
-  const forecast = forecastHistoryForTarget(history, target);
+  const forecast = forecastHistoryForTarget(history, target, "dropped");
   assert.equal(forecast.keptReasoningChars, 400, "same-model replay counts the encrypted payload, not the summary");
   assert.equal(forecast.textChars, "answer".length);
 });
 
 test("redacted thinking: kept same-model, dropped cross-model", () => {
   const history = [solTurn([{ type: "thinking", thinking: "", thinkingSignature: "R".repeat(50), redacted: true }])];
-  assert.equal(forecastHistoryForTarget(history, { ...luna, id: "gpt-5.6-sol" }).keptReasoningChars, 50);
-  assert.equal(forecastHistoryForTarget(history, opus).keptReasoningChars, 0);
+  assert.equal(forecastHistoryForTarget(history, { ...luna, id: "gpt-5.6-sol" }, "dropped").keptReasoningChars, 50);
+  assert.equal(forecastHistoryForTarget(history, opus, "dropped").keptReasoningChars, 0);
 });
 
 test("toolCall: stored ID and arguments count, thoughtSignature only for the same model", () => {
@@ -76,10 +88,10 @@ test("toolCall: stored ID and arguments count, thoughtSignature only for the sam
   const call = { type: "toolCall", id, name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "T".repeat(80) };
   const argChars = JSON.stringify({ id, name: "read", arguments: { path: "/tmp/x" } }).length;
   const history = [solTurn([call], { stopReason: "toolUse" })];
-  const cross = forecastHistoryForTarget(history, opus);
+  const cross = forecastHistoryForTarget(history, opus, "dropped");
   assert.equal(cross.textChars, argChars);
   assert.equal(cross.keptReasoningChars, 0);
-  const same = forecastHistoryForTarget(history, { ...luna, id: "gpt-5.6-sol" });
+  const same = forecastHistoryForTarget(history, { ...luna, id: "gpt-5.6-sol" }, "dropped");
   assert.equal(same.keptReasoningChars, 80);
 });
 
@@ -88,7 +100,7 @@ test("aborted and error assistant turns contribute nothing", () => {
     solTurn([{ type: "text", text: "half an answer" }], { stopReason: "aborted" }),
     solTurn([{ type: "text", text: "failed" }], { stopReason: "error" }),
   ];
-  const forecast = forecastHistoryForTarget(history, opus);
+  const forecast = forecastHistoryForTarget(history, opus, "dropped");
   assert.equal(forecast.textChars, 0);
 });
 
@@ -96,9 +108,9 @@ test("images: pi's flat char convention for vision targets, placeholder for non-
   const history: ForecastMessage[] = [
     { role: "user", content: [{ type: "image" }] },
   ];
-  const vision = forecastHistoryForTarget(history, luna);
+  const vision = forecastHistoryForTarget(history, luna, "dropped");
   assert.equal(vision.imageChars, 4800, "matches pi's compaction image estimate");
-  const blind = forecastHistoryForTarget(history, { ...luna, input: ["text"] });
+  const blind = forecastHistoryForTarget(history, { ...luna, input: ["text"] }, "dropped");
   assert.ok(blind.imageChars > 0 && blind.imageChars < 100, "non-vision targets get a small placeholder");
 });
 
@@ -106,7 +118,7 @@ test("tool results count text content", () => {
   const history: ForecastMessage[] = [
     { role: "toolResult", content: [{ type: "text", text: "result text" }] },
   ];
-  assert.equal(forecastHistoryForTarget(history, luna).textChars, "result text".length);
+  assert.equal(forecastHistoryForTarget(history, luna, "dropped").textChars, "result text".length);
 });
 
 test("forecastTargetPrompt composes system, tools and history in target currency", () => {
@@ -122,17 +134,19 @@ test("forecastTargetPrompt composes system, tools and history in target currency
     systemPromptChars: 2600,
     tools: [],
     target: opus,
+    foreignThinking: "text",
   });
   assert.equal(forecast.heuristic.label, "Claude 4.7+ heuristic");
-  // 2600 system chars / 2.6 + (3500 + 1000 + 500) history chars / 2.6; the 2000-char
-  // encrypted payload never reaches the anthropic target.
+  // 2600 system chars / 2.6 + (3500 + 1000 + 500) history chars / 2.6 (pre-1.3 Pi sends
+  // the readable thinking as text); the 2000-char encrypted payload never reaches the
+  // anthropic target.
   assert.equal(forecast.tokens, 1000 + Math.ceil(5000 / 2.6));
 });
 
 test("forecastTargetPrompt uses the cookbook tool formula for codex targets", () => {
   const tools = [{ name: "read", description: "Read a file.", schema: { type: "object", properties: { path: { type: "string" } } } }];
-  const withTools = forecastTargetPrompt({ history: [], systemPromptChars: 0, tools, target: luna });
-  const withoutTools = forecastTargetPrompt({ history: [], systemPromptChars: 0, tools: [], target: luna });
+  const withTools = forecastTargetPrompt({ history: [], systemPromptChars: 0, tools, target: luna, foreignThinking: "dropped" });
+  const withoutTools = forecastTargetPrompt({ history: [], systemPromptChars: 0, tools: [], target: luna, foreignThinking: "dropped" });
   assert.equal(withTools.heuristic.label, "OpenAI-Codex heuristic");
   assert.ok(withTools.tokens > withoutTools.tokens + 12, "tool definitions must contribute the cookbook overhead");
 });
@@ -143,6 +157,7 @@ test("unknown targets fall back to the family chars/4 heuristic", () => {
     systemPromptChars: 0,
     tools: [],
     target: { provider: "acme", id: "mystery-1", api: "acme-chat" },
+    foreignThinking: "dropped",
   });
   assert.equal(forecast.heuristic.label, "fallback chars/4");
   assert.equal(forecast.tokens, 100);

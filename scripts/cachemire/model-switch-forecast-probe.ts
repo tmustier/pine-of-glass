@@ -14,10 +14,12 @@ import {
   convertToLlm,
   type ExtensionAPI,
   type ExtensionContext,
+  VERSION,
 } from "@earendil-works/pi-coding-agent";
 import {
   forecastHistoryForTarget,
   forecastTargetPrompt,
+  foreignThinkingFor,
   type ForecastMessage,
   type TargetModel,
 } from "../../extensions/_lib/forecast.ts";
@@ -75,10 +77,11 @@ function canonicalCounts(
     ) as unknown as ForecastMessage[];
     const tools = activeToolDefinitions(pi);
     const systemPromptChars = ctx.getSystemPrompt().length;
-    const historyCounts = forecastHistoryForTarget(history, target);
-    const system = forecastTargetPrompt({ history: [], systemPromptChars, tools: [], target });
-    const staticPrompt = forecastTargetPrompt({ history: [], systemPromptChars, tools, target });
-    const total = forecastTargetPrompt({ history, systemPromptChars, tools, target });
+    const foreignThinking = foreignThinkingFor(VERSION);
+    const historyCounts = forecastHistoryForTarget(history, target, foreignThinking);
+    const system = forecastTargetPrompt({ history: [], systemPromptChars, tools: [], target, foreignThinking });
+    const staticPrompt = forecastTargetPrompt({ history: [], systemPromptChars, tools, target, foreignThinking });
+    const total = forecastTargetPrompt({ history, systemPromptChars, tools, target, foreignThinking });
     return {
       totalTokens: total.tokens,
       staticTokens: staticPrompt.tokens,

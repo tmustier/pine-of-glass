@@ -19,7 +19,8 @@ official contract, sanitized Codex observations and unresolved route limits. Cac
 keeps an observed request policy pending until reported cache reads or writes confirm
 that an entry exists. The
 [`thinking-change audit`](./cache-thinking-change-audit-2026-09-10.md) records how
-Pi 0.85.1 handles Claude Fable 5.1 and GPT-6 Astra effort changes. The
+Pi 0.85.1 handles Claude Fable 5.1 and GPT-6 Astra effort changes, with a Pi 1.3
+addendum for direct OpenAI. The
 [`Anthropic TTL audit`](./cache-anthropic-ttl-audit-2026-09-26.md) measures when
 direct Anthropic cache entries stop serving reads.
 
@@ -104,7 +105,9 @@ next prompt.
 The next request adds the new user message and other suffix content. Shared prefixes
 from another session can also reduce the actual write. The `~` marks this uncertainty.
 After a model switch, Cachemire estimates canonical history in the target tokenizer
-and keeps that estimate through send. A new user message or provider wrapper can make
+and keeps that estimate through send. It counts what the running Pi sends: from Pi 1.3,
+thinking written by the previous model is dropped; earlier Pi sent readable thinking
+to the new model as plain text. A new user message or provider wrapper can make
 the eventual billed count differ.
 
 ## Aborted sends do not create evidence
@@ -125,12 +128,16 @@ effort value changes. Other Anthropic thinking changes can invalidate message ca
 entries. A known Anthropic TTL therefore supports an in-flight warning when their
 outgoing wire value changes. Levels that map to the same wire value stay silent.
 
-GPT-6 Astra preserves the prefix only when the client appends a
+GPT-6 models preserve the prefix only when the client appends a
 `configuration_update` input item and leaves request-level `reasoning.effort`
-unchanged. Pi 0.85.1 changes the request-level value instead, on both OpenAI Responses
-implementations, so Cachemire continues to classify that observed difference as a
-thinking mutation. A later Pi implementation of the append-only protocol will compare
-as ordinary prefix growth without a model-name exception.
+unchanged. From Pi 1.3, direct OpenAI Responses does this for models whose catalogue
+entry sets `supportsMidConvoEffort` (GPT-6 Astra, Luna, Sol and 6.1 Sol), when the
+credential is an API key. That payload compares as ordinary prefix growth, and
+Cachemire follows the same flag on that API, so an effort change there is expected to
+hold. Pi changes the request-level value instead in two cases: Sign in with ChatGPT on
+OpenAI's own endpoint (Cachemire checks the stored credential type, not the
+credential) and the OpenAI Codex route. Cachemire classifies that observed difference
+as a thinking mutation.
 
 ### The bill outranks the payload
 

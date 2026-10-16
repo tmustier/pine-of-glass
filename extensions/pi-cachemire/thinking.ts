@@ -9,11 +9,16 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, type JsonFields, nonNegativeNumberValue, stringValue } from "../_lib/boundary.ts";
 import type { CallClassification, ThinkingEvidence, UsageLike } from "./types.ts";
 
-export interface ThinkingRoute {
+type RouteIdentity = {
 	provider: string;
 	model: string;
 	api: string;
+};
+
+export interface ThinkingRoute extends RouteIdentity {
 	supportsMidConvoEffort: boolean;
+	/** OpenAI's own endpoint signed in with ChatGPT: Pi ignores the effort flag there. */
+	signInWithChatGPT: boolean;
 }
 
 /** What this process has billed on one route: every wire effort ever billed there,
@@ -27,13 +32,9 @@ interface RouteThinkingRecord {
  * provider and extension stack, not to a session. */
 export type ThinkingEvidenceLedger = Map<string, RouteThinkingRecord>;
 
-type ActiveModel = NonNullable<ExtensionContext["model"]>;
-
-export function thinkingRoute(model: ExtensionContext["model"]): ThinkingRoute | undefined {
-	return model && routeOf(model);
-}
-
-function routeOf(model: ActiveModel): ThinkingRoute {
+export function thinkingRoute(ctx: Pick<ExtensionContext, "model" | "modelRegistry">): ThinkingRoute | undefined {
+	const { model } = ctx;
+	if (!model) return undefined;
 	// Pi types compat per API, and only some APIs declare the flag: read it as data.
 	const compat: unknown = model.compat;
 	return {
@@ -41,14 +42,18 @@ function routeOf(model: ActiveModel): ThinkingRoute {
 		model: model.id,
 		api: model.api,
 		supportsMidConvoEffort: isJsonObject(compat) && compat.supportsMidConvoEffort === true,
+		// Pi tells a ChatGPT token from an API key by its prefix; the stored credential
+		// type says the same without Cachemire reading the credential.
+		signInWithChatGPT: model.provider === "openai" && model.baseUrl === "https://api.openai.com/v1" &&
+			ctx.modelRegistry.isUsingOAuth(model),
 	};
 }
 
-function routeKey(route: ThinkingRoute): string {
+function routeKey(route: RouteIdentity): string {
 	return `${route.provider}/${route.api}/${route.model}`;
 }
 
-function routeRecord(ledger: ThinkingEvidenceLedger, route: ThinkingRoute): RouteThinkingRecord {
+function routeRecord(ledger: ThinkingEvidenceLedger, route: RouteIdentity): RouteThinkingRecord {
 	const key = routeKey(route);
 	const existing = ledger.get(key);
 	if (existing) return existing;
@@ -69,10 +74,14 @@ export function wireThinkingEffort(
 	return "high";
 }
 
-// The static contract. The exact-model fallback covers stale local overrides that
-// shadow Pi's catalogue flag; direct Pi 0.85.1 calls retained full message-heavy
-// prefixes on both effort changes.
+// The static contract: Pi's catalogue flag on the two wire APIs that implement it.
+// Anthropic Messages appends per-turn effort markers. OpenAI Responses (Pi 1.3+) keeps
+// request-level effort fixed and appends configuration_update items, except with Sign
+// in with ChatGPT on OpenAI's own endpoint, which rejects them. The exact-model
+// fallback covers stale local overrides that shadow Pi's catalogue flag; direct Pi
+// 0.85.1 calls retained full message-heavy prefixes on both effort changes.
 function contractPreservesCache(route: ThinkingRoute): boolean {
+	if (route.api === "openai-responses") return route.supportsMidConvoEffort && !route.signInWithChatGPT;
 	if (route.api !== "anthropic-messages") return false;
 	return (
 		route.supportsMidConvoEffort ||
@@ -166,7 +175,7 @@ export function restoreBilledThinking(
 	now: number,
 ): string | undefined {
 	if (!model || leafId === null) return undefined;
-	const route = routeOf(model);
+	const route: RouteIdentity = { provider: model.provider, model: model.id, api: model.api };
 	const byId = new Map<string, JsonFields>();
 	for (const entry of entries) {
 		if (isJsonObject(entry) && typeof entry.id === "string") byId.set(entry.id, entry);

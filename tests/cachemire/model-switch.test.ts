@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { internals } from "../../extensions/pi-cachemire/index.ts";
 import { computeSwitchForecast, type SwitchTarget } from "../../extensions/pi-cachemire/forecast.ts";
 import { CEREBRAS_BOUNDED_WINDOW, OPENAI_MINIMUM_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { VERSION, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { foreignThinkingFor } from "../../extensions/_lib/forecast.ts";
 
 const {
   cacheClock, nextClockUpdateMs, predictBreak, renderBreakingLine,
@@ -220,10 +221,11 @@ test("computeSwitchForecast: estimates from canonical history in the target curr
   });
   assert.equal(forecast.targetId, "claude-opus-4-8");
   assert.equal(forecast.basis, "direct");
-  // Claude 4.7+ heuristic (chars/2.6): 2.6k system + 2.6k user + 2.6k readable thinking
-  // (converted to text cross-model) + 2.6k assistant text = 4000 tokens; the 2.6k-char
-  // encrypted payload never reaches the anthropic target.
-  assert.equal(forecast.estTokens, 4_000);
+  // Claude 4.7+ heuristic (chars/2.6): 2.6k system + 2.6k user + 2.6k assistant text =
+  // 3000 tokens on Pi 1.3+, which drops the other model's readable thinking. Older Pi
+  // sends those 2.6k chars as text (4000 tokens). The 2.6k-char encrypted payload never
+  // reaches the anthropic target.
+  assert.equal(forecast.estTokens, foreignThinkingFor(VERSION) === "dropped" ? 3_000 : 4_000);
   assert.equal(forecast.prior, undefined);
 });
 
