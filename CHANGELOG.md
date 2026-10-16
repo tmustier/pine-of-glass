@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.16.0 (2026-10-16)
+
 - Traceline failed rows say why. The suffix carries a failure fact in the error
   colour, read from the result the model received: `exit 2`, `timeout 30s`,
   `aborted` for bash, `no matches` for a lone `rg`/`grep` that exited 1 in silence,
