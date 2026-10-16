@@ -1,13 +1,10 @@
 import { stripAnsi } from "../_lib/ansi.ts";
-import type { ToolRowDataLike } from "../_lib/chat.ts";
+import type { ToolResultLike, ToolRowDataLike } from "../_lib/chat.ts";
 import { resultText } from "./records.ts";
 
-// Check facts (design language §9.10.1): test, type-check, lint and format outcomes
-// parsed from the summary a checker printed. Evidence only: the command must name the
-// checker and the output must carry its summary, so a quiet `tsc` or a `cat` of a log
-// file earns nothing. A pass is health (neutral ink); a failure is news.
+// Check facts need both a checker invocation and its printed summary (§9.10.1).
 export type CheckTone = "text" | "warning" | "error";
-export type CheckFact = { verb: string; datum: string; at: number; tone: CheckTone };
+export type CheckFact = { verb: "passed" | "failed" | "found"; datum: string; at: number; tone: CheckTone };
 
 // Gates name a checker invocation, not a word: `cat test-log.txt` must not qualify. A
 // package script such as `pnpm test`, `npm run lint:slop` or `npm run check` counts.
@@ -21,7 +18,7 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-// `name 12` pairs inside a summary such as `2 failed | 1729 passed` or `2 failed, 40 passed`.
+// Counts inside summaries such as `2 failed | 1729 passed` or `2 failed, 40 passed`.
 function countOf(summary: string, names: RegExp): number {
   let total = 0;
   for (const m of summary.matchAll(new RegExp(`(\\d+) (?:${names.source})\\b`, "g"))) total += Number(m[1]);
@@ -30,28 +27,14 @@ function countOf(summary: string, names: RegExp): number {
 
 type Line = { text: string; at: number; n: number };
 
-function linesOf(out: string): Line[] {
-  const lines: Line[] = [];
-  let at = 0;
-  for (const [n, text] of out.split("\n").entries()) {
-    lines.push({ text, at, n });
-    at += text.length + 1;
-  }
-  return lines;
-}
-
 // One summary is one run (§9.10.1): counts never add up across runs, because agents
 // rerun checks in loops and comparisons and a sum is a number no run printed. A runner
 // prints its summary as a few adjacent lines in a fixed order (Vitest `Test Files`,
 // `Tests`, `Errors`; node `tests`, `pass`, `fail`, `cancelled`), so a part joins the
 // open run while it is near and later in that order; otherwise it starts the next run.
-type TestRun = {
-  at: number;
-  last: number;
+type TestCounts = {
   passed?: number;
   failed?: number;
-  /** The summary proves the run's total: a pass needs it (§9.10.1). */
-  proven: boolean;
   /** node's `ℹ tests N`, a total when the pass count was piped away. */
   tests?: number;
   /** node's cancelled tests, which fail the run. */
@@ -60,20 +43,30 @@ type TestRun = {
   unhandled?: number;
 };
 
-/** One line's share of a summary; `rank` is its place in the runner's summary order. */
-type RunPart = { line: Line; rank: number; fill: (run: TestRun) => void };
+type TestRun = TestCounts & {
+  at: number;
+  last: number;
+  /** The summary proves the run's total: a pass needs it (§9.10.1). */
+  proven: boolean;
+};
 
-const RUN_REACH = 3; // agent-default (not a user rule): 2026-10-15
+/** One line's share of a summary; `rank` is its place in the runner's summary order. */
+type RunPart = { line: Line; rank: number; summary: TestCounts & { proven?: true } };
+
+const RUN_REACH = 3;
 
 function joinRuns(parts: RunPart[]): TestRun[] {
   const runs: TestRun[] = [];
   let rank = -1;
   for (const part of parts) {
     const open = runs[runs.length - 1];
-    if (open && part.line.n - open.last <= RUN_REACH && part.rank > rank) open.last = part.line.n;
-    else runs.push({ at: part.line.at, last: part.line.n, proven: false });
+    if (!open || part.line.n - open.last > RUN_REACH || part.rank <= rank) {
+      runs.push({ at: part.line.at, last: part.line.n, proven: false, ...part.summary });
+    } else {
+      Object.assign(open, part.summary);
+      open.last = part.line.n;
+    }
     rank = part.rank;
-    part.fill(runs[runs.length - 1]!);
   }
   return runs;
 }
@@ -89,11 +82,11 @@ function suiteParts(lines: Line[]): RunPart[] {
     const files = /(?:^|\s)Test Files\s{2,}(.+?)\s*\((\d+)\)\s*$/.exec(line.text) ?? /^Test Suites:\s+(.+?),\s*(\d+) total\s*$/.exec(line.text);
     const errors = /(?:^|\s)Errors\s{2,}(\d+) errors?\b/.exec(line.text);
     if (tests) {
-      parts.push({ line, rank: 1, fill: (run) => Object.assign(run, { passed: countOf(tests[1]!, /passed/), failed: countOf(tests[1]!, /failed/), proven: true }) });
+      parts.push({ line, rank: 1, summary: { passed: countOf(tests[1]!, /passed/), failed: countOf(tests[1]!, /failed/), proven: true } });
     } else if (files) {
-      parts.push({ line, rank: 0, fill: (run) => (run.files = { failed: countOf(files[1]!, /failed/), total: Number(files[2]) }) });
+      parts.push({ line, rank: 0, summary: { files: { failed: countOf(files[1]!, /failed/), total: Number(files[2]) } } });
     } else if (errors) {
-      parts.push({ line, rank: 2, fill: (run) => (run.unhandled = Number(errors[1])) });
+      parts.push({ line, rank: 2, summary: { unhandled: Number(errors[1]) } });
     }
   }
   return parts;
@@ -110,26 +103,15 @@ function nodeParts(lines: Line[]): RunPart[] {
     for (const m of line.text.matchAll(tokens)) {
       const kind = m[1]!;
       const count = Number(m[2]);
-      parts.push({
-        line,
-        rank: NODE_ORDER.indexOf(kind),
-        fill: (run) => {
-          if (kind === "pass") run.passed = count;
-          else if (kind === "fail") run.failed = count;
-          else if (kind === "tests") run.tests = count;
-          else run.cancelled = count;
-        },
-      });
+      const summary: TestCounts = {};
+      if (kind === "pass") summary.passed = count;
+      else if (kind === "fail") summary.failed = count;
+      else if (kind === "tests") summary.tests = count;
+      else summary.cancelled = count;
+      parts.push({ line, rank: NODE_ORDER.indexOf(kind), summary });
     }
   }
   return parts;
-}
-
-// A node run proves its total with a `fail` count, or a `tests` count its passes match.
-function settleNode(run: TestRun): TestRun {
-  const proven = run.failed !== undefined || (run.tests !== undefined && run.tests === run.passed);
-  const failed = run.failed === undefined && !run.cancelled ? undefined : (run.failed ?? 0) + (run.cancelled ?? 0);
-  return { ...run, failed, proven };
 }
 
 // pytest: `===== 1 failed, 11 passed in 0.52s =====`, or the -q form without rules.
@@ -196,8 +178,19 @@ function oneCheckOfSuites(byRunner: TestRun[][]): TestRun[] {
 }
 
 function testFacts(out: string): CheckFact[] {
-  const lines = linesOf(out);
-  const runs = oneCheckOfSuites([joinRuns(suiteParts(lines)), joinRuns(nodeParts(lines)).map(settleNode), pytestRuns(lines), cargoRuns(lines)]);
+  let at = 0;
+  const lines = out.split("\n").map((text, n): Line => {
+    const line = { text, at, n };
+    at += text.length + 1;
+    return line;
+  });
+  const nodeRuns = joinRuns(nodeParts(lines));
+  for (const run of nodeRuns) {
+    // A node run proves its total with a `fail` count, or a matching `tests` count.
+    run.proven = run.failed !== undefined || (run.tests !== undefined && run.tests === run.passed);
+    if (run.failed !== undefined || run.cancelled) run.failed = (run.failed ?? 0) + (run.cancelled ?? 0);
+  }
+  const runs = oneCheckOfSuites([joinRuns(suiteParts(lines)), nodeRuns, pytestRuns(lines), cargoRuns(lines)]);
   return runs.flatMap((run) => testRunFact(run) ?? []);
 }
 
@@ -244,27 +237,22 @@ function formatFacts(out: string): CheckFact[] {
   return facts;
 }
 
-const checkFactCache = new WeakMap<object, { result: unknown; facts: CheckFact[] }>();
+const checkFactCache = new WeakMap<ToolRowDataLike, { result: ToolResultLike; facts: CheckFact[] }>();
 
 /** Check facts for a settled bash row, one per run, in output order. */
 export function checkFacts(comp: ToolRowDataLike): CheckFact[] {
-  if (comp?.toolName !== "bash") return [];
+  if (comp.toolName !== "bash") return [];
   const command = comp.args?.command;
-  if (typeof command !== "string" || !comp.result || typeof comp.result !== "object" || comp.isPartial === true) return [];
+  if (typeof command !== "string" || !comp.result || comp.isPartial === true) return [];
   const cached = checkFactCache.get(comp);
   if (cached && cached.result === comp.result) return cached.facts;
   const out = stripAnsi(resultText(comp));
   const facts: CheckFact[] = [];
-  if (out) {
-    const parsers: [RegExp, (text: string) => CheckFact[]][] = [
-      [TEST_GATE, testFacts],
-      [TYPE_GATE, typeFacts],
-      [LINT_GATE, lintFacts],
-      [FORMAT_GATE, formatFacts],
-    ];
-    for (const [gate, parse] of parsers) if (gate.test(command)) facts.push(...parse(out));
-    facts.sort((a, b) => a.at - b.at);
-  }
+  if (TEST_GATE.test(command)) facts.push(...testFacts(out));
+  if (TYPE_GATE.test(command)) facts.push(...typeFacts(out));
+  if (LINT_GATE.test(command)) facts.push(...lintFacts(out));
+  if (FORMAT_GATE.test(command)) facts.push(...formatFacts(out));
+  facts.sort((a, b) => a.at - b.at);
   checkFactCache.set(comp, { result: comp.result, facts });
   return facts;
 }
