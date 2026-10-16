@@ -13,6 +13,10 @@
   cell. Click or Ctrl+O opens the extension's own block, Ctrl+T leaves it to Pi. No
   per-extension code: the rule applies to every registered message and entry renderer
   and to Pi's default block.
+- Traceline's record vocabulary is plain data in `extensions/pi-traceline/vocabulary.ts`.
+  An entry names its commands, the options it requires or rules out, its output
+  patterns, and examples of real output with the records they must yield; the test
+  suite runs every example. Adding a command means adding an entry. No record changes.
 
 ## 0.17.0 (2026-10-17)
 

@@ -153,6 +153,12 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   Pi's exact `(no output)` result; auto modes, status masks and later commands do not.
   Same-row state verification accepts bare or JSON `MERGED` state and matches the
   explicit merge and view targets.
+- **Record vocabulary** (`vocabulary.test.ts`, design language §9.10): every entry in
+  `extensions/pi-traceline/vocabulary.ts` carries examples of real output and the
+  records they must yield, and the suite runs all of them through `recordFacts`. An
+  entry must show at least one record it earns; near misses (dry runs, failures,
+  announcements) belong beside it with `records: []`. The parser reports a bad entry
+  and leaves it out whole.
 - **Composed calls** (`composed-calls.test.ts`, design language §9.14): a codemode row
   folds nested calls by tool with counts, one target per member, `✗N` for nested
   failures inside a completed script, `trimmed` ahead of the size cell, wall time from

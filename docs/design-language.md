@@ -734,23 +734,26 @@ before a command (`do gh issue close`) are looked through.
 - commands run elsewhere stay unknown: `ssh host 'git push'`, `bash -c '…'`,
   `perl -e '…' git push`, `git rebase --exec 'git commit …'`
 
-| command | evidence | record |
-|---|---|---|
-| `git commit` | output `[main a4f21c9]` | `committed a4f21c9` |
-| `git push` | output `a..b main -> main`, `* [new tag] … -> v0.5.9` | `pushed main` |
-| `git push --delete`, `git push origin :fix` | output ` - [deleted] fix` | `deleted origin/fix` |
-| `git branch -d`, `-D` | output `Deleted branch fix (was …).` | `deleted fix` |
-| `git checkout -b`, `git switch -c` | output `Switched to a new branch 'fix'` | `created branch fix` |
-| `git worktree add` | output `Preparing worktree (…)` then `HEAD is now at` | `created worktree fix` |
-| `git worktree remove` | quiet success | `removed worktree ./wt` |
-| `git rebase` | output `Successfully rebased and updated refs/heads/fix.` | `rebased fix` |
-| `gh pr merge` | output `Merged pull request #87`, observed state, quiet success | `merged PR #87` |
-| `gh pr close` | output `Closed pull request #12` | `closed PR #12` |
-| `gh pr create` | output `…/pull/88` | `opened PR #88` |
-| `gh issue create` | output `…/issues/14` | `opened #14` |
-| `gh issue close` | output `Closed issue #12` | `closed #12` |
-| `gh release create` | output `…/releases/tag/v0.5.9` | `released v0.5.9` |
-| `npm publish` | output `+ pine-of-glass@0.5.10` | `published 0.5.10` |
+Each vocabulary entry is plain data, so adding a command means adding an entry,
+not code. The built-in entries live in
+[`extensions/pi-traceline/vocabulary.ts`](../extensions/pi-traceline/vocabulary.ts),
+which is the list of what traceline records. An entry has:
+
+- an `id` (`git.worktree.add`) and the `commands` it covers (`git checkout`,
+  `git switch`)
+- `requires`, options of which at least one must be present (`-b`), and
+  `unless`, options that rule the invocation out (`--dry-run`). A short option
+  matches inside a cluster (`-n` in `-nu`)
+- `records`: completion-output rules, each an output pattern with named groups,
+  the verb, a datum template over those groups (`PR #{number}`), and optionally a
+  warning tone or an opaque datum
+- `examples`: real output with the records it must yield, including near misses
+  that must yield none. The test suite runs every example, so an entry's examples
+  are its specification
+
+A pattern can only read output. What it cannot say is code keyed by the entry's
+`id`: a datum qualified by the command (`origin/fix`), a decoded release tag, and
+the observed-state and quiet-success sources above.
 
 - a worktree's datum is its branch, from git's line; a detached worktree shows
   its sha, dim like a commit's. A worktree removed shows its path as typed

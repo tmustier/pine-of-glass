@@ -1,6 +1,7 @@
-// The record vocabulary and the shell subset it is recognised in (design language
-// §9.10). Output shapes are copied from real git, gh and npm porcelain; the negative
-// cases are rows that used to earn a record they had not proved.
+// How records are recognised in the shell, and which evidence counts (design language
+// §9.10). Each vocabulary entry's own cases are examples in vocabulary.ts, which
+// vocabulary.test.ts runs; the cases here are rows that used to earn a record they had
+// not proved.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -18,61 +19,6 @@ function bash(command: string, output: string, options: { error?: boolean } = {}
 const factLabels = (command: string, output: string, options: { error?: boolean } = {}) =>
   recordFacts(bash(command, output, options)).map(({ verb, datum }) => `${verb} ${datum}`);
 const SILENT = "(no output)";
-
-test("a worktree is created when git's checkout completes, named by its branch", () => {
-  assert.deepEqual(
-    factLabels(
-      "git fetch origin && git worktree add -b release/0.16.0 /tmp/pine-of-glass-release-0.16.0 origin/main",
-      "Preparing worktree (new branch 'release/0.16.0')\nbranch 'release/0.16.0' set up to track 'origin/main'.\nHEAD is now at f238efe Release pine-of-glass 0.16.0 (#160)\n",
-    ),
-    ["created worktree release/0.16.0"],
-  );
-  assert.deepEqual(
-    factLabels("git worktree add .worktrees/fix fix", "Preparing worktree (checking out 'fix')\nUpdating files:  88% (3881/4396)\rUpdating files: 100% (4396/4396), done.\nHEAD is now at a4f21c9 Fix parser\n"),
-    ["created worktree fix"],
-  );
-  // A detached worktree is named by its sha, which stays dim like a commit's.
-  const [detached] = recordFacts(bash("git worktree add --detach /tmp/review HEAD", "Preparing worktree (detached HEAD 5372dd0)\nHEAD is now at 5372dd0 init\n"));
-  assert.deepEqual([detached?.datum, detached?.opaque], ["5372dd0", true]);
-});
-
-test("announced work is not completion", () => {
-  assert.deepEqual(factLabels("git worktree add .worktrees/fix fix", "Preparing worktree (checking out 'fix')\nfatal: 'fix' is already used by worktree at '/repo/.worktrees/old'\n", { error: true }), []);
-  assert.deepEqual(factLabels("git worktree add -b fix ../wt 2>&1 | head -1", "Preparing worktree (new branch 'fix')\n"), []);
-});
-
-test("branch lifecycle: created, rebased, deleted locally and on the remote", () => {
-  assert.deepEqual(factLabels("git checkout -b fix origin/main", "Switched to a new branch 'fix'\n"), ["created branch fix"]);
-  assert.deepEqual(factLabels("git switch -c fix", "Switched to a new branch 'fix'\n"), ["created branch fix"]);
-  // A progress line shares the success line through `\r`.
-  assert.deepEqual(factLabels("git fetch origin && git rebase origin/main", "Rebasing (1/1)\rSuccessfully rebased and updated refs/heads/release/0.16.0.\n"), ["rebased release/0.16.0"]);
-  assert.deepEqual(factLabels("git rebase origin/main", "Current branch fix is up to date.\n"), []);
-  // The remote deletion is qualified by the remote the command names.
-  assert.deepEqual(
-    factLabels(
-      "git worktree remove .worktrees/fix && git branch -D fix && git push origin --delete fix",
-      "Deleted branch fix (was a4f21c9).\nTo github.com:tmustier/pine-of-glass.git\n - [deleted]         fix\n",
-    ),
-    ["deleted fix", "deleted origin/fix"],
-  );
-  assert.deepEqual(factLabels("git push origin :refs/tags/v0.1.0", "To github.com:o/r.git\n - [deleted]         v0.1.0\n"), ["deleted origin/v0.1.0"]);
-  assert.deepEqual(factLabels("git branch -D fix", "error: branch 'fix' not found\n", { error: true }), []);
-});
-
-test("an issue opened by gh earns its number", () => {
-  assert.deepEqual(factLabels("gh issue create --title x --body-file /tmp/body.md", "https://github.com/tmustier/pine-of-glass/issues/14\n"), ["opened #14"]);
-});
-
-test("output that only imitates success earns nothing", () => {
-  // Dry runs print the real porcelain.
-  assert.deepEqual(factLabels("git push --dry-run", "To github.com:o/r.git\n   1c75c2a..50cf33f  main -> main\n"), []);
-  assert.deepEqual(factLabels("git push -n origin main", "To github.com:o/r.git\n   1c75c2a..50cf33f  main -> main\n"), []);
-  assert.deepEqual(factLabels("npm publish --dry-run --access public", "npm notice Publishing to https://registry.npmjs.org/ (dry-run)\n+ pine-of-glass@0.5.10\n"), []);
-  // `git fetch` prints push-shaped lines; `set-url --push` is not a push.
-  assert.deepEqual(factLabels("git remote set-url --push upstream DISABLED && git fetch upstream", "From github.com:o/r\n * [new tag]         v1.2.0     -> v1.2.0\n"), []);
-  // `fetch --prune` prints `[deleted]` lines with an arrow; a push deletion has none.
-  assert.deepEqual(factLabels("git push origin --delete fix; git fetch --prune", " - [deleted]         (none)     -> origin/stale\n"), []);
-});
 
 test("a command named in quotes, a comment or a heredoc body is not a command", () => {
   assert.deepEqual(factLabels("echo 'git commit' && cat log.txt", "[main a4f21c9] x\n"), []);

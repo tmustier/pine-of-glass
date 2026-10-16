@@ -51,6 +51,10 @@ node scripts/dev/bash-corpus/extract-results.mjs
 node scripts/dev/bash-corpus/records.ts --samples 3
 ```
 
+Adding an entry: write it in `extensions/pi-traceline/vocabulary.ts` with examples
+copied from `out/results.jsonl` (real output, positive and near miss), then run the
+census before and after.
+
 Comparing a vocabulary change: run `records.ts` with distinct `--census` and
 `--dump` paths before and after the edit, then join the dumps on `row`. Read every
 record lost (was it a false positive, or a shape the new rule missed?) and sample
