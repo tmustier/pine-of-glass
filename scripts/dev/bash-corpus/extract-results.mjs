@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+// Harvest bash calls *with their results* from local pi session logs, for judging
+// traceline's records (design language §9.10) against real porcelain.
+//
+//   node scripts/dev/bash-corpus/extract-results.mjs [--sessions ~/.pi/agent/sessions] [--out out/results.jsonl]
+//
+// Output: one JSON object per line, {"cmd", "text", "isError"}, for every bash call
+// whose command mentions git, gh or npm (the record vocabularies). The file holds raw
+// session output, so it lives in the git-ignored out/ directory and is never committed.
+// records.ts replays it through the live records parser.
+
+import { createReadStream, mkdirSync, readdirSync, statSync, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const args = process.argv.slice(2);
+function argValue(flag, fallback) {
+  const i = args.indexOf(flag);
+  return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
+}
+
+const here = dirname(fileURLToPath(import.meta.url));
+const sessionsRoot = argValue("--sessions", join(homedir(), ".pi", "agent", "sessions"));
+const outPath = argValue("--out", join(here, "out", "results.jsonl"));
+const VOCABULARY = /\b(?:git|gh|npm)\b/;
+
+function* sessionFiles(root) {
+  let entries;
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = join(root, entry);
+    let stat;
+    try {
+      stat = statSync(full);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) yield* sessionFiles(full);
+    else if (entry.endsWith(".jsonl")) yield full;
+  }
+}
+
+function resultText(content) {
+  if (!Array.isArray(content)) return "";
+  let text = "";
+  for (const block of content) if (block?.type === "text" && typeof block.text === "string") text += `${block.text}\n`;
+  return text;
+}
+
+mkdirSync(dirname(outPath), { recursive: true });
+const out = createWriteStream(outPath);
+let files = 0;
+let rows = 0;
+
+for (const file of sessionFiles(sessionsRoot)) {
+  files++;
+  const pending = new Map(); // toolCallId -> command
+  const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity });
+  for await (const line of rl) {
+    const isCall = line.includes('"toolCall"') && line.includes('"bash"');
+    const isResult = line.includes('"toolResult"') && pending.size > 0;
+    if (!isCall && !isResult) continue;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const message = event?.type === "message" ? event.message : undefined;
+    if (!message) continue;
+    if (message.role === "toolResult") {
+      const cmd = pending.get(message.toolCallId);
+      if (cmd === undefined) continue;
+      pending.delete(message.toolCallId);
+      out.write(`${JSON.stringify({ cmd, text: resultText(message.content), isError: message.isError === true })}\n`);
+      rows++;
+      continue;
+    }
+    if (!Array.isArray(message.content)) continue;
+    for (const item of message.content) {
+      const cmd = item?.type === "toolCall" && item?.name === "bash" ? item?.arguments?.command : undefined;
+      if (typeof cmd === "string" && VOCABULARY.test(cmd)) pending.set(item.id, cmd);
+    }
+  }
+}
+
+out.end();
+console.log(`sessions=${files} rows=${rows} -> ${outPath}`);

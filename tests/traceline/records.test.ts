@@ -1,10 +1,9 @@
-// Records of consequence (design language §9.10): bash rows that change shared
-// state — commit, push, PR merge/close/create, issue close, release/publish —
-// graduate to verb-led outcome rows: the record leads and the command trails as
-// provenance behind its `$`, parsed from the *success evidence the tool reported*.
-// The explicit command target may fill in only targetless verified state output.
-// These tests pin the exact evidence shapes, the headline placement, and the
-// fact-toned ink.
+// Records of consequence (design language §9.10): bash rows that complete a change to
+// named project state graduate to verb-led outcome rows: the record leads and the
+// command trails as provenance behind its `$`. Evidence is the operation's completion
+// output, observed state, or quiet success. These tests pin the evidence shapes, the
+// headline placement, and the fact-toned ink; record-vocabulary.test.ts pins the
+// vocabulary and the shell subset it is recognised in.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 

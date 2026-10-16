@@ -182,7 +182,17 @@ Successful commands can lead with a verified outcome:
   ▏ › committed a1b2c3d $ git commit -m "Fix parser"
   ▏ › pushed main $ git push
   ▏ › merged PR #87 $ gh pr merge 87 --squash
+  ▏ › created worktree release/0.16.0 $ git worktree add -b release/0.16.0 /tmp/pog-release origin/main
+  ▏ › deleted fix, origin/fix $ git branch -D fix && git push origin --delete fix
 ```
+
+Traceline knows commits, pushes, rebases, branches and worktrees created or deleted,
+pull requests and issues opened, merged or closed, GitHub releases and npm publishes.
+The outcome comes from the command's own success line, from a status check later in
+the same command (`gh pr view 87 --json state`), or, for commands that succeed
+silently such as `gh pr merge` and `git worktree remove`, from a clean exit with no
+output when nothing else in the command could have produced it. Dry runs, commands
+quoted inside other commands, and commands run over `ssh` never count.
 
 Test, type-check, lint and format runs lead with their outcome when the output
 carries the checker's summary:

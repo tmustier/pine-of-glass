@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Traceline records more of what a session changes in git: `created worktree fix`,
+  `created branch fix`, `rebased fix`, `deleted fix, origin/fix` for a branch deleted
+  locally and on the remote, `removed worktree ./wt`, and `opened #14` for
+  `gh issue create`. Each comes from git's or gh's own success line, except a
+  worktree removal, which succeeds silently and counts only when it is the last
+  command and nothing could have skipped it.
+- Traceline stops claiming outcomes it had not proved: `npm publish --dry-run` and
+  `git push --dry-run` no longer read as published or pushed, `git fetch` tag lines
+  next to a `git remote set-url --push` no longer read as a push, a command named
+  inside quotes or a comment (`echo 'git commit'`) no longer counts, and
+  `exit 0; gh pr merge 87` or `set -n; gh pr merge 87` no longer read as merged.
+  A merge checked with `gh pr view` in a different `--repo` no longer counts either.
+- A silent merge behind an assignment (`GH_TOKEN=$(gh auth token) gh pr merge 755`)
+  and a merge checked after a heredoc now read as merged.
+
 ## 0.16.0 (2026-10-16)
 
 - Traceline failed rows say why. The suffix carries a failure fact in the error

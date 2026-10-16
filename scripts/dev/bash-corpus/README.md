@@ -38,12 +38,32 @@ node scripts/dev/bash-corpus/report.ts --census out/census-after.json --dump out
   that motivated the corpus review in the first place.
 - **Zero-crown rows** should stay near zero (§9.4: no row goes dark).
 
+## Records
+
+Traceline's records (design language §9.10) are judged against real *results*, not
+just commands: a record is only as good as the porcelain it reads.
+
+```bash
+# 1. Harvest git/gh/npm calls with their results (~30 s over ~20 GB of session logs)
+node scripts/dev/bash-corpus/extract-results.mjs
+
+# 2. Census: rows per record and evidence source, with examples
+node scripts/dev/bash-corpus/records.ts --samples 3
+```
+
+Comparing a vocabulary change: run `records.ts` with distinct `--census` and
+`--dump` paths before and after the edit, then join the dumps on `row`. Read every
+record lost (was it a false positive, or a shape the new rule missed?) and sample
+every record gained for false hits. A new entry should stay rare: a handful of
+records per wall, not one per row.
+
 ## Caveats
 
 - Real rows flatten pi's *rendered* invocation text; the rig flattens the raw
   command string, which matches it modulo pi's own line wrapping. Good enough for
   census work; not a golden.
 - The corpus is your local session history: private. `out/` is gitignored; never
-  commit it.
+  commit it. `out/results.jsonl` holds raw command output, so treat it like the
+  session logs it came from.
 - Crown detection parses rendered ANSI under a marker theme, so the same report
   runs unchanged against any renderer version.

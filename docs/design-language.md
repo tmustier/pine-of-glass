@@ -645,13 +645,12 @@ adopted against a 400-session corpus of real transcripts, per §10):
 
 ### 9.10 Records
 
-Some bash rows change shared state beyond the working tree: a commit, a push, a
-PR merged or closed, a release or package published. Their invocation says only
-what was attempted; the proof lives in the result, which one-line mode hides.
-A row whose result carries that proof graduates to a verb-led outcome row: the
-record leads, stated verb-first from the success evidence the tool actually
-reported. When that evidence is targetless, the command may supply an explicit PR
-target under the verified-state and silent-merge rules below. The command trails as
+Some bash rows complete a consequential change to named project state: a commit,
+a branch or worktree created or deleted, a push, a rebase, a PR or issue opened,
+merged or closed, a release or package published. The test is a name the session
+will refer to later. Their invocation says only what was attempted; the proof lives
+in the result, which one-line mode hides. A row with that proof graduates to a
+verb-led outcome row: the record leads, stated verb-first, and the command trails as
 provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merge 87
 --squash`.
 
@@ -667,17 +666,8 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
   re-earns its berth
 - a bash row with no record keeps `$ command` at the left edge: rows lead with
   an outcome exactly when there demonstrably was one
-- result-first honesty: a fact appears only when the command names the operation
-  and its result carries success evidence (`[main a4f21c9]`, `main -> main`,
-  `Merged pull request #87`, or a verified merged PR state). Same-row PR state may be
-  bare `MERGED` or JSON with a top-level `state` of `MERGED`
-- current `gh pr merge` often succeeds with no text. Pi's `(no output)` result counts
-  only for a successful terminal merge with an explicit numeric or `/pull/N` target;
-  `--auto` and `--disable-auto` do not qualify. Merge queues can turn success into an
-  enqueue rather than a landing, so verified state remains stronger evidence there
 - a failed push after a good commit still headlines `committed a4f21c9` on a red
-  row: committed, demonstrably not landed. `git tag` earns nothing; its success
-  porcelain is silence
+  row: committed, demonstrably not landed
 - facts chain in output order with the `·` separator; consecutive same-verb
   facts merge their data (`pushed main, v0.5.9`) only when their tones agree,
   so a forced push never hides inside a routine one
@@ -692,8 +682,91 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
   not per row: red discriminators beside a green `committed a4f21c9` is the
   loudest and most honest rendering, exactly when state changed before a failure
 
+Evidence comes from three sources. They are not ranked; each proves something
+different, and each vocabulary entry names the sources it accepts and why its
+wording follows from them.
+
+- completion output: the command's own success line names the thing, and the
+  datum comes from that line (`[main a4f21c9]`, `main -> main`, `Deleted branch
+  fix (was a4f21c9).`). A line that announces work is not completion: `Preparing
+  worktree (new branch 'fix')` counts only when git's `HEAD is now at` follows it,
+  because a failed checkout prints `fatal:` in that place
+- observed state: a later command in the same row asks about the same target and
+  its whole output is the state (`MERGED`, or JSON whose top-level `state` is
+  `MERGED`). Same target means the same number, no conflicting `--repo` or URL
+  repository, and no `cd` in between; a query behind `||` runs only when the
+  operation failed, so it proves nothing. State proves the PR is merged now, not
+  that this row merged it; the record states the outcome the row was after
+- quiet success: some CLIs succeed in silence (`gh pr merge` without a terminal,
+  `git worktree remove`). The result is pi's `(no output)` with no error: nothing
+  in the row printed, so no warning hides behind the exit status. The datum comes
+  from the command, so the command must make the exit status the operation's own:
+  - the row is a flat list of commands joined by `&&`, `;` or line breaks: no
+    `if`, loops, `case`, functions, groups, subshells, heredocs or background `&`
+  - the operation is the last command, and the separator before it is `&&`, `;`
+    or a line break. After `||` the row succeeds without running it
+  - no earlier command ends or disarms the shell: `exit`, `return`, `exec`,
+    `eval`, `source`, `.`, `trap`, `alias`, `shopt`, or a `set` beyond `-e`,
+    `-u`, `-x` and `-o pipefail` (`set -n` reads every later command without
+    running it)
+  - the target is literal (no `$`, glob or command substitution), the
+    operation has no redirect or pipe, and no flag changes what exit 0 means
+    (`--auto`, `--disable-auto`)
+  - the entry cites why that CLI's exit 0 means the change happened. Merge
+    queues can turn a merge into an enqueue, so observed state is the stronger
+    evidence there
+
+  Quiet success reads pi's exit status, as failure facts (§9.2.1) do. A Pi
+  command prefix or spawn hook that rewrites the command can make both wrong;
+  traceline renders the result it is given and does not run anything to check
+
+Commands are recognised in a documented subset of shell: words, quotes,
+escapes, comments, `&&`, `||`, `;`, `|`, `&`, line breaks, subshell parentheses
+and heredocs. Leading `NAME=value` assignments, git's global options (`-C dir`,
+`-c key=value`), the wrappers `env`, `command` and `time`, and the reserved word
+before a command (`do gh issue close`) are looked through.
+
+- a command named inside quotes, a comment or a heredoc body is not a command:
+  `echo 'git commit'` earns nothing. A command inside `$(…)` or backticks counts
+  for completion output, since `PR_URL=$(gh pr create …)` usually echoes it, but
+  never for observed state or quiet success: its status is not the row's
+- a dry run never counts (`--dry-run`, `git push -n`): its output imitates success
+- commands run elsewhere stay unknown: `ssh host 'git push'`, `bash -c '…'`,
+  `perl -e '…' git push`, `git rebase --exec 'git commit …'`
+
+| command | evidence | record |
+|---|---|---|
+| `git commit` | output `[main a4f21c9]` | `committed a4f21c9` |
+| `git push` | output `a..b main -> main`, `* [new tag] … -> v0.5.9` | `pushed main` |
+| `git push --delete`, `git push origin :fix` | output ` - [deleted] fix` | `deleted origin/fix` |
+| `git branch -d`, `-D` | output `Deleted branch fix (was …).` | `deleted fix` |
+| `git checkout -b`, `git switch -c` | output `Switched to a new branch 'fix'` | `created branch fix` |
+| `git worktree add` | output `Preparing worktree (…)` then `HEAD is now at` | `created worktree fix` |
+| `git worktree remove` | quiet success | `removed worktree ./wt` |
+| `git rebase` | output `Successfully rebased and updated refs/heads/fix.` | `rebased fix` |
+| `gh pr merge` | output `Merged pull request #87`, observed state, quiet success | `merged PR #87` |
+| `gh pr close` | output `Closed pull request #12` | `closed PR #12` |
+| `gh pr create` | output `…/pull/88` | `opened PR #88` |
+| `gh issue create` | output `…/issues/14` | `opened #14` |
+| `gh issue close` | output `Closed issue #12` | `closed #12` |
+| `gh release create` | output `…/releases/tag/v0.5.9` | `released v0.5.9` |
+| `npm publish` | output `+ pine-of-glass@0.5.10` | `published 0.5.10` |
+
+- a worktree's datum is its branch, from git's line; a detached worktree shows
+  its sha, dim like a commit's. A worktree removed shows its path as typed
+- a remote deletion is qualified by the remote the command names (`origin/fix`),
+  since the output only names the ref; with a local delete it merges into one
+  cell, `deleted fix, origin/fix`
+- `git tag` earns nothing. It succeeds in silence and would qualify for quiet
+  success, but the release flow pushes the tag moments later and `pushed v0.5.9`
+  states the same event with completion output
+- local-only housekeeping stays ambient: `fetch`, `pull`, `merge`, `stash`,
+  `reset`, `clone`, plain `checkout` and `switch`
+
 Rarity keeps records on the right side of principle 3: a handful of green events
-punctuate the wall; ambient green stays purged.
+punctuate the wall; ambient green stays purged. A new entry must keep that:
+`scripts/dev/bash-corpus/` replays real session results through the live parser
+and reports how often each record fires and from which evidence.
 
 ### 9.10.1 Checks
 
