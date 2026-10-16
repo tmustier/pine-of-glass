@@ -4,7 +4,6 @@
 // live in nested-rows.ts, parsing in nested-calls.ts, the reveal default in index.ts.
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { stripAnsi } from "../_lib/ansi.ts";
 import type { ToolRowDataLike } from "../_lib/chat.ts";
 import { compactCount, formatLatency } from "../_lib/fmt.ts";
 import {
@@ -21,7 +20,7 @@ import {
 } from "../_lib/style.ts";
 import { fitBashLines } from "./bash-lines.ts";
 import { relativizeContextCd } from "./bash-preamble.ts";
-import { failureFact, failureFactWidth } from "./failure.ts";
+import { failureCell, failureFact } from "./failure.ts";
 import type { ComposedFacts, NestedCall } from "./nested-calls.ts";
 import { PATH_VERBS, bold, dim, flattenCommand, nameInk, pathInk } from "./nested-rows.ts";
 import { cwdRelativePath, readDirKey } from "./path-rows.ts";
@@ -50,16 +49,13 @@ export type LedgerEntry =
 /** Group a ledger's calls into lines: only healthy calls fold, and only with their
  * immediate neighbours, so the ledger never reorders the record (§9.9, §9.14). A read
  * whose live result reached warning severity keeps its own line and splits the run. */
-export function ledgerEntries(row: ToolRowDataLike, facts: ComposedFacts, warningChars: number): LedgerEntry[] {
+export function ledgerEntries(facts: ComposedFacts, warningChars: number): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   let previousKey: string | undefined;
   for (const call of facts.calls) {
     const healthy = call.status === "ok" && (call.resultChars === undefined || call.resultChars < warningChars);
     let key: string | undefined;
-    if (healthy) {
-      if (call.name !== "read") key = `${call.name}\u0000${stripAnsi(plainBody(undefined, row, call, "text"))}`;
-      else if (call.args.path !== undefined) key = `read\u0000${readDirKey(call.args.path)}`;
-    }
+    if (healthy) key = call.name === "read" ? (call.args.path && `read\u0000${readDirKey(call.args.path)}`) : `${call.name}\u0000${call.args.text}`;
     const last = entries[entries.length - 1];
     if (last && key !== undefined && key === previousKey) {
       if (last.kind === "call") entries[entries.length - 1] = { kind: call.name === "read" ? "reads" : "repeat", calls: [last.calls[0], call] };
@@ -70,22 +66,54 @@ export function ledgerEntries(row: ToolRowDataLike, facts: ComposedFacts, warnin
   return entries;
 }
 
-// A call's body without fitting: the tool's grammar, no outcome cells.
-function plainBody(theme: Theme | undefined, row: ToolRowDataLike, call: NestedCall, tone: Tone): string {
-  const command = call.name === "bash" ? call.args.command : undefined;
-  if (command !== undefined) return `${bold(theme, tone, "$")} ${dim(theme, bashText(row, command))}`;
-  if (PATH_VERBS.has(call.name) && call.args.path !== undefined) {
-    return `${bold(theme, tone, call.name)} ${pathInk(theme, tone, row, call.args.path, call.name === "read" ? call.args.range ?? "" : "")}`;
+type EntryBody = { body: string; continuations: string[]; contIndent: number };
+
+// A dir fold's body (§9.9): `read dir/ a.md, b.md:1-40` wrapped at file boundaries, or,
+// when every member read one file, that file with its ranges joined.
+function readsBody(theme: Theme | undefined, row: ToolRowDataLike, calls: readonly NestedCall[], budget: number): EntryBody {
+  const paths = calls.map((call) => call.args.path!);
+  const rangeOf = (call: NestedCall) => (call.args.range ?? "").slice(1);
+  if (new Set(paths).size === 1) {
+    const ranges = calls.map(rangeOf).filter(Boolean).join(",");
+    return { body: `${bold(theme, "text", "read")} ${pathInk(theme, "text", row, paths[0]!, ranges ? `:${ranges}` : "")}`, continuations: [], contIndent: FOLD_CONT_INDENT };
   }
-  const args = call.args.text;
-  return args && args !== "{}" ? `${nameInk(theme, call.name, tone)} ${dim(theme, args)}` : nameInk(theme, call.name, tone);
+  const shown = cwdRelativePath(row, paths[0]!);
+  const dir = shown.slice(0, shown.lastIndexOf("/") + 1);
+  const head = dir ? `${bold(theme, "text", "read")} ${dim(theme, dir)}` : bold(theme, "text", "read");
+  const groups: { base: string; ranges: string[] }[] = [];
+  for (const call of calls) {
+    const base = call.args.path!.slice(call.args.path!.lastIndexOf("/") + 1);
+    const range = rangeOf(call);
+    const last = groups[groups.length - 1];
+    if (last?.base === base) {
+      if (range) last.ranges.push(range);
+    } else groups.push({ base, ranges: range ? [range] : [] });
+  }
+  const cells = groups.map(({ base, ranges }) => `${bold(theme, "text", base)}${ink(theme, "warning", ranges.length ? `:${ranges.join(",")}` : "")}`);
+  const [body, ...continuations] = wrapReadCells(theme, head, cells, budget, Math.max(1, budget - FOLD_CONT_INDENT));
+  return { body, continuations, contIndent: FOLD_CONT_INDENT };
 }
 
-// A ledger bash line's text: flattened, tildified, and its leading `cd` relative to the
-// parent's cwd (§9.4), so a worktree path reads `./.worktrees/x`.
-function bashText(row: ToolRowDataLike, command: string): string {
-  const cwd = typeof row.cwd === "string" && row.cwd.length > 0 ? tildify(row.cwd) : undefined;
-  return relativizeContextCd(flattenCommand(command), cwd);
+// One call's body in its tool's grammar, with `count` (a repeat's ` ×N`) after it. A bash
+// body flattens, tildifies and reads its leading `cd` relative to the parent's cwd (§9.4),
+// then fits by command or, when `wrap` allows, wraps onto continuation lines (§9.8).
+function callBody(theme: Theme | undefined, row: ToolRowDataLike, call: NestedCall, tone: Tone, count: string, budget: number, wrap: boolean): EntryBody {
+  const command = call.name === "bash" ? call.args.command : undefined;
+  if (command !== undefined) {
+    const cwd = typeof row.cwd === "string" && row.cwd.length > 0 ? tildify(row.cwd) : undefined;
+    const text = relativizeContextCd(flattenCommand(command), cwd);
+    const contBudget = budget - BASH_CONT_INDENT;
+    const plan = fitBashLines(theme, tone, text, contBudget - count.length, wrap ? contBudget : undefined);
+    return { body: `${bold(theme, tone, "$")} ${plan.first}${dim(theme, count)}`, continuations: plan.continuations, contIndent: BASH_CONT_INDENT };
+  }
+  let body: string;
+  if (PATH_VERBS.has(call.name) && call.args.path !== undefined) {
+    body = `${bold(theme, tone, call.name)} ${pathInk(theme, tone, row, call.args.path, call.name === "read" ? call.args.range ?? "" : "")}`;
+  } else {
+    const args = call.args.text;
+    body = args && args !== "{}" ? `${nameInk(theme, call.name, tone)} ${dim(theme, args)}` : nameInk(theme, call.name, tone);
+  }
+  return { body: `${body}${dim(theme, count)}`, continuations: [], contIndent: 0 };
 }
 
 function sizeCell(theme: Theme | undefined, chars: number | undefined, thresholds: SizeThresholds, columnLive: boolean): string {
@@ -106,18 +134,14 @@ export function ledgerLines(
   fold = true,
 ): string[] {
   const available = Math.max(1, width - LEDGER_PREFIX_WIDTH - LEDGER_RIGHT_MARGIN);
-  const entries: LedgerEntry[] = fold ? ledgerEntries(row, facts, thresholds.warning) : facts.calls.map((call) => ({ kind: "call", calls: [call] }));
+  const entries: LedgerEntry[] = fold ? ledgerEntries(facts, thresholds.warning) : facts.calls.map((call) => ({ kind: "call", calls: [call] }));
   const sizeColumnLive = facts.calls.some((call) => call.resultChars !== undefined && call.resultChars >= CHAR_SUFFIX_FLOOR);
   const suffixes = entries.map((entry) => {
     const cells: string[] = [];
     if (entry.kind === "call") {
       const [call] = entry.calls;
       const fact = call.status === "error" && call.error ? failureFact(call.name, call.error, call.args.command) : undefined;
-      let failure = "";
-      if (fact) {
-        failure = ink(theme, "error", fact.text);
-        if (!fact.parsed) failure = middleTruncate(failure, failureFactWidth(available), theme);
-      }
+      const failure = fact ? failureCell(theme, fact, available) : "";
       if (failure) cells.push(failure);
       else if (call.status === "cancelled") cells.push(dim(theme, "cancelled"));
       if (call.durationMs !== undefined && call.durationMs >= DURATION_FLOOR_MS) cells.push(dim(theme, formatLatency(call.durationMs)));
@@ -140,40 +164,9 @@ export function ledgerLines(
     const [call] = entry.calls;
     const tone: Tone = call.status === "error" ? "error" : call.status === "cancelled" ? "dim" : "text";
     const count = entry.kind === "repeat" ? ` ×${entry.calls.length}` : "";
-    const command = call.name === "bash" ? call.args.command : undefined;
-    let body: string;
-    let continuations: string[] = [];
-    let contIndent = 0;
-    if (entry.kind === "reads") {
-      contIndent = FOLD_CONT_INDENT;
-      const paths = entry.calls.map((call) => call.args.path!);
-      if (new Set(paths).size === 1) {
-        const ranges = entry.calls.map((call) => (call.args.range ?? "").slice(1)).filter(Boolean).join(",");
-        body = `${bold(theme, "text", "read")} ${pathInk(theme, "text", row, paths[0]!, ranges ? `:${ranges}` : "")}`;
-      } else {
-        const shown = cwdRelativePath(row, paths[0]!);
-        const dir = shown.slice(0, shown.lastIndexOf("/") + 1);
-        const head = dir ? `${bold(theme, "text", "read")} ${dim(theme, dir)}` : bold(theme, "text", "read");
-        const groups: { base: string; ranges: string[] }[] = [];
-        for (const member of entry.calls) {
-          const path = member.args.path!;
-          const base = path.slice(path.lastIndexOf("/") + 1);
-          const range = (member.args.range ?? "").slice(1);
-          const last = groups[groups.length - 1];
-          if (last && last.base === base) {
-            if (range) last.ranges.push(range);
-          } else groups.push({ base, ranges: range ? [range] : [] });
-        }
-        const cells = groups.map(({ base, ranges }) =>
-          `${bold(theme, "text", base)}${ink(theme, "warning", ranges.length ? `:${ranges.join(",")}` : "")}`);
-        [body, ...continuations] = wrapReadCells(theme, head, cells, bodyBudget, Math.max(1, bodyBudget - contIndent));
-      }
-    } else if (command !== undefined) {
-      contIndent = BASH_CONT_INDENT;
-      const plan = fitBashLines(theme, tone, bashText(row, command), bodyBudget - contIndent - count.length, fold ? bodyBudget - contIndent : undefined);
-      body = `${bold(theme, tone, "$")} ${plan.first}${dim(theme, count)}`;
-      continuations = plan.continuations;
-    } else body = `${plainBody(theme, row, call, tone)}${dim(theme, count)}`;
+    const { body, continuations, contIndent } = entry.kind === "reads"
+      ? readsBody(theme, row, entry.calls, bodyBudget)
+      : callBody(theme, row, call, tone, count, bodyBudget, fold);
     const bullet = ink(theme, STATUS_TONES[call.status], GLYPH.tool);
     const prefix = `${LEDGER_INDENT}${rail}${LEDGER_NEST}${bullet} `;
     const fitted = rightAlignSuffix(body, suffixes[index]!, available, theme, reserve);

@@ -10,15 +10,10 @@ import { fitCompoundCommand, wrapCompoundCommand, type FitPiece } from "./compou
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
 
-// Emission splices the crowns into dim runs: everything between crowned head words
-// (arguments, operators, marks, quoted scripts, demoted glue) dims in maximal spans, and
-// each crowned word takes the discriminator ink (§9.3; §9.2's error tint on failed rows).
-export function inkBashBody(theme: Theme | undefined, tone: Tone, body: string): string {
-  return inkPieces(theme, tone, body, bashCrownedHeads(body), [{ start: 0, end: body.length }]);
-}
-
 // The kept ranges ink with the crowns computed on the whole body, so the shell grammar is
-// never re-parsed on text that has lost its closing quotes; each cut wears a dim `…`.
+// never re-parsed on text that has lost its closing quotes. Everything between crowned
+// head words dims in maximal spans, each crowned word takes the discriminator ink (§9.3;
+// §9.2's error tint on failed rows), and each cut wears a dim `…`.
 function inkPieces(theme: Theme | undefined, tone: Tone, body: string, crowns: readonly BashHead[], pieces: readonly FitPiece[]): string {
   let out = "";
   for (const piece of pieces) {
@@ -47,19 +42,11 @@ export type BashLines = { first: string; continuations: string[] };
  */
 export function fitBashLines(theme: Theme | undefined, tone: Tone, body: string, budget: number, contBudget?: number): BashLines {
   const crowns = bashCrownedHeads(body);
-  if (body.length <= budget) return { first: inkPieces(theme, tone, body, crowns, [{ start: 0, end: body.length }]), continuations: [] };
-  const fit = fitCompoundCommand(body, crowns, budget);
-  if (contBudget !== undefined && (!fit || fit.starved)) {
-    const wrapped = wrapCompoundCommand(body, crowns, budget, contBudget);
-    if (wrapped) {
-      const [first, ...rest] = wrapped.map((pieces) => {
-        const last = pieces[pieces.length - 1]!;
-        if (!last.mark) last.end -= /\s*$/.exec(body.slice(last.start, last.end))![0].length;
-        return inkPieces(theme, tone, body, crowns, pieces);
-      });
-      return { first: first!, continuations: rest };
-    }
-  }
-  const pieces = fit ? fit.pieces : [{ start: 0, end: body.length }];
-  return { first: inkPieces(theme, tone, body, crowns, pieces), continuations: [] };
+  const whole: FitPiece[] = [{ start: 0, end: body.length }];
+  const fit = body.length > budget ? fitCompoundCommand(body, crowns, budget) : undefined;
+  const wrapped = contBudget !== undefined && body.length > budget && (!fit || fit.starved)
+    ? wrapCompoundCommand(body, crowns, budget, contBudget)
+    : undefined;
+  const [first, ...continuations] = (wrapped ?? [fit?.pieces ?? whole]).map((pieces) => inkPieces(theme, tone, body, crowns, pieces));
+  return { first: first!, continuations };
 }

@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { internals } from "../../../extensions/pi-traceline/index.ts";
 
-const { inkBashRow, flattenInvocationLines, stripAnsi, setTracelineThemeGetter } = internals;
+const { inkBashBody, flattenInvocationLines, stripAnsi, setTracelineThemeGetter } = internals;
 
 const args = process.argv.slice(2);
 function argValue(flag: string, fallback?: string): string | undefined {
@@ -71,7 +71,7 @@ const dump: string[] = [];
 const rendered: string[] = [];
 for (const cmd of commands) {
   const body = flattenInvocationLines(cmd.split("\n")) ?? "";
-  const row = inkBashRow(undefined, `$ ${body}`);
+  const row = `$ ${inkBashBody(body)}`;
   const crowns = crownsOf(row);
   perRow.set(crowns.length, (perRow.get(crowns.length) ?? 0) + 1);
   for (const word of crowns) census.set(word, (census.get(word) ?? 0) + 1);

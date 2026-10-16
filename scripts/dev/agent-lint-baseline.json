@@ -292,13 +292,13 @@
     "files": {
       "extensions/pi-cachemire/index.ts": 694,
       "extensions/pi-contextimate/index.ts": 848,
-      "extensions/pi-traceline/index.ts": 1452,
+      "extensions/pi-traceline/index.ts": 1435,
       "tests/traceline/one-line.test.ts": 771
     }
   },
   "internalsBudgets": {
     "extensions/pi-cachemire/index.ts": 25,
     "extensions/pi-contextimate/index.ts": 17,
-    "extensions/pi-traceline/index.ts": 52
+    "extensions/pi-traceline/index.ts": 51
   }
 }

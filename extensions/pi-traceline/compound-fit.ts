@@ -19,10 +19,10 @@ const MIN_CUT_SAVING = 4; // agent-default (not a user rule): 2026-10-15
 
 // A command cut below this many columns is a crown with no story (§9.8); the row wraps
 // instead. agent-default (not a user rule): 2026-10-20
-export const COMMAND_FLOOR_COLS = 24;
+const COMMAND_FLOOR_COLS = 24;
 // Wrapped rows stop here; the remainder packs onto the last line by command (§9.8).
 // agent-default (not a user rule): 2026-10-20
-export const WRAP_LINE_CAP = 4;
+const WRAP_LINE_CAP = 4;
 
 // The connector run that ends a command before the next crowned head: whitespace,
 // sequencers, flattened line breaks, pipes and opening group brackets. It belongs to
@@ -218,26 +218,29 @@ export function fitCompoundCommand(body: string, heads: readonly FitHead[], budg
   return fitUnits(body, buildUnits(body, heads), budget);
 }
 
-// The painted width of a unit that ends a line: its connector stays, the whitespace
-// after it is not painted.
+// A unit that ends a line keeps its connector but not the whitespace after it.
+function trailingSpace(body: string, start: number, end: number): number {
+  return /\s*$/.exec(body.slice(start, end))![0].length;
+}
+
 function lineEndWidth(body: string, unit: Unit): number {
-  return fullWidth(unit) - (/\s*$/.exec(body.slice(unit.start, unit.end))?.[0].length ?? 0);
+  return fullWidth(unit) - trailingSpace(body, unit.start, unit.end);
+}
+
+function closeLine(body: string, line: FitPiece[]): FitPiece[] {
+  const last = line[line.length - 1]!;
+  return last.mark ? line : [...line.slice(0, -1), { start: last.start, end: last.end - trailingSpace(body, last.start, last.end) }];
 }
 
 /**
  * Plan a wrap of a bash body at command boundaries (§9.8): the first line has `budget`
- * columns, continuation lines `contBudget`, and at most `maxLines` lines. Units pack
- * whole onto lines; once the cap is reached, or a lone unit is wider than its line,
- * the remainder fits by command onto that line so every head still shows. Returns
- * undefined when the body fits on one line or has nothing to wrap.
+ * columns, continuation lines `contBudget`, and at most WRAP_LINE_CAP lines. Units
+ * pack whole onto lines; once the cap is reached, or a lone unit is wider than its
+ * line, the remainder fits by command onto that line so every head still shows. Each
+ * line's trailing whitespace is dropped. Returns undefined when the body fits on one
+ * line or has nothing to wrap.
  */
-export function wrapCompoundCommand(
-  body: string,
-  heads: readonly FitHead[],
-  budget: number,
-  contBudget: number,
-  maxLines = WRAP_LINE_CAP,
-): FitPiece[][] | undefined {
+export function wrapCompoundCommand(body: string, heads: readonly FitHead[], budget: number, contBudget: number): FitPiece[][] | undefined {
   if (!fitsByUnit(heads) || body.length <= budget) return undefined;
   const units = buildUnits(body, heads);
   const lines: FitPiece[][] = [];
@@ -261,8 +264,8 @@ export function wrapCompoundCommand(
       used += fullWidth(unit);
       continue;
     }
-    if (line.length > 0 && lines.length < maxLines - 1) {
-      lines.push(line);
+    if (line.length > 0 && lines.length < WRAP_LINE_CAP - 1) {
+      lines.push(closeLine(body, line));
       line = [];
       used = 0;
       lineBudget = contBudget;
@@ -276,9 +279,9 @@ export function wrapCompoundCommand(
     // command into what this line has left.
     const rest = units.slice(index);
     const fit = fitUnits(body, rest, lineBudget - used);
-    lines.push([...line, ...(fit ? fit.pieces : [{ start: rest[0]!.start, end: body.length }])]);
+    lines.push(closeLine(body, [...line, ...(fit ? fit.pieces : [{ start: rest[0]!.start, end: body.length }])]));
     return lines.length > 1 ? lines : undefined;
   }
-  if (line.length > 0) lines.push(line);
+  if (line.length > 0) lines.push(closeLine(body, line));
   return lines.length > 1 ? lines : undefined;
 }
