@@ -3,7 +3,7 @@
 Traceline's bash head-bolding rules (design language §9.4) are judged
 against real usage, not intuition: this rig harvests every bash tool invocation from
 local pi session logs and replays it through the *live* ink pipeline
-(`internals.inkBashBody`), then reports what wears the crown.
+(`fitBashLines`), then reports what wears the crown.
 
 ## Recipe
 

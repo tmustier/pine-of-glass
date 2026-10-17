@@ -92,8 +92,6 @@ import { parseTracelineConfig, type TracelineConfig } from "./traceline-config.t
 
 /** Compact trace rendering; see docs/design-language.md §9. */
 
-type ToolDisplayMode = "native" | "oneLine";
-
 type TracelineGlobal = typeof globalThis & {
   __tracelinePatchVersion?: number;
   __tracelineTui?: TUI;
@@ -164,10 +162,6 @@ function thinkingHidden(): boolean {
   chatChildren();
   const chat = g.__tracelineChat;
   return chat ? topology.prepare(chat).lastAssistant?.hideThinkingBlock ?? false : false;
-}
-
-function displayMode(): ToolDisplayMode {
-  return thinkingHidden() ? "oneLine" : "native";
 }
 
 // --- one-line rendering ---------------------------------------------------------------
@@ -318,10 +312,6 @@ function blockFacts(rows: ToolRowLike[]): BlockFacts {
   });
 }
 
-function blockFactsOf(comp: ToolRowLike): BlockFacts {
-  return blockFacts(blockToolRows(comp));
-}
-
 // Rows in a block share one body budget (design language §9.8): reserve the block's
 // widest rendered fact suffix — folded read runs count as their single `N calls · size`
 // cell — plus the two-space gap (§9.1), so every truncated row in the block cuts at
@@ -419,7 +409,7 @@ function sizeBerthCell(comp: ToolRowDataLike, sizeColumnLive: boolean): string {
   return base ? `${trimmed}${dim(SEP)}${base}` : trimmed;
 }
 
-function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFactsOf(comp)): string {
+function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, facts: BlockFacts = blockFacts(blockToolRows(comp))): string {
   const theme = currentTheme();
   const parts: string[] = [];
   // Inline-diff mutations (§9.5) spend no right-column ink: the diff rides the
@@ -1064,7 +1054,7 @@ function patchToolRowPrototype(proto: TraceMousePrototype): void {
   if (currentPatchInstalled() || typeof proto.render !== "function" || typeof proto.handleMouse !== "function") return;
   installTraceMouse(proto, renderCache, {
     bulletColumn: TOOL_PREFIX_VISIBLE_WIDTH - TOOL_AFTER_BULLET.length - 1,
-    isCompact: (row) => displayMode() === "oneLine" && row.expanded !== true,
+    isCompact: (row) => thinkingHidden() && row.expanded !== true,
     renderTrace: cachedLayout,
     decorateNative: (row, lines) => drillDecorateNativeRow(
       currentTheme(), row, lines, ink(currentTheme(), statusTone(row), TOOL_BULLET),
@@ -1195,7 +1185,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     },
     // Only one-line mode folds rows away; in native mode every row is its own target.
     hiddenByFold: (comp) =>
-      displayMode() === "oneLine" && ((readRun(comp)?.index ?? 0) > 0 || (repetitionRun(comp)?.index ?? 0) > 0),
+      thinkingHidden() && ((readRun(comp)?.index ?? 0) > 0 || (repetitionRun(comp)?.index ?? 0) > 0),
     statusTone,
     // The pager is the fidelity surface (§9.13): every call, unfolded.
     ledgerLines: (comp, width) => {

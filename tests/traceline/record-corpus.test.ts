@@ -121,3 +121,20 @@ test("draft --check rejects examples that are not copied from a real result", (t
     assert.deepEqual(checked.stdout.trim().split("\n"), [problem]);
   }
 });
+
+test("bash corpus replay preserves multiline commands through the shared ink pipeline", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "pog-crown-corpus-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const corpus = join(dir, "commands.jsonl");
+  const census = join(dir, "census.json");
+  const dump = join(dir, "crowns.jsonl");
+  writeFileSync(corpus, ["set -e\ncd /tmp\nnpm test\nprintf 'done'", "git status && git diff --stat"]
+    .map((cmd) => JSON.stringify({ cmd })).join("\n"));
+  const result = spawnSync(process.execPath, [new URL("report.ts", scripts).pathname,
+    "--corpus", corpus, "--census", census, "--dump", dump], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readFileSync(dump, "utf8").trim().split("\n").map((line) => JSON.parse(line).crowns), [
+    ["npm"], ["git", "git"],
+  ]);
+  assert.equal(JSON.parse(readFileSync(census, "utf8")).invocations, 2);
+});
