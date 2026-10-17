@@ -547,7 +547,7 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
 
   // With a theme (design language §2/§9.3/§9.4): one supporting grey — each
   // command's head word renders L0-bold, the bash row's basename; arguments and
-  // plumbing all sit at L3-dim. No muted level anywhere in a trace row.
+  // plumbing all sit at L3-dim. No muted level in a bash body (a gist line is §9.15's exception).
   setTracelineThemeGetter(() => themed());
   const body = inkBashBody("pwd && git remote -v 2>/dev/null");
   assert.ok(body.startsWith(`${T.text}\x1b[1mpwd\x1b[22m`), `head command must be bold text: ${JSON.stringify(body)}`);
