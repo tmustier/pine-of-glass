@@ -23,14 +23,21 @@ initTheme(undefined, false);
 trace.patchToolRowPrototype(ToolExecutionComponent.prototype as unknown as TraceMousePrototype);
 trace.patchAssistantRowPrototype(AssistantMessageComponent.prototype as unknown as AssistantRowPrototypeLike);
 const rowSeam = (row: ToolExecutionComponent) => row as unknown as ToolRowLike;
+interface BenchmarkRow {
+  row: ToolExecutionComponent;
+  id: string;
+  args: { command: string };
+}
 // Rows whose native call component rendered: every invocation capture renders it (at one
 // or more bounded widths, or the wide fallback), and nothing else does in these frames.
-let captured = new Set<number>();
-function makeRow(id: number) {
+const captured = new Set<number>();
+function makeRow(id: number): BenchmarkRow {
   const command = `cd /tmp/project && NODE_ENV=test npm run validate -- src/package-${id}/important-file.ts`;
-  const row = new ToolExecutionComponent("bash", `bench-${id}`, { command }, {}, {
+  const toolCallId = `bench-${id}`;
+  const args = { command };
+  const row = new ToolExecutionComponent("bash", toolCallId, args, {}, {
     ...createReadTool("/tmp"), name: "bash",
-    renderCall: (args: { command: string }) => {
+    renderCall: () => {
       const component = new Text(`$ ${args.command}`, 0, 0);
       const render = component.render.bind(component);
       component.render = (width) => { captured.add(id); return render(width); };
@@ -39,12 +46,12 @@ function makeRow(id: number) {
     renderResult: () => new Text("native output", 0, 0),
   }, { requestRender() {} } as never, "/tmp");
   row.updateResult({ content: [{ type: "text", text: "x".repeat(1024) }], isError: false });
-  return row;
+  return { row, id: toolCallId, args };
 }
-function message(rows: ToolExecutionComponent[], group: number) {
+function message(rows: BenchmarkRow[], group: number) {
   return assistantMessage([
     { type: "text", text: `Step ${group}` },
-    ...rows.map((row) => ({ type: "toolCall" as const, id: String(rowSeam(row).toolCallId), name: "bash", arguments: {} })),
+    ...rows.map(({ id, args }) => ({ type: "toolCall" as const, id, name: "bash", arguments: args })),
   ]);
 }
 function sample(times: number[], fn: () => void) { const start = performance.now(); fn(); times.push(performance.now() - start); }
@@ -56,24 +63,24 @@ function distribution(times: number[]) {
 for (const [count, groupSize] of cases.slice(Number(process.argv[2]), Number(process.argv[2]) + 1)) {
   trace.resetRenderCache();
   const container = new Container();
-  const rows: ToolExecutionComponent[] = [];
+  const rows: BenchmarkRow[] = [];
   let tail: AssistantMessageComponent | undefined;
-  let tailRows: ToolExecutionComponent[] = [];
+  let tailRows: BenchmarkRow[] = [];
   for (let i = 0; i < count; i += groupSize) {
     const members = Array.from({ length: Math.min(groupSize, count - i) }, (_, j) => makeRow(i + j));
     tail = new AssistantMessageComponent(message(members, i), true);
-    container.addChild(tail); members.forEach((row) => container.addChild(row));
+    container.addChild(tail); members.forEach(({ row }) => container.addChild(row));
     rows.push(...members); tailRows = members;
   }
   trace.setTracelineChat(container as never);
-  const raw = () => rows.map((row) => trace.uncachedRenderTraceRow(rowSeam(row), 100));
-  const cached = () => rows.map((row) => row.render(100));
+  const raw = () => rows.map(({ row }) => trace.uncachedRenderTraceRow(rowSeam(row), 100));
+  const cached = () => rows.map(({ row }) => row.render(100));
   global.gc?.();
   const heapBefore = process.memoryUsage().heapUsed;
   const check = () => {
     if (groupSize <= 50) assert.deepEqual(cached(), raw());
     else for (const index of [0, Math.floor(rows.length / 2), rows.length - 1]) {
-      assert.deepEqual(rows[index]!.render(100), trace.uncachedRenderTraceRow(rowSeam(rows[index]!), 100));
+      assert.deepEqual(rows[index]!.row.render(100), trace.uncachedRenderTraceRow(rowSeam(rows[index]!.row), 100));
     }
   };
   const cold: number[] = []; sample(cold, () => { cached(); }); check();
@@ -81,16 +88,16 @@ for (const [count, groupSize] of cases.slice(Number(process.argv[2]), Number(pro
   // The uncached giant-block path takes minutes. Sample oracle rows instead of
   // presenting a partial-transcript timing as a comparable full-frame baseline.
   if (groupSize <= 50) for (let i = 0; i < 3; i++) sample(baseline, () => { raw(); });
-  const warm: number[] = []; captured = new Set(); trace.renderCacheWorkCounts(true);
+  const warm: number[] = []; captured.clear(); trace.renderCacheWorkCounts(true);
   for (let i = 0; i < 30; i++) sample(warm, () => { cached(); });
   assert.equal(captured.size, 0, "warm frames must not capture native invocations");
   assert.equal(trace.renderCacheWorkCounts().outputMisses, 0);
   const streaming: number[] = []; const work: number[] = []; const parsed: number[] = [];
   const activeId = count - 1;
   for (let i = 0; i < 20; i++) {
-    captured = new Set(); trace.renderCacheWorkCounts(true);
+    captured.clear(); trace.renderCacheWorkCounts(true);
     sample(streaming, () => {
-      rows.at(-1)!.updateResult({ content: [{ type: "text", text: "x".repeat(1024 + i) }], isError: false }, true);
+      rows.at(-1)!.row.updateResult({ content: [{ type: "text", text: "x".repeat(1024 + i) }], isError: false }, true);
       cached();
     });
     work.push(trace.renderCacheWorkCounts().outputMisses); parsed.push(captured.size);
@@ -99,8 +106,8 @@ for (const [count, groupSize] of cases.slice(Number(process.argv[2]), Number(pro
   assert.ok(work.every((misses) => misses === groupSize), "only the active block may recompute output");
   const appends: number[] = [];
   for (let i = 0; i < 5; i++) sample(appends, () => {
-    const row = makeRow(count + i); rows.push(row); tailRows.push(row);
-    tail!.updateContent(message(tailRows, count), true); container.addChild(row); cached();
+    const member = makeRow(count + i); rows.push(member); tailRows.push(member);
+    tail!.updateContent(message(tailRows, count), true); container.addChild(member.row); cached();
   });
   check();
   global.gc?.();

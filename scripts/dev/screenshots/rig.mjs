@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// README screenshot rig. Launches the installed pi in tmux with an isolated HOME (so
+// README screenshot rig. Launches the locked or linked Pi in tmux with an isolated HOME (so
 // only this repo's extensions load — no personal extensions, no session-hud), replays
 // or drives a session, captures the pane with colors, and renders PNGs via
 // ansi2html.mjs + html2png.py. See tests/smoke/startup-smoke.mjs for the recipe this
@@ -14,7 +14,7 @@
 //
 // Captures land in docs/img/. Pass --keep to leave the tmux session running.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync, copyFileSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync, copyFileSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,13 +54,7 @@ function waitFor(label, predicate, timeoutMs = 60000) {
 }
 const send = (...keys) => tmux("send-keys", "-t", session, ...keys);
 
-function makeFixture({ extensions, withAuth = false }) {
-  // The fixture project lives *inside* the fixture HOME so every path pi renders
-  // tildifies like a normal machine (~/projects/site) instead of leaking temp dirs.
-  // realpath: /var/folders is a symlink to /private/var — pi realpaths file labels,
-  // so HOME must be the resolved path or tildify misses and temp paths leak into shots.
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "pog-shots-home-")));
-  const cwd = join(home, "projects", "site");
+function makeFixture({ home, cwd }, extensions) {
   mkdirSync(cwd, { recursive: true });
   mkdirSync(join(home, ".pi", "agent"), { recursive: true });
   const trusted = {};
@@ -69,13 +63,11 @@ function makeFixture({ extensions, withAuth = false }) {
     trusted[realpathSync(path)] = true;
   }
   writeFileSync(join(home, ".pi", "agent", "trust.json"), JSON.stringify(trusted, null, 2));
-  if (withAuth) copyFileSync(join(homedir(), ".pi", "agent", "auth.json"), join(home, ".pi", "agent", "auth.json"));
+  copyFileSync(join(homedir(), ".pi", "agent", "auth.json"), join(home, ".pi", "agent", "auth.json"));
   mkdirSync(join(cwd, ".pi"), { recursive: true });
-  writeFileSync(
-    join(cwd, ".pi", "settings.json"),
-    JSON.stringify({ extensions: extensions.map((name) => join(repoRoot, "extensions", name, "index.ts")) }, null, 2),
-  );
-  return { home, cwd };
+  const settings = { extensions: extensions.map((name) => join(repoRoot, "extensions", name, "index.ts")) };
+  writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify(settings, null, 2));
+  return settings;
 }
 
 function launchPi({ home, cwd, args = "", cols = 120, rows = 45 }) {
@@ -140,50 +132,34 @@ function shoot(name, { trimTo, cutFrom, cols = 120 } = {}) {
   console.log(`shot docs/img/${name}.png (ansi: ${base}.txt)`);
 }
 
-function writeSession(dir, cwd, build) {
-  const { id, entries } = build(cwd);
-  const header = { type: "session", version: 3, id, timestamp: entries[0]?.timestamp, cwd };
-  const rest = entries.filter((e) => e.type !== "session");
-  // Re-chain: first entry hangs off nothing.
-  if (rest.length) rest[0].parentId = null;
-  const file = join(dir, `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`);
-  writeFileSync(file, [header, ...rest].map((e) => JSON.stringify(e)).join("\n") + "\n");
-  return file;
-}
-
-function cleanup(fixture) {
-  if (keep) {
-    console.log(`kept tmux session ${session} and fixture ${fixture.cwd}`);
-    return;
-  }
+function stopPi() {
   send("/quit", "Enter");
   sleep(800);
   tmux("kill-session", "-t", session);
-  rmSync(fixture.home, { recursive: true, force: true });
 }
 
 // --- scenarios --------------------------------------------------------------------
 
-function tracelineShot() {
-  const fixture = makeFixture({ extensions: ["pi-traceline"], withAuth: true });
-  const sessionFile = writeSession(fixture.home, fixture.cwd, buildTracelineSession);
+function tracelineShot(fixture) {
+  const { id, entries } = buildTracelineSession(fixture.cwd);
+  const header = { type: "session", version: 3, id, timestamp: entries[0]?.timestamp, cwd: fixture.cwd };
+  const rest = entries.filter((e) => e.type !== "session");
+  // Re-chain: first entry hangs off nothing.
+  if (rest.length) rest[0].parentId = null;
+  const sessionFile = join(fixture.home, `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`);
+  writeFileSync(sessionFile, [header, ...rest].map((e) => JSON.stringify(e)).join("\n") + "\n");
   launchPi({ ...fixture, args: `--session ${JSON.stringify(sessionFile)}`, rows: 60 });
-  try {
-    waitFor("transcript", (t) => t.includes("PR #120 is merged"), 90000);
-    sleep(2500);
-    // Restored sessions open with thinking visible. Ctrl+T hides it and renders
-    // Traceline's one-line tool rows.
-    send("C-t");
-    waitFor("one-line mode", (t) => /^\s*▏\s+›/m.test(t), 15000);
-    sleep(1500);
-    shoot("pi-traceline-collapsed", { trimTo: "The pricing section on /product" });
-  } finally {
-    cleanup(fixture);
-  }
+  waitFor("transcript", (t) => t.includes("PR #120 is merged"), 90000);
+  sleep(2500);
+  // Restored sessions open with thinking visible. Ctrl+T hides it and renders
+  // Traceline's one-line tool rows.
+  send("C-t");
+  waitFor("one-line mode", (t) => /^\s*▏\s+›/m.test(t), 15000);
+  sleep(1500);
+  shoot("pi-traceline-collapsed", { trimTo: "The pricing section on /product" });
 }
 
-function contextimateShot() {
-  const fixture = makeFixture({ extensions: ["pi-contextimate"], withAuth: true });
+function contextimateShot(fixture) {
   // A little real project material so the panel has something to account for.
   writeFileSync(join(fixture.cwd, "AGENTS.md"), `# site\n${"Astro site for the product pages. Copy style: say it once, land it. ".repeat(40)}\n`);
   mkdirSync(join(fixture.cwd, ".pi", "skills", "release-notes"), { recursive: true });
@@ -192,26 +168,21 @@ function contextimateShot() {
     "---\nname: release-notes\ndescription: Draft release notes from the merged PRs since the last tag, in the site voice.\n---\n# release-notes\n",
   );
   launchPi({ ...fixture, args: "--no-session", rows: 50 });
-  try {
-    waitFor("panel", (t) => t.includes("[Contextimate]"), 90000);
-    sleep(2000);
-    shoot("pi-contextimate-summary", { trimTo: "[Contextimate]" });
-    send("/contextimate compact", "Enter");
-    waitFor("compact", (t) => t.includes("(inactive)"));
-    sleep(1500);
-    shoot("pi-contextimate-compact", { trimTo: "[Contextimate]" });
-    send("/contextimate expanded", "Enter");
-    waitFor("expanded", (t) => t.includes("readable view"));
-    sleep(1500);
-    // Excerpt: the full schema-tree dump is a wall; one tool tree gives the sense.
-    shoot("pi-contextimate-expanded", { trimTo: "[Contextimate]", cutFrom: "read · builtin" });
-  } finally {
-    cleanup(fixture);
-  }
+  waitFor("panel", (t) => t.includes("[Contextimate]"), 90000);
+  sleep(2000);
+  shoot("pi-contextimate-summary", { trimTo: "[Contextimate]" });
+  send("/contextimate compact", "Enter");
+  waitFor("compact", (t) => t.includes("(inactive)"));
+  sleep(1500);
+  shoot("pi-contextimate-compact", { trimTo: "[Contextimate]" });
+  send("/contextimate expanded", "Enter");
+  waitFor("expanded", (t) => t.includes("readable view"));
+  sleep(1500);
+  // Excerpt: the full schema-tree dump is a wall; one tool tree gives the sense.
+  shoot("pi-contextimate-expanded", { trimTo: "[Contextimate]", cutFrom: "read · builtin" });
 }
 
-function cachemireShot() {
-  const fixture = makeFixture({ extensions: ["pi-traceline", "pi-cachemire"], withAuth: true });
+function cachemireShot(fixture) {
   writeFileSync(join(fixture.cwd, "README.md"), "# lantern\n\nA tiny CLI that turns build logs into one-line verdicts.\n\n## License\nMIT.\n");
   // Low materiality thresholds: the fixture session is tiny, and the point of the
   // shot is the break notice, so let a small-but-real break clear the bar.
@@ -224,79 +195,70 @@ function cachemireShot() {
     args: '--model openai/gpt-6-sol:medium --models "openai/gpt-6-sol:medium,openai/gpt-6-astra:medium"',
     rows: 45,
   });
-  try {
-    waitFor("editor", (t) => t.includes("gpt-6-sol"), 90000);
-    sleep(1500);
-    send("Read README.md and tell me, in one line, what this project is.");
-    sleep(300);
-    send("Enter");
-    waitFor("turn 1", (t) => /turn: .*calls/.test(t), 120000);
-    sleep(2000);
-    send("And what license is it under?");
-    sleep(300);
-    send("Enter");
-    waitFor("turn 2", (t) => (t.match(/turn: /g) ?? []).length >= 2, 120000);
-    sleep(2000);
-    // Cycle the thinking level (shift+tab): reasoning effort participates in the
-    // codex backend's cache key (live-verified, see docs/pi-cachemire.md), so the
-    // next send should produce a real break with a *named* cause — the interesting
-    // shot. Best-effort cache: if the break doesn't materialize, re-run the rig.
-    send("BTab");
-    sleep(1000);
-    send("Summarize the README in exactly five words.");
-    sleep(300);
-    send("Enter");
-    waitFor("turn 3", (t) => (t.match(/turn: /g) ?? []).length >= 3, 120000);
-    sleep(2000);
-    if (!/cache (broke|partial)/.test(captureText())) {
-      console.warn("WARNING: no cache break materialized (best-effort cache) — shots will be boring; re-run");
-    }
-    // Hide thinking so tool rows render as traceline one-liners, consistent with the
-    // other README shots.
-    send("C-t");
-    sleep(1500);
-    send("C-p");
-    waitFor("model-switch forecast", (t) => t.includes("previous prefix not reusable") && t.includes("model switched"));
-    sleep(1000);
-    shoot("pi-cachemire-clock", { trimTo: "Read README.md" });
-    send("C-p");
-    waitFor("billed model restored", (t) => t.includes("Switched to GPT-6 Sol"));
-    sleep(500);
-    send("/cache", "Enter");
-    waitFor("ledger", (t) => t.includes("cache & loop ledger"));
-    sleep(1000);
-    shoot("pi-cachemire-ledger", { trimTo: "[Cachemire]" });
-  } finally {
-    cleanup(fixture);
+  waitFor("editor", (t) => t.includes("gpt-6-sol"), 90000);
+  sleep(1500);
+  send("Read README.md and tell me, in one line, what this project is.");
+  sleep(300);
+  send("Enter");
+  waitFor("turn 1", (t) => /turn: .*calls/.test(t), 120000);
+  sleep(2000);
+  send("And what license is it under?");
+  sleep(300);
+  send("Enter");
+  waitFor("turn 2", (t) => (t.match(/turn: /g) ?? []).length >= 2, 120000);
+  sleep(2000);
+  // Cycle the thinking level (shift+tab): reasoning effort participates in the
+  // codex backend's cache key (live-verified, see docs/pi-cachemire.md), so the
+  // next send should produce a real break with a *named* cause — the interesting
+  // shot. Best-effort cache: if the break doesn't materialize, re-run the rig.
+  send("BTab");
+  sleep(1000);
+  send("Summarize the README in exactly five words.");
+  sleep(300);
+  send("Enter");
+  waitFor("turn 3", (t) => (t.match(/turn: /g) ?? []).length >= 3, 120000);
+  sleep(2000);
+  if (!/cache (broke|partial)/.test(captureText())) {
+    console.warn("WARNING: no cache break materialized (best-effort cache) — shots will be boring; re-run");
   }
+  // Hide thinking so tool rows render as traceline one-liners, consistent with the
+  // other README shots.
+  send("C-t");
+  sleep(1500);
+  send("C-p");
+  waitFor("model-switch forecast", (t) => t.includes("previous prefix not reusable") && t.includes("model switched"));
+  sleep(1000);
+  shoot("pi-cachemire-clock", { trimTo: "Read README.md" });
+  send("C-p");
+  waitFor("billed model restored", (t) => t.includes("Switched to GPT-6 Sol"));
+  sleep(500);
+  send("/cache", "Enter");
+  waitFor("ledger", (t) => t.includes("cache & loop ledger"));
+  sleep(1000);
+  shoot("pi-cachemire-ledger", { trimTo: "[Cachemire]" });
 }
 
-function meantimeShot() {
-  const fixture = makeFixture({ extensions: ["pi-traceline", "pi-meantime"], withAuth: true });
+function meantimeShot(fixture) {
   writeFileSync(
     join(fixture.cwd, "README.md"),
     "# tempo fixture\n\nA tiny project used to show model and tool timing in the real pi TUI.\n",
   );
   writeFileSync(join(fixture.cwd, ".pi", "pi-meantime.json"), JSON.stringify({ enabled: true }));
   launchPi({ ...fixture, args: "--model openai-codex/gpt-6.1-sol --thinking medium", rows: 48 });
-  try {
-    waitFor("editor", (t) => t.includes("gpt-6.1-sol"), 90000);
-    sleep(1500);
-    send("Use the bash tool to run `sleep 8`, then reply with exactly: Timing complete.");
-    sleep(300);
-    send("Enter");
-    waitFor("live tool phase", (t) => t.includes("◍ tools"), 120000);
-    sleep(2500);
-    shoot("pi-meantime-tempo", { trimTo: "Use the bash tool" });
-    waitFor("turn complete", (t) => (t.match(/Timing complete\./g) ?? []).length >= 2, 120000);
-    sleep(1500);
-    send("/pace", "Enter");
-    waitFor("pace ledger", (t) => t.includes("[Meantime]"));
-    sleep(1000);
-    shoot("pi-meantime-ledger", { trimTo: "[Meantime]" });
-  } finally {
-    cleanup(fixture);
-  }
+  waitFor("editor", (t) => t.includes("gpt-6.1-sol"), 90000);
+  sleep(1500);
+  send("Use the bash tool to run `sleep 8`, then reply with exactly: Timing complete.");
+  sleep(300);
+  send("Enter");
+  waitFor("live tool phase", (t) => t.includes("◍ tools"), 120000);
+  sleep(2500);
+  shoot("pi-meantime-tempo", { trimTo: "Use the bash tool" });
+  waitFor("turn complete", (t) => (t.match(/Timing complete\./g) ?? []).length >= 2, 120000);
+  sleep(1500);
+  send("/pace", "Enter");
+  waitFor("pace ledger", (t) => t.includes("[Meantime]"));
+  sleep(1000);
+  shoot("pi-meantime-ledger", { trimTo: "[Meantime]" });
 }
 
 // Composed calls (design language §9.14). Stage 1 is live: a real model, with codemode
@@ -306,10 +268,8 @@ function meantimeShot() {
 // "after", ledgers shown by default), then folds the first ledger by click in fullscreen
 // mode and opens the drill pager. Nothing in the transcript is crafted; the model chose
 // the scripts.
-function codemodeShot() {
-  const fixture = makeFixture({ extensions: ["pi-traceline"], withAuth: true });
-  const fixtureSettings = JSON.parse(readFileSync(join(fixture.cwd, ".pi", "settings.json"), "utf8"));
-  fixtureSettings.defaultTools = ["+codemode"];
+function codemodeShot(fixture, settings) {
+  const fixtureSettings = { ...settings, defaultTools: ["+codemode"] };
   writeFileSync(join(fixture.cwd, ".pi", "settings.json"), JSON.stringify(fixtureSettings, null, 2));
   const docs = join(fixture.cwd, "docs");
   mkdirSync(join(docs, "adr"), { recursive: true });
@@ -332,7 +292,7 @@ function codemodeShot() {
   ].join(" ");
   // Stage 1: live. `pi -p` runs the real agent loop with codemode active and records the session.
   // No shell: the prompt carries backticks that a shell would substitute.
-  const live = run(["pi", "-p", "--model", "openai-codex/gpt-6.1-sol:medium", "--session-dir", sessionDir, prompt], {
+  const live = run([process.execPath, piCli, "-p", "--model", "openai-codex/gpt-6.1-sol:medium", "--session-dir", sessionDir, prompt], {
     cwd: fixture.cwd, env: { ...process.env, HOME: fixture.home, PI_SKIP_VERSION_CHECK: "1" }, timeout: 600000,
   });
   if (live.status !== 0) throw new Error(`live stage failed: ${live.stderr}\n${live.stdout}`);
@@ -342,82 +302,88 @@ function codemodeShot() {
   console.log(`session: ${sessionFile}`);
 
   const settingsPath = join(fixture.cwd, ".pi", "settings.json");
-  const replay = (extraArgs, shots, { traceline = true } = {}) => {
+  const replay = (traceline, extraArgs = "") => {
     // "Before" is stock pi with its own codemode renderer: the same fixture with
     // this repo's extension removed from settings (not --no-extensions, which would
     // also drop pi's built-in codemode extension and its renderer).
     writeFileSync(settingsPath, JSON.stringify({ ...fixtureSettings, extensions: traceline ? fixtureSettings.extensions : [] }, null, 2));
     launchPi({ ...fixture, args: `--session ${JSON.stringify(sessionFile)} --session-dir ${JSON.stringify(sessionDir)} ${extraArgs}`, rows: 60 });
-    try {
-      waitFor("transcript", (t) => /ADR/i.test(t) && /MIT/.test(t), 90000);
-      sleep(4000);
-      // Restored sessions open with thinking visible. Press Ctrl+T until reasoning is
-      // hidden: with traceline that is the trace rail (`▏ ›`/`▏ ▸`) appearing, without
-      // it the reasoning paragraphs vanishing. A collapsed traceline preview still
-      // contains the reasoning's first words, so the text itself is not the signal.
-      const hidden = (t) => traceline ? /^\s*▏\s+[›▸▾]/m.test(t) : !/\n\s*Thinking\.\.\.|I'm contemplating|Figuring out/m.test(t);
-      for (let attempt = 0; attempt < 3 && !hidden(captureText()); attempt++) {
-        send("C-t");
-        sleep(3000);
-        console.log(`ctrl+t attempt ${attempt + 1}: ${hidden(captureText()) ? "reasoning hidden" : "still visible"}`);
-      }
-      shots();
-    } finally {
-      // Two replays share one fixture: end this pi, keep the HOME until the last one.
-      if (!keep) {
-        send("/quit", "Enter");
-        sleep(800);
-        tmux("kill-session", "-t", session);
-      }
+    waitFor("transcript", (t) => /ADR/i.test(t) && /MIT/.test(t), 90000);
+    sleep(4000);
+    // Restored sessions open with thinking visible. Press Ctrl+T until reasoning is
+    // hidden: with traceline that is the trace rail (`▏ ›`/`▏ ▸`) appearing, without
+    // it the reasoning paragraphs vanishing. A collapsed traceline preview still
+    // contains the reasoning's first words, so the text itself is not the signal.
+    const hidden = (t) => traceline ? /^\s*▏\s+[›▸▾]/m.test(t) : !/\n\s*Thinking\.\.\.|I'm contemplating|Figuring out/m.test(t);
+    for (let attempt = 0; attempt < 3 && !hidden(captureText()); attempt++) {
+      send("C-t");
+      sleep(3000);
+      console.log(`ctrl+t attempt ${attempt + 1}: ${hidden(captureText()) ? "reasoning hidden" : "still visible"}`);
     }
   };
   // Stage 2a: before. The native codemode rows, thinking hidden.
-  replay("", () => {
-    waitFor("native codemode rows", (t) => t.includes("codemode"), 15000);
-    shoot("pi-traceline-codemode-before", { trimTo: "Use codemode scripts" });
-  }, { traceline: false });
+  replay(false);
+  waitFor("native codemode rows", (t) => t.includes("codemode"), 15000);
+  shoot("pi-traceline-codemode-before", { trimTo: "Use codemode scripts" });
+  // The fixture spans both replays; --keep preserves the final one.
+  stopPi();
   // Stage 2b: after. Traceline's composed rows with their ledgers shown; then click the
   // first row's ▾ to fold its ledger (fullscreen mode owns the mouse), then drill into it.
-  replay("--tui-mode fullscreen", () => {
-    waitFor("composed rows", (t) => /▾ codemode \d+ calls/.test(t), 30000);
-    shoot("pi-traceline-codemode-after", { trimTo: "Use codemode scripts" });
-    const text = captureText();
-    const y = text.split("\n").findIndex((line) => /▾ codemode \d+ calls/.test(line));
-    if (y < 0) throw new Error("no composed row on screen");
-    // SGR 1006 mouse press+release at the row's bullet cell, the same raw path the
-    // click smoke tests use (tests/smoke/click-fixture.mjs).
-    const raw = (x, row, release) => {
-      const data = `\x1b[<0;${x};${row}${release ? "m" : "M"}`;
-      tmux("send-keys", "-t", session, "-H", ...[...Buffer.from(data)].map((b) => b.toString(16)));
-    };
-    raw(5, y + 1, false);
-    raw(5, y + 1, true);
-    waitFor("folded ledger", (t) => /▸ codemode \d+ calls/.test(t), 10000);
-    sleep(1500);
-    shoot("pi-traceline-codemode-folded", { trimTo: "Use codemode scripts" });
-    send("Escape");
-    send("/drill", "Enter");
-    waitFor("drill", (t) => t.includes("[Traceline] drill"), 10000);
-    sleep(800);
-    send("3"); // the oldest row: the many-call script, so the pager shows a real ledger
-    waitFor("pager", (t) => t.includes("[Traceline] peek"), 10000);
-    sleep(1200);
-    shoot("pi-traceline-codemode-pager", { trimTo: "[Traceline] peek" });
-    send("Escape");
-    send("Escape");
-  });
-  cleanup(fixture);
+  replay(true, "--tui-mode fullscreen");
+  waitFor("composed rows", (t) => /▾ codemode \d+ calls/.test(t), 30000);
+  shoot("pi-traceline-codemode-after", { trimTo: "Use codemode scripts" });
+  const text = captureText();
+  const y = text.split("\n").findIndex((line) => /▾ codemode \d+ calls/.test(line));
+  if (y < 0) throw new Error("no composed row on screen");
+  // SGR 1006 mouse press+release at the row's bullet cell, the same raw path the
+  // click smoke tests use (tests/smoke/click-fixture.mjs).
+  const raw = (x, row, release) => {
+    const data = `\x1b[<0;${x};${row}${release ? "m" : "M"}`;
+    tmux("send-keys", "-t", session, "-H", ...[...Buffer.from(data)].map((b) => b.toString(16)));
+  };
+  raw(5, y + 1, false);
+  raw(5, y + 1, true);
+  waitFor("folded ledger", (t) => /▸ codemode \d+ calls/.test(t), 10000);
+  sleep(1500);
+  shoot("pi-traceline-codemode-folded", { trimTo: "Use codemode scripts" });
+  send("Escape");
+  send("/drill", "Enter");
+  waitFor("drill", (t) => t.includes("[Traceline] drill"), 10000);
+  sleep(800);
+  send("3"); // the oldest row: the many-call script, so the pager shows a real ledger
+  waitFor("pager", (t) => t.includes("[Traceline] peek"), 10000);
+  sleep(1200);
+  shoot("pi-traceline-codemode-pager", { trimTo: "[Traceline] peek" });
+  send("Escape");
+  send("Escape");
 }
 
 const scenarios = {
-  traceline: tracelineShot,
-  codemode: codemodeShot,
-  contextimate: contextimateShot,
-  cachemire: cachemireShot,
-  meantime: meantimeShot,
+  traceline: { shoot: tracelineShot, extensions: ["pi-traceline"] },
+  codemode: { shoot: codemodeShot, extensions: ["pi-traceline"] },
+  contextimate: { shoot: contextimateShot, extensions: ["pi-contextimate"] },
+  cachemire: { shoot: cachemireShot, extensions: ["pi-traceline", "pi-cachemire"] },
+  meantime: { shoot: meantimeShot, extensions: ["pi-traceline", "pi-meantime"] },
 };
 if (!scenarios[scenario]) {
   console.error(`usage: rig.mjs <${Object.keys(scenarios).join("|")}> [--keep]`);
   process.exit(2);
 }
-scenarios[scenario]();
+let home = mkdtempSync(join(tmpdir(), "pog-shots-home-"));
+try {
+  // Resolve HOME so Pi's realpathed file labels tildify instead of leaking temp paths.
+  home = realpathSync(home);
+  const fixture = { home, cwd: join(home, "projects", "site") };
+  const settings = makeFixture(fixture, scenarios[scenario].extensions);
+  scenarios[scenario].shoot(fixture, settings);
+} finally {
+  if (keep) {
+    console.log(`kept tmux session ${session} and fixture ${join(home, "projects", "site")}`);
+  } else {
+    try {
+      stopPi();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }
+}
