@@ -33,7 +33,8 @@
     "test:smoke:drill": "node tests/smoke/traceline-drill-smoke.mjs",
     "test:smoke:pager": "node tests/smoke/traceline-pager-fidelity-smoke.mjs",
     "test:smoke:nested": "node tests/smoke/traceline-nested-session-smoke.mjs",
-    "test:smoke": "npm run test:smoke:click && npm run test:smoke:traceline && npm run test:smoke:drill && npm run test:smoke:pager && npm run test:smoke:nested && node tests/smoke/startup-smoke.mjs"
+    "test:smoke:notice": "node tests/smoke/traceline-notice-smoke.mjs",
+    "test:smoke": "npm run test:smoke:click && npm run test:smoke:traceline && npm run test:smoke:drill && npm run test:smoke:pager && npm run test:smoke:nested && npm run test:smoke:notice && node tests/smoke/startup-smoke.mjs"
   },
   "pi": {
     "extensions": [

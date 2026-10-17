@@ -2,7 +2,9 @@
 // against extension-visible component shapes and contract-tested against the
 // installed pi (tests/contract/pi-internals.test.ts), never imported from
 // pi internals — that is what lets the family survive `pi update`.
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { stripAnsi } from "./ansi.ts";
+import { isJsonObject, type JsonFields } from "./boundary.ts";
 
 export interface ToolArgsLike {
   [key: string]: unknown;
@@ -115,6 +117,59 @@ export function isToolRow(component: unknown): component is ToolRowLike {
   return typeof c.render === "function" && typeof c.setExpanded === "function" && "toolName" in c;
 }
 
+/** What a custom message or custom entry carries: pi's CustomMessage / CustomEntry shapes. */
+export interface NoticeSourceLike {
+  customType: string;
+  /** a custom message's model-facing text (string or content blocks); absent on an entry */
+  content?: string | JsonFields[];
+  /** a custom message's structured details, whatever the extension sent */
+  details?: JsonFields;
+  /** a custom entry's structured data, whatever the extension appended */
+  data?: JsonFields;
+}
+
+/** pi's CustomMessageComponent / CustomEntryComponent (design language §9.15). */
+export interface NoticeRowDataLike {
+  message?: NoticeSourceLike;
+  entry?: NoticeSourceLike;
+  /** pi's per-row expansion flag, written by setExpanded() and passed to the extension's renderer. */
+  _expanded?: boolean;
+  /** the extension renderer's component for the current expansion state; absent under pi's default rendering */
+  customComponent?: { render?: (width: number) => string[] };
+}
+
+export interface NoticeRowLike extends NoticeRowDataLike {
+  render: (width: number) => string[];
+  setExpanded: (expanded: boolean) => void;
+}
+
+export interface NoticeRowPrototypeLike extends Partial<NoticeRowLike> {
+  __tracelineNoticePatchVersion?: number;
+  __tracelineOriginalNoticeRender?: (width: number) => string[];
+  __tracelineOriginalNoticeMouse?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
+  __tracelineOriginalNoticeSetExpanded?: (expanded: boolean) => void;
+  handleMouse?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
+}
+
+/** Any chat child the trace-row spacing rules walk over. */
+export type ChatRowLike = ToolRowDataLike | NoticeRowDataLike;
+
+function hasCustomType(value: unknown): value is NoticeSourceLike {
+  return isJsonObject(value) && typeof value.customType === "string";
+}
+
+/** An extension notice row: an expandable chat child built on a custom message or entry. */
+export function isNoticeRow(component: unknown): component is NoticeRowLike {
+  if (!isJsonObject(component)) return false;
+  if (typeof component.render !== "function" || typeof component.setExpanded !== "function" || "toolName" in component) return false;
+  return hasCustomType(component.message) || hasCustomType(component.entry);
+}
+
+/** The message or entry behind a notice row. */
+export function noticeSource(row: NoticeRowDataLike): NoticeSourceLike {
+  return (hasCustomType(row.message) ? row.message : row.entry)!;
+}
+
 /** An assistant message row: carries the hideThinkingBlock toggle. */
 export function isAssistantRow(component: unknown): component is AssistantRowLike {
   const c = component as { setHideThinkingBlock?: unknown; hideThinkingBlock?: unknown };
@@ -127,7 +182,7 @@ export interface ContainerLike {
   removeChild?: (child: unknown) => unknown;
   clear?: () => unknown;
   /** traceline-internal: membership hooks installed for scoped render invalidation. */
-  __tracelineCachePatched?: { changed: () => void };
+  __tracelineCachePatched?: { changed: () => void; added: (child: unknown) => void };
 }
 
 /** Depth-first search for the container whose direct children satisfy `predicate`,

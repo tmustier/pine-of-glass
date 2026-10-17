@@ -267,6 +267,36 @@ The screenshots come from `node scripts/dev/screenshots/rig.mjs codemode`: a rea
 
 Any other tool that calls tools through Pi's `ctx.executeTool()` gets the same treatment once its result records nested calls.
 
+## See extension notices as rows
+
+Extensions such as pi-subagents put their own messages in the chat: a subagent's
+question or result, a reply you sent it, a watchdog warning. Pi draws each one as a
+padded block on the custom-message background. With reasoning hidden, Traceline shows
+it as one trace row in the block with the calls around it:
+
+```
+  ▏ › read ./src/alpha.txt                                       0.4k ch
+  ▏ › [subagent] worker needs a decision                         0.1k ch
+  ▏ › $ python3 -m unittest -v test_review_frame.py              1.3k ch
+  ▏ › [subagent] reply sent to worker
+  ▏ › [subagent] worker completed                                4.2k ch
+```
+
+- the row is `[label] headline`. The label is the extension's own when its collapsed
+  block starts with one, else the message's `customType`
+- the headline is, in order: a `summary` string the extension put in the message's
+  `details` (or the entry's `data`); the first line of the extension's own collapsed
+  block, without the `(ctrl+o to expand)` hint; the first line of the text the model
+  read. Words the extension coloured as success, warning or error keep that colour
+- a message that carried text for the model shows the usual size cell; an entry does
+  not
+- click the row or press `Ctrl+O` to see the extension's full block; click the block
+  to collapse it. `Ctrl+T` shows Pi's own rendering untouched
+
+This needs nothing from the extension. It applies to every custom message and entry
+Pi shows, with or without a registered renderer. An extension that wants a specific
+one-line summary adds `summary` to the message's `details`.
+
 ## Keep repeated work compact
 
 Traceline folds rows when repetition would hide the useful difference:

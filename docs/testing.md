@@ -113,6 +113,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | Native theme invalidation recolours SDK-created cache/pace ledgers, clocks and pending tool rows while preserving facts and layout; Pi's identity-stable theme proxy supplies the new ink | shared styling and themed chat lines |
 | On Pi versions with the system theme, palette, background-only and no-reply cases flow through the same semantic roles | terminal-derived family styling |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
+| `CustomMessageComponent` and `CustomEntryComponent` satisfy `isNoticeRow` (`render`, `setExpanded`, `message.customType`/`entry.customType`, no `toolName`), read `_expanded` as the flag `setExpanded()` writes, hold the extension renderer's component in `customComponent`, and their prototypes accept the render/mouse/setExpanded substitution; the theme's success/warning/error openers are single SGR sequences | traceline notice rows (§9.15) |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
 | Two Pi SDK sessions in one process distinguish headless and interactive through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
@@ -162,6 +163,15 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   codemode script through the installed Pi's agent loop (a scripted provider issues the
   call; nothing leaves the process) and pins `details.calls`, `nestedCalls`, the script
   header, the truncation notice and the parent-tagged execution events.
+- **Notice rows** (`notice-rows.test.ts`, design language §9.15): the headline's
+  precedence (`details.summary`, the renderer's collapsed line without its key hint, the
+  first meaningful content line, the bare label), Markdown marker stripping, the
+  label prefix for renderers without one, a throwing renderer falling through, and the
+  char cell counting a message's text blocks and never an entry. The contract
+  `pi-traceline-notice-rows.test.ts` drives the real components through a chat
+  container: compact rows between tool rows with no blank lines, status ink kept and
+  background dropped, click to z1 and back, Ctrl+O's per-row flag, byte-identical
+  native rendering at z2.
 - **Collapsed thinking previews**: three adjacent non-empty blocks and every non-empty
   line inside them append into one ` · `-separated display row; source paragraph breaks
   never add rows; empty thinking fragments do not consume labels or break adjacency;

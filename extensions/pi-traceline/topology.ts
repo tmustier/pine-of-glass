@@ -1,7 +1,11 @@
-import { isAssistantRow, isToolRow, type ContainerLike, type AssistantRowLike, type ToolRowDataLike, type ToolRowLike } from "../_lib/chat.ts";
+import { isAssistantRow, isNoticeRow, isToolRow, type ContainerLike, type AssistantRowLike, type ToolRowDataLike, type ToolRowLike } from "../_lib/chat.ts";
+import { noticeExpanded } from "./notice-rows.ts";
 import type { TraceRenderCache } from "./render-cache.ts";
 
 export function isExpandedToolRow(row: unknown): boolean { return isToolRow(row) && row.expanded === true; }
+
+/** A notice at z0 is a block member (§9.15): it neither breaks the rail nor the block's columns. */
+export function isCompactNoticeRow(row: unknown): boolean { return isNoticeRow(row) && !noticeExpanded(row); }
 
 export function isEmptyConnector(row: unknown): boolean {
   if (!isAssistantRow(row)) return false;
@@ -70,7 +74,7 @@ export class TraceTopology {
         if (row.expanded === true) { if (block.length) groups.push(block); block = []; }
         else block.push(row);
       } else {
-        const empty = isEmptyConnector(row);
+        const empty = isEmptyConnector(row) || isCompactNoticeRow(row);
         if (!empty && !isCollapsedThinkingRow(row)) previousBash = undefined;
         if (isAssistantRow(row)) { assistants.push(row); next.lastAssistant = row; }
         if (!empty) { if (block.length) groups.push(block); block = []; }

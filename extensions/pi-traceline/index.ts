@@ -5,8 +5,10 @@ import { captureTui } from "../_lib/capture.ts";
 import {
   findChatContainer,
   isAssistantRow,
+  isNoticeRow,
   isToolRow,
   type AssistantRowPrototypeLike,
+  type ChatRowLike,
   type ContainerLike,
   resultTextCharCount as rawResultTextCharCount,
   type ToolRowDataLike,
@@ -29,7 +31,6 @@ import {
   type Tone,
 } from "../_lib/style.ts";
 import {
-  LINE_BREAK_MARK,
   PREAMBLE_MARK,
   bashPreambleRun,
   bashTopLevelSegments,
@@ -45,6 +46,7 @@ import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
   drillDecorateNativeRow,
   drillRenderKey,
+  drillState,
   drillTracePrefix,
   enterDrillMode,
   exitDrillMode,
@@ -63,12 +65,14 @@ import {
 import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStart } from "./nested-calls.ts";
 import { ledgerEntries, ledgerLines } from "./ledger.ts";
 import { composedBody } from "./nested-rows.ts";
+import { flattenInvocationLines, stripLeadingVisibleBullet, stripTimeoutSuffix, stripTrailingExpandHint } from "./native-lines.ts";
+import { installNoticeRows, noticeExpanded, type NoticeRowHost } from "./notice-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, resultText } from "./records.ts";
 import { wrapReadCells } from "./read-fold.ts";
 import { TraceRenderCache } from "./render-cache.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun, readPlan, repetitionPlan } from "./repetition-fold.ts";
-import { TraceTopology, isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./topology.ts";
+import { TraceTopology, isCompactNoticeRow, isEmptyConnector, isCollapsedThinkingRow, isExpandedToolRow } from "./topology.ts";
 import {
   captureWriteCallSnapshot,
   clearWriteCallSnapshots,
@@ -106,7 +110,6 @@ function topologyChanged(): void { if (g.__tracelineChat) topology.changed(g.__t
 function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
 function setTracelineThemeGetter(getTheme: (() => Theme | undefined) | undefined): void { g.__tracelineGetTheme = getTheme; }
 
-const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
 const TOOL_RAIL = GLYPH.rail;
@@ -294,7 +297,7 @@ function blockToolRows(comp: ToolRowLike): ToolRowLike[] {
   if (renderCache.active && g.__tracelineChat) return topology.block(g.__tracelineChat, comp);
   const found = componentLocation(comp);
   if (!found) return [comp];
-  const breaks = (row: unknown) => isToolRow(row) ? row.expanded === true : !isEmptyConnector(row);
+  const breaks = (row: unknown) => isToolRow(row) ? row.expanded === true : !isEmptyConnector(row) && !isCompactNoticeRow(row);
   let start = found.index;
   while (start > 0 && !breaks(found.sibs[start - 1])) start--;
   const rows: ToolRowLike[] = [];
@@ -500,44 +503,6 @@ function compactJson(value: unknown): string {
   }
 }
 
-// Bash commands keep their real newlines (heredocs, inline python, chained pipelines),
-// so first-line-only collapses them to an uninformative prefix like `$ python3 -c "`
-// (issue #10). Flatten every visible line into the one trace line, with a ↵ where each
-// break was — middle truncation then keeps the head *and* the operative tail. The marks
-// stay plain here; inkBashBody dims them with the rest of the shell apparatus.
-function flattenInvocationLines(lines: string[]): string | undefined {
-  const visible = lines
-    .filter((line) => stripAnsi(line).trim().length > 0)
-    .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
-  if (visible.length === 0) return undefined;
-  return visible.join(` ${LINE_BREAK_MARK} `);
-}
-
-function trimLeadingVisibleWhitespace(line: string): string {
-  const visible = stripAnsi(line);
-  const leading = visible.match(/^\s*/)?.[0].length ?? 0;
-  if (leading === 0) return line;
-  return line.slice(rawIndexAtVisibleIndex(line, leading));
-}
-
-function stripTrailingExpandHint(line: string): string {
-  // Native compact read/resource calls include a key hint. One-line mode is deliberately
-  // invocation-only, so keep pi's styling but drop that non-invocation suffix.
-  const visible = stripAnsi(line);
-  const hint = visible.match(/ \([^)]*to expand\)\s*$/i)?.[0];
-  if (!hint) return line;
-  const rawStart = rawIndexAtVisibleIndex(line, visible.length - hint.length);
-  return `${line.slice(0, rawStart)}${RESET}`;
-}
-
-// Native bash rows append " (timeout Ns)". It is near-constant boilerplate — the same
-// dim parenthetical on every row — so in one-line mode it only spends width and adds
-// noise; the full invocation (timeout included) is one Ctrl+T away. Bash rows
-// are rebuilt from plain text (see bashInvocationText), so this works on plain text.
-function stripTimeoutSuffix(text: string): string {
-  return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
-}
-
 // --- bash rows: plain-text rebuild + family ink (§2/§9.3/§9.4) ------
 // Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, and the
 // head words that survive crown selection (below) render L0-bold the way a basename
@@ -565,14 +530,6 @@ function commandPrefixLength(comp: ToolRowDataLike | undefined, line: string): n
   const name = toolLabel(comp?.toolName);
   if (visible.startsWith(name)) return name.length;
   return visible.match(/^\S+/)?.[0].length ?? 0;
-}
-
-function stripLeadingVisibleBullet(line: string): string {
-  const trimmed = trimLeadingVisibleWhitespace(line);
-  const visible = stripAnsi(trimmed);
-  const bullet = visible.match(/^•\s*/)?.[0];
-  if (!bullet) return trimmed;
-  return trimmed.slice(rawIndexAtVisibleIndex(trimmed, bullet.length));
 }
 
 function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): string {
@@ -1095,7 +1052,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   ];
 }
 
-function componentLocation(comp: ToolRowDataLike): { sibs: unknown[]; index: number } | undefined {
+function componentLocation(comp: ChatRowLike): { sibs: unknown[]; index: number } | undefined {
   renderCache.depend(comp);
   if (renderCache.active && g.__tracelineChat) {
     const index = topology.prepare(g.__tracelineChat).positions.get(comp);
@@ -1114,7 +1071,7 @@ function componentLocation(comp: ToolRowDataLike): { sibs: unknown[]; index: num
 // One blank line before a tool *group*, none within it: walk back past invisible
 // connector turns; tight if the nearest visible sibling is another collapsed tool row
 // or the collapsed thinking-label line that motivated this call.
-function leadingBlank(comp: ToolRowDataLike): boolean {
+function leadingBlank(comp: ChatRowLike): boolean {
   const found = componentLocation(comp);
   if (!found || found.index <= 0) return true;
   const { sibs, index } = found;
@@ -1123,6 +1080,7 @@ function leadingBlank(comp: ToolRowDataLike): boolean {
     renderCache.depend(prev);
     if (isExpandedToolRow(prev)) return true; // a native-rendered block above → new trace block
     if (isToolRow(prev)) return false; // adjacent (through connectors) to another tool
+    if (isNoticeRow(prev)) return noticeExpanded(prev); // a compact notice is a block member (§9.15)
     if (isEmptyConnector(prev)) continue; // skip invisible tool-call-only turns
     if (isCollapsedThinkingRow(prev)) return false; // tight under its Thinking... line
     return true; // hit visible content → blank before the group
@@ -1149,6 +1107,28 @@ function renderTraceRow(comp: ToolRowLike, width: number): string[] {
   const composed = composedFacts(comp);
   const ledger = composed && ledgerView(comp) === "revealed" ? ledgerLines(currentTheme(), comp, composed, width, sizeThresholds) : [];
   return leadingBlank(comp) ? ["", ...lines, ...ledger] : [...lines, ...ledger];
+}
+
+// --- notice rows (design language §9.15) ------------------------------------------------
+
+// The row grammar notice-rows.ts needs from this module: the rail prefix, the fact
+// cell, the group-spacing rule and the view state. Expansion changes move a notice
+// between block member and block break, so the rows around it re-derive spacing.
+const noticeRowHost: NoticeRowHost = {
+  theme: currentTheme,
+  compact: () => displayMode() === "oneLine",
+  drillActive: () => drillState() !== undefined,
+  railPrefix: (bullet) => `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`,
+  available: traceRowAvailable,
+  charSuffix: (chars) => charSuffix(chars),
+  leadingBlank,
+  changed: (row) => { renderCache.dirty(row); topologyChanged(); },
+};
+
+// A notice class is adopted the first time one of its rows reaches the chat, whether
+// from a replayed session, a live message, or an entry appended with no event at all.
+function adoptNoticeRow(child: unknown): void {
+  if (isNoticeRow(child) && installNoticeRows(Object.getPrototypeOf(child), noticeRowHost)) g.__tracelineTui?.requestRender();
 }
 
 // --- collapsed thinking previews (issue #14, pi-native rendering) ----------------------
@@ -1185,7 +1165,7 @@ function patchToolRowPrototype(proto: TraceMousePrototype): void {
 
 function cachedLayout(row: ToolRowLike, width: number) {
   const chat = g.__tracelineChat!;
-  installContainerCacheHooks(renderCache, chat, topologyChanged);
+  installContainerCacheHooks(renderCache, chat, topologyChanged, adoptNoticeRow);
   topology.prepare(chat);
   const key = `${width}:${objectCacheKey(chat)}:${objectCacheKey(currentTheme())}:${drillRenderKey(row)}:${revealRenderKey()}`;
   return renderCache.value(row, `layout:${key}`, () => {
@@ -1203,6 +1183,7 @@ function tryPatch(): boolean {
   const toolWasPatched = currentPatchInstalled();
   const assistantWasPatched = assistantPatchInstalled();
   let containerWasPatched = false;
+  let noticeWasPatched = false;
   try {
     const sibs = chatChildren();
     if (!Array.isArray(sibs)) return false;
@@ -1214,15 +1195,18 @@ function tryPatch(): boolean {
       const assistant = sibs.find(isAssistantRow);
       if (assistant) patchAssistantRowPrototype(Object.getPrototypeOf(assistant));
     }
+    for (const row of sibs) {
+      if (isNoticeRow(row)) noticeWasPatched = installNoticeRows(Object.getPrototypeOf(row), noticeRowHost) || noticeWasPatched;
+    }
     const chat = g.__tracelineChat;
     if (chat && !chat.__tracelineCachePatched) {
-      installContainerCacheHooks(renderCache, chat, topologyChanged);
+      installContainerCacheHooks(renderCache, chat, topologyChanged, adoptNoticeRow);
       containerWasPatched = true;
     }
   } catch {
     return false;
   }
-  return containerWasPatched || (!toolWasPatched && currentPatchInstalled()) ||
+  return containerWasPatched || noticeWasPatched || (!toolWasPatched && currentPatchInstalled()) ||
     (!assistantWasPatched && assistantPatchInstalled());
 }
 
@@ -1358,7 +1342,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     handler: async (_args, ctx) => startDrill(ctx),
   });
   pi.on("message_start", (event, ctx) => {
-    if (tuiOwner.owns() && ctx.mode === "tui" && event.message.role === "assistant") schedulePatches();
+    if (tuiOwner.owns() && ctx.mode === "tui" && (event.message.role === "assistant" || event.message.role === "custom")) schedulePatches();
   });
   pi.on("message_update", (_event, ctx) => { if (tuiOwner.owns() && ctx.mode === "tui") schedulePatches(); });
   // Nested calls (§9.14) never get rows of their own; their live events are the only

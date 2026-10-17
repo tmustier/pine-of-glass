@@ -56,13 +56,17 @@ export function installAssistantCacheHook(
   };
 }
 
-/** Rebind the callback on reload without stacking wrappers on the live container. */
-export function installContainerCacheHooks(cache: TraceRenderCache, chat: ContainerLike, changed: () => void): void {
-  if (chat.__tracelineCachePatched) { chat.__tracelineCachePatched.changed = changed; return; }
-  const binding = { changed };
+/** Rebind the callbacks on reload without stacking wrappers on the live container. `added`
+ * sees each child the moment pi appends it: a notice row can arrive with no extension
+ * event at all (pi.appendEntry), so this is where its class gets adopted. */
+export function installContainerCacheHooks(
+  cache: TraceRenderCache, chat: ContainerLike, changed: () => void, added: (child: unknown) => void = () => {},
+): void {
+  if (chat.__tracelineCachePatched) { Object.assign(chat.__tracelineCachePatched, { changed, added }); return; }
+  const binding = { changed, added };
   if (typeof chat.addChild === "function") {
     const original = chat.addChild.bind(chat);
-    chat.addChild = (child: unknown) => { const result = original(child); binding.changed(); return result; };
+    chat.addChild = (child: unknown) => { const result = original(child); binding.changed(); binding.added(child); return result; };
   }
   if (typeof chat.removeChild === "function") {
     const original = chat.removeChild.bind(chat);

@@ -1114,6 +1114,64 @@ The ledger:
   composed row as one target; its pager shows the complete script with pi's
   syntax ink, the full ledger under a `calls` label, then the result
 
+### 9.15 Notice rows
+
+An extension notice is a message that arrived in the transcript without the model
+asking for it: a subagent's result or question, a supervisor's reply, a watchdog
+warning. Pi draws every one as a padded block on the custom-message background,
+with a blank line above, whether it carries one sentence or a page. Between trace
+rows those blocks are the loudest thing on screen, and they say the least: the
+model already read the text, and the trace is about what happened. So with reasoning
+hidden (z0, §9.12) a notice is one trace row, and the block is one zoom away:
+
+```
+  ▏ › [subagent] worker needs a decision
+  ▏ › [subagent] reply sent to worker
+  ▏ › [subagent] worker completed                                      4.2k ch
+  ▏ › [my-extension] Deploy finished for api-gateway                   0.3k ch
+```
+
+- the rule is generic, not per extension: any custom message or custom entry Pi
+  shows in the chat is a notice row. Traceline never registers a message renderer
+  of its own and never competes with the extension's, so load order cannot change
+  what a notice says; it substitutes the row's geometry the way it does for tool
+  rows and leaves the extension's component in place for z1
+- the row is `[label] headline`. The label is the extension's own when its
+  collapsed rendering opens with one (`[subagent]`), else the message's
+  `customType`, which is exactly what Pi's default renderer prints. The label
+  renders neutral bold, the verb's treatment (§9.2); the headline sits at the one
+  supporting dim (§9.3)
+- the headline is, in order: a `summary` string the extension put in the message's
+  `details` (or the entry's `data`), an explicit one-line contract any extension
+  can adopt without knowing about Traceline's internals; else the first line of the
+  extension's own collapsed rendering, without its `(… to expand)` hint, which is
+  the sentence the author already chose for the collapsed state; else the first
+  meaningful line of the text the model read, with leading Markdown heading, quote
+  and list markers and inline emphasis removed. A message with none of these is
+  its bare label
+- status ink survives, apparatus ink does not: a span of the collapsed rendering
+  in the theme's success, warning or error colour keeps it (`needs a decision`
+  stays warning), because that is the one thing the author coloured on purpose;
+  every other foreground and every background drops, and unstyled spans demote to
+  dim as on native rows (§9.6). This holds the one-supporting-grey rule without
+  flattening the only signal a reader needs before deciding whether to expand
+- the bullet is the glyph in Pi's `customMessageLabel` colour, not a status tone: a
+  notice has no success or failure of its own, and the bullet's job here is to say
+  "not a call" at the one cell that identifies every row
+- a custom message's content is pulled context exactly like a tool result, so the
+  row carries the char cell (§9.7) under the same floor and severity; a custom
+  entry has no model-facing text and no cell
+- a compact notice is a member of the surrounding trace block (§9.1): it sits
+  tight under the row before it and the row after it sits tight under it, the rail
+  fuses across, and it neither breaks §9.4's `⋯` context nor the block's columns.
+  An expanded notice opts out exactly as an expanded tool row does (§9.12): it
+  breaks the block and the trace after it starts with its own blank line
+- z1 is the extension's own block, untouched: Ctrl+O's global expansion reaches a
+  notice because Pi already toggles every expandable chat child, and in fullscreen
+  mode a click on the compact row opens it while a click on the opened block
+  collapses it again. With reasoning visible (z2) Traceline does nothing to a
+  notice at all. Drill mode (§9.13) numbers tool rows only; a notice is not a call
+
 ## 10. Tempo facts
 
 Meantime decomposes the loop's wall-clock: where the time went, and why. Its lines

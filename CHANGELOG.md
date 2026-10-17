@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Traceline shows extension notices as trace rows. A custom message or custom entry
+  that an extension puts in the chat (a subagent's question or result, a supervisor's
+  reply, a watchdog warning) was Pi's padded purple block between the trace lines;
+  with reasoning hidden it is now one row, `[subagent] worker needs a decision`, in
+  the block with the tool calls around it. The row reads a `summary` the extension
+  put in the message's `details`, else the first line of the extension's own collapsed
+  rendering without its key hint (status words keep their colour), else the first line
+  of the text the model read; a message with model-facing text carries the usual char
+  cell. Click or Ctrl+O opens the extension's own block, Ctrl+T leaves it to Pi. No
+  per-extension code: the rule applies to every registered message and entry renderer
+  and to Pi's default block.
+
 ## 0.17.0 (2026-10-17)
 
 - Traceline records more of what a session changes in git: `created worktree fix`,
