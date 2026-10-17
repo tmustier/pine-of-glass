@@ -5,7 +5,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { ink, type Tone } from "../_lib/style.ts";
 import { bashCrownedHeads, type BashHead } from "./bash-crowns.ts";
-import { fitCompoundCommand, wrapCompoundCommand, type FitHead, type FitPiece } from "./compound-fit.ts";
+import { commandFloor, fitCompoundCommand, wrapCompoundCommand, type FitHead, type FitPiece } from "./compound-fit.ts";
 import { commandKeys } from "./record-shell.ts";
 
 const BOLD = "\x1b[1m";
@@ -48,6 +48,14 @@ function earningHeads(body: string, crowns: readonly BashHead[], earned: readonl
     const keys = earned.length > 0 ? commandKeys(text) : [];
     return { ...crown, earned: keys.some((key) => earned.some((by) => by === key || by.endsWith(` ${key}`))) };
   });
+}
+
+/**
+ * The columns a record headline may take ahead of `$ body` in `bodyBudget` (§9.10): all
+ * of them but the space after it, the `$ `, and the command's floor.
+ */
+export function headlineRoom(body: string, bodyBudget: number): number {
+  return bodyBudget - 3 - commandFloor(body);
 }
 
 /**

@@ -40,7 +40,7 @@ import {
 import { checkFacts, checkFailed } from "./checks.ts";
 import { failureCell as inkFailureFact, failureFact } from "./failure.ts";
 import { fitHeadline, mergeHeadlineFacts, recordCellText, type RecordCellData } from "./headline.ts";
-import { fitBashLines, type BashLines } from "./bash-lines.ts";
+import { fitBashLines, headlineRoom, type BashLines } from "./bash-lines.ts";
 import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
   drillDecorateNativeRow,
@@ -427,8 +427,8 @@ function recordCells(comp: ToolRowDataLike): string[] {
   return recordCellData(comp).map(recordCellText);
 }
 
-function recordHeadline(comp: ToolRowDataLike, available: number): string {
-  return fitHeadline(currentTheme(), recordCellData(comp), available);
+function recordHeadline(comp: ToolRowDataLike, room: number): string {
+  return fitHeadline(currentTheme(), recordCellData(comp), room);
 }
 
 // Only records of consequence suppress the size cell (§9.7); a check row keeps it,
@@ -738,9 +738,9 @@ function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: nu
   return renderCache.memo(comp, `bash-plan:${available}:${bodyBudget}:${wrap}:${objectCacheKey(currentTheme())}`, () => {
     const plain = bashInvocationText(comp);
     if (plain === undefined) return { first: inkedFallbackLine(comp), continuations: [], overflow: false, commandColumn: 0 };
-    const headline = recordHeadline(comp, available);
-    const headlineWidth = headline ? visibleWidth(headline) + 1 : 0;
     const text = foldBashPreamble(comp, bashDisplayLine(comp, plain));
+    const headline = recordHeadline(comp, headlineRoom(text.slice(2), bodyBudget));
+    const headlineWidth = headline ? visibleWidth(headline) + 1 : 0;
     const commandColumn = headlineWidth + 2;
     const budget = bodyBudget - commandColumn;
     const lines: BashLines = text.startsWith("$ ")

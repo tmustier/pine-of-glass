@@ -20,6 +20,11 @@ const MIN_CUT_SAVING = 4; // agent-default (not a user rule): 2026-10-15
 // A command cut below this many columns is a crown with no story (§9.8); the row wraps
 // instead. agent-default (not a user rule): 2026-10-20
 const COMMAND_FLOOR_COLS = 24;
+
+/** The columns a body keeps however crowded its row (§9.8, §9.10): the floor, or all of it. */
+export function commandFloor(body: string): number {
+  return Math.min(body.length, COMMAND_FLOOR_COLS);
+}
 // Wrapped rows stop here; the remainder packs onto the last line by command (§9.8).
 // agent-default (not a user rule): 2026-10-20
 const WRAP_LINE_CAP = 4;

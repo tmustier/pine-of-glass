@@ -428,6 +428,14 @@ are validated against a corpus of 51k real invocations
 - every command gets a head candidate: `&&`, `||`, `;` (attached or
   space-delimited) and flattened `↵` breaks each start a new command whose first
   non-assignment token is its head
+- an assignment whose value runs a command (`PR_URL=$(gh pr create …)`, or the
+  backtick form) hands the crown to that command's first word, `gh`: the
+  substituted command is what the row runs, and the word after it is only an
+  argument. Arithmetic (`$((n + 1))`) runs nothing and crowns nothing
+- a command's leading assignments belong to it. Cutting and wrapping (§9.8) treat
+  `PR_URL=$(gh pr create …)` and `FOO=1 npm test` as one unit from the
+  assignment on, so a wrapped row never strands `PR_URL=$(` or `FOO=1` at the end
+  of the line before its command
 - pipes and redirects continue a command: `| head -240` is a filter and stays
   dim. Brightening a single "operative segment" was considered and rejected: a
   pipeline tail is as often a filter as the point
@@ -692,15 +700,19 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
   the row was for, so a cramped `committed a4f21c9 · deleted branch docs` keeps
   the commit. Then the oldest go, because a row's later facts are usually its
   culmination (`committed` → `pushed` → `opened`). A merged cell's data are
-  separate facts, so `pushed main, v0.5.9` narrows to `pushed v0.5.9`. Records
-  take at most about a third of the row, so the command keeps its width; a
+  separate facts, so `pushed main, v0.5.9` narrows to `pushed v0.5.9`. A
   mangled sha is worse than none
+- the headline is the row's story, so it takes the room it needs. Its only limit
+  is the row: the suffix keeps its column (§9.7), and the command keeps `$ ` and
+  its floor (§9.8), 24 columns or the whole command when that is shorter, so the
+  outcome never loses the command that proves it. A wide row shows every fact; a
+  narrow one drops facts in the order above
 - a row that dropped facts says so: a dim `+N` closes the headline
   (`pushed main +1`), so a cramped row never hides that it did more. The count
-  fits inside the cap like any fact, because a headline past its cap starves the
-  command it stands for. It never costs the last fact its place: on a row too
-  narrow for both, the fact stays and the count goes. The dropped facts are one
-  zoom away
+  takes room like any fact, since room it takes past the headline's comes out
+  of the command. It never costs the last fact its place: on a row too narrow
+  for both, the fact stays and the count goes. The dropped facts are one zoom
+  away
 - records wear the ink of what they state: the cell renders success-toned bold,
   verb and datum together (`pushed main`, `released v0.5.9`), because a refname,
   tag or PR number is the event's identity. A commit sha stays dim beside its
@@ -881,16 +893,15 @@ fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
   context, not porcelain about an event
 - check facts share the record headline: they chain in output order with
   records, merge same-verb neighbours of the same tone
-  (`passed 1731 tests, lint`), and obey the same one-third cap. On overflow a
+  (`passed 1731 tests, lint`), and share the same room. On overflow a
   pass goes first, because it is health, not news; then deletions (§9.10); then
   records and warnings, oldest first; a failed check is dropped last. Dropped
   checks count in the headline's `+N`. A cramped row keeps
   `committed a4f21c9` over `passed 8 tests` and `found type errors` over an
   older pass or warning, and a merged cell gives up its oldest datum before
   the cell goes: `passed 30 tests, 13 tests` narrows to `passed 13 tests`. A
-  failure is the row's news and the only explanation of a warning bullet, so a
-  lone failed check may take up to half the row (agent default, not requested)
-  before it goes
+  failure is the row's news and the only explanation of a warning bullet, which
+  is why it goes last
 - check rows never repetition-fold (§9.9): their counts are row-specific
 
 ### 9.11 Collapsed thinking

@@ -34,32 +34,27 @@ export function recordCellText(cell: RecordCellData): string {
   return `${cell.verb} ${cell.data.join(", ")}`;
 }
 
-// Records may take at most roughly a third of the row (§9.10), so the command keeps
-// its width: overflow drops whole facts, one datum of a merged cell at a time. A pass
-// goes first (§9.10.1), then deletions, then the oldest; a failed check goes last.
-// Terminal state wins, a mangled sha is worse than none, and a dim `+N` says facts
-// were dropped; Ctrl+T shows them.
-const RECORD_HEADLINE_SHARE = 1 / 3;
-// A failure is the row's news and the only explanation of its warning bullet (§9.10.1),
-// so a lone failed check may take this much before it goes.
-const LONE_FAILURE_SHARE = 1 / 2; // agent-default (not a user rule): 2026-10-15
+// The headline takes the room it needs (§9.10): the caller passes what the row has left
+// once the suffix and the command's floor are kept. Overflow drops whole facts, one
+// datum of a merged cell at a time: a fact that could never fit, then a pass (§9.10.1),
+// then deletions, then the oldest; a failed check goes last. Terminal state wins, a
+// mangled sha is worse than none, and a dim `+N` says facts were dropped; Ctrl+T shows
+// them.
 // A deletion tidies up after the change the row was for (§9.10): `committed a4f21c9 ·
 // deleted branch docs` keeps the commit.
 const DELETION = /^(?:deleted|removed)\b/;
 
-/** Fit whole facts ahead of the command; keep failed checks longest (§9.10.1). */
-export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], available: number): string {
-  // A fact longer than its cap alone can never show, so it goes before any choice:
-  // the drop order below must not spend a fact that fits on one that never will.
-  const fits = (verb: string, datum: string, tone: RecordCellData["tone"]) =>
-    `${verb} ${datum}`.length <= Math.floor(available * (tone === "error" ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
-  const cells = all.map((cell) => ({ ...cell, data: cell.data.filter((datum) => fits(cell.verb, datum, cell.tone)) })).filter((cell) => cell.data.length > 0);
-  const lone = () => cells.length === 1 && cells[0]!.data.length === 1;
-  const cap = () => Math.floor(available * (lone() && cells[0]!.tone === "error" ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
+/** Fit whole facts into `room` columns; keep failed checks longest (§9.10.1). */
+export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], room: number): string {
+  // A fact that cannot fit even alone goes before any choice, so the order below never
+  // spends a fact that fits on one that never will.
+  const cells = all.map((cell) => ({ ...cell, data: cell.data.filter((datum) => `${cell.verb} ${datum}`.length <= room) }))
+    .filter((cell) => cell.data.length > 0);
+  const size = (cs: RecordCellData[]) => cs.reduce((sum, cell) => sum + cell.data.length, 0);
   const width = () => cells.map(recordCellText).join(SEP).length;
-  let dropped = all.reduce((sum, cell) => sum + cell.data.length, 0) - cells.reduce((sum, cell) => sum + cell.data.length, 0);
-  // The count fits the cap too, but never costs the last fact its place.
-  while (cells.length && width() + (dropped ? ` +${dropped}`.length : 0) > cap() && !(lone() && width() <= cap())) {
+  let dropped = size(all) - size(cells);
+  // The count takes room too, but never costs the last fact its place.
+  while (width() + (dropped ? ` +${dropped}`.length : 0) > room && size(cells) > 1) {
     const pass = cells.findIndex((cell) => cell.tone === "text");
     const deletion = cells.findIndex((cell) => cell.tone !== "error" && DELETION.test(cell.verb));
     const index = pass >= 0 ? pass : deletion >= 0 ? deletion : Math.max(0, cells.findIndex((cell) => cell.tone !== "error"));
@@ -74,5 +69,5 @@ export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], ava
     return `${verb}${ink(theme, "dim", ` ${cell.data.join(", ")}`)}`;
   }).join(ink(theme, "dim", SEP));
   const count = ` +${dropped}`;
-  return dropped && width() + count.length <= cap() ? `${shown}${ink(theme, "dim", count)}` : shown;
+  return dropped && width() + count.length <= room ? `${shown}${ink(theme, "dim", count)}` : shown;
 }
