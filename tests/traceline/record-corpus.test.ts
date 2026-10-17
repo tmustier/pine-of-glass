@@ -131,7 +131,9 @@ test("bash corpus replay preserves multiline commands through the shared ink pip
   writeFileSync(corpus, ["set -e\ncd /tmp\nnpm test\nprintf 'done'", "git status && git diff --stat"]
     .map((cmd) => JSON.stringify({ cmd })).join("\n"));
   const result = spawnSync(process.execPath, [new URL("report.ts", scripts).pathname,
-    "--corpus", corpus, "--census", census, "--dump", dump], { encoding: "utf8", timeout: 30_000 });
+    "--corpus", corpus, "--census", census, "--dump", dump], {
+    encoding: "utf8", timeout: 30_000, // agent-default (not a user rule): 2026-10-17
+  });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(readFileSync(dump, "utf8").trim().split("\n").map((line) => JSON.parse(line).crowns), [
     ["npm"], ["git", "git"],
