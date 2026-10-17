@@ -107,15 +107,13 @@ if (dumpPath) {
 if (samples > 0) {
   // Deterministic sample (mulberry32) so before/after runs show the same rows.
   let s = seed >>> 0;
-  const rand = () => {
+  console.log(`\n--- ${samples} sampled rows (seed ${seed}) ---`);
+  for (let i = 0; i < samples; i++) {
     s = (s + 0x6d2b79f5) >>> 0;
     let t = Math.imul(s ^ (s >>> 15), 1 | s);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  console.log(`\n--- ${samples} sampled rows (seed ${seed}) ---`);
-  for (let i = 0; i < samples; i++) {
-    const row = rendered[Math.floor(rand() * rendered.length)]!;
+    const random = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    const row = rendered[Math.floor(random * rendered.length)]!;
     console.log(stripAnsi(row).length > 220 ? `${row.slice(0, 2200)}\x1b[0m…` : row);
   }
 }

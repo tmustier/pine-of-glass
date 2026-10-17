@@ -59,28 +59,6 @@ function countTextContent(content) {
   }
   return sum;
 }
-function sessionBreakdownFromMessages(messages) {
-  const out = { thinkingChars: 0, toolOutputChars: 0, messageChars: 0, messageCount: messages.length };
-  for (const message of convertToLlm(messages)) {
-    if (message.role === 'toolResult') { out.toolOutputChars += countTextContent(message.content); continue; }
-    if (message.role === 'assistant') {
-      for (const block of message.content) {
-        if (block.type === 'thinking') {
-          // Historical baseline only: the current extension never prices opaque signatures as text.
-          let text = block.thinkingSignature || block.thinking;
-          if (block.thinkingSignature) {
-            try { text = JSON.stringify(JSON.parse(text), null, 2); } catch { /* opaque signature */ }
-          }
-          out.thinkingChars += text.length;
-        } else if (block.type === 'toolCall') out.messageChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }, null, 2).length;
-        else out.messageChars += countTextContent([block]);
-      }
-      continue;
-    }
-    out.messageChars += countTextContent(message.content);
-  }
-  return out;
-}
 function inputTokens(usage) { return (usage.input || 0) + (usage.cacheRead || 0) + (usage.cacheWrite || 0); }
 function median(xs){ if(!xs.length)return null; const a=xs.slice().sort((x,y)=>x-y); const m=Math.floor(a.length/2); return a.length%2?a[m]:(a[m-1]+a[m])/2; }
 function quantile(xs,q){ if(!xs.length)return null; const a=xs.slice().sort((x,y)=>x-y); const idx=Math.min(a.length-1,Math.max(0,Math.ceil(q*a.length)-1)); return a[idx]; }
@@ -92,15 +70,6 @@ function summarizeRows(rows, estKey) {
   const abs = errors.map(Math.abs);
   const ape = rows.map((r,i) => r.actual > 0 ? Math.abs(errors[i]) / r.actual : 0);
   return { intercept, mae: mean(abs), medianAbs: median(abs), p90Abs: quantile(abs, .9), meanAbsPct: mean(ape), medianAbsPct: median(ape), p90AbsPct: quantile(ape, .9), bias: mean(errors) };
-}
-function scanModelsAndUsage(entries) {
-  const models = []; let usageCount = 0;
-  for (const e of entries) {
-    if (e.type === 'model_change') models.push([e.provider, e.modelId]);
-    if (e.type === 'message' && e.message?.role === 'assistant' && e.message.usage && inputTokens(e.message.usage) > 0) usageCount++;
-  }
-  const unique = [...new Set(models.map(m => JSON.stringify(m)))].map(s => JSON.parse(s));
-  return { unique, usageCount };
 }
 function aggregate(groupRows, estimator) {
   const totalTurns = groupRows.reduce((s,r)=>s+r.turns,0);
@@ -127,7 +96,12 @@ for (const file of files) {
   }
   let entries;
   try { entries = parseSessionEntries(source); migrateSessionEntries(entries); } catch { failed++; continue; }
-  const { unique, usageCount } = scanModelsAndUsage(entries);
+  const models = []; let usageCount = 0;
+  for (const e of entries) {
+    if (e.type === 'model_change') models.push([e.provider, e.modelId]);
+    if (e.type === 'message' && e.message?.role === 'assistant' && e.message.usage && inputTokens(e.message.usage) > 0) usageCount++;
+  }
+  const unique = [...new Set(models.map(m => JSON.stringify(m)))].map(s => JSON.parse(s));
   if (!usageCount) continue;
   withUsage++;
   if (unique.length !== 1) continue;
@@ -146,7 +120,25 @@ for (const file of files) {
     if (!(actual > 0)) continue;
     try {
       const ctx = buildSessionContext(entries, e.parentId, byId);
-      const br = sessionBreakdownFromMessages(ctx.messages);
+      const br = { thinkingChars: 0, toolOutputChars: 0, messageChars: 0, messageCount: ctx.messages.length };
+      for (const message of convertToLlm(ctx.messages)) {
+        if (message.role === 'toolResult') { br.toolOutputChars += countTextContent(message.content); continue; }
+        if (message.role === 'assistant') {
+          for (const block of message.content) {
+            if (block.type === 'thinking') {
+              // Historical baseline only: the current extension never prices opaque signatures as text.
+              let text = block.thinkingSignature || block.thinking;
+              if (block.thinkingSignature) {
+                try { text = JSON.stringify(JSON.parse(text), null, 2); } catch { /* opaque signature */ }
+              }
+              br.thinkingChars += text.length;
+            } else if (block.type === 'toolCall') br.messageChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }, null, 2).length;
+            else br.messageChars += countTextContent([block]);
+          }
+          continue;
+        }
+        br.messageChars += countTextContent(message.content);
+      }
       const chars = br.thinkingChars + br.toolOutputChars + br.messageChars;
       rows.push({ actual, chars, historical: Math.ceil(chars / denomHistorical), single4: Math.ceil(chars / 4) });
     } catch { contextFailures++; }

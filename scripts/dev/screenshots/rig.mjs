@@ -38,9 +38,6 @@ writeFileSync(tmuxConf, 'set -g extended-keys on\nset -g extended-keys-format cs
 const tmux = (...args) => run(["tmux", "-L", "pogshots", "-f", tmuxConf, ...args]);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-function capturePane() {
-  return tmux("capture-pane", "-p", "-e", "-t", session, "-S", "-500").stdout ?? "";
-}
 function captureText() {
   return tmux("capture-pane", "-p", "-t", session, "-S", "-500").stdout ?? "";
 }
@@ -55,22 +52,6 @@ function waitFor(label, predicate, timeoutMs = 60000) {
 }
 const send = (...keys) => tmux("send-keys", "-t", session, ...keys);
 
-function makeFixture({ home, cwd }, extensions) {
-  mkdirSync(cwd, { recursive: true });
-  mkdirSync(join(home, ".pi", "agent"), { recursive: true });
-  const trusted = {};
-  for (const path of [cwd, repoRoot]) {
-    trusted[path] = true;
-    trusted[realpathSync(path)] = true;
-  }
-  writeFileSync(join(home, ".pi", "agent", "trust.json"), JSON.stringify(trusted, null, 2));
-  copyFileSync(join(homedir(), ".pi", "agent", "auth.json"), join(home, ".pi", "agent", "auth.json"));
-  mkdirSync(join(cwd, ".pi"), { recursive: true });
-  const settings = { extensions: extensions.map((name) => join(repoRoot, "extensions", name, "index.ts")) };
-  writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify(settings, null, 2));
-  return settings;
-}
-
 function launchPi({ home, cwd, args = "", cols = 120, rows = 45 }) {
   const launch = tmux(
     "new-session", "-d", "-s", session, "-x", String(cols), "-y", String(rows),
@@ -82,7 +63,7 @@ function launchPi({ home, cwd, args = "", cols = 120, rows = 45 }) {
 }
 
 function shoot(name, { trimTo, cutFrom, cols = 120 } = {}) {
-  let ansi = capturePane().replace(/\s+$/, "");
+  let ansi = (tmux("capture-pane", "-p", "-e", "-t", session, "-S", "-500").stdout ?? "").replace(/\s+$/, "");
   const strip = (l) => l.replace(/\x1b\[[0-9;:]*m/g, "");
   {
     // Startup housekeeping notices and view-toggle status echoes are not what the
@@ -378,7 +359,19 @@ try {
   // Resolve HOME so Pi's realpathed file labels tildify instead of leaking temp paths.
   home = realpathSync(home);
   const fixture = { home, cwd: join(home, "projects", "site") };
-  const settings = makeFixture(fixture, scenarios[scenario].extensions);
+  const { cwd } = fixture;
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+  const trusted = {};
+  for (const path of [cwd, repoRoot]) {
+    trusted[path] = true;
+    trusted[realpathSync(path)] = true;
+  }
+  writeFileSync(join(home, ".pi", "agent", "trust.json"), JSON.stringify(trusted, null, 2));
+  copyFileSync(join(homedir(), ".pi", "agent", "auth.json"), join(home, ".pi", "agent", "auth.json"));
+  mkdirSync(join(cwd, ".pi"), { recursive: true });
+  const settings = { extensions: scenarios[scenario].extensions.map((name) => join(repoRoot, "extensions", name, "index.ts")) };
+  writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify(settings, null, 2));
   scenarios[scenario].shoot(fixture, settings);
 } finally {
   if (keep) {

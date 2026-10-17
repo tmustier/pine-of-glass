@@ -23,54 +23,50 @@ const here = dirname(fileURLToPath(import.meta.url));
 const sessionsRoot = argValue("--sessions", join(homedir(), ".pi", "agent", "sessions"));
 const outPath = argValue("--out", join(here, "out", "commands.jsonl"));
 
-function* sessionFiles(root) {
-  let dirs;
-  try {
-    dirs = readdirSync(root);
-  } catch {
-    return;
-  }
-  for (const dir of dirs) {
-    const full = join(root, dir);
-    let entries;
-    try {
-      if (!statSync(full).isDirectory()) continue;
-      entries = readdirSync(full);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.endsWith(".jsonl")) yield join(full, entry);
-    }
-  }
-}
-
 mkdirSync(dirname(outPath), { recursive: true });
 const out = createWriteStream(outPath);
 let files = 0;
 let commands = 0;
 
-for (const file of sessionFiles(sessionsRoot)) {
-  files++;
-  const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity });
-  for await (const line of rl) {
-    // Cheap prefilter: bash toolCalls are rare relative to log volume.
-    if (!line.includes('"toolCall"') || !line.includes('"bash"')) continue;
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (event?.type !== "message") continue;
-    const content = event.message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const item of content) {
-      if (item?.type !== "toolCall" || item?.name !== "bash") continue;
-      const cmd = item?.arguments?.command;
-      if (typeof cmd === "string" && cmd.trim().length > 0) {
-        out.write(JSON.stringify({ cmd }) + "\n");
-        commands++;
+let dirs;
+try {
+  dirs = readdirSync(sessionsRoot);
+} catch {
+  dirs = [];
+}
+for (const dir of dirs) {
+  const full = join(sessionsRoot, dir);
+  let entries;
+  try {
+    if (!statSync(full).isDirectory()) continue;
+    entries = readdirSync(full);
+  } catch {
+    continue;
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".jsonl")) continue;
+    const file = join(full, entry);
+    files++;
+    const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity });
+    for await (const line of rl) {
+      // Cheap prefilter: bash toolCalls are rare relative to log volume.
+      if (!line.includes('"toolCall"') || !line.includes('"bash"')) continue;
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (event?.type !== "message") continue;
+      const content = event.message?.content;
+      if (!Array.isArray(content)) continue;
+      for (const item of content) {
+        if (item?.type !== "toolCall" || item?.name !== "bash") continue;
+        const cmd = item?.arguments?.command;
+        if (typeof cmd === "string" && cmd.trim().length > 0) {
+          out.write(JSON.stringify({ cmd }) + "\n");
+          commands++;
+        }
       }
     }
   }

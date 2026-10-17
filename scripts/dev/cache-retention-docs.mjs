@@ -15,22 +15,6 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const check = process.argv.includes("--check");
 const MINUTE = 60_000;
 
-function replaceGeneratedBlock(source, kind, body, path) {
-  const start = `<!-- BEGIN GENERATED CACHE RETENTION: ${kind} -->`;
-  const end = `<!-- END GENERATED CACHE RETENTION: ${kind} -->`;
-  const startAt = source.indexOf(start);
-  const endAt = source.indexOf(end);
-  if (startAt === -1 || endAt === -1 || endAt < startAt) {
-    throw new Error(`${path}: missing generated block markers for ${kind}`);
-  }
-  if (source.indexOf(start, startAt + start.length) !== -1 ||
-      source.indexOf(end, endAt + end.length) !== -1) {
-    throw new Error(`${path}: duplicate generated block markers for ${kind}`);
-  }
-  const afterEnd = endAt + end.length;
-  return source.slice(0, startAt) + `${start}\n${body.trim()}\n${end}` + source.slice(afterEnd);
-}
-
 function sourceLink(source) {
   return source.url === undefined ? source.label : `[${source.label}](${source.url})`;
 }
@@ -91,7 +75,19 @@ for (const target of targets) {
   const before = readFileSync(path, "utf8");
   let after = before;
   for (const [kind, body] of Object.entries(target.blocks)) {
-    after = replaceGeneratedBlock(after, kind, body, target.path);
+    const start = `<!-- BEGIN GENERATED CACHE RETENTION: ${kind} -->`;
+    const end = `<!-- END GENERATED CACHE RETENTION: ${kind} -->`;
+    const startAt = after.indexOf(start);
+    const endAt = after.indexOf(end);
+    if (startAt === -1 || endAt === -1 || endAt < startAt) {
+      throw new Error(`${target.path}: missing generated block markers for ${kind}`);
+    }
+    if (after.indexOf(start, startAt + start.length) !== -1 ||
+        after.indexOf(end, endAt + end.length) !== -1) {
+      throw new Error(`${target.path}: duplicate generated block markers for ${kind}`);
+    }
+    const afterEnd = endAt + end.length;
+    after = after.slice(0, startAt) + `${start}\n${body.trim()}\n${end}` + after.slice(afterEnd);
   }
   if (after === before) continue;
   stale.push(target.path);

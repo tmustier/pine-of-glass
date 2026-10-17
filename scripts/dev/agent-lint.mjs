@@ -119,10 +119,6 @@ function makeFinding(code, file, line, lineText, message = messageFor(code)) {
   return { code, file, line, lineText, message };
 }
 
-function signature(finding) {
-  return `${finding.code}\u0000${finding.file}\u0000${normalizeLine(finding.lineText)}`;
-}
-
 function isTsLike(path) {
   return /\.(?:ts|mts|cts|tsx|mjs|js)$/.test(path);
 }
@@ -152,125 +148,6 @@ function hasSafety(lines, index) {
   return false;
 }
 
-function hasLocalRecordProof(lines, index) {
-  const window = lines.slice(Math.max(0, index - 5), index + 1).join("\n");
-  if (window.includes("isJsonObject(")) return true;
-  return window.includes("typeof") && window.includes("object") && window.includes("Array.isArray");
-}
-
-function scanTsFile({ file, lines }, findings) {
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    const trimmed = line.trim();
-    const lineNumber = index + 1;
-
-    if (!hasDisable(lines, index, "POG001") && /\b(?:function|const|let|var)\s+(?:isRecord|isObject)\b/.test(line)) {
-      findings.push(makeFinding("POG001", file, lineNumber, line));
-    }
-
-    if (!hasDisable(lines, index, "POG002") && /JSON\.parse\([^;]*\)\s+as\s+/.test(line)) {
-      findings.push(makeFinding("POG002", file, lineNumber, line));
-    }
-
-    const unsafeAnyType = /(:\s*any\b|as\s+any\b|<\s*any\s*>|\bany\s*\[\s*\]|\bArray\s*<\s*any\s*>|[<,]\s*any\s*[>,])/.test(line);
-    if (!trimmed.startsWith("//") && !trimmed.startsWith("/*") && !trimmed.startsWith("*") && unsafeAnyType) {
-      if (!hasDisable(lines, index, "POG003") && !hasSafety(lines, index)) {
-        findings.push(makeFinding("POG003", file, lineNumber, line));
-      }
-    }
-
-    if (/as\s+Record\s*<\s*string\s*,\s*unknown\s*>/.test(line)) {
-      if (!hasDisable(lines, index, "POG004") && !hasSafety(lines, index) && !hasLocalRecordProof(lines, index)) {
-        findings.push(makeFinding("POG004", file, lineNumber, line));
-      }
-    }
-
-    if (!hasDisable(lines, index, "POG005") && /@ts-(?:ignore|expect-error)/.test(line) && !hasSafety(lines, index)) {
-      findings.push(makeFinding("POG005", file, lineNumber, line));
-    }
-
-    if (inPath(file, "tests") && !hasDisable(lines, index, "POG013") && /assert\.ok\(\s*![^,]*\.includes\(["'`]</.test(line)) {
-      findings.push(makeFinding("POG013", file, lineNumber, line));
-    }
-
-    if (inPath(file, "extensions") && file !== "extensions/_lib/style.ts" && file !== "extensions/_lib/ansi.ts") {
-      const rawAnsiColor = /\\x1b\[(?:3[0-7]|9[0-7]|38[;:]|48[;:]|4[0-7]|10[0-7])/.test(line);
-      if (!hasDisable(lines, index, "POG006") && rawAnsiColor) {
-        findings.push(makeFinding("POG006", file, lineNumber, line));
-      }
-    }
-  }
-}
-
-function scanMarkdownFile({ file, lines }, findings) {
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (line.includes("—") && !hasDisable(lines, index, "POG007")) {
-      findings.push(makeFinding("POG007", file, index + 1, line));
-    }
-  }
-}
-
-function scanFileBudgets(sources, baseline, findings) {
-  const budgets = baseline.lineBudgets ?? {};
-  const defaultMax = budgets.defaultTsMax ?? DEFAULT_TS_MAX_LINES;
-  const fileBudgets = budgets.files ?? {};
-  const seenBudgetFiles = new Set();
-  for (const { file, lines } of sources.values()) {
-    if (!file.endsWith(".ts")) continue;
-    if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
-    const lineCount = lines.length;
-    const storedBudget = fileBudgets[file];
-    if (storedBudget !== undefined) seenBudgetFiles.add(file);
-    const allowed = storedBudget ?? defaultMax;
-    if (lineCount > allowed) {
-      findings.push(makeFinding("POG010", file, 1, `line-count:${lineCount} budget:${allowed}`));
-    }
-    if (storedBudget !== undefined && lineCount < storedBudget) {
-      findings.push(makeFinding("POG011", file, 1, `line-count:${lineCount} stale-budget:${storedBudget}`));
-    }
-  }
-  for (const budgetFile of Object.keys(fileBudgets)) {
-    if (!seenBudgetFiles.has(budgetFile)) {
-      findings.push(makeFinding("POG011", budgetFile, 1, "missing file still has a line budget"));
-    }
-  }
-}
-
-// Oxlint diagnostics (rules in .oxlintrc.json) join the ledger under their own rule id,
-// e.g. `anti-slop(no-unknown-returns)`, keyed by source line like the POG findings.
-function scanWithOxlint(sources, findings) {
-  if (!existsSync(join(ROOT, ".oxlintrc.json"))) return;
-  const oxlint = join(ROOT, "node_modules", ".bin", "oxlint");
-  const result = spawnSync(oxlint, [".", "--format", "json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (result.error) throw result.error;
-  // oxlint exits 1 when it reports findings; anything else is a tooling failure.
-  if (result.status !== 0 && result.status !== 1) {
-    console.error(result.stderr || result.stdout);
-    console.error(`agent-lint: oxlint exited with ${result.status}`);
-    process.exit(1);
-  }
-  const report = JSON.parse(result.stdout);
-  for (const diagnostic of report.diagnostics) {
-    const file = diagnostic.filename.split(sep).join("/");
-    const line = diagnostic.labels[0].span.line;
-    const lines = sources.get(file)?.lines ?? readText(join(ROOT, file)).split(/\r?\n/);
-    const lineText = lines[line - 1] ?? "";
-    const message = [
-      diagnostic.message,
-      ...(diagnostic.help ? [diagnostic.help] : []),
-      "Rule policy: .oxlintrc.json (inline reasons) and docs/agent-coding-standard.md (\"Slop lint\").",
-      "See the full diagnostic with `npm run lint:slop`.",
-    ].join("\n");
-    findings.push(makeFinding(diagnostic.code, file, line, lineText, message));
-  }
-}
-
-// --- POG014: a private function parameter every caller leaves constant -----------------
-// Only functions declared and called by name within one file are judged, and only when
-// every reference to the name is a direct call: an exported, re-exported or passed-around
-// function has callers this file cannot see.
-
 function walkAst(node, visit) {
   if (!node || typeof node !== "object") return;
   if (Array.isArray(node)) {
@@ -284,198 +161,8 @@ function walkAst(node, visit) {
   }
 }
 
-function literalKey(node) {
-  if (!node) return "omitted";
-  if (node.type === "Literal" || node.type === "BooleanLiteral" || node.type === "NumericLiteral" || node.type === "StringLiteral" || node.type === "NullLiteral") {
-    return `${node.type}:${String(node.value)}`;
-  }
-  if (node.type === "Identifier" && node.name === "undefined") return "omitted";
-  return undefined;
-}
-
 function lineOf(text, offset) {
   return text.slice(0, offset).split("\n").length;
-}
-
-function scanConstantParameters({ file, text, lines, program }, findings) {
-  const exported = new Set();
-  const declared = new Map();
-  for (const statement of program.body) {
-    if (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration") {
-      walkAst(statement, (node) => { if (node.type === "Identifier") exported.add(node.name); });
-    }
-    if (statement.type === "FunctionDeclaration" && statement.id) declared.set(statement.id.name, statement);
-  }
-  const calls = new Map();
-  const otherUses = new Set();
-  walkAst(program, (node) => {
-    if (node.type === "CallExpression" && node.callee.type === "Identifier" && declared.has(node.callee.name)) {
-      calls.set(node.callee.name, [...(calls.get(node.callee.name) ?? []), node]);
-      return;
-    }
-    if (node.type === "FunctionDeclaration") return;
-    for (const value of Object.values(node)) {
-      if (value?.type === "Identifier" && declared.has(value.name) && !(node.type === "CallExpression" && node.callee === value)) otherUses.add(value.name);
-    }
-  });
-  for (const [name, fn] of declared) {
-    if (exported.has(name) || otherUses.has(name)) continue;
-    const sites = calls.get(name) ?? [];
-    if (sites.length === 0) continue;
-    fn.params.forEach((param, index) => {
-      const target = param.type === "AssignmentPattern" ? param.left : param;
-      if (target.type !== "Identifier") return;
-      const keys = new Set(sites.map((site) => literalKey(site.arguments[index])));
-      if (keys.size !== 1 || keys.has(undefined)) return;
-      const omitted = [...keys][0] === "omitted";
-      // A required parameter nobody passes is a type error, not this rule's; one caller
-      // passing a literal is just one caller.
-      if (omitted ? param.type !== "AssignmentPattern" : sites.length < 2) return;
-      const line = lineOf(text, param.start);
-      if (hasDisable(lines, line - 1, "POG014")) return;
-      findings.push(makeFinding("POG014", file, line, lines[line - 1], `${messageFor("POG014")}\n${name}(${target.name}) is always ${omitted ? "left to its default" : "the same literal"} across ${sites.length} call(s).`));
-    });
-  }
-}
-
-// --- POG015: an `internals` entry nothing outside extensions/ reads ----------------------
-
-// The names each consumer file reads from each extension's `internals`, by resolved path.
-function internalsReads({ absPath, program }) {
-  const locals = new Map();
-  for (const statement of program.body) {
-    if (statement.type !== "ImportDeclaration") continue;
-    for (const specifier of statement.specifiers) {
-      if (specifier.type === "ImportSpecifier" && specifier.imported.name === "internals") {
-        locals.set(specifier.local.name, rel(resolve(dirname(absPath), statement.source.value)));
-      }
-    }
-  }
-  const reads = new Map();
-  const add = (local, name) => {
-    const target = locals.get(local);
-    if (!target) return;
-    if (!reads.has(target)) reads.set(target, new Set());
-    reads.get(target).add(name);
-  };
-  walkAst(program, (node) => {
-    if (node.type === "MemberExpression" && node.object.type === "Identifier" && !node.computed) add(node.object.name, node.property.name);
-    if (node.type === "VariableDeclarator" && node.init?.type === "Identifier" && node.id.type === "ObjectPattern") {
-      for (const property of node.id.properties) if (property.type === "Property" && property.key.type === "Identifier") add(node.init.name, property.key.name);
-    }
-  });
-  return reads;
-}
-
-function scanInternalsUses(sources, findings) {
-  const used = new Map();
-  for (const source of sources.values()) {
-    const { file } = source;
-    if (!file.endsWith(".ts") || !(inPath(file, "tests") || inPath(file, "scripts"))) continue;
-    for (const [target, names] of internalsReads(source)) {
-      if (!used.has(target)) used.set(target, new Set());
-      for (const name of names) used.get(target).add(name);
-    }
-  }
-  for (const { file, text, lines, internalsProperties } of sources.values()) {
-    for (const property of internalsProperties) {
-      if (property.type !== "Property" || property.key.type !== "Identifier") continue;
-      const { name, start } = property.key;
-      if (used.get(file)?.has(name)) continue;
-      const line = lineOf(text, start);
-      if (hasDisable(lines, line - 1, "POG015")) continue;
-      findings.push(makeFinding("POG015", file, line, lines[line - 1], `${messageFor("POG015")}\ninternals.${name} has no reader under tests/ or scripts/.`));
-    }
-  }
-}
-
-function scanInternalsBudgets(sources, baseline, findings) {
-  const budgets = baseline.internalsBudgets ?? {};
-  const seen = new Set();
-  for (const { file, internalsProperties } of sources.values()) {
-    if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
-    const count = internalsProperties.length;
-    const budget = budgets[file];
-    if (budget !== undefined) seen.add(file);
-    if (count > (budget ?? 0)) {
-      findings.push(makeFinding("POG012", file, 1, `internals-entries:${count} budget:${budget ?? 0}`));
-    }
-    if (budget !== undefined && count < budget) {
-      findings.push(makeFinding("POG011", file, 1, `internals-entries:${count} stale-budget:${budget}`));
-    }
-  }
-  for (const budgetFile of Object.keys(budgets)) {
-    if (!seen.has(budgetFile)) findings.push(makeFinding("POG011", budgetFile, 1, "missing file still has an internals budget"));
-  }
-}
-
-// Budgets already in the baseline may only shrink; new files are never added.
-function buildInternalsBudgets(sources, previous) {
-  const budgets = {};
-  for (const [file, oldBudget] of Object.entries(previous)) {
-    const source = sources.get(file);
-    if (!source) continue;
-    const count = source.internalsProperties.length;
-    if (count > 0) budgets[file] = Math.min(count, oldBudget);
-  }
-  return sortObjectDeep(budgets);
-}
-
-function scanStructural(sources, findings) {
-  if (existsSync(join(ROOT, "extensions", "_lib", "index.ts"))) {
-    findings.push(makeFinding("POG008", "extensions/_lib/index.ts", 1, "extensions/_lib/index.ts"));
-  }
-
-  const packageSource = sources.get("package.json");
-  if (packageSource) {
-    const pkg = JSON.parse(packageSource.text);
-    const deps = pkg.dependencies && typeof pkg.dependencies === "object" ? Object.keys(pkg.dependencies) : [];
-    if (deps.length > 0) {
-      findings.push(makeFinding("POG009", "package.json", 1, `dependencies:${deps.join(",")}`));
-    }
-  }
-}
-
-function loadBaseline() {
-  if (!existsSync(BASELINE_PATH)) {
-    return { version: 1, knownFindings: {}, lineBudgets: { defaultTsMax: DEFAULT_TS_MAX_LINES, files: {} }, internalsBudgets: {} };
-  }
-  return JSON.parse(readText(BASELINE_PATH));
-}
-
-function flattenKnownFindings(baseline) {
-  const map = new Map();
-  for (const [code, files] of Object.entries(baseline.knownFindings ?? {})) {
-    for (const [file, lines] of Object.entries(files ?? {})) {
-      for (const [lineText, count] of Object.entries(lines ?? {})) {
-        map.set(`${code}\u0000${file}\u0000${lineText}`, Number(count));
-      }
-    }
-  }
-  return map;
-}
-
-function buildKnownFindings(findings) {
-  const knownFindings = {};
-  for (const finding of findings) {
-    if (NON_BASELINED_CODES.has(finding.code)) continue;
-    const lineText = normalizeLine(finding.lineText);
-    knownFindings[finding.code] ??= {};
-    knownFindings[finding.code][finding.file] ??= {};
-    knownFindings[finding.code][finding.file][lineText] = (knownFindings[finding.code][finding.file][lineText] ?? 0) + 1;
-  }
-  return sortObjectDeep(knownFindings);
-}
-
-function buildLineBudgets(sources, previous) {
-  const budgets = {};
-  for (const [file, oldBudget] of Object.entries(previous.files ?? {})) {
-    const source = sources.get(file);
-    if (!source) continue;
-    const lineCount = source.lines.length;
-    if (lineCount > DEFAULT_TS_MAX_LINES) budgets[file] = Math.min(lineCount, oldBudget);
-  }
-  return { defaultTsMax: DEFAULT_TS_MAX_LINES, files: sortObjectDeep(budgets) };
 }
 
 function sortObjectDeep(value) {
@@ -483,33 +170,17 @@ function sortObjectDeep(value) {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortObjectDeep(value[key])]));
 }
 
-function partitionFindings(findings, baseline) {
-  const knownMap = flattenKnownFindings(baseline);
-  const known = [];
-  const fresh = [];
-  for (const finding of findings) {
-    if (NON_BASELINED_CODES.has(finding.code)) {
-      fresh.push(finding);
-      continue;
-    }
-    const sig = signature(finding);
-    const remaining = knownMap.get(sig) ?? 0;
-    if (remaining > 0) {
-      known.push(finding);
-      knownMap.set(sig, remaining - 1);
-    } else {
-      fresh.push(finding);
-    }
-  }
-  const stale = Array.from(knownMap.entries()).filter(([, count]) => count > 0);
-  return { known, fresh, stale };
-}
-
 function formatFinding(finding) {
   return `${finding.file}:${finding.line} ${finding.code} ${finding.message}\n  > ${finding.lineText.trim()}`;
 }
 
-function collectSources() {
+cli: {
+  const args = new Set(process.argv.slice(2));
+  if (args.has("--help") || args.has("-h")) {
+    console.log(`Usage: node scripts/dev/agent-lint.mjs [--update-baseline] [--show-baseline]\n\nDeterministic source checks for the pine-of-glass agent coding standard.`);
+    break cli;
+  }
+
   const sources = new Map();
   for (const absPath of walk(ROOT)) {
     const file = rel(absPath);
@@ -540,37 +211,278 @@ function collectSources() {
     }
     sources.set(file, { absPath, file, text, lines, program, internalsProperties });
   }
-  return sources;
-}
-
-function collectFindings(sources, baseline) {
+  const baseline = existsSync(BASELINE_PATH)
+    ? JSON.parse(readText(BASELINE_PATH))
+    : { version: 1, knownFindings: {}, lineBudgets: { defaultTsMax: DEFAULT_TS_MAX_LINES, files: {} }, internalsBudgets: {} };
   const findings = [];
   for (const source of sources.values()) {
     const { file } = source;
-    if (isTsLike(file)) scanTsFile(source, findings);
-    if (file.endsWith(".ts") && inPath(file, "extensions")) scanConstantParameters(source, findings);
-    if (isMarkdown(file)) scanMarkdownFile(source, findings);
+    if (isTsLike(file)) {
+      const { lines } = source;
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        const trimmed = line.trim();
+        const lineNumber = index + 1;
+
+        if (!hasDisable(lines, index, "POG001") && /\b(?:function|const|let|var)\s+(?:isRecord|isObject)\b/.test(line)) {
+          findings.push(makeFinding("POG001", file, lineNumber, line));
+        }
+
+        if (!hasDisable(lines, index, "POG002") && /JSON\.parse\([^;]*\)\s+as\s+/.test(line)) {
+          findings.push(makeFinding("POG002", file, lineNumber, line));
+        }
+
+        const unsafeAnyType = /(:\s*any\b|as\s+any\b|<\s*any\s*>|\bany\s*\[\s*\]|\bArray\s*<\s*any\s*>|[<,]\s*any\s*[>,])/.test(line);
+        if (!trimmed.startsWith("//") && !trimmed.startsWith("/*") && !trimmed.startsWith("*") && unsafeAnyType) {
+          if (!hasDisable(lines, index, "POG003") && !hasSafety(lines, index)) {
+            findings.push(makeFinding("POG003", file, lineNumber, line));
+          }
+        }
+
+        if (/as\s+Record\s*<\s*string\s*,\s*unknown\s*>/.test(line)) {
+          const window = lines.slice(Math.max(0, index - 5), index + 1).join("\n");
+          const localRecordProof = window.includes("isJsonObject(")
+            || (window.includes("typeof") && window.includes("object") && window.includes("Array.isArray"));
+          if (!hasDisable(lines, index, "POG004") && !hasSafety(lines, index) && !localRecordProof) {
+            findings.push(makeFinding("POG004", file, lineNumber, line));
+          }
+        }
+
+        if (!hasDisable(lines, index, "POG005") && /@ts-(?:ignore|expect-error)/.test(line) && !hasSafety(lines, index)) {
+          findings.push(makeFinding("POG005", file, lineNumber, line));
+        }
+
+        if (inPath(file, "tests") && !hasDisable(lines, index, "POG013") && /assert\.ok\(\s*![^,]*\.includes\(["'`]</.test(line)) {
+          findings.push(makeFinding("POG013", file, lineNumber, line));
+        }
+
+        if (inPath(file, "extensions") && file !== "extensions/_lib/style.ts" && file !== "extensions/_lib/ansi.ts") {
+          const rawAnsiColor = /\\x1b\[(?:3[0-7]|9[0-7]|38[;:]|48[;:]|4[0-7]|10[0-7])/.test(line);
+          if (!hasDisable(lines, index, "POG006") && rawAnsiColor) {
+            findings.push(makeFinding("POG006", file, lineNumber, line));
+          }
+        }
+      }
+    }
+    // --- POG014: a private function parameter every caller leaves constant -----------------
+    // Only functions declared and called by name within one file are judged, and only when
+    // every reference to the name is a direct call: an exported, re-exported or passed-around
+    // function has callers this file cannot see.
+    if (file.endsWith(".ts") && inPath(file, "extensions")) {
+      const { text, lines, program } = source;
+      const exported = new Set();
+      const declared = new Map();
+      for (const statement of program.body) {
+        if (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration") {
+          walkAst(statement, (node) => { if (node.type === "Identifier") exported.add(node.name); });
+        }
+        if (statement.type === "FunctionDeclaration" && statement.id) declared.set(statement.id.name, statement);
+      }
+      const calls = new Map();
+      const otherUses = new Set();
+      walkAst(program, (node) => {
+        if (node.type === "CallExpression" && node.callee.type === "Identifier" && declared.has(node.callee.name)) {
+          calls.set(node.callee.name, [...(calls.get(node.callee.name) ?? []), node]);
+          return;
+        }
+        if (node.type === "FunctionDeclaration") return;
+        for (const value of Object.values(node)) {
+          if (value?.type === "Identifier" && declared.has(value.name) && !(node.type === "CallExpression" && node.callee === value)) otherUses.add(value.name);
+        }
+      });
+      for (const [name, fn] of declared) {
+        if (exported.has(name) || otherUses.has(name)) continue;
+        const sites = calls.get(name) ?? [];
+        if (sites.length === 0) continue;
+        fn.params.forEach((param, index) => {
+          const target = param.type === "AssignmentPattern" ? param.left : param;
+          if (target.type !== "Identifier") return;
+          const keys = new Set(sites.map((site) => {
+            const node = site.arguments[index];
+            if (!node) return "omitted";
+            if (node.type === "Literal" || node.type === "BooleanLiteral" || node.type === "NumericLiteral" || node.type === "StringLiteral" || node.type === "NullLiteral") {
+              return `${node.type}:${String(node.value)}`;
+            }
+            if (node.type === "Identifier" && node.name === "undefined") return "omitted";
+            return undefined;
+          }));
+          if (keys.size !== 1 || keys.has(undefined)) return;
+          const omitted = [...keys][0] === "omitted";
+          // A required parameter nobody passes is a type error, not this rule's; one caller
+          // passing a literal is just one caller.
+          if (omitted ? param.type !== "AssignmentPattern" : sites.length < 2) return;
+          const line = lineOf(text, param.start);
+          if (hasDisable(lines, line - 1, "POG014")) return;
+          findings.push(makeFinding("POG014", file, line, lines[line - 1], `${messageFor("POG014")}\n${name}(${target.name}) is always ${omitted ? "left to its default" : "the same literal"} across ${sites.length} call(s).`));
+        });
+      }
+    }
+    if (isMarkdown(file)) {
+      const { lines } = source;
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        if (line.includes("—") && !hasDisable(lines, index, "POG007")) {
+          findings.push(makeFinding("POG007", file, index + 1, line));
+        }
+      }
+    }
   }
-  scanFileBudgets(sources, baseline, findings);
-  scanInternalsBudgets(sources, baseline, findings);
-  scanInternalsUses(sources, findings);
-  scanStructural(sources, findings);
-  scanWithOxlint(sources, findings);
-  return findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.code.localeCompare(b.code));
-}
-
-function main() {
-  const args = new Set(process.argv.slice(2));
-  if (args.has("--help") || args.has("-h")) {
-    console.log(`Usage: node scripts/dev/agent-lint.mjs [--update-baseline] [--show-baseline]\n\nDeterministic source checks for the pine-of-glass agent coding standard.`);
-    return;
+  {
+    const budgets = baseline.lineBudgets ?? {};
+    const defaultMax = budgets.defaultTsMax ?? DEFAULT_TS_MAX_LINES;
+    const fileBudgets = budgets.files ?? {};
+    const seenBudgetFiles = new Set();
+    for (const { file, lines } of sources.values()) {
+      if (!file.endsWith(".ts")) continue;
+      if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
+      const lineCount = lines.length;
+      const storedBudget = fileBudgets[file];
+      if (storedBudget !== undefined) seenBudgetFiles.add(file);
+      const allowed = storedBudget ?? defaultMax;
+      if (lineCount > allowed) {
+        findings.push(makeFinding("POG010", file, 1, `line-count:${lineCount} budget:${allowed}`));
+      }
+      if (storedBudget !== undefined && lineCount < storedBudget) {
+        findings.push(makeFinding("POG011", file, 1, `line-count:${lineCount} stale-budget:${storedBudget}`));
+      }
+    }
+    for (const budgetFile of Object.keys(fileBudgets)) {
+      if (!seenBudgetFiles.has(budgetFile)) {
+        findings.push(makeFinding("POG011", budgetFile, 1, "missing file still has a line budget"));
+      }
+    }
   }
+  {
+    const budgets = baseline.internalsBudgets ?? {};
+    const seen = new Set();
+    for (const { file, internalsProperties } of sources.values()) {
+      if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
+      const count = internalsProperties.length;
+      const budget = budgets[file];
+      if (budget !== undefined) seen.add(file);
+      if (count > (budget ?? 0)) {
+        findings.push(makeFinding("POG012", file, 1, `internals-entries:${count} budget:${budget ?? 0}`));
+      }
+      if (budget !== undefined && count < budget) {
+        findings.push(makeFinding("POG011", file, 1, `internals-entries:${count} stale-budget:${budget}`));
+      }
+    }
+    for (const budgetFile of Object.keys(budgets)) {
+      if (!seen.has(budgetFile)) findings.push(makeFinding("POG011", budgetFile, 1, "missing file still has an internals budget"));
+    }
+  }
+  {
+    const used = new Map();
+    for (const source of sources.values()) {
+      const { file } = source;
+      if (!file.endsWith(".ts") || !(inPath(file, "tests") || inPath(file, "scripts"))) continue;
+      const { absPath, program } = source;
+      // The names each consumer file reads from each extension's `internals`, by resolved path.
+      const locals = new Map();
+      for (const statement of program.body) {
+        if (statement.type !== "ImportDeclaration") continue;
+        for (const specifier of statement.specifiers) {
+          if (specifier.type === "ImportSpecifier" && specifier.imported.name === "internals") {
+            locals.set(specifier.local.name, rel(resolve(dirname(absPath), statement.source.value)));
+          }
+        }
+      }
+      const reads = new Map();
+      const add = (local, name) => {
+        const target = locals.get(local);
+        if (!target) return;
+        if (!reads.has(target)) reads.set(target, new Set());
+        reads.get(target).add(name);
+      };
+      walkAst(program, (node) => {
+        if (node.type === "MemberExpression" && node.object.type === "Identifier" && !node.computed) add(node.object.name, node.property.name);
+        if (node.type === "VariableDeclarator" && node.init?.type === "Identifier" && node.id.type === "ObjectPattern") {
+          for (const property of node.id.properties) if (property.type === "Property" && property.key.type === "Identifier") add(node.init.name, property.key.name);
+        }
+      });
+      for (const [target, names] of reads) {
+        if (!used.has(target)) used.set(target, new Set());
+        for (const name of names) used.get(target).add(name);
+      }
+    }
+    for (const { file, text, lines, internalsProperties } of sources.values()) {
+      for (const property of internalsProperties) {
+        if (property.type !== "Property" || property.key.type !== "Identifier") continue;
+        const { name, start } = property.key;
+        if (used.get(file)?.has(name)) continue;
+        const line = lineOf(text, start);
+        if (hasDisable(lines, line - 1, "POG015")) continue;
+        findings.push(makeFinding("POG015", file, line, lines[line - 1], `${messageFor("POG015")}\ninternals.${name} has no reader under tests/ or scripts/.`));
+      }
+    }
+  }
+  {
+    if (existsSync(join(ROOT, "extensions", "_lib", "index.ts"))) {
+      findings.push(makeFinding("POG008", "extensions/_lib/index.ts", 1, "extensions/_lib/index.ts"));
+    }
 
-  const sources = collectSources();
-  const baseline = loadBaseline();
-  const findings = collectFindings(sources, baseline);
+    const packageSource = sources.get("package.json");
+    if (packageSource) {
+      const pkg = JSON.parse(packageSource.text);
+      const deps = pkg.dependencies && typeof pkg.dependencies === "object" ? Object.keys(pkg.dependencies) : [];
+      if (deps.length > 0) {
+        findings.push(makeFinding("POG009", "package.json", 1, `dependencies:${deps.join(",")}`));
+      }
+    }
+  }
+  // Oxlint diagnostics join the ledger under their rule id, keyed by source line.
+  if (existsSync(join(ROOT, ".oxlintrc.json"))) {
+    const oxlint = join(ROOT, "node_modules", ".bin", "oxlint");
+    const result = spawnSync(oxlint, [".", "--format", "json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (result.error) throw result.error;
+    // oxlint exits 1 when it reports findings; anything else is a tooling failure.
+    if (result.status !== 0 && result.status !== 1) {
+      console.error(result.stderr || result.stdout);
+      console.error(`agent-lint: oxlint exited with ${result.status}`);
+      process.exit(1);
+    }
+    const report = JSON.parse(result.stdout);
+    for (const diagnostic of report.diagnostics) {
+      const file = diagnostic.filename.split(sep).join("/");
+      const line = diagnostic.labels[0].span.line;
+      const lines = sources.get(file)?.lines ?? readText(join(ROOT, file)).split(/\r?\n/);
+      const lineText = lines[line - 1] ?? "";
+      const message = [
+        diagnostic.message,
+        ...(diagnostic.help ? [diagnostic.help] : []),
+        "Rule policy: .oxlintrc.json (inline reasons) and docs/agent-coding-standard.md (\"Slop lint\").",
+        "See the full diagnostic with `npm run lint:slop`.",
+      ].join("\n");
+      findings.push(makeFinding(diagnostic.code, file, line, lineText, message));
+    }
+  }
+  findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.code.localeCompare(b.code));
 
-  const { known, fresh, stale } = partitionFindings(findings, baseline);
+  const knownMap = new Map();
+  for (const [code, files] of Object.entries(baseline.knownFindings ?? {})) {
+    for (const [file, lines] of Object.entries(files ?? {})) {
+      for (const [lineText, count] of Object.entries(lines ?? {})) {
+        knownMap.set(`${code}\u0000${file}\u0000${lineText}`, Number(count));
+      }
+    }
+  }
+  const known = [];
+  const fresh = [];
+  for (const finding of findings) {
+    if (NON_BASELINED_CODES.has(finding.code)) {
+      fresh.push(finding);
+      continue;
+    }
+    const sig = `${finding.code}\u0000${finding.file}\u0000${normalizeLine(finding.lineText)}`;
+    const remaining = knownMap.get(sig) ?? 0;
+    if (remaining > 0) {
+      known.push(finding);
+      knownMap.set(sig, remaining - 1);
+    } else {
+      fresh.push(finding);
+    }
+  }
+  const stale = Array.from(knownMap.entries()).filter(([, count]) => count > 0);
   if (args.has("--update-baseline")) {
     // Only stale entries (POG011) may be pruned; every other fresh finding needs a fix or a hand edit.
     const unreviewed = fresh.filter((finding) => finding.code !== "POG011");
@@ -579,25 +491,48 @@ function main() {
       for (const finding of unreviewed) console.error(`${formatFinding(finding)}\n`);
       console.error("Fix the findings or admit them with a reviewed hand edit of scripts/dev/agent-lint-baseline.json.");
       process.exitCode = 1;
-      return;
+      break cli;
+    }
+    const knownFindings = {};
+    for (const finding of known) {
+      if (NON_BASELINED_CODES.has(finding.code)) continue;
+      const lineText = normalizeLine(finding.lineText);
+      knownFindings[finding.code] ??= {};
+      knownFindings[finding.code][finding.file] ??= {};
+      knownFindings[finding.code][finding.file][lineText] = (knownFindings[finding.code][finding.file][lineText] ?? 0) + 1;
+    }
+    const lineBudgets = {};
+    for (const [file, oldBudget] of Object.entries((baseline.lineBudgets ?? {}).files ?? {})) {
+      const source = sources.get(file);
+      if (!source) continue;
+      const lineCount = source.lines.length;
+      if (lineCount > DEFAULT_TS_MAX_LINES) lineBudgets[file] = Math.min(lineCount, oldBudget);
+    }
+    // Budgets already in the baseline may only shrink; new files are never added.
+    const internalsBudgets = {};
+    for (const [file, oldBudget] of Object.entries(baseline.internalsBudgets ?? {})) {
+      const source = sources.get(file);
+      if (!source) continue;
+      const count = source.internalsProperties.length;
+      if (count > 0) internalsBudgets[file] = Math.min(count, oldBudget);
     }
     const next = {
       version: 1,
       generatedBy: "node scripts/dev/agent-lint.mjs --update-baseline",
-      knownFindings: buildKnownFindings(known),
-      lineBudgets: buildLineBudgets(sources, baseline.lineBudgets ?? {}),
-      internalsBudgets: buildInternalsBudgets(sources, baseline.internalsBudgets ?? {}),
+      knownFindings: sortObjectDeep(knownFindings),
+      lineBudgets: { defaultTsMax: DEFAULT_TS_MAX_LINES, files: sortObjectDeep(lineBudgets) },
+      internalsBudgets: sortObjectDeep(internalsBudgets),
     };
     writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
     console.log(`Pruned ${relative(ROOT, BASELINE_PATH)}; no new findings or budget growth were admitted.`);
-    return;
+    break cli;
   }
 
   if (args.has("--show-baseline")) {
     for (const finding of known) console.log(`${formatFinding(finding)}\n`);
     console.log(`Known baseline findings: ${known.length}`);
     if (stale.length > 0) console.log(`Stale baseline signatures: ${stale.length}`);
-    return;
+    break cli;
   }
 
   if (fresh.length > 0 || stale.length > 0) {
@@ -614,10 +549,8 @@ function main() {
     }
     console.error("Fix the issue, add a SAFETY comment for a real boundary seam, or update the reviewed baseline after deliberate fixes (node scripts/dev/agent-lint.mjs --update-baseline).");
     process.exitCode = 1;
-    return;
+    break cli;
   }
 
   console.log(`agent-lint passed: no new findings (${known.length} known baseline finding(s) remain).`);
 }
-
-main();

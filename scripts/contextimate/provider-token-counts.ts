@@ -404,21 +404,6 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function anthropicHeaders(): Record<string, string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey) return { "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
-  try {
-    const auth: unknown = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8"));
-    const entry = isJsonObject(auth) && isJsonObject(auth.anthropic) ? auth.anthropic : undefined;
-    if (entry && typeof entry.access === "string" && (typeof entry.expires !== "number" || entry.expires > Date.now())) {
-      return { authorization: `Bearer ${entry.access}`, "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20" };
-    }
-  } catch {
-    // The credential error below is more useful than a missing or malformed local auth-file error.
-  }
-  throw new Error("set ANTHROPIC_API_KEY or refresh the Anthropic login in Pi");
-}
-
 function numberField(data: unknown, key: string, provider: string): number {
   if (isJsonObject(data) && typeof data[key] === "number") return data[key];
   throw new Error(`${provider} returned no ${key}`);
@@ -459,7 +444,22 @@ export const PROVIDERS: Record<string, Provider> = {
     build: buildAnthropicRequests,
     full: buildAnthropicFullRequest,
     async execute(body) {
-      const data = await postJson("https://api.anthropic.com/v1/messages/count_tokens", body, anthropicHeaders());
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      let headers: Record<string, string> | undefined;
+      if (apiKey) headers = { "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
+      else {
+        try {
+          const auth: unknown = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8"));
+          const entry = isJsonObject(auth) && isJsonObject(auth.anthropic) ? auth.anthropic : undefined;
+          if (entry && typeof entry.access === "string" && (typeof entry.expires !== "number" || entry.expires > Date.now())) {
+            headers = { authorization: `Bearer ${entry.access}`, "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20" };
+          }
+        } catch {
+          // The credential error below is more useful than a missing or malformed local auth-file error.
+        }
+      }
+      if (!headers) throw new Error("set ANTHROPIC_API_KEY or refresh the Anthropic login in Pi");
+      const data = await postJson("https://api.anthropic.com/v1/messages/count_tokens", body, headers);
       return numberField(data, "input_tokens", "Anthropic");
     },
   },
