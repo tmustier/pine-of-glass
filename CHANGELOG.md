@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.18.0 (2026-10-17)
+
+- Contextimate shows conversation text added only for a provider request in a separate
+  `Request-only` row. It keeps Pi's provider total unchanged, avoids counting those
+  additions as harness or tool growth, and saves counts rather than injected text.
+  Attribution survives reload and branch changes. Native OpenAI Responses, Codex and
+  Anthropic text requests are reconciled after context hooks; other formats and
+  image-bearing requests retain the earlier context-hook observation.
+- Traceline records each summary request's full reported usage, including partial or
+  unusable replies, and shows its estimated cost separately in the footer as
+  `summaries $0.001 extra`. Tiny charges stay visible, and missing usage stays unknown.
+  Costs restore even when new summaries are disabled; late replies cannot write into
+  a replacement session. Pi's own session total stays unchanged.
 - Traceline headlines say more when space is short. A deleted local branch reads
   `deleted branch docs`, not `deleted docs`; a remote deletion stays `deleted origin/docs`
   because the remote ref may be a tag. A crowded headline drops the tidy-up first, so
@@ -21,8 +34,8 @@
   `≈` line with a model's gist of it, and a cut thinking preview shows its gist. A gist
   is a lighter grey than the command's arguments and wraps rather than being cut.
   `openai-codex/gpt-6-luna` by default, or `{ "model": "provider/id" }`. Gists are asked
-  for in batches once rows settle and saved in the session, so a reopened session asks
-  for nothing. A project file cannot turn summaries on.
+  for in batches once rows settle and saved in the session, so saved gists restore
+  without another request. A project file cannot turn summaries on.
 
 - Traceline shows extension notices as trace rows. A custom message or custom entry
   that an extension puts in the chat (a subagent's question or result, a supervisor's
@@ -52,6 +65,10 @@
   script retries with the problems, then reports where the draft fires across all your
   results. `--list` shows frequent commands no entry covers, and `extract-results.mjs
   --all` harvests every bash call for tools beyond git, gh and npm.
+
+- Internal code is simpler across all four extensions. Boundary parsing is narrower,
+  single-use helpers and unused exports are removed, and tests cover behaviour through
+  Pi's SDK and domain interfaces.
 
 ## 0.17.0 (2026-10-17)
 
