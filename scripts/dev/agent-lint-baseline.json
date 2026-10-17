@@ -53,10 +53,8 @@
       },
       "scripts/contextimate/provider-token-counts.ts": {
         "export const PROVIDERS: Record<string, Provider> = {": 1,
-        "if (apiKey) return { \"x-api-key\": apiKey, \"anthropic-version\": \"2023-06-01\" };": 1,
         "if (kind && isJsonObject(candidate)) return { kind, payload: candidate };": 1,
-        "return {": 1,
-        "return { authorization: `Bearer ${entry.access}`, \"anthropic-version\": \"2023-06-01\", \"anthropic-beta\": \"oauth-2025-04-20\" };": 1
+        "return {": 1
       },
       "scripts/dev/bash-corpus/report.ts": {
         "const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };": 1
@@ -99,8 +97,6 @@
       },
       "extensions/_lib/tool-payloads.ts": {
         "export function aggregateToolPayload(tools: Array<ToolDefinition & { promptGuidelines?: string[] }>, format: string): unknown {": 1,
-        "export function arrayItemsSchema(property: unknown): unknown {": 1,
-        "export function openAIResponsesToolPayload(tool: ToolDefinition): unknown {": 1,
         "export function toolPayload(tool: ToolDefinition & { promptGuidelines?: string[] }, format: string): unknown {": 1
       },
       "extensions/pi-cachemire/classify.ts": {
@@ -122,8 +118,7 @@
         "export function getSchemaProperties(schema: unknown): Record<string, unknown> {": 1
       },
       "extensions/pi-cachemire/classify.ts": {
-        "const out: Record<string, unknown> = {};": 1,
-        "function findTtlMs(payload: Record<string, unknown>): number | undefined {": 1
+        "const out: Record<string, unknown> = {};": 1
       },
       "tests/contract/pi-cache-retention-seams.test.ts": {
         "async function accountCompletionUsage(provider: string, usage: Record<string, unknown>) {": 1
