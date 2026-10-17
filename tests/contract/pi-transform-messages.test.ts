@@ -10,7 +10,6 @@ import {
   ESTIMATED_IMAGE_CHARS,
   forecastHistoryForTarget,
   foreignThinkingFor,
-  type ForecastMessage,
 } from "../../extensions/_lib/forecast.ts";
 import { assistantMessage } from "../helpers.ts";
 
@@ -27,10 +26,8 @@ function fakeModel(overrides: Partial<Model<Api>> = {}): Model<Api> {
     contextWindow: 272_000,
     maxTokens: 128_000,
     ...overrides,
-  } as Model<Api>;
+  };
 }
-
-type AssistantContent = Extract<Message, { role: "assistant" }>["content"];
 
 // The forecast's char conventions applied to real transform *output*: text and
 // tool-call structure verbatim, encrypted payloads at signature length, images at
@@ -57,20 +54,12 @@ function materialCharsOfTransform(messages: Message[]): number {
   return chars;
 }
 
-// The forecast applies the installed Pi's rule for another model's readable thinking.
-function materialCharsOfForecast(messages: Message[], model: Model<Api>): number {
-  const forecast = forecastHistoryForTarget(messages as unknown as ForecastMessage[], {
-    provider: model.provider,
-    id: model.id,
-    api: model.api,
-    input: model.input,
-  }, foreignThinkingFor(VERSION));
-  return forecast.textChars + forecast.keptReasoningChars + forecast.imageChars;
-}
-
 function assertMirror(messages: Message[], model: Model<Api>, label: string): void {
+  const forecast = forecastHistoryForTarget(messages, {
+    provider: model.provider, id: model.id, api: model.api, input: model.input,
+  }, foreignThinkingFor(VERSION));
   assert.equal(
-    materialCharsOfForecast(messages, model),
+    forecast.textChars + forecast.keptReasoningChars + forecast.imageChars,
     materialCharsOfTransform(transformMessages(messages, model)),
     `forecast disagrees with transformMessages: ${label}`,
   );
@@ -81,7 +70,7 @@ function assertMirror(messages: Message[], model: Model<Api>, label: string): vo
 // ignores — pinned separately below).
 function richHistory(): Message[] {
   return [
-    { role: "user", content: "plain string user message", timestamp: 1 } as Message,
+    { role: "user", content: "plain string user message", timestamp: 1 },
     {
       role: "user",
       timestamp: 2,
@@ -92,7 +81,7 @@ function richHistory(): Message[] {
         { type: "text", text: "between" },
         { type: "image", data: "aGk=", mimeType: "image/png" }, // new run: second placeholder
       ],
-    } as Message,
+    },
     assistantMessage(
       [
         { type: "thinking", thinking: "readable summary", thinkingSignature: "ENCRYPTED-SOL-PAYLOAD" },
@@ -100,7 +89,7 @@ function richHistory(): Message[] {
         { type: "thinking", thinking: "   \n  ", thinkingSignature: undefined }, // blank: vanishes even same-model
         { type: "thinking", thinking: "", thinkingSignature: "REDACTED", redacted: true },
         { type: "toolCall", id: "call|foreign/item+x", name: "read", arguments: { path: "/tmp/x" }, thoughtSignature: "TOOL-THOUGHT" },
-      ] as AssistantContent,
+      ],
       { provider: "openai-codex", api: "openai-codex-responses", model: "gpt-5.6-sol", stopReason: "toolUse" },
     ),
     {
@@ -113,11 +102,11 @@ function richHistory(): Message[] {
       ],
       isError: false,
       timestamp: 4,
-    } as Message,
-    assistantMessage([{ type: "text", text: "half an answer" }] as AssistantContent, { stopReason: "aborted" }),
-    assistantMessage([{ type: "text", text: "failed" }] as AssistantContent, { stopReason: "error", errorMessage: "boom" }),
+    },
+    assistantMessage([{ type: "text", text: "half an answer" }], { stopReason: "aborted" }),
+    assistantMessage([{ type: "text", text: "failed" }], { stopReason: "error", errorMessage: "boom" }),
     assistantMessage(
-      [{ type: "thinking", thinking: "unsigned readable thinking" }, { type: "text", text: "the answer" }] as AssistantContent,
+      [{ type: "thinking", thinking: "unsigned readable thinking" }, { type: "text", text: "the answer" }],
       { provider: "anthropic", api: "anthropic-messages", model: "claude-opus-4-8" },
     ),
   ];
@@ -141,7 +130,7 @@ test("mirror: same-model replay keeps reasoning payloads", () => {
 test("known divergence: pi synthesizes results for orphaned tool calls; the forecast ignores them", () => {
   const orphaned = [
     assistantMessage(
-      [{ type: "toolCall", id: "t9", name: "bash", arguments: { command: "ls" } }] as AssistantContent,
+      [{ type: "toolCall", id: "t9", name: "bash", arguments: { command: "ls" } }],
       { stopReason: "toolUse" },
     ),
   ];

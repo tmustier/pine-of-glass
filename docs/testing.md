@@ -32,8 +32,8 @@ refactor with no behaviour change is a bug in the test.
    whose inputs and outputs are the specification (`extensions/_lib/*.ts`,
    `pi-cachemire/retention.ts`). Do not expose private helpers or split a module just to
    make something testable.
-3. **Privates of `index.ts` are not a test surface.** The three legacy
-   `export const internals` objects may only shrink.
+3. **Privates of `index.ts` are not a test surface.** Traceline's remaining legacy
+   `internals` export may only shrink. Contextimate and Cachemire have none.
 
 A good test names the capability in user terms, uses the smallest realistic fixture,
 asserts on outputs and visible state rather than call order, and fails against the bug it
@@ -97,15 +97,15 @@ scripts/dev/link-pi-runtime.sh
 
 ## Layer 1: contract tests against the installed Pi (drift)
 
-`tests/contract/*.test.ts` import the real installed Pi and assert every structural
-assumption the extensions make. Each assertion names the extension code that depends on
-it. When `pi update` breaks one, the failure message says exactly which seam moved.
+`tests/contract/*.test.ts` execute the installed Pi's message conversion, components,
+provider adapters and extension lifecycle. They assert behaviour, not source text or
+declaration spelling. Typechecking covers imported APIs; terminal smoke covers mounting,
+editor restoration and keyboard routing.
 
 | Assumption | Depended on by |
 |---|---|
-| `buildSessionContext`, `convertToLlm`, `keyText` are exported with compatible shapes (callable; `convertToLlm` yields messages with `role`, `content`; thinking blocks expose `thinking`/`thinkingSignature`; toolCall blocks expose `id`/`name`/`arguments`) | contextimate `buildSessionBreakdown` |
+| `convertToLlm` preserves message roles, thinking blocks and tool calls | contextimate `scanSession` |
 | A real Pi-built system prompt (constructed via Pi's own prompt assembly against a fixture project dir with an AGENTS.md and one skill) matches `PROJECT_INSTRUCTIONS_RE`, `AVAILABLE_SKILLS_RE`, `SKILL_RE`, and `getPromptRemainder` strips both blocks | contextimate section parsing; it silently renders wrong buckets if the prompt format drifts |
-| `[Context]`/`[Skills]`/… resource headers still render in the startup transcript shape matched by `RESOURCE_HEADER_RE` | contextimate block insertion point |
 | `ToolExecutionComponent` (or successor) instances satisfy `isToolRow`: `render`, `setExpanded`, `toolName` in instance; prototype is patchable | traceline prototype patch |
 | Pi's call renderers (built-in bash, read and write, and a padded `Box`/`Text` shell) wrap greedily and pad to width, so bounded renders that agree once trailing padding is removed match the 10,000-column render; lines too wide for every pair, and args with long space runs, take the wide render | traceline call capture |
 | A successful silent built-in bash call returns exactly `(no output)` | traceline's terminal `gh pr merge` evidence rule |
@@ -117,7 +117,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
 | Two Pi SDK sessions in one process distinguish headless and interactive through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
-| Direct OpenAI request payloads can expose `prompt_cache_retention`; Codex OAuth uses a separate backend shape with a cache key but no public API retention field | cachemire route, model and outgoing-policy evidence |
+| OpenAI request capture exposes retention fields and distinguishes append-only effort updates from ChatGPT sign-in's request-level effort | cachemire outgoing-policy evidence |
 | Native OpenAI Completions accounts top-level `usage.cached_tokens` for Moonshot, Moonshot CN and Together, while preserving detailed-field precedence and cost accounting | cachemire provider usage accounting |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |
 | A real codemode run records `details.calls` (streamed) and `nestedCalls` (persisted, ids `<parent>/<n>`, typed arguments, `durationMs`, `error`), opens its result with `Script completed\nWall time N seconds\nOutput:\n`, prefixes capped output with `Warning: truncated output`, and emits nested `tool_execution_*` events with `parentToolCallId` and the full nested result | traceline composed rows |
@@ -135,9 +135,9 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   (basename + `:range` survive); short input returned unchanged; no half-emitted SGR
   sequence (strip-then-rebuild round-trips); falls back to tail-truncation below
   `MIN_HEAD_COLS`.
-- **`middleTruncate` tail cut**: a seeded differential run pins the output to the
-  v0.13.0 forward-scan implementation over ANSI, wide, combining, emoji, tab and
-  stray-escape inputs, and a pure-ASCII 200k-character line is not walked to its end.
+- **`middleTruncate` tail cut**: output tests cover ANSI, links, tabs and complete wide,
+  combining and emoji graphemes. Cut columns stay aligned, and a 200k-character ASCII
+  line is not walked to its end. Tests do not carry a copy of the implementation.
 - **`rawIndexAtVisibleIndex` / `rawIndexBeforeVisibleIndex`** against strings mixing SGR,
   OSC-8 links, and plain text; off-by-one here corrupts every truncated row.
 - **`stripSgrBackgrounds` / `stripSgrForegrounds`**: parameterised over `38;2;r;g;b`,
@@ -145,8 +145,8 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   asserts non-colour params (bold) survive.
 - **`fitOneLineAndSuffix`**: suffix right-aligned at exact width; ≥1 gap column; suffix
   wins when width is tiny; no overlap at any width (sweep widths 1..120 on one fixture).
-- **`formatCharCount`, `lineRange`, `tildify`**: table-driven exact outputs (these strings
-  are user-facing grammar).
+- **Row grammar**: rendered rows preserve character counts, line ranges and home-relative
+  paths through the renderer and shared domain APIs.
 - **`toolStatus`**: result+`isError` → error; result+complete → success; partial/none →
   running.
 - **Record evidence**: a successful terminal `gh pr merge <number>` may graduate from
@@ -220,7 +220,7 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   `<available_skills>` list with XML entities (`&amp;`, `&apos;`) → correct section split,
   unescaped names, wrapper-chars math (`content − Σ skill chars ≥ 0`); prompt *without*
   skills/context blocks degrades to a single system section.
-- **Session estimate math** (`buildSessionEstimate`): with `contextUsage` → totalSource
+- **Session estimate math** (`estimateSnapshotSession`): with `contextUsage` → totalSource
   `"pi"`, `unattributed = total − tools − messages − uncovered thinking summaries −
   exact retained reasoning` clamped ≥ 0; without → heuristic fallback. The session walk
   sums provider-reported `usage.reasoning`, including zero, on documented Anthropic and

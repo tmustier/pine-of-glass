@@ -10,7 +10,7 @@ node scripts/contextimate/evaluate-transcripts.mjs \
   --output /tmp/pi-contextimate-transcript-eval/results.json
 ```
 
-This compares recorded provider input usage in local Pi JSONL sessions with the current session-material heuristic. It fits one static intercept per transcript because historical JSONL sessions do **not** store the startup system prompt or provider tool schema payload. Use it to evaluate session growth, not static prefix/tool-schema accuracy.
+The evaluator replays the original June 2026 session-growth baselines, labelled `historical` and `single4` in its output. It does not run the current estimator. It fits one static intercept per transcript because those historical sessions lack the startup prompt and tool schemas. The results measure session growth, not static prefix accuracy.
 
 ## Live prefix probe
 

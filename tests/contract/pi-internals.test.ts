@@ -11,7 +11,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 import { captureCallLines } from "../../extensions/pi-traceline/call-capture.ts";
-import { isAssistantRow, isToolRow } from "../../extensions/_lib/chat.ts";
+import { isAssistantRow, isToolRow, type AssistantRowLike, type ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { isExpandedToolRow } from "../../extensions/pi-traceline/topology.ts";
 import { getPromptRemainder } from "../../extensions/pi-contextimate/prompt-parsing.ts";
 import { buildSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
@@ -84,8 +84,8 @@ test("real tool rows render successful result sizes and errors", () => {
     "read", "tool-1", { path: "/tmp/contract-fixture.txt", offset: 1, limit: 20 },
     undefined, undefined, {} as never, tmpdir(),
   );
-  // SAFETY: the guard checks Pi's private row fields against the extension's seam type.
-  const row: unknown = comp;
+  // SAFETY: Pi's private fields need a structural view; the assertion checks the seam.
+  const row = comp as unknown as ToolRowLike;
   assert(isToolRow(row), "ToolExecutionComponent no longer matches isToolRow");
   assert.equal(row.toolCallId, "tool-1");
   comp.updateResult({ content: [{ type: "text", text: "hello world ".repeat(20) }], isError: false }, false);
@@ -107,7 +107,7 @@ test("real bash call rendering preserves multiline command tails", async () => {
     "bash", "tool-2", { command: 'python3 -c "\nimport json\nprint(1)\n" && echo done', timeout: 70 },
     undefined, withBuiltInRenderers("bash", undefined), {} as never, tmpdir(),
   );
-  const row: unknown = comp;
+  const row = comp as unknown as ToolRowLike;
   assert(isToolRow(row));
   const lines = captureCallLines(row.callRendererComponent, row.args);
   assert(lines && lines.length >= 4, "bash call no longer renders one line per newline");
@@ -120,7 +120,7 @@ test("real assistant rows retain the tool-call link and thinking visibility", ()
   const component = new pi.AssistantMessageComponent(assistantMessage([
     { type: "toolCall", id: "tool-1", name: "read", arguments: { path: "/tmp/contract-fixture.txt" } },
   ]));
-  const row: unknown = component;
+  const row = component as unknown as AssistantRowLike;
   assert(isAssistantRow(row));
   const content = row.lastMessage?.content;
   assert(Array.isArray(content) && isJsonObject(content[0]));

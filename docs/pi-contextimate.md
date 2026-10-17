@@ -33,7 +33,7 @@ A follow-up count on 3 August 2026 established the Claude 4.7+ family boundary. 
 
 Divisors depend on content shape: repetitive prose tokenizes around chars ÷ 7, JSON-ish text heavier, markdown heavier still. The shipped values are calibrated to Pi-shaped material (system prompts, AGENTS.md, skill index), not universal constants.
 
-The session divisors were validated by replaying 194 local session transcripts (16,479 assistant turns) against recorded provider usage: chars ÷ 2.6 beat a blanket chars ÷ 4 on 20 of 24 Anthropic transcripts, with median error 0.6 to 2.1% against 2.8 to 4.7%. OpenAI-Codex session material sits at chars ÷ 4, so the blanket value is already right there. `pi-contextimate-evaluate-transcripts` re-runs this evaluation.
+The session divisors were validated by replaying 194 local session transcripts (16,479 assistant turns) against recorded provider usage: chars ÷ 2.6 beat a blanket chars ÷ 4 on 20 of 24 Anthropic transcripts, with median error 0.6 to 2.1% against 2.8 to 4.7%. OpenAI-Codex session material sits at chars ÷ 4, so the blanket value is already right there. `pi-contextimate-evaluate-transcripts` replays those original baselines, not the current estimator.
 
 A second study on 5 August 2026 covered Gemini, Kimi, GLM, Cohere, Grok, DeepSeek and Qwen. It counted 54,719 characters of public instructions and 33,590 characters of TypeScript and tests. Gemini used the official `countTokens` endpoint. Local checks used pinned official tokenizer artifacts. xAI checks used exact token IDs and bytes from `TokenizeText`.
 

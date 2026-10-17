@@ -4,33 +4,26 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import assert from 'node:assert/strict';
 
-async function loadPiCodingAgent() {
+let piModule = process.env.PI_CODING_AGENT_MODULE;
+if (piModule) {
+  piModule = pathToFileURL(piModule).href;
+} else {
   try {
-    return await import('@earendil-works/pi-coding-agent');
-  } catch {}
-  const candidates = [];
-  if (process.env.PI_CODING_AGENT_MODULE) candidates.push(process.env.PI_CODING_AGENT_MODULE);
-  const npmRoot = spawnSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 5000 });
-  if (npmRoot.status === 0 && npmRoot.stdout.trim()) {
-    candidates.push(path.join(npmRoot.stdout.trim(), '@earendil-works/pi-coding-agent/dist/index.js'));
-    candidates.push(path.join(npmRoot.stdout.trim(), '@earendil-works/pi-coding-agent'));
+    piModule = import.meta.resolve('@earendil-works/pi-coding-agent');
+  } catch (error) {
+    if (error.code !== 'ERR_MODULE_NOT_FOUND') throw error;
+    const npmRoot = spawnSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 5000 });
+    if (npmRoot.error) throw npmRoot.error;
+    assert.equal(npmRoot.status, 0, npmRoot.stderr);
+    const requireGlobal = createRequire(path.join(npmRoot.stdout.trim(), 'pog-evaluator.cjs'));
+    piModule = pathToFileURL(requireGlobal.resolve('@earendil-works/pi-coding-agent')).href;
   }
-  for (const candidate of candidates) {
-    try {
-      return await import(pathToFileURL(candidate).href);
-    } catch {}
-  }
-  throw new Error('Could not load @earendil-works/pi-coding-agent. Run from a Pi environment or set PI_CODING_AGENT_MODULE=/path/to/dist/index.js.');
 }
-
-const {
-  parseSessionEntries,
-  migrateSessionEntries,
-  buildSessionContext,
-  convertToLlm,
-} = await loadPiCodingAgent();
+const { parseSessionEntries, migrateSessionEntries, buildSessionContext, convertToLlm } = await import(piModule);
 
 const args = process.argv.slice(2);
 const roots = [];
@@ -42,7 +35,7 @@ for (let i = 0; i < args.length; i++) {
   else if (arg === '--output') output = args[++i];
   else if (arg === '--no-dedupe') dedupe = false;
   else if (arg === '--help' || arg === '-h') {
-    console.log(`Usage: node scripts/contextimate/evaluate-transcripts.mjs [--root DIR ...] [--output FILE] [--no-dedupe]\n\nEvaluates visible session-growth heuristics against recorded Pi JSONL provider usage.\nThis does not validate static startup prefix/tool schemas because historical sessions do not store provider payloads.`);
+    console.log(`Usage: node scripts/contextimate/evaluate-transcripts.mjs [--root DIR ...] [--output FILE] [--no-dedupe]\n\nReplays the historical June 2026 session-growth baselines against recorded Pi JSONL provider usage.\nThis does not validate static startup prefix/tool schemas because historical sessions do not store provider payloads.`);
     process.exit(0);
   }
 }
@@ -57,32 +50,29 @@ function walk(dir, out = []) {
   }
   return out;
 }
-function safeJson(value) { try { return JSON.stringify(value, null, 2) ?? 'undefined'; } catch (e) { return `[unserializable: ${e?.message ?? String(e)}]`; } }
 function countTextContent(content) {
   if (typeof content === 'string') return content.length;
-  if (!Array.isArray(content)) return 0;
   let sum = 0;
   for (const block of content) {
-    if (!block || typeof block !== 'object') continue;
     if (block.type === 'text') sum += (block.text || '').length;
     else if (block.type === 'image') sum += `[image:${block.mimeType || 'unknown'}:${(block.data || '').length} chars]`.length;
   }
   return sum;
-}
-function countToolCallContent(block) { return !block || typeof block !== 'object' ? 0 : safeJson({ id: block.id, name: block.name, arguments: block.arguments }).length; }
-function countReasoningPayload(value) {
-  if (!value) return 0;
-  if (typeof value !== 'string') return safeJson(value).length;
-  try { return safeJson(JSON.parse(value)).length; } catch { return value.length; }
 }
 function sessionBreakdownFromMessages(messages) {
   const out = { thinkingChars: 0, toolOutputChars: 0, messageChars: 0, messageCount: messages.length };
   for (const message of convertToLlm(messages)) {
     if (message.role === 'toolResult') { out.toolOutputChars += countTextContent(message.content); continue; }
     if (message.role === 'assistant') {
-      for (const block of message.content || []) {
-        if (block.type === 'thinking') out.thinkingChars += block.thinkingSignature ? countReasoningPayload(block.thinkingSignature) : (block.thinking || '').length;
-        else if (block.type === 'toolCall') out.messageChars += countToolCallContent(block);
+      for (const block of message.content) {
+        if (block.type === 'thinking') {
+          // Historical baseline only: the current extension never prices opaque signatures as text.
+          let text = block.thinkingSignature || block.thinking;
+          if (block.thinkingSignature) {
+            try { text = JSON.stringify(JSON.parse(text), null, 2); } catch { /* opaque signature */ }
+          }
+          out.thinkingChars += text.length;
+        } else if (block.type === 'toolCall') out.messageChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }, null, 2).length;
         else out.messageChars += countTextContent([block]);
       }
       continue;
@@ -91,18 +81,7 @@ function sessionBreakdownFromMessages(messages) {
   }
   return out;
 }
-function sessionChars(b) { return b.thinkingChars + b.toolOutputChars + b.messageChars; }
 function inputTokens(usage) { return (usage.input || 0) + (usage.cacheRead || 0) + (usage.cacheWrite || 0); }
-function currentSessionDenominator(provider, model) {
-  const p = (provider || '').toLowerCase();
-  const m = (model || '').toLowerCase();
-  if (p.includes('anthropic')) {
-    if (/claude.*4[-.]?[78]|4[-.]?[78].*claude/.test(m)) return 2.6;
-    if (/claude.*4[-.]?[56]|4[-.]?[56].*claude/.test(m)) return 3.5;
-    return 3.5;
-  }
-  return 4;
-}
 function median(xs){ if(!xs.length)return null; const a=xs.slice().sort((x,y)=>x-y); const m=Math.floor(a.length/2); return a.length%2?a[m]:(a[m-1]+a[m])/2; }
 function quantile(xs,q){ if(!xs.length)return null; const a=xs.slice().sort((x,y)=>x-y); const idx=Math.min(a.length-1,Math.max(0,Math.ceil(q*a.length)-1)); return a[idx]; }
 function mean(xs){ return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null; }
@@ -139,20 +118,25 @@ let scanned = 0, withUsage = 0, single = 0, failed = 0;
 const seen = new Set();
 for (const file of files) {
   scanned++;
+  let source;
+  try { source = fs.readFileSync(file, 'utf8'); } catch { failed++; continue; }
   if (dedupe) {
-    let h; try { h = crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex'); } catch { h = file; }
-    if (seen.has(h)) continue;
-    seen.add(h);
+    const hash = crypto.createHash('sha1').update(source).digest('hex');
+    if (seen.has(hash)) continue;
+    seen.add(hash);
   }
   let entries;
-  try { entries = parseSessionEntries(fs.readFileSync(file, 'utf8')); migrateSessionEntries(entries); } catch { failed++; continue; }
+  try { entries = parseSessionEntries(source); migrateSessionEntries(entries); } catch { failed++; continue; }
   const { unique, usageCount } = scanModelsAndUsage(entries);
   if (!usageCount) continue;
   withUsage++;
   if (unique.length !== 1) continue;
   single++;
   const [provider, model] = unique[0];
-  const denomCurrent = currentSessionDenominator(provider, model);
+  let denomHistorical = 4;
+  if (provider.toLowerCase().includes('anthropic')) {
+    denomHistorical = /claude.*4[-.]?[78]|4[-.]?[78].*claude/.test(model.toLowerCase()) ? 2.6 : 3.5;
+  }
   const byId = new Map(entries.filter(e => e.id).map(e => [e.id, e]));
   const rows = [];
   let contextFailures = 0;
@@ -162,19 +146,19 @@ for (const file of files) {
     if (!(actual > 0)) continue;
     try {
       const ctx = buildSessionContext(entries, e.parentId, byId);
-      const br = sessionBreakdownFromMessages(ctx.messages || []);
-      const chars = sessionChars(br);
-      rows.push({ actual, chars, current: Math.ceil(chars / denomCurrent), single4: Math.ceil(chars / 4) });
+      const br = sessionBreakdownFromMessages(ctx.messages);
+      const chars = br.thinkingChars + br.toolOutputChars + br.messageChars;
+      rows.push({ actual, chars, historical: Math.ceil(chars / denomHistorical), single4: Math.ceil(chars / 4) });
     } catch { contextFailures++; }
   }
   if (rows.length < 2) continue;
-  results.push({ file, provider, model, denomCurrent, turns: rows.length, contextFailures, current: summarizeRows(rows, 'current'), single4: summarizeRows(rows, 'single4') });
+  results.push({ file, provider, model, denomHistorical, turns: rows.length, contextFailures, historical: summarizeRows(rows, 'historical'), single4: summarizeRows(rows, 'single4') });
 }
 const byModel = {};
 for (const r of results) (byModel[`${r.provider}/${r.model}`] ||= []).push(r);
-const summary = { scanned, withUsage, single, evaluated: results.length, failed, note: 'Static startup prefix/tool schemas are not evaluated; one intercept per transcript absorbs static prefix.', byModel: {} };
+const summary = { scanned, withUsage, single, evaluated: results.length, failed, note: 'Historical June 2026 baselines, not the current estimator. Static startup prefix/tool schemas are not evaluated; one intercept per transcript absorbs static prefix.', byModel: {} };
 for (const [key, arr] of Object.entries(byModel)) {
-  summary.byModel[key] = { current: aggregate(arr, 'current'), single4: aggregate(arr, 'single4'), betterCurrentCount: arr.filter(r=>r.current.mae<r.single4.mae).length, betterSingle4Count: arr.filter(r=>r.single4.mae<r.current.mae).length, equalCount: arr.filter(r=>Math.abs(r.current.mae-r.single4.mae)<1e-9).length };
+  summary.byModel[key] = { historical: aggregate(arr, 'historical'), single4: aggregate(arr, 'single4'), betterHistoricalCount: arr.filter(r=>r.historical.mae<r.single4.mae).length, betterSingle4Count: arr.filter(r=>r.single4.mae<r.historical.mae).length, equalCount: arr.filter(r=>Math.abs(r.historical.mae-r.single4.mae)<1e-9).length };
 }
 fs.mkdirSync(path.dirname(output), { recursive: true });
 fs.writeFileSync(output, JSON.stringify({ summary, results }, null, 2));
