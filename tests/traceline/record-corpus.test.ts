@@ -74,22 +74,18 @@ const ready = {
   ],
 };
 
-function draftScript(t: { after: (fn: () => void) => void }, ...args: string[]) {
+function draftScript(t: { after: (fn: () => void) => void }, draft?: typeof ready | { vocabulary: typeof ready[] }) {
   const dir = mkdtempSync(join(tmpdir(), "pog-draft-vocabulary-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const results = join(dir, "results.jsonl");
   writeFileSync(results, draftCorpus.map((row) => JSON.stringify(row)).join("\n"));
-  const files = args.map((arg) => {
-    if (!arg.startsWith("{")) return arg;
-    const path = join(dir, `draft-${Math.random().toString(36).slice(2)}.json`);
-    writeFileSync(path, arg);
-    return path;
-  });
-  return spawnSync(process.execPath, [new URL("draft-vocabulary.ts", scripts).pathname, "--results", results, ...files], { encoding: "utf8" });
+  const path = join(dir, "draft.json");
+  if (draft) writeFileSync(path, JSON.stringify(draft));
+  return spawnSync(process.execPath, [new URL("draft-vocabulary.ts", scripts).pathname, "--results", results, ...(draft ? ["--check", path] : ["--list"])], { encoding: "utf8" });
 }
 
 test("draft --list names frequent commands no entry covers, and leaves out reads and covered commands", (t) => {
-  const listed = draftScript(t, "--list");
+  const listed = draftScript(t);
   assert.equal(listed.status, 0, listed.stderr);
   assert.deepEqual(listed.stdout.trim().split("\n"), [
     "rows=6; most frequent commands no entry covers:",
@@ -98,7 +94,7 @@ test("draft --list names frequent commands no entry covers, and leaves out reads
 });
 
 test("draft --check accepts an entry whose examples hold and are copied from real results, and replays it", (t) => {
-  const checked = draftScript(t, "--check", JSON.stringify({ vocabulary: [ready] }));
+  const checked = draftScript(t, { vocabulary: [ready] });
   assert.equal(checked.status, 0, checked.stdout + checked.stderr);
   assert.deepEqual(checked.stdout.trim().split("\n"), [
     "gh.pr.ready: parses, 3 examples hold, every example is copied from a real result",
@@ -120,7 +116,7 @@ test("draft --check rejects examples that are not copied from a real result", (t
     [invented, "example 4: its command is not copied from a real result"],
     [flipped, "example 3: its output is not whole lines copied from a real result of that command with error false"],
   ] as const) {
-    const checked = draftScript(t, "--check", JSON.stringify(draft));
+    const checked = draftScript(t, draft);
     assert.equal(checked.status, 1, checked.stdout);
     assert.deepEqual(checked.stdout.trim().split("\n"), [problem]);
   }

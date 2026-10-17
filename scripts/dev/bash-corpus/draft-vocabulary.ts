@@ -14,17 +14,18 @@
 // The model sees up to --samples real results for the command, cut to whole lines.
 // They are tool results from your own sessions, sent to the model you name.
 
+import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import type { Message } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { stripAnsi } from "../../../extensions/_lib/ansi.ts";
-import { isJsonObject, type JsonFields } from "../../../extensions/_lib/boundary.ts";
+import { isJsonObject } from "../../../extensions/_lib/boundary.ts";
 import { readShell } from "../../../extensions/pi-traceline/record-shell.ts";
 import { BUILT_IN_ENTRIES, parseVocabulary, useVocabulary } from "../../../extensions/pi-traceline/records.ts";
 import { BUILT_IN_VOCABULARY } from "../../../extensions/pi-traceline/vocabulary.ts";
-import { readHarvest, replayFacts, type Harvested } from "./corpus.ts";
+import { readHarvest, replayFacts } from "./corpus.ts";
 
 const args = process.argv.slice(2);
 function argValue(flag: string, fallback = ""): string {
@@ -32,26 +33,22 @@ function argValue(flag: string, fallback = ""): string {
   return i >= 0 && args[i + 1] ? args[i + 1]! : fallback;
 }
 const here = dirname(fileURLToPath(import.meta.url));
-const rows = readHarvest(argValue("--results", join(here, "out", "results.jsonl"))).map((row) => ({ ...row, text: stripAnsi(row.text) }));
-
-// --- which rows run a command ---------------------------------------------------------
-
-const SUBCOMMAND = /^[a-z][a-z0-9-]*$/;
-/** The command paths a row runs: each command's head and up to two subcommand words (`gh pr ready`). */
-function commandPaths(cmd: string): string[] {
-  const script = readShell(cmd);
-  return [...script.commands, ...script.nested].flatMap(({ head, args: words }) => {
+// Sample by the command head and up to two subcommands (`gh pr ready`), parsed once.
+const rows = readHarvest(argValue("--results", join(here, "out", "results.jsonl"))).map((row) => {
+  const script = readShell(row.cmd);
+  const paths = [...script.commands, ...script.nested].flatMap(({ head, args: words }) => {
     if (!head.literal) return [];
     const path = [head.text];
     for (const { text } of words) {
-      if (path.length === 3 || !SUBCOMMAND.test(text)) break;
+      if (path.length === 3 || !/^[a-z][a-z0-9-]*$/.test(text)) break;
       path.push(text);
     }
     return [path.join(" ")];
   });
-}
+  return { ...row, text: stripAnsi(row.text), paths };
+});
 /** A sampling filter only: the drafted entry's own matching decides its records. */
-const runs = (row: Harvested, path: string) => commandPaths(row.cmd).some((p) => p === path || p.startsWith(`${path} `));
+const runs = (row: typeof rows[number], path: string) => row.paths.some((p) => p === path || p.startsWith(`${path} `));
 
 // --- list: frequent commands no entry covers ------------------------------------------
 
@@ -64,52 +61,29 @@ const NOT_RECORDS = [
   ..."pr-view pr-checks pr-list pr-diff issue-view issue-list run-view run-list run-watch api search repo-view".split(" ").map((sub) => `gh ${sub.replace("-", " ")}`),
   "npm test", "npm run",
 ];
-const skipped = (path: string) => /^\S+ in$|^(?:git|gh|npm)$/.test(path) || NOT_RECORDS.some((done) => path === done || path.startsWith(`${done} `));
-
-function list(top: number): void {
-  const covered = BUILT_IN_ENTRIES.flatMap(({ commands }) => commands.map((path) => path.join(" ")));
-  const counts = new Map<string, { rows: number; errors: number }>();
-  for (const row of rows) {
-    for (const path of new Set(commandPaths(row.cmd))) {
-      if (skipped(path) || covered.some((done) => path === done || path.startsWith(`${done} `))) continue;
-      const count = counts.get(path) ?? { rows: 0, errors: 0 };
-      count.rows++;
-      if (row.isError) count.errors++;
-      counts.set(path, count);
-    }
-  }
-  console.log(`rows=${rows.length}; most frequent commands no entry covers:`);
-  for (const [path, { rows: count, errors }] of [...counts].sort((a, b) => b[1].rows - a[1].rows).slice(0, top)) {
-    console.log(`${String(count).padStart(7)}  ${path}${errors ? `  (${errors} failed)` : ""}`);
-  }
-}
-
 // --- check: the way traceline will -----------------------------------------------------
 
 const lines = (text: string) => text.replace(/\n$/, "").split("\n");
-/** Whether `excerpt` is a contiguous run of whole lines of `text`. */
-function excerptOf(excerpt: string, text: string): boolean {
-  const want = lines(excerpt);
-  const have = lines(text);
-  return have.some((_, start) => want.every((line, i) => have[start + i] === line));
-}
-
 type Checked = { problems: string[]; report: string[] };
 
 function check(value: unknown, path: string): Checked {
   const { entries, problems } = parseVocabulary([value]);
-  const examples = isJsonObject(value) && Array.isArray(value.examples) ? value.examples : [];
-  examples.forEach((example: unknown, index) => {
-    if (!isJsonObject(example) || typeof example.command !== "string" || typeof example.output !== "string") return;
-    const { command, output, error } = example;
+  if (problems.length) return { problems, report: [] };
+  const [entry] = entries;
+  assert(entry);
+  path ||= entry.commands[0]!.join(" ");
+  entry.examples.forEach(({ command, output, error }, index) => {
     const same = rows.filter((row) => row.cmd === command);
     if (same.length === 0) problems.push(`example ${index + 1}: its command is not copied from a real result`);
-    else if (!same.some((row) => row.isError === (error === true) && excerptOf(output, row.text))) {
+    else if (!same.some((row) => {
+      const want = lines(output);
+      const have = lines(row.text);
+      return row.isError === (error === true) && have.some((_, start) => want.every((line, i) => have[start + i] === line));
+    })) {
       problems.push(`example ${index + 1}: its output is not whole lines copied from a real result of that command with error ${error === true}`);
     }
   });
-  const [entry] = entries;
-  if (!entry || problems.length > 0) return { problems, report: [] };
+  if (problems.length) return { problems, report: [] };
 
   useVocabulary([entry]);
   const ran = rows.filter((row) => runs(row, path));
@@ -129,7 +103,6 @@ function check(value: unknown, path: string): Checked {
     if (!runs(row, path)) elsewhere++;
     for (const { verb, datum } of facts) records.set(`${verb} ${datum}`, (records.get(`${verb} ${datum}`) ?? 0) + 1);
   }
-  useVocabulary(BUILT_IN_ENTRIES);
   const share = ran.length ? ` (${Math.round((100 * recorded) / ran.length)}%)` : "";
   const report = [
     `${entry.id}: parses, ${entry.examples.length} examples hold, every example is copied from a real result`,
@@ -157,78 +130,6 @@ Output proves completion. A line that announces work, help text, a usage error o
 
 Reply with the JSON object only.`;
 
-function excerpt(text: string): string {
-  // agent-default (not a user rule): 2026-10-18. 15 head and 5 tail lines, lines up to 300 columns.
-  const all = lines(text).map((line) => (line.length > 300 ? "⟪long line not shown⟫" : line));
-  return all.length <= 20 ? all.join("\n") : [...all.slice(0, 15), `⟪${all.length - 20} lines not shown⟫`, ...all.slice(-5)].join("\n");
-}
-
-function prompt(path: string, max: number): string {
-  // Variety over volume: the shortest command for each way the output opens, failures included.
-  const byOpening = new Map<string, Harvested>();
-  for (const row of rows.filter((candidate) => runs(candidate, path)).sort((a, b) => a.cmd.length - b.cmd.length)) {
-    const opening = `${row.isError} ${lines(row.text).slice(0, 2).join(" ").replace(/[0-9a-f]{7,}|\d+/g, "#")}`;
-    if (!byOpening.has(opening)) byOpening.set(opening, row);
-  }
-  const picked = [...byOpening.values()].slice(0, max);
-  const reference = BUILT_IN_VOCABULARY.filter(({ id }) => ["git.commit", "gh.pr.create", "npm.publish"].includes(id));
-  return [
-    `Command: ${path}`,
-    `Built-in entries, for the format:\n${JSON.stringify(reference, null, 1)}`,
-    `Real results (${picked.length} of ${rows.filter((row) => runs(row, path)).length} that run it):`,
-    ...picked.map((row, i) => `### result ${i + 1}\ncommand: ${JSON.stringify(row.cmd)}\nerror: ${row.isError}\noutput:\n\`\`\`\n${excerpt(row.text)}\n\`\`\``),
-  ].join("\n\n");
-}
-
-/** The model's reply, read at the boundary: a command it declines, or an entry to check. */
-type Reply = { skip: string } | { entry: JsonFields } | { unreadable: string };
-
-function readReply(message: AssistantMessage): Reply {
-  const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
-  try {
-    const value: unknown = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-    if (isJsonObject(value)) return typeof value.skip === "string" ? { skip: value.skip } : { entry: value };
-  } catch {
-    // Not JSON: the model is told so below.
-  }
-  return { unreadable: text.slice(0, 300) };
-}
-
-async function draft(path: string): Promise<number> {
-  const [provider, ...id] = argValue("--model", "openai-codex/gpt-6-luna").split("/");
-  const runtime = await ModelRuntime.create();
-  const model = runtime.getModel(provider!, id.join("/"));
-  if (!model) throw new Error(`unknown model ${provider}/${id.join("/")}`);
-  const out = argValue("--out", join(here, "out", "drafts", `${path.replace(/\W+/g, ".")}.json`));
-  // agent-default (not a user rule): 2026-10-18. Three tries, 24 sampled results.
-  const attempts = Number(argValue("--attempts", "3"));
-  const messages: Message[] = [{ role: "user", content: prompt(path, Number(argValue("--samples", "24"))), timestamp: Date.now() }];
-  let cost = 0;
-  let rejected: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const answer = await runtime.completeSimple(model, { systemPrompt: SYSTEM, messages }, { reasoning: "medium" });
-    if (answer.stopReason === "error" || answer.stopReason === "aborted") throw new Error(answer.errorMessage ?? answer.stopReason);
-    cost += answer.usage.cost.total;
-    messages.push(answer);
-    const read = readReply(answer);
-    console.log(`attempt ${attempt}: ${model.provider}/${model.id}, $${cost.toFixed(4)} so far`);
-    if ("skip" in read) {
-      console.log(`skipped: ${read.skip}`);
-      return 0;
-    }
-    const { problems, report } = "entry" in read ? check(read.entry, path) : { problems: ["the reply is not one JSON object"], report: [] };
-    if (problems.length === 0 && "entry" in read) {
-      console.log([...report, `wrote ${write(out, read.entry)}`].join("\n"));
-      return 0;
-    }
-    rejected = "entry" in read ? read.entry : read.unreadable;
-    console.log(problems.map((problem) => `  ${problem}`).join("\n"));
-    messages.push({ role: "user", content: `The entry did not pass:\n${problems.map((problem) => `- ${problem}`).join("\n")}\nReply with a corrected JSON object only.`, timestamp: Date.now() });
-  }
-  console.log(`no entry passed after ${attempts} attempts; the last draft is in ${write(out.replace(/\.json$/, ".rejected.json"), rejected)}`);
-  return 1;
-}
-
 function write(path: string, value: unknown): string {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify({ vocabulary: [value] }, null, 2)}\n`);
@@ -236,16 +137,88 @@ function write(path: string, value: unknown): string {
 }
 
 if (args.includes("--list")) {
-  list(Number(argValue("--top", "25")));
+  const covered = [...NOT_RECORDS, ...BUILT_IN_ENTRIES.flatMap(({ commands }) => commands.map((path) => path.join(" ")))];
+  const counts = new Map<string, { rows: number; errors: number }>();
+  for (const row of rows) {
+    for (const path of new Set(row.paths)) {
+      if (/^\S+ in$|^(?:git|gh|npm)$/.test(path) || covered.some((done) => path === done || path.startsWith(`${done} `))) continue;
+      const count = counts.get(path) ?? { rows: 0, errors: 0 };
+      count.rows++;
+      if (row.isError) count.errors++;
+      counts.set(path, count);
+    }
+  }
+  console.log(`rows=${rows.length}; most frequent commands no entry covers:`);
+  for (const [path, { rows: count, errors }] of [...counts].sort((a, b) => b[1].rows - a[1].rows).slice(0, Number(argValue("--top", "25")))) {
+    console.log(`${String(count).padStart(7)}  ${path}${errors ? `  (${errors} failed)` : ""}`);
+  }
 } else if (argValue("--check")) {
   const file: unknown = JSON.parse(readFileSync(argValue("--check"), "utf8"));
   const value = isJsonObject(file) && Array.isArray(file.vocabulary) ? file.vocabulary[0] : file;
-  const commands = isJsonObject(value) && Array.isArray(value.commands) ? value.commands : [];
-  const { problems, report } = check(value, argValue("--command", typeof commands[0] === "string" ? commands[0] : ""));
+  const { problems, report } = check(value, argValue("--command"));
   console.log([...problems, ...report].join("\n"));
   process.exitCode = problems.length ? 1 : 0;
 } else if (argValue("--command")) {
-  process.exitCode = await draft(argValue("--command"));
+  const path = argValue("--command");
+  const [provider, ...id] = argValue("--model", "openai-codex/gpt-6-luna").split("/");
+  const runtime = await ModelRuntime.create();
+  const model = runtime.getModel(provider!, id.join("/"));
+  if (!model) throw new Error(`unknown model ${provider}/${id.join("/")}`);
+  const out = argValue("--out", join(here, "out", "drafts", `${path.replace(/\W+/g, ".")}.json`));
+  // agent-default (not a user rule): 2026-10-18. Three tries, 24 sampled results.
+  const attempts = Number(argValue("--attempts", "3"));
+  // Variety over volume: the shortest command for each way the output opens, failures included.
+  const byOpening = new Map<string, typeof rows[number]>();
+  for (const row of rows.filter((candidate) => runs(candidate, path)).sort((a, b) => a.cmd.length - b.cmd.length)) {
+    const opening = `${row.isError} ${lines(row.text).slice(0, 2).join(" ").replace(/[0-9a-f]{7,}|\d+/g, "#")}`;
+    if (!byOpening.has(opening)) byOpening.set(opening, row);
+  }
+  const picked = [...byOpening.values()].slice(0, Number(argValue("--samples", "24")));
+  const reference = BUILT_IN_VOCABULARY.filter(({ id }) => ["git.commit", "gh.pr.create", "npm.publish"].includes(id));
+  const prompt = [
+    `Command: ${path}`,
+    `Built-in entries, for the format:\n${JSON.stringify(reference, null, 1)}`,
+    `Real results (${picked.length} of ${rows.filter((row) => runs(row, path)).length} that run it):`,
+    ...picked.map((row, i) => {
+      // agent-default (not a user rule): 2026-10-18. 15 head and 5 tail lines, lines up to 300 columns.
+      const all = lines(row.text).map((line) => line.length > 300 ? "⟪long line not shown⟫" : line);
+      const excerpt = all.length <= 20 ? all : [...all.slice(0, 15), `⟪${all.length - 20} lines not shown⟫`, ...all.slice(-5)];
+      return `### result ${i + 1}\ncommand: ${JSON.stringify(row.cmd)}\nerror: ${row.isError}\noutput:\n\`\`\`\n${excerpt.join("\n")}\n\`\`\``;
+    }),
+  ].join("\n\n");
+  const messages: Message[] = [{ role: "user", content: prompt, timestamp: Date.now() }];
+  process.exitCode = 1;
+  let cost = 0;
+  let rejected: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const answer = await runtime.completeSimple(model, { systemPrompt: SYSTEM, messages }, { reasoning: "medium" });
+    if (answer.stopReason === "error" || answer.stopReason === "aborted") throw new Error(answer.errorMessage ?? answer.stopReason);
+    cost += answer.usage.cost.total;
+    messages.push(answer);
+    const text = answer.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("");
+    let value: unknown;
+    try {
+      value = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    } catch {
+      // The next attempt tells the model its reply was unreadable.
+    }
+    console.log(`attempt ${attempt}: ${model.provider}/${model.id}, $${cost.toFixed(4)} so far`);
+    if (isJsonObject(value) && typeof value.skip === "string") {
+      console.log(`skipped: ${value.skip}`);
+      process.exitCode = 0;
+      break;
+    }
+    const { problems, report } = isJsonObject(value) ? check(value, path) : { problems: ["the reply is not one JSON object"], report: [] };
+    if (problems.length === 0) {
+      console.log([...report, `wrote ${write(out, value)}`].join("\n"));
+      process.exitCode = 0;
+      break;
+    }
+    rejected = isJsonObject(value) ? value : text.slice(0, 300);
+    console.log(problems.map((problem) => `  ${problem}`).join("\n"));
+    messages.push({ role: "user", content: `The entry did not pass:\n${problems.map((problem) => `- ${problem}`).join("\n")}\nReply with a corrected JSON object only.`, timestamp: Date.now() });
+  }
+  if (process.exitCode) console.log(`no entry passed after ${attempts} attempts; the last draft is in ${write(out.replace(/\.json$/, ".rejected.json"), rejected)}`);
 } else {
   console.log("usage: draft-vocabulary.ts --list | --command \"<command>\" | --check <draft.json>");
   process.exitCode = 2;

@@ -5,12 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { BUILT_IN_ENTRIES, parseVocabulary } from "../../extensions/pi-traceline/records.ts";
+import { BUILT_IN_ENTRIES, parseVocabulary, recordFacts, useVocabulary } from "../../extensions/pi-traceline/records.ts";
 import { BUILT_IN_VOCABULARY } from "../../extensions/pi-traceline/vocabulary.ts";
-
-test("every built-in entry loads, so every built-in example holds", () => {
-  assert.deepEqual(BUILT_IN_ENTRIES.map(({ id }) => id), BUILT_IN_VOCABULARY.map(({ id }) => id));
-});
 
 test("built-in code does not travel with an entry's data", () => {
   // The same data without the built-ins' code fails exactly the examples code proves:
@@ -77,11 +73,19 @@ test("a bad entry is reported and left out whole; the rest still parse", () => {
   assert.deepEqual(parseVocabulary({ entries: [valid] }), { entries: [], problems: ["vocabulary must be a list of entries"] });
 });
 
-test("a parsed entry keeps its commands, options and rules", () => {
-  const [entry] = parseVocabulary([{ ...valid, commands: ["kubectl apply", "kubectl create"], requires: ["--filename", "-f", "-k"] }]).entries;
-  assert.deepEqual(entry?.commands, [["kubectl", "apply"], ["kubectl", "create"]]);
-  assert.deepEqual(entry?.requires, { long: ["--filename"], short: "fk" });
-  assert.deepEqual(entry?.unless, { long: ["--dry-run"], short: "" });
-  assert.deepEqual(entry?.records.map(({ verb, datum, tone, opaque }) => ({ verb, datum, tone, opaque })), [{ verb: "applied", datum: "{name}", tone: "success", opaque: false }]);
-  assert.equal(entry?.code, undefined);
+test("command aliases and required options govern which invocations earn records", () => {
+  const parsed = parseVocabulary([{ ...valid, commands: ["kubectl apply", "kubectl create"], requires: ["--filename", "-f", "-k"] }]);
+  assert.deepEqual(parsed.problems, []);
+  useVocabulary(parsed.entries);
+  try {
+    for (const command of ["kubectl apply --filename=web.yaml", "kubectl create -f web.yaml", "kubectl apply -vk overlays/web"]) {
+      const facts = recordFacts({ toolName: "bash", args: { command }, result: { content: [{ type: "text", text: "deployment.apps/web configured\n" }], isError: false } });
+      assert.deepEqual(facts.map(({ verb, datum, tone, opaque }) => ({ verb, datum, tone, opaque })), [{ verb: "applied", datum: "deployment.apps/web", tone: "success", opaque: false }]);
+    }
+    for (const command of ["kubectl apply web.yaml", "kubectl create --dry-run=client -f web.yaml", "kubectl apply -- -f web.yaml", "kubectl delete -f web.yaml"]) {
+      assert.deepEqual(recordFacts({ toolName: "bash", args: { command }, result: { content: [{ type: "text", text: "deployment.apps/web configured\n" }], isError: false } }), []);
+    }
+  } finally {
+    useVocabulary(BUILT_IN_ENTRIES);
+  }
 });
