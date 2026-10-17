@@ -26,6 +26,21 @@ const COMPOUND_WORDS = new Set(["if", "then", "else", "elif", "fi", "for", "whil
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const GLOB = /[*?[{]/;
 
+/**
+ * A command's identity as words: its head and arguments, unquoted. Two readings of the
+ * same command agree on it however each text was quoted, wrapped or prefixed, so the
+ * fitter can find the commands that earned a record in the rendered body (§9.8).
+ */
+export function commandKey({ head, args }: ShellCommand): string {
+  return [head, ...args].map(({ text }) => text).join(" ");
+}
+
+/** The keys of every command `source` runs, `$(…)` included. */
+export function commandKeys(source: string): string[] {
+  const { commands, nested } = readShell(source);
+  return [...commands, ...nested].map(commandKey);
+}
+
 export function readShell(source: string): ShellScript {
   const commands: ShellCommand[] = [];
   const nested: ShellCommand[] = [];

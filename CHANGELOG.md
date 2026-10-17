@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Traceline headlines say more when space is short. A deleted local branch reads
+  `deleted branch docs`, not `deleted docs`; a remote deletion stays `deleted origin/docs`
+  because the remote ref may be a tag. A crowded headline drops the tidy-up first, so
+  `committed a4f21c9 · deleted branch docs` keeps the commit, and a dim `+1` says what
+  it left out. A fact too long to show no longer takes a shorter one down with it.
+- The commands behind a headline stay readable. A command that earned a record is
+  never cut below 24 columns (or shown whole when shorter), the other commands give
+  way first, and a row wraps past a long command to reach it. A command cut to fit
+  behind a headline is cut in its own text, never in the headline or its `$`.
+
 - Traceline summaries (experimental, off by default). With `"summaries": true` in your
   own `~/.pi/agent/pi-traceline.json`, a command that had to be cut or wrapped gets a
   `≈` line with a model's gist of it, and a cut thinking preview shows its gist. A gist

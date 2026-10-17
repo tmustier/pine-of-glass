@@ -44,7 +44,7 @@ test("entries combine in one row: each states its own fact, in output order", ()
       "git worktree remove .worktrees/fix && git branch -D fix && git push origin --delete fix",
       "Deleted branch fix (was a4f21c9).\nTo github.com:o/r.git\n - [deleted]         fix\n",
     ),
-    ["deleted fix", "deleted origin/fix"],
+    ["deleted branch fix", "deleted origin/fix"],
   );
 });
 

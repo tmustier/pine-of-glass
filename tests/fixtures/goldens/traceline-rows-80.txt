@@ -35,8 +35,8 @@ The runner mangles the config — patching it and logging the pass.
 
 Fixed — committing and shipping the release.
 
-  ▏ › pushed main $ cd ~/projects/pine-of-glass && git add -A &&
-  ▏                 git … commit -m "traceline: records of consequen… git push
+  ▏ › pushed main +1 $ cd ~/projects/pine-of-glass && git add -A &&
+  ▏                    git … commit -m "traceline: records of conseq… git push
   ▏ › merged PR #87 $ gh pr merge 87 --squash --delete-branch
   ▏ › $ git status --short
 

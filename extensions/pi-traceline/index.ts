@@ -696,9 +696,9 @@ function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: nu
     const commandColumn = headlineWidth + 2;
     const budget = bodyBudget - commandColumn;
     const lines: BashLines = text.startsWith("$ ")
-      ? fitBashLines(currentTheme(), verbTone(comp), text.slice(2), budget, wrap ? budget : undefined)
+      ? fitBashLines(currentTheme(), verbTone(comp), text.slice(2), budget, wrap ? budget : undefined, recordFacts(comp).flatMap(({ by }) => by))
       : { first: dim(text), continuations: [], overflow: false };
-    const body = text.startsWith("$ ") ? `${verbInk(comp, "$")} ${lines.first}` : lines.first;
+    const body = text.startsWith("$ ") ? `${verbInk(comp, "$")} ${headline ? middleTruncate(lines.first, budget, currentTheme()) : lines.first}` : lines.first;
     return { ...lines, first: headline ? `${headline} ${body}` : body, commandColumn };
   });
 }
