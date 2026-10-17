@@ -184,7 +184,7 @@ export default function piContextimate(pi: ExtensionAPI) {
     cache.dirty = true;
   };
 
-  observeRequestMessages(pi, markDirty);
+  observeRequestMessages(pi);
 
   // Pi keeps before_agent_start rewrites (such as pi-skill-gate's filtered skill index) only
   // while a run is active, so count the prompt the latest run sent once it has one.

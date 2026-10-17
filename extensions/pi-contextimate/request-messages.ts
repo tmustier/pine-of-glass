@@ -30,17 +30,6 @@ function conversationText(messages: Message[], model?: Model<Api>): TextPart[] {
   });
 }
 
-function textAdditions(expected: TextPart[], observed: TextPart[]): RequestMessages {
-  let index = 0;
-  let chars = 0;
-  for (const part of observed) {
-    const match = expected[index];
-    if (match && match.role === part.role && match.text === part.text) index++;
-    else chars += part.text.length;
-  }
-  return index === expected.length ? { chars, additive: true } : { additive: false };
-}
-
 function hasImages(messages: Message[]): boolean {
   return messages.some((message) => Array.isArray(message.content)
     && message.content.some((block) => block.type === "image"));
@@ -87,12 +76,19 @@ export async function payloadTextAdditions(saved: AgentMessage[], payload: unkno
   const native = await normalization;
   const expected = conversationText(native.transformMessages(messages, model), model)
     .map((part) => ({ ...part, text: native.sanitizeSurrogates(part.text) }));
-  return textAdditions(expected, observed);
+  let index = 0;
+  let chars = 0;
+  for (const part of observed) {
+    const match = expected[index];
+    if (match?.role === part.role && match.text === part.text) index++;
+    else chars += part.text.length;
+  }
+  return index === expected.length ? { chars, additive: true } : { additive: false };
 }
 
 const ENTRY_TYPE = "contextimate-request-messages";
 
-export function observeRequestMessages(pi: ExtensionAPI, markDirty: () => void): void {
+export function observeRequestMessages(pi: ExtensionAPI): void {
   let request: {
     saved: AgentMessage[];
     payload?: unknown;
@@ -108,19 +104,18 @@ export function observeRequestMessages(pi: ExtensionAPI, markDirty: () => void):
     const keys = expected.map(messageKey);
     let index = 0;
     let chars = 0;
-    let changed = false;
+    let textChars = 0;
     for (const message of observed) {
       if (messageKey(message) === keys[index]) { index++; continue; }
-      changed = true;
       chars += countTextContent(message.content);
+      textChars += conversationText([message]).reduce((sum, part) => sum + part.text.length, 0);
       if (message.role === "assistant") {
         for (const block of message.content) if (block.type === "toolCall") chars += countToolCallContent(block);
       }
     }
     const counts: RequestMessages | undefined = index !== keys.length ? { additive: false }
-      : changed ? { chars, additive: true } : undefined;
-    const text = textAdditions(conversationText(expected), conversationText(observed));
-    request = { saved, counts, nonTextChars: text.additive ? chars - text.chars : 0, hasImages: hasImages(observed) };
+      : observed.length > expected.length ? { chars, additive: true } : undefined;
+    request = { saved, counts, nonTextChars: chars - textChars, hasImages: hasImages(observed) };
   });
   pi.on("before_provider_request", (event) => {
     if (request) request.payload = structuredClone(event.payload);
@@ -144,10 +139,7 @@ export function observeRequestMessages(pi: ExtensionAPI, markDirty: () => void):
     }
     // Pi saves the assistant after message_end. Metadata stays on its parent path
     // even when /tree or a fork selects the response itself.
-    if (counts) {
-      pi.appendEntry(ENTRY_TYPE, { version: 1, ...counts });
-      markDirty();
-    }
+    if (counts) pi.appendEntry(ENTRY_TYPE, { version: 1, ...counts });
   });
 }
 
@@ -171,23 +163,22 @@ export function accountingSession(entries: SessionEntry[], leafId: string | null
   const requestMessages = new Map<AssistantMessage, RequestMessages>();
   for (const { sourceEntry, messages } of projection.entries) {
     if (sourceEntry.type !== "message" || sourceEntry.message.role !== "assistant") continue;
-    let parent = sourceEntry.parentId === null ? undefined : byId.get(sourceEntry.parentId);
-    while (parent && parent.type !== "message" && parent.type !== "compaction") {
-      if (parent.type !== "custom" || parent.customType !== ENTRY_TYPE) {
-        parent = parent.parentId === null ? undefined : byId.get(parent.parentId);
-        continue;
-      }
+    let parentId = sourceEntry.parentId;
+    while (parentId !== null) {
+      const parent = byId.get(parentId);
+      if (!parent || parent.type === "message" || parent.type === "compaction") break;
+      parentId = parent.parentId;
+      if (parent.type !== "custom" || parent.customType !== ENTRY_TYPE) continue;
       const data = parent.data;
-      if (isJsonObject(data) && data.version === 1) {
-        let counts: RequestMessages | undefined;
-        if (data.additive === false || !afterCompaction.has(sourceEntry.id)) counts = { additive: false };
-        else if (data.additive === true
-          && typeof data.chars === "number" && Number.isSafeInteger(data.chars) && data.chars >= 0) {
-          counts = { additive: true, chars: data.chars };
-        }
-        if (counts) for (const message of messages) {
-          if (message.role === "assistant") requestMessages.set(message, counts);
-        }
+      if (!isJsonObject(data) || data.version !== 1) break;
+      let counts: RequestMessages;
+      if (data.additive === false || !afterCompaction.has(sourceEntry.id)) counts = { additive: false };
+      else if (data.additive === true
+        && typeof data.chars === "number" && Number.isSafeInteger(data.chars) && data.chars >= 0) {
+        counts = { additive: true, chars: data.chars };
+      } else break;
+      for (const message of messages) {
+        if (message.role === "assistant") requestMessages.set(message, counts);
       }
       break;
     }

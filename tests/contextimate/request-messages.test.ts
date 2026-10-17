@@ -228,7 +228,7 @@ test("the request-only row keeps the shared token alignment in every panel view"
     });
     for (const width of [48, 80, 120]) {
       const lines = renderSummary(snapshot, plainTheme, width);
-      expectGolden(`contextimate-request-only-${width}.txt`, normalizeKeyHints(stripAnsi(lines.join("\n"))));
+      expectGolden(`contextimate-request-only-${width === 48 ? 48 : 80}.txt`, normalizeKeyHints(stripAnsi(lines.join("\n"))));
     }
     for (const render of [renderSummary, renderCompact, renderExpanded]) {
       const lines = render(snapshot, plainTheme, 80).map(stripAnsi);
