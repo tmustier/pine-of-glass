@@ -163,12 +163,11 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   codemode script through the installed Pi's agent loop (a scripted provider issues the
   call; nothing leaves the process) and pins `details.calls`, `nestedCalls`, the script
   header, the truncation notice and the parent-tagged execution events.
-- **Notice rows** (`pi-traceline-notice-rows.test.ts`, design language §9.15): real Pi
-  components render through a chat container. Tests cover headline precedence,
-  Markdown stripping, optional summary metadata, missing labels, empty or failing
-  renderers, and message size counting. They also check compact rows between tool rows,
-  status colours, background removal, click expansion and collapse, global expansion,
-  and byte-identical native rendering at z2.
+- **Notice rows** (`pi-traceline-notice-rows.test.ts`, design language §9.15): the SDK
+  host loads the same extension fixture as the notice smoke test, without Traceline
+  internals. Real components test headline precedence, Markdown, summary metadata,
+  renderer fallbacks, sizes, colours and block spacing. The fullscreen smoke covers
+  replayed and live notices, mouse expansion, global toggles and reload.
 - **Collapsed thinking previews**: three adjacent non-empty blocks and every non-empty
   line inside them append into one ` · `-separated display row; source paragraph breaks
   never add rows; empty thinking fragments do not consume labels or break adjacency;

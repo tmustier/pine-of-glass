@@ -10,6 +10,7 @@ import {
   type AssistantRowPrototypeLike,
   type ChatRowLike,
   type ContainerLike,
+  type NoticeRowLike,
   resultTextCharCount as rawResultTextCharCount,
   type ToolRowDataLike,
   type ToolRowLike,
@@ -31,6 +32,7 @@ import {
   type Tone,
 } from "../_lib/style.ts";
 import {
+  LINE_BREAK_MARK,
   PREAMBLE_MARK,
   bashPreambleRun,
   bashTopLevelSegments,
@@ -46,7 +48,6 @@ import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
   drillDecorateNativeRow,
   drillRenderKey,
-  drillState,
   drillTracePrefix,
   enterDrillMode,
   exitDrillMode,
@@ -54,19 +55,19 @@ import {
 } from "./drill.ts";
 import { handleDrillTerminalInput } from "./drill-input.ts";
 import { resultImageFact as rawResultImageFact } from "./image-fact.ts";
-import { isRevealed, ledgerOverride, resetRevealedFolds, revealRenderKey, revealedBullet, type LedgerView, type TraceMousePrototype } from "./click.ts";
+import { installTraceMouse, isRevealed, ledgerOverride, resetRevealedFolds, revealRenderKey, revealedBullet, type LedgerView, type TraceMousePrototype } from "./click.ts";
 import {
   cachedIntrinsic,
   installAssistantCacheHook,
-  installCachedTraceMouse,
   installContainerCacheHooks,
   objectCacheKey,
 } from "./cache-hooks.ts";
 import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStart } from "./nested-calls.ts";
 import { ledgerEntries, ledgerLines } from "./ledger.ts";
 import { composedBody } from "./nested-rows.ts";
-import { flattenInvocationLines, stripLeadingVisibleBullet, stripTimeoutSuffix, stripTrailingExpandHint } from "./native-lines.ts";
-import { installNoticeRows, type NoticeRowHost } from "./notice-rows.ts";
+import { stripTrailingExpandHint, trimLeadingVisibleWhitespace } from "./native-lines.ts";
+import { noticeBody } from "./notice-rows.ts";
+import { installRowMouse, type RowLayout } from "./row-mouse.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, resultText } from "./records.ts";
 import { wrapReadCells } from "./read-fold.ts";
@@ -162,10 +163,7 @@ function chatChildren(): unknown[] | undefined {
 
 // --- reasoning-visibility = source of truth for tool collapse -------------------------
 
-// True when pi is currently hiding reasoning. Read from a live assistant row so tool
-// visibility can never desync from reasoning. A tool row always follows the assistant
-// turn that issued it, so a sibling assistant row exists whenever this runs; the
-// theoretical no-row case defaults to native rather than guessing from disk.
+// Follow Pi's live reasoning state; use native rendering until an assistant exists.
 function thinkingHidden(): boolean {
   chatChildren();
   const chat = g.__tracelineChat;
@@ -220,16 +218,15 @@ function discriminatorInk(comp: ToolRowDataLike | undefined, text: string): stri
   return verbInk(comp, text);
 }
 
-// Every trace row indents one gutter, then opens with the dim ▏ rail (design language
-// §1/§5/§9.1): the block nests under the narrative line that motivated it, consecutive
-// rows fuse into one visible block, and the blank spacer before a group ends the rail.
-// While drill mode is active (§9.13), a numbered row swaps the rail cell for its
-// right-aligned number at identical width, so numbering never reflows the transcript.
+function railPrefix(bullet: string): string {
+  return `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`;
+}
+
 function toolPrefix(tone: Tone, comp?: ToolRowDataLike, disclosure?: string): string {
   const bullet = ink(currentTheme(), tone, disclosure ?? revealedBullet(comp) ?? TOOL_BULLET);
   return (
     drillTracePrefix(currentTheme(), comp, bullet) ??
-    `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`
+    railPrefix(bullet)
   );
 }
 
@@ -287,12 +284,7 @@ function inlineMutationRow(comp: ToolRowDataLike | undefined): boolean {
   return typeof path === "string" && path.length > 0;
 }
 
-// The row's contiguous visual block — the rail-fused run. Boundaries mirror the
-// *rendered* rail: tool rows fuse across invisible empty connectors; visible prose
-// breaks the block, and so does a collapsed thinking preview — it renders with a
-// blank line above it, which breaks the rail and starts a new block. §9.7
-// (block-scoped columns), §9.5 (boring-prefix path emphasis) and §9.8 (shared
-// cut columns) all scope their facts to this run.
+// Scope columns and path emphasis to the contiguous trace block (§9.5/§9.7/§9.8).
 function blockToolRows(comp: ToolRowLike): ToolRowLike[] {
   if (renderCache.active && g.__tracelineChat) return topology.block(g.__tracelineChat, comp);
   const found = componentLocation(comp);
@@ -503,19 +495,20 @@ function compactJson(value: unknown): string {
   }
 }
 
-// --- bash rows: plain-text rebuild + family ink (§2/§9.3/§9.4) ------
-// Bash rows speak the exact grammar of path rows: the bold `$` anchors at L0, and the
-// head words that survive crown selection (below) render L0-bold the way a basename
-// does (`$ rm`, `$ npm`, `$ python3` scan like `read file.ts`; §9.3), while
-// everything else — arguments, connectors, redirects, heredoc markers, demoted glue
-// commands, and the ↵/⋯ flatten/elision marks — sits at the one L3-dim supporting
-// grey shared with directories, plumbing, and size suffixes. Pi's native bash styling
-// is deliberately dropped: the invocation *text* still comes from pi's renderer, the
-// ink is the family's.
+// Preserve every command line; taking only the first loses heredoc and script bodies.
+function flattenInvocationLines(lines: string[]): string | undefined {
+  const visible = lines
+    .filter((line) => stripAnsi(line).trim().length > 0)
+    .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
+  if (visible.length === 0) return undefined;
+  return visible.join(` ${LINE_BREAK_MARK} `);
+}
 
-// The rendered bash invocation as plain text: every visible line flattened into one,
-// leading bullet and timeout boilerplate dropped. All later transforms (tildify, cd
-// elision) stay in plain text; bashInvocationPlan applies the family ink last.
+function stripTimeoutSuffix(text: string): string {
+  return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
+}
+
+// Shape bash as plain text; bashInvocationPlan applies ink last.
 function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
   return comp ? renderCache.memo(comp, "bash-invocation", () => {
     const lines = captureCallLines(comp.callRendererComponent, comp.args);
@@ -533,7 +526,9 @@ function commandPrefixLength(comp: ToolRowDataLike | undefined, line: string): n
 }
 
 function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): string {
-  const trimmed = stripLeadingVisibleBullet(line);
+  const unindented = trimLeadingVisibleWhitespace(line);
+  const bullet = stripAnsi(unindented).match(/^•\s*/)?.[0];
+  const trimmed = bullet ? unindented.slice(rawIndexAtVisibleIndex(unindented, bullet.length)) : unindented;
   const prefixLen = commandPrefixLength(comp, trimmed);
   if (prefixLen <= 0) return trimmed;
   const rawEnd = rawIndexBeforeVisibleIndex(trimmed, prefixLen);
@@ -706,17 +701,18 @@ function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: nu
   });
 }
 
-// The body+suffix budget inside the two-sided inset (§9.1): what remains after the
-// rail prefix and the right margin.
 function traceRowAvailable(width: number): number {
   return Math.max(1, Math.max(1, width) - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
 }
 
-// The one row form shared by single rows and folded read runs: body left, the block's
-// reserved fact-suffix column right (§9.8/§9.1), behind the railed status prefix.
+function fitTraceLine(prefix: string, body: string, suffix: string, reserve: number, width: number): string {
+  const fitted = rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve);
+  return truncateToWidth(`${prefix}${fitted}`, Math.max(1, width), ELLIPSIS);
+}
+
 function fitTraceRow(comp: ToolRowDataLike | undefined, tone: Tone, body: string, suffix: string, reserve: number, width: number, disclosure?: string): string {
   const key = JSON.stringify(["fit", width, reserve, tone, body, suffix, disclosure, drillRenderKey(comp), objectCacheKey(currentTheme())]);
-  const fit = () => truncateToWidth(`${toolPrefix(tone, comp, disclosure)}${rightAlignSuffix(body, suffix, traceRowAvailable(width), currentTheme(), reserve)}`, Math.max(1, width), ELLIPSIS);
+  const fit = () => fitTraceLine(toolPrefix(tone, comp, disclosure), body, suffix, reserve, width);
   return comp ? renderCache.memo(comp, key, fit) : fit();
 }
 
@@ -1068,9 +1064,7 @@ function componentLocation(comp: ChatRowLike): { sibs: unknown[]; index: number 
   return Array.isArray(sibs) && index >= 0 ? { sibs, index } : undefined;
 }
 
-// One blank line before a tool *group*, none within it: walk back past invisible
-// connector turns; tight if the nearest visible sibling is another collapsed tool row
-// or the collapsed thinking-label line that motivated this call.
+// Compact tools, notices and thinking labels share one block across empty turns.
 function leadingBlank(comp: ChatRowLike): boolean {
   const found = componentLocation(comp);
   if (!found || found.index <= 0) return true;
@@ -1078,18 +1072,16 @@ function leadingBlank(comp: ChatRowLike): boolean {
   for (let j = index - 1; j >= 0; j--) {
     const prev = sibs[j];
     renderCache.depend(prev);
-    if (isExpandedToolRow(prev)) return true; // a native-rendered block above → new trace block
-    if (isToolRow(prev)) return false; // adjacent (through connectors) to another tool
-    if (isNoticeRow(prev)) return prev._expanded; // a compact notice is a block member (§9.15)
-    if (isEmptyConnector(prev)) continue; // skip invisible tool-call-only turns
-    if (isCollapsedThinkingRow(prev)) return false; // tight under its Thinking... line
-    return true; // hit visible content → blank before the group
+    if (isExpandedToolRow(prev)) return true;
+    if (isToolRow(prev)) return false;
+    if (isNoticeRow(prev)) return prev._expanded;
+    if (isEmptyConnector(prev)) continue;
+    if (isCollapsedThinkingRow(prev)) return false;
+    return true;
   }
   return true;
 }
 
-// One row's worth of one-line output: folded-run handling plus the group-spacing rule.
-// Shared by the prototype patch and the test suites.
 function renderTraceRow(comp: ToolRowLike, width: number): string[] {
   const read = readRun(comp);
   if (read) {
@@ -1109,26 +1101,27 @@ function renderTraceRow(comp: ToolRowLike, width: number): string[] {
   return leadingBlank(comp) ? ["", ...lines, ...ledger] : [...lines, ...ledger];
 }
 
-// --- notice rows (design language §9.15) ------------------------------------------------
-
-// The row grammar notice-rows.ts needs from this module: the rail prefix, the fact
-// cell, the group-spacing rule and the view state. Expansion changes move a notice
-// between block member and block break, so the rows around it re-derive spacing.
-const noticeRowHost: NoticeRowHost = {
-  theme: currentTheme,
-  compact: () => displayMode() === "oneLine",
-  drillActive: () => drillState() !== undefined,
-  railPrefix: (bullet) => `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`,
-  available: traceRowAvailable,
-  charSuffix,
-  leadingBlank,
-  changed: (row) => { renderCache.dirty(row); topologyChanged(); },
-};
-
-// A notice class is adopted the first time one of its rows reaches the chat, whether
-// from a replayed session, a live message, or an entry appended with no event at all.
-function adoptNoticeRow(child: unknown): void {
-  if (isNoticeRow(child) && installNoticeRows(Object.getPrototypeOf(child), noticeRowHost)) g.__tracelineTui?.requestRender();
+function adoptNoticeRow(child: unknown): boolean {
+  if (!isNoticeRow(child)) return false;
+  const patched = installRowMouse<NoticeRowLike, RowLayout>(Object.getPrototypeOf(child), {
+    renderTrace(row, width) {
+      if (!thinkingHidden() || row._expanded) return undefined;
+      const theme = currentTheme();
+      const { body, chars } = noticeBody(row, theme);
+      const bullet = theme ? theme.fg("customMessageLabel", TOOL_BULLET) : TOOL_BULLET;
+      const line = fitTraceLine(railPrefix(bullet), body, charSuffix(chars), 0, width);
+      const lines = leadingBlank(row) ? ["", line] : [line];
+      return { lines, plain: lines.map(stripAnsi) };
+    },
+    click(row) {
+      if (!thinkingHidden()) return false;
+      row.setExpanded(!row._expanded);
+      return true;
+    },
+    changed: (row) => { renderCache.dirty(row); topologyChanged(); },
+  });
+  if (patched) g.__tracelineTui?.requestRender();
+  return patched;
 }
 
 // --- collapsed thinking previews (issue #14, pi-native rendering) ----------------------
@@ -1142,15 +1135,13 @@ function patchAssistantRowPrototype(proto: AssistantRowPrototypeLike): void {
   g.__tracelineAssistantPatchVersion = ASSISTANT_ROW_PATCH_VERSION;
 }
 
-// --- prototype patch (shared by every current + future tool row, applied once) --------
-
 function currentPatchInstalled(): boolean {
   return g.__tracelinePatchVersion === TOOL_ROW_PATCH_VERSION;
 }
 
 function patchToolRowPrototype(proto: TraceMousePrototype): void {
   if (currentPatchInstalled() || typeof proto.render !== "function" || typeof proto.handleMouse !== "function") return;
-  installCachedTraceMouse(proto, renderCache, {
+  installTraceMouse(proto, renderCache, {
     bulletColumn: TOOL_PREFIX_VISIBLE_WIDTH - TOOL_AFTER_BULLET.length - 1,
     isCompact: (row) => displayMode() === "oneLine" && row.expanded !== true,
     renderTrace: cachedLayout,
@@ -1196,7 +1187,7 @@ function tryPatch(): boolean {
       if (assistant) patchAssistantRowPrototype(Object.getPrototypeOf(assistant));
     }
     for (const row of sibs) {
-      if (isNoticeRow(row)) noticeWasPatched = installNoticeRows(Object.getPrototypeOf(row), noticeRowHost) || noticeWasPatched;
+      noticeWasPatched = adoptNoticeRow(row) || noticeWasPatched;
     }
     const chat = g.__tracelineChat;
     if (chat && !chat.__tracelineCachePatched) {
@@ -1210,10 +1201,7 @@ function tryPatch(): boolean {
     (!assistantWasPatched && assistantPatchInstalled());
 }
 
-// Test-only surface. Pi loads extensions via `jiti.import(path, { default: true })`,
-// so named exports are runtime-inert; this object exists for the repo test suites
-// (see docs/testing.md) and is not a stable public API. An entry stays only while
-// a test or dev script actually uses it.
+// Legacy test/dev access, not a public API. Entries only shrink (docs/testing.md).
 export const internals = {
   // duck-typed pi-internal detection (contract-tested against the installed pi)
   isToolRow,

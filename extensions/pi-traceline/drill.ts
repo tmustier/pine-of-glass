@@ -85,16 +85,14 @@ export function drillTracePrefix(theme: Theme | undefined, comp: unknown, bullet
   return `${numberCell(theme, n, st.rows[st.selected] === comp)} ${bulletInk} `;
 }
 
-// A native-rendered (expanded or z2) row takes its number on the blank spacer line pi
-// renders above the row (§9.13). Only a genuinely blank first line is replaced; any
-// other shape passes through untouched, so this can never reflow a native row.
-export function drillDecorateNativeRow(theme: Theme | undefined, comp: unknown, lines: unknown, bulletInk: string): unknown {
+// Replace only Pi's blank spacer, so numbering never reflows native rows.
+export function drillDecorateNativeRow(theme: Theme | undefined, comp: unknown, lines: string[], bulletInk: string): string[] {
   const st = g.__tracelineDrill;
-  if (!st || !Array.isArray(lines) || lines.length === 0) return lines;
+  if (!st || lines.length === 0) return lines;
   const n = st.numbers.get(comp);
   if (n === undefined || n > MAX_NUMBER) return lines;
   const first = lines[0];
-  if (typeof first !== "string" || stripAnsi(first).trim() !== "") return lines;
+  if (stripAnsi(first!).trim() !== "") return lines;
   return [`${numberCell(theme, n, st.rows[st.selected] === comp)} ${bulletInk}`, ...lines.slice(1)];
 }
 

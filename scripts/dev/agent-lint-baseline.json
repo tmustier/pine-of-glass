@@ -52,7 +52,6 @@
       },
       "extensions/pi-traceline/drill.ts": {
         "if (!/^[0-9]$/.test(ch)) return { digits };": 1,
-        "return [`${numberCell(theme, n, st.rows[st.selected] === comp)} ${bulletInk}`, ...lines.slice(1)];": 1,
         "return { digits: \"\" };": 1
       },
       "scripts/contextimate/provider-token-counts.ts": {
@@ -109,15 +108,12 @@
     "anti-slop(no-unknown-returns)": {
       "extensions/_lib/chat.ts": {
         "__tracelineOriginalAssistantRender?: (width: number) => unknown;": 1,
-        "__tracelineOriginalRender?: (width: number) => unknown;": 1,
         "__tracelineOriginalUpdateContent?: (...args: unknown[]) => unknown;": 1,
         "__tracelineOriginalUpdateDisplay?: (...args: unknown[]) => unknown;": 1,
         "addChild?: (child: unknown) => unknown;": 1,
         "clear?: () => unknown;": 1,
         "removeChild?: (child: unknown) => unknown;": 1,
-        "render: (width: number) => unknown;": 1,
         "render?: (width: number) => unknown;": 2,
-        "setExpanded: (...args: unknown[]) => unknown;": 1,
         "setHideThinkingBlock: (...args: unknown[]) => unknown;": 1,
         "updateContent: (...args: unknown[]) => unknown;": 1,
         "updateDisplay: (...args: unknown[]) => unknown;": 1
@@ -134,12 +130,6 @@
       },
       "extensions/pi-cachemire/classify.ts": {
         "function stripCacheMarkers(value: unknown): unknown {": 1
-      },
-      "extensions/pi-traceline/click.ts": {
-        "decorateNative: (row: ToolRowLike, lines: unknown) => unknown;": 1
-      },
-      "extensions/pi-traceline/drill.ts": {
-        "export function drillDecorateNativeRow(theme: Theme | undefined, comp: unknown, lines: unknown, bulletInk: string): unknown {": 1
       },
       "scripts/contextimate/provider-token-counts.ts": {
         "CountTokensCommand: new (input: JsonObject) => unknown;": 1,
@@ -292,7 +282,7 @@
     "files": {
       "extensions/pi-cachemire/index.ts": 694,
       "extensions/pi-contextimate/index.ts": 847,
-      "extensions/pi-traceline/index.ts": 1414,
+      "extensions/pi-traceline/index.ts": 1402,
       "tests/traceline/one-line.test.ts": 771
     }
   },

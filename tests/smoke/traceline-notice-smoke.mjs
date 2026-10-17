@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Notice rows (design language §9.15) in a real fullscreen Pi: custom messages and a
-// custom entry between tool calls, replayed from a session and sent live, through an
-// isolated tmux PTY with raw SGR mouse input. No model calls.
+// Real fullscreen Pi: replayed/live notices, mouse input, global toggles and reload.
 import assert from "node:assert/strict";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

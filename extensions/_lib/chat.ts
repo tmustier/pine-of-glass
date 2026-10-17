@@ -3,7 +3,6 @@
 // installed pi (tests/contract/pi-internals.test.ts), never imported from
 // pi internals — that is what lets the family survive `pi update`.
 import type { CustomEntry, CustomMessageEntry } from "@earendil-works/pi-coding-agent";
-import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { stripAnsi } from "./ansi.ts";
 import { isJsonObject } from "./boundary.ts";
 
@@ -63,8 +62,8 @@ export interface ToolRowDataLike {
 }
 
 export interface ToolRowLike extends ToolRowDataLike {
-  render: (width: number) => unknown;
-  setExpanded: (...args: unknown[]) => unknown;
+  render: (width: number) => string[];
+  setExpanded: (expanded: boolean) => void;
 }
 
 export interface AssistantMessageLike {
@@ -86,7 +85,7 @@ export interface AssistantRowLike extends AssistantRowDataLike {
 }
 
 export interface ToolRowPrototypeLike extends Partial<ToolRowLike> {
-  __tracelineOriginalRender?: (width: number) => unknown;
+  __tracelineOriginalRender?: (width: number) => string[];
   updateDisplay: (...args: unknown[]) => unknown;
   __tracelineOriginalUpdateDisplay?: (...args: unknown[]) => unknown;
 }
@@ -128,13 +127,6 @@ export type NoticeRowLike = (
   render: (width: number) => string[];
   setExpanded: (expanded: boolean) => void;
 };
-
-export interface NoticeRowPrototypeLike extends Pick<NoticeRowLike, "render" | "setExpanded"> {
-  __tracelineOriginalNoticeRender?: (width: number) => string[];
-  __tracelineOriginalNoticeMouse?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
-  __tracelineOriginalNoticeSetExpanded?: (expanded: boolean) => void;
-  handleMouse?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
-}
 
 /** Any chat child the trace-row spacing rules walk over. */
 export type ChatRowLike = ToolRowDataLike | NoticeRowLike;
