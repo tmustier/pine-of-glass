@@ -160,8 +160,7 @@
         "if (matchesKey(data, String(d) as KeyId)) {": 1
       },
       "extensions/pi-traceline/drill.ts": {
-        "const g = globalThis as DrillGlobal;": 1,
-        "for (let d = 0; d <= 9; d++) if (matchesKey(data, String(d) as KeyId)) return String(d);": 1
+        "const g = globalThis as DrillGlobal;": 1
       },
       "extensions/pi-traceline/index.ts": {
         "const g = globalThis as TracelineGlobal;": 1
