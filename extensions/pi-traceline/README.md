@@ -372,6 +372,30 @@ Traceline shortens rows before they reach the terminal edge. It:
   ▏ › read ~/projects/pine-of-glass/…/pi-traceline/index.ts:1-200  18.5k ch
 ```
 
+### Summaries (experimental)
+
+A long command or a long stretch of reasoning can lose most of itself to a one-line row. Summaries ask a model for a short gist of what was left out. They are off by default. Turn them on in your own `~/.pi/agent/pi-traceline.json`:
+
+```json
+{ "summaries": true }
+```
+
+That uses `openai-codex/gpt-6-luna`. To use another model, write `{ "summaries": { "model": "provider/id" } }`. A project's `.pi/pi-traceline.json` cannot turn summaries on, because they send your commands and reasoning to a model.
+
+A command that had to be cut or wrapped gets one dim line under it, starting with `≈`. A collapsed thinking line that had to be cut shows its gist instead of its first words:
+
+```
+  ▏ › committed a4f21c9 $ cd ~/projects/slack-bridge && git add -A && pnpm lint &&
+  ▏                       pnpm typecheck && npx prettier --check . &&
+  ▏                       git commit -m "Fix the bridge"
+  ▏   ≈ lints, type-checks and commits slack-bridge
+```
+
+- A gist is the model's reading, not proof. It never replaces the command or an outcome, and the full text is still one click or `Ctrl+O` away.
+- Gists are asked for in small batches once a row has finished. The row shows as normal until its gist arrives.
+- Each gist is saved in the session, so reopening the session shows the same gists without asking again.
+- The summary model's cost is not part of Pi's session total. Each saved gist records its share.
+
 ## Understand colours and status
 
 The `›` bullet uses Pi's accent colour while running, success colour after success

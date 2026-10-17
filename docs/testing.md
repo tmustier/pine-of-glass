@@ -113,7 +113,7 @@ it. When `pi update` breaks one, the failure message says exactly which seam mov
 | Native theme invalidation recolours SDK-created cache/pace ledgers, clocks and pending tool rows while preserving facts and layout; Pi's identity-stable theme proxy supplies the new ink | shared styling and themed chat lines |
 | On Pi versions with the system theme, palette, background-only and no-reply cases flow through the same semantic roles | terminal-derived family styling |
 | Assistant message component satisfies `isAssistantRow`: `setHideThinkingBlock` fn + `hideThinkingBlock` boolean | traceline collapse-state source of truth |
-| `CustomMessageComponent` and `CustomEntryComponent` satisfy `isNoticeRow` (`render`, `setExpanded`, `message.customType`/`entry.customType`, no `toolName`), read `_expanded` as the flag `setExpanded()` writes, hold the extension renderer's component in `customComponent`, and their prototypes accept the render/mouse/setExpanded substitution | traceline notice rows (§9.15) |
+| `CustomMessageComponent` and `CustomEntryComponent` satisfy `isNoticeRow` (`render`, `setExpanded`, `message.customType`/`entry.customType`, no `toolName`), read `_expanded` as the flag `setExpanded()` writes, hold the extension renderer's component in `customComponent`, and their prototypes accept the render/mouse/setExpanded substitution | traceline notice rows (§9.16) |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
 | Two Pi SDK sessions in one process distinguish headless and interactive through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
@@ -165,6 +165,13 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   The user's and the project's files and extension layers add, replace and turn off
   entries in their order; a replaced built-in loses its code; each problem is notified
   once with its layer.
+- **Summaries** (`summaries.test.ts`, §9.15): hosted through the SDK with a scripted
+  summary model registered through Pi's provider API, so every request is counted.
+  Only the user's own file turns summaries on; a cut or wrapped command gets one `≈`
+  line at the command column once its result arrives and the record keeps its slot; a
+  cut thinking preview shows its gist once the run is settled; requests batch; gists
+  are stored as session entries and a replay asks for nothing; a reply that answers
+  nothing, or arrives after its session ended, changes nothing.
 - **Composed calls** (`composed-calls.test.ts`, design language §9.14): a codemode row
   folds nested calls by tool with counts, one target per member, `✗N` for nested
   failures inside a completed script, `trimmed` ahead of the size cell, wall time from
@@ -175,7 +182,7 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   codemode script through the installed Pi's agent loop (a scripted provider issues the
   call; nothing leaves the process) and pins `details.calls`, `nestedCalls`, the script
   header, the truncation notice and the parent-tagged execution events.
-- **Notice rows** (`pi-traceline-notice-rows.test.ts`, design language §9.15): the SDK
+- **Notice rows** (`pi-traceline-notice-rows.test.ts`, design language §9.16): the SDK
   host loads the same extension fixture as the notice smoke test, without Traceline
   internals. Real components test headline precedence, Markdown, summary metadata,
   renderer fallbacks, sizes, colours and block spacing. The fullscreen smoke covers

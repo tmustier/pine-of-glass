@@ -3,7 +3,7 @@ import type { TraceRenderCache } from "./render-cache.ts";
 
 export function isExpandedToolRow(row: unknown): boolean { return isToolRow(row) && row.expanded === true; }
 
-/** A notice at z0 is a block member (§9.15): it neither breaks the rail nor the block's columns. */
+/** A notice at z0 is a block member (§9.16): it neither breaks the rail nor the block's columns. */
 export function isCompactNoticeRow(row: unknown): boolean { return isNoticeRow(row) && !row._expanded; }
 
 export function isEmptyConnector(row: unknown): boolean {

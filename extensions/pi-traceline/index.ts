@@ -71,6 +71,7 @@ import { installRowMouse, type RowLayout } from "./row-mouse.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, resultText } from "./records.ts";
 import { installVocabulary } from "./vocabulary-layers.ts";
+import { gistFor, installSummaries } from "./summaries.ts";
 import { wrapReadCells } from "./read-fold.ts";
 import { TraceRenderCache } from "./render-cache.ts";
 import { adjacentReadGroups, combinedResultChars, groupedReadRun, groupedRepetitionRun, readPlan, repetitionPlan } from "./repetition-fold.ts";
@@ -688,7 +689,7 @@ type BashRowPlan = BashLines & { commandColumn: number };
 function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: number, wrap: boolean): BashRowPlan {
   return renderCache.memo(comp, `bash-plan:${available}:${bodyBudget}:${wrap}:${objectCacheKey(currentTheme())}`, () => {
     const plain = bashInvocationText(comp);
-    if (plain === undefined) return { first: inkedFallbackLine(comp), continuations: [], commandColumn: 0 };
+    if (plain === undefined) return { first: inkedFallbackLine(comp), continuations: [], overflow: false, commandColumn: 0 };
     const headline = recordHeadline(comp, available);
     const headlineWidth = headline ? visibleWidth(headline) + 1 : 0;
     const text = foldBashPreamble(comp, bashDisplayLine(comp, plain));
@@ -696,9 +697,9 @@ function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: nu
     const budget = bodyBudget - commandColumn;
     const lines: BashLines = text.startsWith("$ ")
       ? fitBashLines(currentTheme(), verbTone(comp), text.slice(2), budget, wrap ? budget : undefined)
-      : { first: dim(text), continuations: [] };
+      : { first: dim(text), continuations: [], overflow: false };
     const body = text.startsWith("$ ") ? `${verbInk(comp, "$")} ${lines.first}` : lines.first;
-    return { first: headline ? `${headline} ${body}` : body, continuations: lines.continuations, commandColumn };
+    return { ...lines, first: headline ? `${headline} ${body}` : body, commandColumn };
   });
 }
 
@@ -731,7 +732,8 @@ function oneLine(comp: ToolRowLike, width: number): string {
 }
 
 // One row's lines: the bullet line, then a wrapped bash row's continuation lines (§9.8)
-// at the command column, rail-only like a dir fold's (§9.9).
+// at the command column, rail-only like a dir fold's (§9.9), then a cut or wrapped
+// command's dim `≈` gist at the body column, across the row's width (§9.15).
 function rowLines(comp: ToolRowLike, width: number): string[] {
   const rows = blockToolRows(comp);
   const facts = blockFacts(rows);
@@ -743,20 +745,14 @@ function rowLines(comp: ToolRowLike, width: number): string[] {
   const bash = toolLabel(comp.toolName) === "bash" && !composedFacts(comp);
   const plan = bash ? bashInvocationPlan(comp, available, bodyBudget, true) : undefined;
   const body = plan ? plan.first : invocationInk(comp, available, bodyBudget);
-  const line = fitTraceRow(
-    comp,
-    statusTone(comp),
-    body,
-    suffix,
-    reserve,
-    width,
-    ledger === "revealed" ? "▾" : ledger === "folded" ? "▸" : undefined,
-  );
-  if (!plan || plan.continuations.length === 0) return [line];
-  const contPrefix = `${TOOL_INDENT}${dim(TOOL_RAIL)}${" ".repeat(TOOL_PREFIX_VISIBLE_WIDTH - TOOL_INDENT.length - 1 + plan.commandColumn)}`;
+  const disclosure = ledger === "revealed" ? "▾" : ledger === "folded" ? "▸" : undefined;
+  const line = fitTraceRow(comp, statusTone(comp), body, suffix, reserve, width, disclosure);
+  const command = comp.args?.command;
+  const gist = plan?.overflow && typeof command === "string" ? gistFor("command", command, comp.result !== undefined) : undefined;
+  if (!plan || (plan.continuations.length === 0 && !gist)) return [line];
+  const railed = (column: number, budget: number, text: string) => truncateToWidth(`${TOOL_INDENT}${dim(TOOL_RAIL)}${" ".repeat(TOOL_PREFIX_VISIBLE_WIDTH - TOOL_INDENT.length - 1 + column)}${middleTruncate(text, budget, currentTheme())}`, Math.max(1, width), ELLIPSIS);
   const contBudget = Math.max(1, bodyBudget - plan.commandColumn);
-  return [line, ...plan.continuations.map((text) =>
-    truncateToWidth(`${contPrefix}${middleTruncate(text, contBudget, currentTheme())}`, Math.max(1, width), ELLIPSIS))];
+  return [line, ...plan.continuations.map((text) => railed(plan.commandColumn, contBudget, text)), ...(gist ? [railed(0, available, dim(`≈ ${gist}`))] : [])];
 }
 
 // --- repetition folding + preamble reclaim (issue #14, design language §9.4/§9.9) ---
@@ -1384,8 +1380,11 @@ export default function piTraceline(pi: ExtensionAPI) {
     });
   });
 
-  // Vocabulary layers (§9.10) apply after the claim above; a change re-renders every row.
-  installVocabulary(pi, tuiOwner.owns, () => { renderCache.reset(); g.__tracelineTui?.requestRender(); });
+  // Vocabulary layers (§9.10) and summaries (§9.15) start after the claim above; a new
+  // vocabulary or a gist that arrives re-renders every row.
+  const rerender = () => { renderCache.reset(); g.__tracelineTui?.requestRender(); };
+  installVocabulary(pi, tuiOwner.owns, rerender);
+  installSummaries(pi, tuiOwner.owns, rerender);
   pi.on("session_shutdown", () => {
     if (!tuiOwner.release()) return;
     inputUnsubscribe?.();

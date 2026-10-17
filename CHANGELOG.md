@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Traceline summaries (experimental, off by default). With `"summaries": true` in your
+  own `~/.pi/agent/pi-traceline.json`, a command that had to be cut or wrapped gets a
+  dim `≈` line with a model's gist of it, and a cut thinking preview shows its gist.
+  `openai-codex/gpt-6-luna` by default, or `{ "model": "provider/id" }`. Gists are asked
+  for in batches once rows settle and saved in the session, so a reopened session asks
+  for nothing. A project file cannot turn summaries on.
+
 - Traceline shows extension notices as trace rows. A custom message or custom entry
   that an extension puts in the chat (a subagent's question or result, a supervisor's
   reply, a watchdog warning) was Pi's padded purple block between the trace lines;

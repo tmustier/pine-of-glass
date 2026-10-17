@@ -1149,7 +1149,43 @@ The ledger:
   composed row as one target; its pager shows the complete script with pi's
   syntax ink, the full ledger under a `calls` label, then the result
 
-### 9.15 Notice rows
+### 9.15 Summaries (experimental)
+
+A trace row is short by design, and a long command or a long stretch of
+reasoning can lose most of itself to that. A summary is a model's gist of what
+the row had to leave out. It is interpretation, not evidence, so it never looks
+like a record or a fact:
+
+- it is off by default. Only the user's own `~/.pi/agent/pi-traceline.json`
+  can turn it on (`"summaries": true`, or `{ "model": "provider/id" }`;
+  `openai-codex/gpt-6-luna` by default): a project must not be able to send the
+  user's commands and reasoning to a model
+- it opens with `≈`, the mark of a gist, beside `~` for estimates (principle 4),
+  and renders dim. It never takes the record slot (§9.10), never wears status or
+  outcome ink, and states what the row does, not whether it worked
+- a bash row earns one when its command is wider than the row's first line, so
+  traceline had to cut or wrap it (§9.8). The gist takes one line under the row,
+  after any wrapped continuation: rail, no bullet, at the body column under the
+  row's first word, `≈ lints, type-checks and commits slack-bridge`. It is a note
+  about the row, not more command, so it does not indent to the command column,
+  and it has the row's full width, since it carries no fact suffix. The command
+  keeps its place as provenance; the gist never replaces it
+- a collapsed thinking run (§9.11) earns one when its preview had to be cut. The
+  gist takes the preview's place on the run's one line, `≈ checks whether the
+  push landed before merging`; the run's own words stay one click away
+- only settled text earns a gist: a call once its result arrives, a thinking run
+  once anything follows it in the message. Text that is still streaming would
+  ask again with every token
+- the original stays one zoom away (§9.12), so a wrong gist costs a click
+
+Gists are asked for in batches as rows settle, and each is stored in the session
+as a custom entry keyed by a hash of its text. A replayed or resumed session
+reads them back and asks for nothing. A row waiting for its gist renders exactly
+as it would without summaries, so the transcript never waits on a model; a gist
+that fails is not asked for again in that session. Their cost is the summary
+model's, outside Pi's session total, and each entry records it.
+
+### 9.16 Notice rows
 
 An extension notice is a message that arrived in the transcript without the model
 asking for it: a subagent's result or question, a supervisor's reply, a watchdog

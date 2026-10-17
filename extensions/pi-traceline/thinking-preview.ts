@@ -1,9 +1,10 @@
-import { Markdown, MouseRegion, Text, type Component, type MarkdownTheme, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { Markdown, MouseRegion, Text, visibleWidth, type Component, type MarkdownTheme, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import type { AssistantRowDataLike } from "../_lib/chat.ts";
 import { middleTruncate } from "../_lib/style.ts";
 import { drillState } from "./drill.ts";
+import { gistFor } from "./summaries.ts";
 
 const PREVIEW_RENDER_WIDTH = 10_000;
 
@@ -67,11 +68,14 @@ function replaceVisibleLabel(line: string, preview: string, width: number): stri
   return middleTruncate(`${line.slice(0, start)}${preview}${suffix}`, width);
 }
 
-function thinkingPreviews(comp: AssistantRowDataLike): string[] | undefined {
+// A run is settled once anything follows it in the message (§9.15): its text is final.
+type RunPreview = { text: string; settled: boolean };
+
+function thinkingPreviews(comp: AssistantRowDataLike): RunPreview[] | undefined {
   const content = comp.lastMessage?.content;
   if (!Array.isArray(content)) return undefined;
 
-  const previews: string[] = [];
+  const previews: RunPreview[] = [];
   let group: string[] | undefined;
   for (const block of content) {
     if (block && typeof block === "object" && (block as { type?: unknown }).type === "thinking") {
@@ -81,10 +85,10 @@ function thinkingPreviews(comp: AssistantRowDataLike): string[] | undefined {
       if (preview !== undefined) (group ??= []).push(preview);
       continue;
     }
-    if (group) previews.push(group.join(" · "));
+    if (group) previews.push({ text: group.join(" · "), settled: true });
     group = undefined;
   }
-  if (group) previews.push(group.join(" · "));
+  if (group) previews.push({ text: group.join(" · "), settled: false });
   return previews;
 }
 
@@ -106,7 +110,7 @@ export function installThinkingPreviews(comp: AssistantPreviewRow): void {
   const regions = children
     .filter((child) => child instanceof MouseRegion)
     .map((region) => region as unknown as ThinkingRegion);
-  let previews: string[] | undefined;
+  let previews: RunPreview[] | undefined;
   if (regions.some((region) => region.child instanceof Text)) {
     previews = thinkingPreviews(comp);
     if (!previews || regions.length !== previews.length) return;
@@ -120,18 +124,21 @@ export function installThinkingPreviews(comp: AssistantPreviewRow): void {
     };
     const nativeLabel = region.child;
     const preview = previews?.[i];
-    if (!(nativeLabel instanceof Text) || !preview) continue;
+    if (!(nativeLabel instanceof Text) || !preview?.text) continue;
     // Fullscreen Pi renders the whole transcript every frame, so every thinking label pays
-    // this per frame. The output is a function of the native label line and the width alone
-    // (the preview is fixed per install), so reuse it while both hold.
-    let last: { width: number; line: string; lines: string[] } | undefined;
+    // this per frame. The output is a function of the native label line, the width and
+    // the run's gist (the preview is fixed per install), so reuse it while all three hold.
+    // A preview cut at this width shows its `≈` gist instead, once there is one (§9.15).
+    let last: { width: number; line: string; gist: string | undefined; lines: string[] } | undefined;
     region.child = {
       render(width) {
         const lines = nativeLabel.render(width);
         if (lines.length !== 1) return lines;
         const line = lines[0]!;
-        if (last?.width !== width || last.line !== line) {
-          last = { width, line, lines: [replaceVisibleLabel(line, preview, width)] };
+        const cut = visibleWidth(replaceVisibleLabel(line, preview.text, Number.POSITIVE_INFINITY)) > width;
+        const gist = cut ? gistFor("thinking", preview.text, preview.settled) : undefined;
+        if (last?.width !== width || last.line !== line || last.gist !== gist) {
+          last = { width, line, gist, lines: [replaceVisibleLabel(line, gist ? `≈ ${gist}` : preview.text, width)] };
         }
         return last.lines;
       },
