@@ -7,6 +7,7 @@
 // draft intact, and a foreign chord (alt+up) exits the mode un-consumed so the same
 // press reaches the restored editor. Every subprocess call is bounded and the
 // uniquely launched Pi is killed on timeout.
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,15 +62,14 @@ function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// Poll the pane until predicate(pane) holds; returns the pane text either way.
-function waitForPane(predicate) {
+function waitForPane(label, predicate) {
   let pane = "";
   while (Date.now() < hardDeadline && hasTmuxSession()) {
     pane = capturePane();
     if (predicate(pane)) return pane;
     sleep(200);
   }
-  return pane;
+  assert.fail(`${label}\n${pane}`);
 }
 
 function waitForHiddenThinking(settingsPath, expected) {
@@ -240,9 +240,8 @@ try {
   if (!Number.isInteger(launchedPid)) throw new Error("could not identify the isolated Pi pane PID");
 
   // 1. Resume renders both trace rows.
-  const resumed = waitForPane((pane) =>
+  const resumed = waitForPane("resumed session did not render both tool rows", (pane) =>
     pane.includes(readySentinel) && pane.includes("alpha.txt") && pane.includes("beta.txt"));
-  if (!resumed.includes(readySentinel)) throw new Error(`resumed session did not render\n${resumed}`);
   const traceRowsOf = (pane) => pane.split("\n").filter((line) => /alpha\.txt|beta\.txt/.test(line));
   const beforeRows = traceRowsOf(resumed).map((line) => line.trimEnd());
   if (beforeRows.length !== 2) throw new Error(`expected two trace rows, saw:\n${resumed}`);
@@ -250,13 +249,13 @@ try {
   // 2. Ctrl+O opens z1. Ctrl+T still owns the next transition: it clears z1 before
   // Pi shows reasoning, and a second Ctrl+T therefore returns to z0 trace rows.
   sendKeys("C-o");
-  const expanded = waitForPane((pane) => pane.includes("DRILL_RESULT_ALPHA") && !traceRowsOf(pane).some((line) => line.includes("▏")));
-  if (!expanded.includes("DRILL_RESULT_ALPHA")) throw new Error(`Ctrl+O did not expand the native tool rows\n${expanded}`);
+  waitForPane("Ctrl+O did not expand the native tool rows", (pane) =>
+    pane.includes("DRILL_RESULT_ALPHA") && !traceRowsOf(pane).some((line) => line.includes("▏")));
   sendKeys("C-t");
   if (!waitForHiddenThinking(settingsPath, false)) throw new Error("first Ctrl+T did not reach Pi's native reasoning toggle");
   sendKeys("C-t");
   if (!waitForHiddenThinking(settingsPath, true)) throw new Error("second Ctrl+T did not return to hidden reasoning");
-  const retraced = waitForPane((pane) => {
+  const retraced = waitForPane("Ctrl+T did not restore trace rows", (pane) => {
     const rows = traceRowsOf(pane);
     return rows.length === 2 && rows.every((line) => line.includes("▏"));
   });
@@ -267,11 +266,9 @@ try {
 
   // 3. A draft, then Alt+T: hint bar replaces the editor, numbers land at equal width.
   sendKeys(draft);
-  const withDraft = waitForPane((pane) => pane.includes(draft));
-  if (!withDraft.includes(draft)) throw new Error(`draft never appeared in the editor\n${withDraft}`);
+  waitForPane("draft never appeared in the editor", (pane) => pane.includes(draft));
   sendKeys("M-t");
-  const drilling = waitForPane((pane) => pane.includes("drill · row 1 of 2"));
-  if (!drilling.includes("drill · row 1 of 2")) throw new Error(`hint bar did not appear\n${drilling}`);
+  const drilling = waitForPane("hint bar did not appear", (pane) => pane.includes("drill · row 1 of 2"));
   if (drilling.includes(draft)) throw new Error(`draft still visible while the hint bar owns the editor slot\n${drilling}`);
   const numberedRows = traceRowsOf(drilling).map((line) => line.trimEnd());
   if (numberedRows.length !== 2) throw new Error(`numbering changed the row count\n${drilling}`);
@@ -286,18 +283,15 @@ try {
 
   // 4. Digit commit opens the pager on the older row's complete result.
   sendKeys("2");
-  const peeking = waitForPane((pane) => pane.includes("peek · row 2 of 2"));
-  if (!peeking.includes("peek · row 2 of 2")) throw new Error(`pager did not open on row 2\n${peeking}`);
+  const peeking = waitForPane("pager did not open on row 2", (pane) => pane.includes("peek · row 2 of 2"));
   if (!peeking.includes("DRILL_RESULT_ALPHA")) throw new Error(`pager missing the full result text\n${peeking}`);
   if (!peeking.includes("invocation")) throw new Error(`pager missing the invocation section\n${peeking}`);
 
   // 5. esc unwinds: pager → numbered transcript → editor with the draft intact.
   sendKeys("Escape");
-  const backToDrill = waitForPane((pane) => pane.includes("drill · row") && !pane.includes("peek · row"));
-  if (!backToDrill.includes("drill · row")) throw new Error(`esc did not return to drill mode\n${backToDrill}`);
+  waitForPane("esc did not return to drill mode", (pane) => pane.includes("drill · row") && !pane.includes("peek · row"));
   sendKeys("Escape");
-  const restored = waitForPane((pane) => pane.includes(draft) && !pane.includes("drill · row"));
-  if (!restored.includes(draft)) throw new Error(`editor draft not restored after exit\n${restored}`);
+  const restored = waitForPane("editor draft not restored after exit", (pane) => pane.includes(draft) && !pane.includes("drill · row"));
   const restoredRows = traceRowsOf(restored).map((line) => line.trimEnd());
   if (restoredRows.join("\n") !== beforeRows.join("\n")) {
     throw new Error(`exit did not restore the plain rail rows\n${restoredRows.join("\n")}`);
@@ -306,16 +300,10 @@ try {
   // 6. A foreign chord (§9.13): alt+up exits the mode un-consumed and lands in the
   // restored editor in the same press — stock pi answers with its native dequeue status.
   sendKeys("M-t");
-  const redrilling = waitForPane((pane) => pane.includes("drill · row 1 of 2"));
-  if (!redrilling.includes("drill · row 1 of 2")) throw new Error(`hint bar did not reappear for the chord step\n${redrilling}`);
+  waitForPane("hint bar did not reappear for the chord step", (pane) => pane.includes("drill · row 1 of 2"));
   sendKeys("M-Up");
-  const chordExit = waitForPane(
-    (pane) => !pane.includes("drill · row") && pane.includes("No queued messages to restore"),
-  );
-  if (chordExit.includes("drill · row")) throw new Error(`alt+up did not exit drill mode\n${chordExit}`);
-  if (!chordExit.includes("No queued messages to restore")) {
-    throw new Error(`alt+up did not reach the restored editor in the same press\n${chordExit}`);
-  }
+  const chordExit = waitForPane("alt+up did not exit drill and reach the restored editor", (pane) =>
+    !pane.includes("drill · row") && pane.includes("No queued messages to restore"));
   if (!chordExit.includes(draft)) throw new Error(`editor draft lost across the chord exit\n${chordExit}`);
 
   sendKeys("C-c");

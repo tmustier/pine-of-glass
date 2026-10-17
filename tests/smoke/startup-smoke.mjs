@@ -8,6 +8,7 @@
 //   5. the explicit Meantime feature flag enables /pace through real Pi,
 //   6. /pace and /cache render, and both survive the Ctrl+T visibility update.
 // Local-only: needs tmux and the linked Pi runtime. Exits non-zero on failure.
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,8 +46,7 @@ function waitFor(label, predicate, timeoutMs = 30000) {
     if (predicate(pane)) return pane;
     sleep(500);
   }
-  failures.push(`${label}: condition not met within ${timeoutMs}ms`);
-  return pane;
+  assert.fail(`${label}: condition not met within ${timeoutMs}ms\n${pane}`);
 }
 
 function check(label, condition, detail) {
@@ -128,15 +128,11 @@ try {
     "tmux", "new-session", "-d", "-s", session, "-x", "120", "-y", "45",
     `cd ${JSON.stringify(fixtureDir)} && HOME=${JSON.stringify(fixtureHome)} PI_SKIP_VERSION_CHECK=1 ${pi.shell} --no-session`,
   ]);
-  if (launch.status !== 0) {
-    console.error(`tmux session failed to start: ${launch.stderr}`);
-    process.exit(2);
-  }
+  assert.equal(launch.status, 0, `tmux session failed to start: ${launch.stderr}`);
 
   // 1. Estimator block renders at startup, in summary mode by default. First render can
   // be slow: the fresh HOME means a cold jiti cache for both TS extensions.
   pane = waitFor("startup render", (text) => text.includes("[Contextimate]"), 60000);
-  check("estimator block present at startup", pane.includes("[Contextimate]"));
   // The header always shows the full cycle legend and the ▸ section glyph appears in
   // every mode now; mode-specific markers are the reliable tell. Summary renders
   // neither compact's scan rows (the fixture skill's name+token row would show) nor
@@ -155,15 +151,13 @@ try {
 
   // 2. Mode switching via the slash command actually changes the rendered block.
   run(["tmux", "send-keys", "-t", session, "/contextimate compact", "Enter"]);
-  pane = waitFor("compact mode", compactScanRow);
-  check("compact mode renders the scan view", compactScanRow(pane));
+  waitFor("compact mode", compactScanRow);
 
   // Pi 1.x redraws a changed block in place without keeping the old frames in
   // scrollback, so the expanded tools note must fit on screen: grow the window for it.
   run(["tmux", "resize-window", "-t", session, "-x", "120", "-y", "140"]);
   run(["tmux", "send-keys", "-t", session, "/contextimate expanded", "Enter"]);
-  pane = waitFor("expanded mode", (text) => /readable view/.test(text));
-  check("expanded mode renders the detail view", /readable view/.test(pane));
+  waitFor("expanded mode", (text) => /readable view/.test(text));
   run(["tmux", "resize-window", "-t", session, "-x", "120", "-y", "45"]);
 
   // 3. /reload keeps exactly one estimator block (regression: duplicate insertion).
