@@ -8,7 +8,7 @@ import type { ModelSummary } from "../../extensions/_lib/heuristics.ts";
 import {
   keepsAllClaudeThinking,
   keepsAllOpenAIReasoning,
-} from "../../extensions/pi-contextimate/model-heuristics.ts";
+} from "../../extensions/_lib/heuristics.ts";
 import { anthropicModel, codexModel } from "../helpers.ts";
 import { tokenizerFamilies } from "./heuristic-family-fixtures.ts";
 

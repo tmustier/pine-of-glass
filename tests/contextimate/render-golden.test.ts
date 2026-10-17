@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { internals } from "../../extensions/pi-contextimate/index.ts";
+import { renderSummary, renderCompact, renderExpanded } from "../../extensions/pi-contextimate/render.ts";
 import type { ModelSummary } from "../../extensions/_lib/heuristics.ts";
 import { buildSnapshot, type PrefixSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
 import {
@@ -21,8 +21,6 @@ import {
   stripAnsi,
   normalizeKeyHints,
 } from "../helpers.ts";
-
-const { renderSummary, renderCompact, renderExpanded } = internals;
 
 // Raw prompt counts include absolute fixture paths, so pin HOME while building the
 // snapshot to keep the goldens independent of the developer's home-directory length.
@@ -84,7 +82,7 @@ test("compact view goldens at 80 and 120 columns", () => {
 });
 
 test("compact view golden for an adapter-injected <codex_skills> list", () => {
-  const snapshot = fixtureSnapshot(codexModel, { activeTools: ["search"], prompt: () => fixtureCodexSystemPrompt() });
+  const snapshot = fixtureSnapshot(codexModel, { activeTools: ["search"], prompt: fixtureCodexSystemPrompt });
   expectGolden("contextimate-compact-codex-skills-100.txt", rendered(renderCompact(snapshot, plainTheme, 100)));
 });
 

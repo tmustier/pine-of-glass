@@ -1,8 +1,8 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { ModelSummary } from "../_lib/heuristics.ts";
-import { keepsAllClaudeThinking, keepsAllOpenAIReasoning } from "./model-heuristics.ts";
+import { keepsAllClaudeThinking, keepsAllOpenAIReasoning } from "../_lib/heuristics.ts";
 
 const OPENAI_REASONING_REPLAY_APIS = new Set([
   "openai-responses",
@@ -89,30 +89,13 @@ export type SessionSource = {
   getLeafId(): string | null;
 };
 
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? "undefined";
-  } catch (error) {
-    return `[unserializable: ${error instanceof Error ? error.message : String(error)}]`;
-  }
-}
-
-function countTextContent(content: unknown): number {
+function countTextContent(content: Message["content"]): number {
   if (typeof content === "string") return content.length;
-  if (!Array.isArray(content)) return 0;
   return content.reduce((sum, block) => {
-    if (!block || typeof block !== "object") return sum;
-    const typed = block as { type?: string; text?: string; data?: string; mimeType?: string };
-    if (typed.type === "text") return sum + (typed.text ?? "").length;
-    if (typed.type === "image") return sum + `[image:${typed.mimeType ?? "unknown"}:${typed.data?.length ?? 0} chars]`.length;
+    if (block.type === "text") return sum + block.text.length;
+    if (block.type === "image") return sum + `[image:${block.mimeType}:${block.data.length} chars]`.length;
     return sum;
   }, 0);
-}
-
-function countToolCallContent(block: unknown): number {
-  if (!block || typeof block !== "object") return 0;
-  const toolCall = block as { id?: string; name?: string; arguments?: unknown };
-  return safeJson({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }).length;
 }
 
 function reportedReasoning(message: AssistantMessage): number | undefined {
@@ -146,8 +129,8 @@ function hasEncryptedOpenAIReasoning(signature: string | undefined): boolean {
   if (!signature) return false;
   try {
     const item: unknown = JSON.parse(signature);
-    if (!item || typeof item !== "object") return false;
-    const encryptedContent = (item as { encrypted_content?: unknown }).encrypted_content;
+    if (!item || typeof item !== "object" || !("encrypted_content" in item)) return false;
+    const encryptedContent = item.encrypted_content;
     return typeof encryptedContent === "string" && encryptedContent.length > 0;
   } catch {
     return false;
@@ -278,10 +261,10 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
             const crossModelSummary = anchor !== undefined && !sameModel(message, anchor);
             if (!strippedThinkingIndices.has(index) && !exactReasoningIndices.has(index)
               && !block.redacted && (claudeSummary || plainSummary || crossModelSummary)) {
-              breakdown.thinkingSummaryChars += (block.thinking ?? "").length;
+              breakdown.thinkingSummaryChars += block.thinking.length;
             }
           } else if (block.type === "toolCall") {
-            breakdown.messageChars += countToolCallContent(block);
+            breakdown.messageChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }, null, 2).length;
           } else {
             breakdown.messageChars += countTextContent([block]);
           }
@@ -294,18 +277,9 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
     // Pi estimates every raw context message after the last trusted usage, including
     // `!!` bash messages that convertToLlm deliberately omits from provider context.
     breakdown.contextUsageEstimated = lastTrustedContextIndex !== messages.length - 1;
-    const lastBilled = anchor
-      && typeof anchor.provider === "string"
-      && typeof anchor.model === "string"
-      && typeof anchor.api === "string"
-      ? { provider: anchor.provider, id: anchor.model, api: anchor.api }
-      : undefined;
+    const lastBilled = anchor ? { provider: anchor.provider, id: anchor.model, api: anchor.api } : undefined;
     return { breakdown, lastBilled };
   } catch {
     return {};
   }
-}
-
-export function buildSessionBreakdown(sessionManager?: SessionSource): SessionBreakdown | undefined {
-  return scanSession(sessionManager).breakdown;
 }

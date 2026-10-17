@@ -2,10 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
-import { internals } from "../../extensions/pi-contextimate/index.ts";
+import { scanSession } from "../../extensions/pi-contextimate/session-accounting.ts";
 import { assistantMessage } from "../helpers.ts";
-
-const { buildSessionBreakdown } = internals;
 
 function usageWithReasoning(reasoning: number, promptTokens = 20000, cacheRead = 0) {
   return {
@@ -46,13 +44,13 @@ test("Claude reasoning follows keep-all, current-turn and exact-identity boundar
     [{ type: "text", text: "done" }],
     { model: "claude-fable-5", usage: usageWithReasoning(25) },
   ));
-  const keepAllBreakdown = buildSessionBreakdown(keepAll)!;
+  const keepAllBreakdown = scanSession(keepAll).breakdown!;
   assert.equal(keepAllBreakdown.thinkingSummaryChars, 0, "exact retained reasoning covers the summary");
   assert.equal(keepAllBreakdown.reasoningTokens, 825, "Fable keeps every same-model turn");
   assert.equal(keepAllBreakdown.contextUsageEstimated, false);
 
   keepAll.appendMessage({ role: "user", content: "trailing", timestamp: 3 });
-  const trailing = buildSessionBreakdown(keepAll)!;
+  const trailing = scanSession(keepAll).breakdown!;
   assert.equal(trailing.contextUsageEstimated, true);
   assert.equal(trailing.reasoningTokens, 825, "a local estimate preserves the last provider anchor");
 
@@ -70,7 +68,7 @@ test("Claude reasoning follows keep-all, current-turn and exact-identity boundar
     [{ type: "text", text: "done" }],
     { model: "claude-opus-4-4", usage: usageWithReasoning(30) },
   ));
-  const currentTurnBreakdown = buildSessionBreakdown(currentTurn)!;
+  const currentTurnBreakdown = scanSession(currentTurn).breakdown!;
   assert.equal(currentTurnBreakdown.reasoningTokens, 50, "older Claude keeps the active assistant turn");
   assert.equal(currentTurnBreakdown.thinkingSummaryChars, 0, "older same-model thinking is stripped");
 
@@ -83,7 +81,7 @@ test("Claude reasoning follows keep-all, current-turn and exact-identity boundar
     [{ type: "text", text: "done" }],
     { model: "claude-opus-4-8", usage: usageWithReasoning(25) },
   ));
-  const changedBreakdown = buildSessionBreakdown(changedModel)!;
+  const changedBreakdown = scanSession(changedModel).breakdown!;
   assert.equal(changedBreakdown.reasoningTokens, 25, "replay requires Pi's exact model identity");
   assert.equal(changedBreakdown.thinkingSummaryChars, 5, "cross-model thinking becomes summary text");
 
@@ -92,7 +90,7 @@ test("Claude reasoning follows keep-all, current-turn and exact-identity boundar
     [{ type: "thinking", thinking: "think", thinkingSignature: "signed-relay" }],
     { api: "pi-messages", provider: "radius", model: "claude-fable-5", usage: usageWithReasoning(700) },
   ));
-  assert.equal(buildSessionBreakdown(relay)!.reasoningTokens, 700, "relay usage stays exact");
+  assert.equal(scanSession(relay).breakdown!.reasoningTokens, 700, "relay usage stays exact");
 });
 
 test("OpenAI uses encrypted carriers and the model's effective context default", () => {
@@ -111,7 +109,7 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
       usage: usageWithReasoning(100, 900, 900),
     },
   ));
-  const allTurnsBreakdown = buildSessionBreakdown(allTurns)!;
+  const allTurnsBreakdown = scanSession(allTurns).breakdown!;
   assert.equal(allTurnsBreakdown.thinkingSummaryChars, 0, "opaque carriers are not sized as text");
   assert.equal(allTurnsBreakdown.reasoningTokens, 1000, "GPT-5.6 defaults to all turns");
 
@@ -129,7 +127,7 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
     [{ type: "text", text: "done" }],
     { api: "openai-responses", provider: "openai", model: "gpt-5.5", usage: usageWithReasoning(40, 90) },
   ));
-  assert.equal(buildSessionBreakdown(currentTurn)!.reasoningTokens, 90, "older models default to current turn");
+  assert.equal(scanSession(currentTurn).breakdown!.reasoningTokens, 90, "older models default to current turn");
 
   const ordinaryTextItem = SessionManager.inMemory("/tmp/contextimate-openai-text-signature");
   ordinaryTextItem.appendMessage(assistantMessage(
@@ -141,7 +139,7 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
     [{ type: "text", text: "done" }],
     { api: "openai-responses", provider: "openai", model: "gpt-5.2", usage: usageWithReasoning(40) },
   ));
-  assert.equal(buildSessionBreakdown(ordinaryTextItem)!.reasoningTokens, 40, "text item ids are not reasoning");
+  assert.equal(scanSession(ordinaryTextItem).breakdown!.reasoningTokens, 40, "text item ids are not reasoning");
 
   const idOnlyReasoning = SessionManager.inMemory("/tmp/contextimate-openai-id-only-reasoning");
   idOnlyReasoning.appendMessage(assistantMessage(
@@ -152,7 +150,7 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
     [{ type: "text", text: "done" }],
     { api: "openai-responses", provider: "openai", model: "gpt-5.6", usage: usageWithReasoning(40) },
   ));
-  assert.equal(buildSessionBreakdown(idOnlyReasoning)!.reasoningTokens, 40, "id-only items cannot replay reasoning");
+  assert.equal(scanSession(idOnlyReasoning).breakdown!.reasoningTokens, 40, "id-only items cannot replay reasoning");
 
   const changedModel = SessionManager.inMemory("/tmp/contextimate-openai-changed-model");
   const summary = "visible summary";
@@ -164,7 +162,7 @@ test("OpenAI uses encrypted carriers and the model's effective context default",
     [{ type: "text", text: "done" }],
     { api: "openai-responses", provider: "openai", model: "gpt-5.5", usage: usageWithReasoning(40) },
   ));
-  const changedModelBreakdown = buildSessionBreakdown(changedModel)!;
+  const changedModelBreakdown = scanSession(changedModel).breakdown!;
   assert.equal(changedModelBreakdown.reasoningTokens, 40);
   assert.equal(changedModelBreakdown.thinkingSummaryChars, summary.length, "cross-model thinking becomes text");
 });
@@ -180,7 +178,7 @@ test("a replay signature alone does not prove historical retention", () => {
     [{ type: "text", text: "done" }],
     { api: "google-generative-ai", provider: "google", model: "gemini-3-pro", usage: usageWithReasoning(50) },
   ));
-  assert.equal(buildSessionBreakdown(unmeasured)!.reasoningTokens, 50);
+  assert.equal(scanSession(unmeasured).breakdown!.reasoningTokens, 50);
 });
 
 test("reported prompt usage rejects impossible historical attribution", () => {
@@ -193,7 +191,7 @@ test("reported prompt usage rejects impossible historical attribution", () => {
     [{ type: "text", text: "done" }],
     { api: "openai-responses", provider: "openai", model: "gpt-5.6", usage: usageWithReasoning(100, 100) },
   ));
-  assert.equal(buildSessionBreakdown(session)!.reasoningTokens, 100);
+  assert.equal(scanSession(session).breakdown!.reasoningTokens, 100);
 
   const noAnchorBreakdown = SessionManager.inMemory("/tmp/contextimate-impossible-history-no-anchor-breakdown");
   noAnchorBreakdown.appendMessage(assistantMessage(
@@ -204,7 +202,7 @@ test("reported prompt usage rejects impossible historical attribution", () => {
     [{ type: "text", text: "done" }],
     { api: "openai-responses", provider: "openai", model: "gpt-5.6", usage: usageWithoutReasoning(100) },
   ));
-  assert.equal(buildSessionBreakdown(noAnchorBreakdown)!.reasoningTokens, undefined);
+  assert.equal(scanSession(noAnchorBreakdown).breakdown!.reasoningTokens, undefined);
 
   const totalOnlyPrompt = SessionManager.inMemory("/tmp/contextimate-total-only-prompt");
   totalOnlyPrompt.appendMessage(assistantMessage(
@@ -220,5 +218,5 @@ test("reported prompt usage rejects impossible historical attribution", () => {
       usage: { ...usageWithReasoning(10, 0), totalTokens: 90 },
     },
   ));
-  assert.equal(buildSessionBreakdown(totalOnlyPrompt)!.reasoningTokens, 60);
+  assert.equal(scanSession(totalOnlyPrompt).breakdown!.reasoningTokens, 60);
 });

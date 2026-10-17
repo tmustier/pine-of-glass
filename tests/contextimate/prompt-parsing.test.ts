@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { getPromptRemainder, parseSkillsBlock, detectRuntimeAdditions } from "../../extensions/pi-contextimate/prompt-parsing.ts";
 import { fixtureSystemPrompt, fixtureCodexSystemPrompt } from "../helpers.ts";
 
-test("skills parse with XML entities unescaped and stable ordering by tokens", () => {
+test("skills parse XML entities and count full entry spans", () => {
   const { skills } = parseSkillsBlock(fixtureSystemPrompt(), 4)!;
   assert.equal(skills.length, 3);
   const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
@@ -45,7 +45,6 @@ test("runtime-addition attribution counts only verified, deduplicated prompt tex
     "- bash: Execute bash commands".length + 1 +
     shared.length + 1;
   assert.equal(additions.chars, expectedChars);
-
 });
 
 test("compact <codex_skills> list parses into the same skills row as the XML index", () => {

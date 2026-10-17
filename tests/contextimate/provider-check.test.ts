@@ -21,18 +21,12 @@ import {
   summarizeCounts,
   vertexCountRequest,
 } from "../../scripts/contextimate/provider-token-counts.ts";
-import { isJsonObject, type JsonObject } from "../../extensions/_lib/boundary.ts";
-import { toolPayload } from "../../extensions/_lib/tool-payloads.ts";
-import { buildSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
-import { anthropicModel, fakePi, fixtureSystemPrompt } from "../helpers.ts";
+import { fixtureSystemPrompt } from "../helpers.ts";
 
 function capturedAnthropicPayload() {
-  const snapshot = buildSnapshot(fakePi(), { systemPrompt: fixtureSystemPrompt(), model: anthropicModel });
-  const tools = snapshot.tools.slice(0, 3).map((tool) => {
-    const payload = toolPayload(tool, "anthropic");
-    assert.ok(isJsonObject(payload));
-    return payload as JsonObject;
-  });
+  const tools = ["read", "bash", "search"].map((name) => ({
+    name, description: `The ${name} tool`, input_schema: { type: "object" },
+  }));
   return {
     model: "claude-opus-4-8",
     max_tokens: 8192,

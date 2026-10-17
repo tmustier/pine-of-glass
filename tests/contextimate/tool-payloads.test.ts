@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 
 import {
   aggregateToolPayload, toolPayload, estimateOpenAIToolDefinitionTokens,
@@ -65,8 +66,13 @@ test("unknown formats fall back to the OpenAI Responses payload", () => {
 });
 
 test("OpenAI tool render tracks provider-measured counts", () => {
-  const measured = JSON.parse(readFileSync(new URL("../fixtures/openai-codex-tool-counts.json", import.meta.url), "utf8"));
-  const tools: Array<ToolDefinition & { measuredTokens: number }> = measured.tools;
+  const measured: unknown = JSON.parse(readFileSync(new URL("../fixtures/openai-codex-tool-counts.json", import.meta.url), "utf8"));
+  assert.ok(isJsonObject(measured) && typeof measured.blockTokens === "number" && Array.isArray(measured.tools));
+  const tools = measured.tools.map((tool: unknown): ToolDefinition & { measuredTokens: number } => {
+    assert.ok(isJsonObject(tool) && typeof tool.name === "string"
+      && typeof tool.description === "string" && typeof tool.measuredTokens === "number");
+    return { name: tool.name, description: tool.description, schema: tool.schema, measuredTokens: tool.measuredTokens };
+  });
   for (const tool of tools) {
     const estimate = estimateOpenAIToolDefinitionTokens(tool);
     assert.ok(Math.abs(estimate - tool.measuredTokens) <= tool.measuredTokens * 0.15, `${tool.name}: ${estimate} vs ${tool.measuredTokens}`);

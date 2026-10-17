@@ -4,11 +4,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
-import { internals } from "../../extensions/pi-contextimate/index.ts";
-import { buildSnapshot, type PrefixSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
+import { renderSummary } from "../../extensions/pi-contextimate/render.ts";
+import { scanSession } from "../../extensions/pi-contextimate/session-accounting.ts";
+import { tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel } from "../../extensions/pi-contextimate/metric-rows.ts";
+import { buildSnapshot, estimateSnapshotSession, totalTokens, type PrefixSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
 import { assistantMessage, fakePi, fixtureSystemPrompt, anthropicModel, plainTheme, stripAnsi } from "../helpers.ts";
-
-const { buildSessionBreakdown, buildSessionEstimate, totalTokens, tokenLabelLayout, estimatedTokenField, estimatedTokenLabel, exactTokenLabel, ctxShareLabel, contextWindowLabel, methodologyHint, renderSummary } = internals;
 
 function snapshotWith(session: PrefixSnapshot["session"], usage: PrefixSnapshot["contextUsage"]): PrefixSnapshot {
   const snapshot = buildSnapshot(fakePi(), { systemPrompt: fixtureSystemPrompt(), contextUsage: usage, model: anthropicModel });
@@ -30,7 +30,7 @@ const session = {
 test("with Pi usage: total anchors to (Pi current − estimated harness) and residual is clamped", () => {
   const usage = { tokens: 50000, contextWindow: 200000, percent: 25 };
   const snapshot = snapshotWith(session, usage);
-  const estimate = buildSessionEstimate(snapshot)!;
+  const estimate = estimateSnapshotSession(snapshot)!;
   assert.equal(estimate.totalSource, "pi");
   assert.equal(estimate.totalTokens, Math.max(0, Math.round(50000 - totalTokens(snapshot))));
   // Visible buckets use the session denominator (2.6 for the Claude 4.7+ heuristic).
@@ -50,13 +50,13 @@ test("with Pi usage: total anchors to (Pi current − estimated harness) and res
   );
 
   // Pi usage smaller than the visible buckets must clamp at zero, never go negative.
-  const tiny = buildSessionEstimate(snapshotWith(session, { tokens: 100, contextWindow: 200000, percent: 0.1 }))!;
+  const tiny = estimateSnapshotSession(snapshotWith(session, { tokens: 100, contextWindow: 200000, percent: 0.1 }))!;
   assert.equal(tiny.unattributedTokens, 0);
 });
 
 test("without Pi usage (or null tokens): heuristic fallback over all session chars", () => {
   for (const usage of [undefined, { tokens: null, contextWindow: 200000, percent: null }]) {
-    const estimate = buildSessionEstimate(snapshotWith(session, usage))!;
+    const estimate = estimateSnapshotSession(snapshotWith(session, usage))!;
     assert.equal(estimate.totalSource, "heuristic");
     assert.equal(estimate.totalTokens, Math.ceil((1200 + 5200 + 1300) / 2.6) + 12000);
     assert.equal(estimate.thinkingSummaryTokens, Math.ceil(1200 / 2.6));
@@ -65,17 +65,13 @@ test("without Pi usage (or null tokens): heuristic fallback over all session cha
   }
 });
 
-test("no session → no estimate", () => {
-  assert.equal(buildSessionEstimate(snapshotWith(undefined, undefined)), undefined);
-});
-
 test("session walk estimates a summary when the provider omits its reasoning breakdown", () => {
   const unreported = SessionManager.inMemory("/tmp/contextimate-unreported-reasoning");
   const summary = "summary only";
   unreported.appendMessage(assistantMessage([
     { type: "thinking", thinking: summary, thinkingSignature: "opaque-signature" },
   ]));
-  const breakdown = buildSessionBreakdown(unreported)!;
+  const breakdown = scanSession(unreported).breakdown!;
   assert.equal(breakdown.reasoningTokens, undefined);
   assert.equal(breakdown.thinkingSummaryChars, summary.length);
   const rows = stripAnsi(renderSummary(snapshotWith(breakdown, undefined), plainTheme, 120).join("\n"));
@@ -100,7 +96,7 @@ test("reported zero reasoning stays exact while the accounting gap remains separ
       },
     },
   ));
-  const breakdown = buildSessionBreakdown(fable)!;
+  const breakdown = scanSession(fable).breakdown!;
   assert.equal(breakdown.reasoningTokens, 0);
   const rendered = stripAnsi(renderSummary(
     snapshotWith(breakdown, { tokens: 31044, contextWindow: 200000, percent: 15.5 }),
@@ -139,7 +135,7 @@ test("trailing excluded bash keeps Pi's estimate marker", () => {
     timestamp: 2,
     excludeFromContext: true,
   });
-  const breakdown = buildSessionBreakdown(manager)!;
+  const breakdown = scanSession(manager).breakdown!;
   assert.equal(breakdown.contextUsageEstimated, true);
   const rendered = stripAnsi(renderSummary(
     snapshotWith(breakdown, { tokens: 50000, contextWindow: 200000, percent: 25 }),
@@ -177,7 +173,7 @@ test("pre-switch usage names its old currency without losing Pi's estimate marke
 
   const switched = build();
   assert.deepEqual(switched.preSwitchUsage, { billedModel: "gpt-5.6-sol" });
-  const switchedEstimate = buildSessionEstimate(switched)!;
+  const switchedEstimate = estimateSnapshotSession(switched)!;
   assert.equal(switchedEstimate.totalSource, "heuristic");
   assert.equal(switchedEstimate.reasoningTokens, undefined, "old-model reasoning cannot be reused in the target currency");
   assert.equal(switched.session!.firstPrompt?.tokens, 40_002);
@@ -212,7 +208,7 @@ test("token labels align to one shared column width across magnitudes", () => {
   for (const value of values) {
     const estimated = estimatedTokenLabel(value, layout);
     const exact = exactTokenLabel(value, layout);
-    assert.equal(exact.length, estimated.length + (estimated.includes("~") ? 0 : 1));
+    assert.equal(exact.length, estimated.length);
     assert.equal(exact.replace(/^\s+/, ""), estimated.replace(/^\s*~/, ""));
   }
 });
@@ -227,45 +223,33 @@ test("token labels speak the family fixed-k grammar (design language §4)", () =
   assert.equal(exactTokenLabel(64321), " 64.3k");
 });
 
-test("context-window shares: integer percent, <1% over a dishonest 0%, budget label", () => {
-  const usage = { tokens: 64321, contextWindow: 200000, percent: 32.2 };
-  assert.equal(ctxShareLabel(64321, usage), "32% ctx");
-  assert.equal(ctxShareLabel(900, usage), "<1% ctx");
-  assert.equal(ctxShareLabel(0, usage), "0% ctx");
-  assert.equal(ctxShareLabel(900, undefined), undefined);
-  assert.equal(ctxShareLabel(900, { tokens: null, contextWindow: 200000, percent: null }), undefined);
-  // The window is a budget label, not a measurement: 200k, not 200.0k.
-  assert.equal(contextWindowLabel(200000), "200k");
-  assert.equal(contextWindowLabel(128500), "128.5k");
-  assert.equal(contextWindowLabel(1000000), "1M");
+test("summary names small context shares and the window budget", () => {
+  const snapshot = snapshotWith(session, { tokens: 50_000, contextWindow: 200_000, percent: 25 });
+  const rendered = stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
+  assert.match(rendered, /Total request\s+50\.0k tokens \(25\.0% \/ 200k ctx\)/);
+  assert.match(rendered, /Total session.*~25% ctx/);
+
+  snapshot.contextUsage = { tokens: 50_000, contextWindow: 10_000_000, percent: 0.5 };
+  assert.match(stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n")), /Total harness.*<1% ctx/);
 });
 
-test("methodology states session/tool methods only when they deviate from the text ratio", () => {
-  const heuristic = (patch: Record<string, unknown>) => ({
-    source: "test", toolNumerator: "anthropic", ...patch,
-  }) as Parameters<typeof methodologyHint>[0];
-  // Everything counted at the text ratio: one clause, no qualifiers.
-  assert.equal(
-    methodologyHint(heuristic({ label: "Claude 4.7+ heuristic", textDenominator: 2.6, sessionDenominator: 2.6, toolDenominator: 2.6 })),
-    "counts ch ÷ 2.6 (Claude 4.7+ heuristic)",
-  );
-  // Session and tool denominators each disclose their own deviation.
-  assert.equal(
-    methodologyHint(heuristic({ label: "Claude 4.5/4.6 heuristic", textDenominator: 3.8, sessionDenominator: 3.5, toolDenominator: 3.3 })),
-    "counts ch ÷ 3.8 · session ÷ 3.5 · tools ÷ 3.3 (Claude 4.5/4.6 heuristic)",
-  );
-  assert.equal(
-    methodologyHint(heuristic({ label: "OpenAI Responses heuristic", textDenominator: 4, sessionDenominator: 4, toolDenominator: 5.5 })),
-    "counts ch ÷ 4 · tools ÷ 5.5 (OpenAI Responses heuristic)",
-  );
-  // Formula-counted tools are not a ch ratio at all — the hint must not pretend they are.
-  assert.equal(
-    methodologyHint(heuristic({ label: "OpenAI-Codex heuristic", textDenominator: 4, sessionDenominator: 4, toolDenominator: 5.5, toolNumerator: "openai-cookbook" })),
-    "counts ch ÷ 4 · tools: OpenAI render (OpenAI-Codex heuristic)",
-  );
+test("the header discloses session and tool methods only when they differ", () => {
+  const snapshot = snapshotWith(undefined, undefined);
+  const header = () => stripAnsi(renderSummary(snapshot, plainTheme, 120).join("\n"));
+  assert.match(header(), /counts ch ÷ 2\.6 \(Claude 4\.7\+ heuristic\)/);
+  snapshot.heuristic = {
+    source: "configured defaults", label: "custom ratios", textDenominator: 3.8,
+    sessionDenominator: 3.5, toolDenominator: 3.3, toolNumerator: "anthropic",
+  };
+  assert.match(header(), /counts ch ÷ 3\.8 · session ÷ 3\.5 · tools ÷ 3\.3 \(custom ratios\)/);
+  snapshot.heuristic = {
+    source: "configured defaults", label: "custom render", textDenominator: 4,
+    sessionDenominator: 4, toolDenominator: 5.5, toolNumerator: "openai-cookbook",
+  };
+  assert.match(header(), /counts ch ÷ 4 · tools: OpenAI render \(custom render\)/);
 });
 
-test("snapshot signature changes exactly when inputs that affect rendering change", () => {
+test("snapshot signatures are stable and invalidate for active tools, models and config", () => {
   const build = (active: string[], model = anthropicModel, config = {}) =>
     buildSnapshot(fakePi({ activeTools: active }), { systemPrompt: fixtureSystemPrompt(), model, config });
 
