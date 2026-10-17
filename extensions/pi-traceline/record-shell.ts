@@ -6,8 +6,8 @@
 // inside quotes or a comment is a word, not a command. Commands inside `$(…)` and
 // backticks are read into `nested`.
 
-/** One shell word, unquoted. `literal`: no expansion can change it at run time. */
-export type ShellWord = { text: string; literal: boolean };
+/** One shell word, unquoted, with its source range. `literal`: no run-time expansion. */
+export type ShellWord = { text: string; literal: boolean; start: number; end: number };
 type ShellSeparator = "start" | "&&" | "||" | ";" | "|";
 /**
  * A simple command: its words without leading `NAME=value` assignments or redirects,
@@ -41,7 +41,7 @@ export function commandKeys(source: string): string[] {
   return [...commands, ...nested].map(commandKey);
 }
 
-export function readShell(source: string): ShellScript {
+export function readShell(source: string, offset = 0): ShellScript {
   const commands: ShellCommand[] = [];
   const nested: ShellCommand[] = [];
   let flat = true;
@@ -50,6 +50,8 @@ export function readShell(source: string): ShellScript {
   let before: ShellSeparator = "start";
   let assigning = true; // still reading leading NAME=value words
   let text = "";
+  let i = 0;
+  let wordStart = 0;
   let inWord = false;
   let literal = true;
   let quotedAt = -1; // text index of the word's first quote, -1 when none
@@ -79,7 +81,7 @@ export function readShell(source: string): ShellScript {
       flat = false;
     } else if (!assigning || !ASSIGNMENT.test(text) || (quotedAt >= 0 && eq > quotedAt)) {
       assigning = false;
-      words.push({ text, literal });
+      words.push({ text, literal, start: offset + wordStart, end: offset + i });
     }
     text = "";
     inWord = false;
@@ -140,12 +142,13 @@ export function readShell(source: string): ShellScript {
     }
     append(source.slice(start - 1, i));
     literal = false;
-    const inner = readShell(source.slice(start, Math.max(start, i - 1)));
+    const inner = readShell(source.slice(start, Math.max(start, i - 1)), offset + start);
     nested.push(...inner.commands, ...inner.nested);
     return i - 1;
   };
 
-  for (let i = 0; i < source.length; i++) {
+  for (; i < source.length; i++) {
+    if (!inWord) wordStart = i;
     const ch = source[i]!;
     const next = source[i + 1];
     if (ch === "'") {

@@ -145,10 +145,10 @@ test("the command that earned a record keeps the command floor; its siblings giv
   const by = commandKeys("git push origin --force-with-lease topic/quote-pack-receipts");
   const shielded = stripAnsi(fitBashLines(undefined, "text", body, 60, undefined, by).first);
   assert.match(shielded, /^rg -n 'quotePack… rg -n 'doorServ… git push origin --force-…$/, shielded);
-  // A crown inside its command still names it: `PR_URL=$(gh pr create …)` crowns `pr`.
+  // A crown inside its command (`pr`) does not move the protected start past `gh`.
   const assigned = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && PR_URL=$(gh pr create --fill --title 'Add receipts' --base main)";
   const opened = stripAnsi(fitBashLines(undefined, "text", assigned, 60, undefined, commandKeys("gh pr create --fill --title 'Add receipts' --base main")).first);
-  assert.match(opened, / pr create --fill --title…$/, opened);
+  assert.match(opened, /gh pr create --fill --ti…$/, opened);
 });
 
 test("a folded repetition of a long compound row stays one line: it fits by command, never wraps", () => {
