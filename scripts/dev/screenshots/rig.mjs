@@ -27,6 +27,7 @@ const imgDir = join(repoRoot, "docs", "img");
 const scenario = process.argv[2];
 const keep = process.argv.includes("--keep");
 const session = `pog-shots-${process.pid}`;
+let sessionOwned = false;
 
 const run = (args, opts = {}) => spawnSync(args[0], args.slice(1), { encoding: "utf8", ...opts });
 
@@ -77,6 +78,7 @@ function launchPi({ home, cwd, args = "", cols = 120, rows = 45 }) {
     `cd ${JSON.stringify(cwd)} && HOME=${JSON.stringify(home)} COLORTERM=truecolor PI_SKIP_VERSION_CHECK=1 ${JSON.stringify(process.execPath)} ${JSON.stringify(piCli)} ${args}`,
   );
   if (launch.status !== 0) throw new Error(`tmux launch failed: ${launch.stderr}`);
+  sessionOwned = true;
 }
 
 function shoot(name, { trimTo, cutFrom, cols = 120 } = {}) {
@@ -133,9 +135,11 @@ function shoot(name, { trimTo, cutFrom, cols = 120 } = {}) {
 }
 
 function stopPi() {
+  if (!sessionOwned) return;
   send("/quit", "Enter");
   sleep(800);
   tmux("kill-session", "-t", session);
+  sessionOwned = false;
 }
 
 // --- scenarios --------------------------------------------------------------------
