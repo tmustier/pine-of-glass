@@ -1,4 +1,5 @@
 // Hosts an extension through Pi's SDK with a recording UI. See docs/testing.md, "Public interfaces".
+import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -105,7 +106,7 @@ export type HostedExtension = {
 };
 
 export async function hostExtension(
-  factory: ExtensionFactory,
+  factory: ExtensionFactory | ExtensionFactory[],
   options: {
     project: IsolatedProject;
     ui?: RecordedUi;
@@ -125,10 +126,10 @@ export async function hostExtension(
   const cwd = project.dir;
   const agentDir = join(project.home, ".pi", "agent");
   const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: options.projectTrusted ?? true });
-  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager, extensionFactories: [factory] });
+  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager, extensionFactories: Array.isArray(factory) ? factory : [factory] });
   await loader.reload();
   const loadErrors = loader.getExtensions().errors;
-  if (loadErrors.length > 0) throw new Error(loadErrors.map((entry) => entry.error).join("\n"));
+  assert.equal(loadErrors.length, 0, loadErrors.map((entry) => entry.error).join("\n"));
 
   const { session } = await createAgentSession({
     cwd,
@@ -152,9 +153,12 @@ export async function hostExtension(
     session,
     ui,
     async dispose() {
-      await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
-      session.dispose();
-      if (errors.length > 0) throw new Error(`Pi caught extension errors:\n${errors.join("\n")}`);
+      try {
+        await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+      } finally {
+        session.dispose();
+      }
+      assert.equal(errors.length, 0, `Pi caught extension errors:\n${errors.join("\n")}`);
     },
   };
 }

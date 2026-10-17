@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import type { Theme, ExtensionAPI, ToolInfo, ContextUsage } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 import type { ModelSummary, SessionBreakdown } from "../extensions/pi-contextimate/index.ts";
 
@@ -98,7 +99,7 @@ export const fixtureContextUsage: ContextUsage = {
   tokens: 64321,
   contextWindow: 200000,
   percent: 32.2,
-} as ContextUsage;
+};
 
 export const fixtureSession: SessionBreakdown = {
   thinkingSummaryChars: 1200,
@@ -202,16 +203,13 @@ Current working directory: ${home}/projects/demo`;
 export const fixtureTools: ToolInfo[] = [
   {
     name: "read",
+    exposure: "direct",
     description: "Read the contents of a file.",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Path to the file to read" },
-        offset: { type: "number", description: "Line number to start reading from" },
-        limit: { type: "number", description: "Maximum number of lines to read" },
-      },
-      required: ["path"],
-    },
+    parameters: Type.Object({
+      path: Type.String({ description: "Path to the file to read" }),
+      offset: Type.Optional(Type.Number({ description: "Line number to start reading from" })),
+      limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+    }),
     // read and bash share one guideline: pi dedupes repeated guidelines in the prompt,
     // and detectRuntimeAdditions must count the shared text once.
     promptGuidelines: ["Prefer rg over grep for searching."],
@@ -219,64 +217,43 @@ export const fixtureTools: ToolInfo[] = [
   },
   {
     name: "bash",
+    exposure: "direct",
     description: "Execute a bash command in the current working directory.",
-    parameters: {
-      type: "object",
-      properties: {
-        command: { type: "string", description: "Bash command to execute" },
-        timeout: { type: "number", description: "Timeout in seconds" },
-      },
-      required: ["command"],
-    },
+    parameters: Type.Object({
+      command: Type.String({ description: "Bash command to execute" }),
+      timeout: Type.Optional(Type.Number({ description: "Timeout in seconds" })),
+    }),
     promptGuidelines: ["Prefer rg over grep for searching."],
     sourceInfo: { scope: "temporary", source: "builtin", origin: "top-level", path: "<builtin:bash>" },
   },
   {
     name: "search",
+    exposure: "direct",
     description: "Search the web with one or more queries.",
-    parameters: {
-      type: "object",
-      properties: {
-        queries: {
-          type: "array",
-          description: "Queries searched in sequence",
-          items: {
-            type: "object",
-            properties: {
-              text: { type: "string", description: "Query text" },
-              recency: { type: "string", enum: ["day", "week"], description: "Recency filter" },
-            },
-            required: ["text"],
-          },
-        },
-        options: {
-          type: "object",
-          description: "Search options",
-          properties: {
-            numResults: { type: "number", description: "Results per query" },
-          },
-        },
-      },
-      required: ["queries"],
-    },
+    parameters: Type.Object({
+      queries: Type.Array(Type.Object({
+        text: Type.String({ description: "Query text" }),
+        recency: Type.Optional(Type.String({ enum: ["day", "week"], description: "Recency filter" })),
+      }), { description: "Queries searched in sequence" }),
+      options: Type.Optional(Type.Object({
+        numResults: Type.Optional(Type.Number({ description: "Results per query" })),
+      }, { description: "Search options" })),
+    }),
     // A guideline that is NOT present in the fixture prompt: must not be attributed.
     promptGuidelines: ["Vary search query phrasing across angles."],
     sourceInfo: { scope: "user", source: "npm:fixture-pack", origin: "package", path: `${homedir()}/.pi/agent/npm/fixture/search.ts` },
   },
   {
     name: "write",
+    exposure: "direct",
     description: "Write content to a file.",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Path to the file to write" },
-        content: { type: "string", description: "Content to write" },
-      },
-      required: ["path", "content"],
-    },
+    parameters: Type.Object({
+      path: Type.String({ description: "Path to the file to write" }),
+      content: Type.String({ description: "Content to write" }),
+    }),
     sourceInfo: { scope: "temporary", source: "builtin", origin: "top-level", path: "<builtin:write>" },
   },
-] as unknown as ToolInfo[];
+];
 
 export function fakePi(options: { activeTools?: string[]; tools?: ToolInfo[] } = {}): Pick<ExtensionAPI, "getActiveTools" | "getAllTools"> {
   const tools = options.tools ?? fixtureTools;

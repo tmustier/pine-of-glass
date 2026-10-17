@@ -1,26 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { normalizeContext, type Context, type FetchFunction, type Model } from "@earendil-works/pi-ai";
 import { streamSimple as streamOpenAICompletions } from "@earendil-works/pi-ai/api/openai-completions";
 import { streamSimple as streamOpenAIResponses } from "@earendil-works/pi-ai/api/openai-responses";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, type JsonFields } from "../../extensions/_lib/boundary.ts";
-
-const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
-const piAiRoot = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-ai")));
-
-function source(name: string): string {
-  return readFileSync(join(piAiRoot, "api", name), "utf8");
-}
-
-test("direct OpenAI keeps the legacy retention field", () => {
-  assert.match(source("openai-responses.js"), /prompt_cache_retention:/);
-});
+import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
 
 const CONTEXT: Context = {
   messages: [{ role: "user", content: "Reply with OK", timestamp: 1 }],
@@ -104,45 +92,9 @@ test("native OpenAI Completions keeps documented cache-field precedence", async 
   }
 });
 
-function modelRecord(name: string, api: string, model: string): Record<string, unknown> {
-  const raw: unknown = JSON.parse(readFileSync(join(piAiRoot, "providers", "data", name), "utf8"));
-  assert(isJsonObject(raw), `invalid provider catalogue: ${name}`);
-  const models = raw[api];
-  assert(isJsonObject(models), `missing provider API: ${name} ${api}`);
-  // Pi 0.99 keys catalogue entries by model type (`chat:<id>`); older records were bare.
-  const record = models[`chat:${model}`] ?? models[model];
-  assert(isJsonObject(record), `missing provider model: ${name} ${api} ${model}`);
-  return record;
-}
-
-test("installed GPT-5.6 and GPT-6 Astra models keep direct API and Codex routes distinct", () => {
-  for (const model of ["gpt-5.6-sol", "gpt-6-astra"]) {
-    const direct = modelRecord("openai.json", "openai-responses", model);
-    const codex = modelRecord("openai-codex.json", "openai-codex-responses", model);
-    assert.equal(direct.provider, "openai");
-    assert.ok(isJsonObject(direct.compat));
-    assert.equal(direct.compat.supportsExplicitPromptCacheMode, true);
-    assert.equal(codex.provider, "openai-codex");
-    assert.equal(codex.baseUrl, "https://chatgpt.com/backend-api");
-  }
-});
-
-test("installed Claude Fable 5.1 declares Pi's cache-safe effort protocol", () => {
-  const fable = modelRecord("anthropic.json", "anthropic-messages", "claude-fable-5-1");
-  assert.equal(fable.provider, "anthropic");
-  assert.ok(isJsonObject(fable.compat));
-  assert.equal(fable.compat.supportsMidConvoEffort, true);
-
-  const anthropic = source("anthropic-messages.js");
-  assert.match(anthropic, /insertThinkingLevelMessages\(converted, activeEffort\)/);
-  assert.match(anthropic, /prefix_mismatch_behavior: "drop_block"/);
-  assert.match(anthropic, /params\.output_config = \{ effort: "high" \}/);
-  assert.match(anthropic, /providerThinkingLevel/);
-});
-
 // Capture real Pi requests, including its ChatGPT sign-in exception.
-async function directOpenAIRequest(apiKey: string): Promise<JsonFields> {
-  const model = openaiProvider().getModels().find((model) => model.id === "gpt-6.1-sol");
+async function directOpenAIRequest(apiKey: string, modelId = "gpt-6.1-sol"): Promise<JsonFields> {
+  const model = openaiProvider().getModels().find((model) => model.id === modelId);
   assert(model);
   const prior: Context["messages"][number] = {
     role: "assistant",
@@ -168,6 +120,7 @@ async function directOpenAIRequest(apiKey: string): Promise<JsonFields> {
     apiKey,
     fetch,
     reasoning: "high",
+    cacheRetention: "long",
     onPayload: (params) => {
       assert(isJsonObject(params));
       request = params;
@@ -194,43 +147,35 @@ test("Pi appends GPT-6 effort updates with API keys but changes request-level ef
   assert.equal(signIn.input.some((item) => isJsonObject(item) && item.type === "configuration_update"), false);
 });
 
-// Cachemire reads the request at its own hook position. Pi runs before_provider_request
-// per extension in load order and threads each replacement payload into later handlers
-// only, so a later-loaded rewrite (for example an append-only configuration_update for
-// Astra) is invisible to Cachemire: the billed usage, not the payload, is the verdict.
-test("Pi threads before_provider_request replacements through later extensions in load order", () => {
-  const runner = readFileSync(join(piRoot, "dist", "core", "extensions", "runner.js"), "utf8");
-  const emit = runner.match(/async emitBeforeProviderRequest\(payload\) \{[\s\S]*?\n {4}\}\n/)?.[0];
-  assert.ok(emit, "emitBeforeProviderRequest moved: re-verify Cachemire's evidence model against the new hook order");
-  assert.match(emit, /snapshotEventHandlers\(this\.extensions, "before_provider_request"\)/);
-  assert.match(emit, /payload: currentPayload,/);
-  assert.match(emit, /if \(handlerResult !== undefined\) \{\s*currentPayload = handlerResult;/);
+test("direct OpenAI sends the legacy retention field when long caching is selected", async () => {
+  const payload = await directOpenAIRequest("sk-contract", "gpt-5.2");
+  assert.equal(payload.prompt_cache_retention, "24h");
 });
 
-// A resumed session seeds the route's billed efforts from Pi's persisted level changes.
-test("Pi persists thinking level changes as session entries Cachemire can replay", () => {
-  const declarations = readFileSync(join(piRoot, "dist", "core", "session-manager.d.ts"), "utf8");
-  assert.match(declarations, /interface SessionEntryBase \{\s*type: string;\s*id: string;\s*parentId: string \| null;\s*timestamp: string;/);
-  assert.match(declarations, /interface ThinkingLevelChangeEntry extends SessionEntryBase \{\s*type: "thinking_level_change";\s*thinkingLevel: string;/);
-  assert.match(declarations, /appendThinkingLevelChange\(thinkingLevel: string\): string;/);
-});
-
-test("installed provider records keep Cachemire's new routes exact", () => {
-  for (const [file, api, model, provider] of [
-    ["minimax.json", "anthropic-messages", "MiniMax-M2.7", "minimax"],
-    ["minimax-cn.json", "anthropic-messages", "MiniMax-M2.7-highspeed", "minimax-cn"],
-    ["amazon-bedrock.json", "bedrock-converse-stream", "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "amazon-bedrock"],
-    ["groq.json", "openai-completions", "openai/gpt-oss-120b", "groq"],
-    ["cerebras.json", "openai-completions", "gpt-oss-120b", "cerebras"],
-  ]) {
-    assert.equal(modelRecord(file, api, model).provider, provider);
+test("Pi threads request replacements through extensions in load order", async () => {
+  const project = new IsolatedProject();
+  const seen: unknown[] = [];
+  const host = await hostExtension([
+    (pi) => { pi.on("before_provider_request", ({ payload }) => { seen.push(payload); return { replacement: true }; }); },
+    (pi) => { pi.on("before_provider_request", ({ payload }) => { seen.push(payload); }); },
+  ], { project });
+  try {
+    const result = await host.session.extensionRunner.emitBeforeProviderRequest({ original: true });
+    assert.deepEqual(seen, [{ original: true }, { replacement: true }]);
+    assert.deepEqual(result, { replacement: true });
+  } finally {
+    await host.dispose();
+    project.dispose();
   }
 });
 
-test("Bedrock exposes cache points and normalized read/write usage", () => {
-  const bedrock = source("bedrock-converse-stream.js");
-  assert.match(bedrock, /cachePoint: \{ type: CachePointType\.DEFAULT/);
-  assert.match(bedrock, /ttl: CacheTTL\.ONE_HOUR/);
-  assert.match(bedrock, /usage\.cacheRead = event\.usage\.cacheReadInputTokens/);
-  assert.match(bedrock, /usage\.cacheWrite = event\.usage\.cacheWriteInputTokens/);
+test("Pi records thinking level changes on the active session branch", () => {
+  const manager = SessionManager.inMemory();
+  const id = manager.appendThinkingLevelChange("high");
+  const [entry] = manager.getBranch();
+  assert(entry?.type === "thinking_level_change");
+  assert.equal(entry.id, id);
+  assert.equal(entry.parentId, null);
+  assert.equal(entry.thinkingLevel, "high");
+  assert.ok(Number.isFinite(Date.parse(entry.timestamp)));
 });

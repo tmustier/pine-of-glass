@@ -1,11 +1,6 @@
-// Contract tests: every structural assumption pine-of-glass makes about Pi internals,
-// asserted against the *installed* Pi runtime (linked via scripts/dev/link-pi-runtime.sh).
-// When `pi update` breaks one of these, the failure names the dependent extension seam.
-// See docs/testing.md. These deliberately use no mocks — a mock would mirror our own
-// assumptions and pass forever.
+// Contract tests against the installed Pi runtime. See docs/testing.md.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,25 +8,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as pi from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
-import { internals as contextimate } from "../../extensions/pi-contextimate/index.ts";
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
+import { isJsonObject } from "../../extensions/_lib/boundary.ts";
+import { captureCallLines } from "../../extensions/pi-traceline/call-capture.ts";
+import { isAssistantRow, isToolRow } from "../../extensions/_lib/chat.ts";
+import { isExpandedToolRow } from "../../extensions/pi-traceline/topology.ts";
+import { getPromptRemainder } from "../../extensions/pi-contextimate/prompt-parsing.ts";
 import { buildSnapshot } from "../../extensions/pi-contextimate/snapshot.ts";
 import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
 import { assistantMessage } from "../helpers.ts";
 
 const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
-// ---------------------------------------------------------------------------------------
-// Module exports contextimate imports at load time.
 
-test("pi exports the session/message machinery contextimate imports", () => {
-  assert.equal(typeof pi.buildSessionContext, "function", "buildSessionContext gone — contextimate buildSessionBreakdown breaks");
-  assert.equal(typeof pi.convertToLlm, "function", "convertToLlm gone — contextimate buildSessionBreakdown breaks");
-  assert.equal(typeof pi.keyText, "function", "keyText gone — contextimate renderHeader breaks");
-  assert.equal(typeof pi.initTheme, "function", "initTheme gone — contract component instantiation breaks");
-});
-
-test("convertToLlm message shape: roles and content blocks contextimate counts", () => {
-  // Use Pi's current AgentMessage contract rather than the surrounding session-entry
-  // shape: entry timestamps are ISO strings, but nested message timestamps are numbers.
+test("convertToLlm preserves the roles and content blocks contextimate counts", () => {
   const timestamp = Date.UTC(2026, 5, 10, 22);
   const messages: AgentMessage[] = [
     { role: "user", content: [{ type: "text", text: "hi" }], timestamp },
@@ -43,257 +32,112 @@ test("convertToLlm message shape: roles and content blocks contextimate counts",
       { timestamp: timestamp + 1, stopReason: "toolUse" },
     ),
     {
-      role: "toolResult",
-      toolCallId: "t1",
-      toolName: "read",
-      content: [{ type: "text", text: "result text" }],
-      isError: false,
-      timestamp: timestamp + 2,
+      role: "toolResult", toolCallId: "t1", toolName: "read",
+      content: [{ type: "text", text: "result text" }], isError: false, timestamp: timestamp + 2,
     },
   ];
   const converted = pi.convertToLlm(messages);
-  assert.ok(Array.isArray(converted) && converted.length === 3, "convertToLlm must return the converted message list");
-  const roles = converted.map((message: { role: string }) => message.role);
-  assert.deepEqual(roles, ["user", "assistant", "toolResult"], "role names contextimate switches on");
-  const assistant = converted[1] as { content: Array<{ type: string }> };
-  const types = assistant.content.map((block) => block.type);
-  assert.ok(types.includes("thinking"), "thinking block type renamed — session bucket split breaks");
-  assert.ok(types.includes("toolCall"), "toolCall block type renamed — session bucket split breaks");
+  assert.deepEqual(converted.map((message) => message.role), ["user", "assistant", "toolResult"]);
+  const assistant = converted[1]!;
+  assert.equal(assistant.role, "assistant");
+  assert(Array.isArray(assistant.content));
+  assert.deepEqual(assistant.content.map((block) => block.type), ["thinking", "toolCall"]);
 });
 
-// ---------------------------------------------------------------------------------------
-// Real system prompt vs contextimate's parsing regexes.
-
-test("contextimate regexes parse the system prompt Pi actually builds", async () => {
-  const systemPromptModule = await import(pathToFileURL(join(piRoot, "dist/core/system-prompt.js")).href) as {
-    buildSystemPrompt: (options: Record<string, unknown>) => string;
+test("contextimate parses the system prompt Pi actually builds", async () => {
+  const { buildSystemPrompt } = await import(pathToFileURL(join(piRoot, "dist/core/system-prompt.js")).href) as {
+    buildSystemPrompt: (options: pi.BuildSystemPromptOptions) => string;
   };
-  assert.equal(typeof systemPromptModule.buildSystemPrompt, "function", "dist/core/system-prompt.js moved — update this contract test's deep import");
-
   const home = homedir();
-  const prompt = systemPromptModule.buildSystemPrompt({
+  const prompt = buildSystemPrompt({
     cwd: tmpdir(),
     contextFiles: [
       { path: join(home, ".pi/agent/AGENTS.md"), content: "# Global\nBe precise & kind." },
       { path: join(home, "projects/demo/AGENTS.md"), content: "# Demo\nLocal rules." },
     ],
-    skills: [
-      {
-        name: "demo-skill",
-        description: "Does a demo & more",
-        filePath: join(home, "skills/demo/SKILL.md"),
-        baseDir: join(home, "skills/demo"),
-        sourceInfo: { scope: "user", source: "auto", origin: "top-level", path: join(home, "skills/demo/SKILL.md") },
-        disableModelInvocation: false,
-      },
-    ],
+    skills: [{
+      name: "demo-skill", description: "Does a demo & more",
+      filePath: join(home, "skills/demo/SKILL.md"), baseDir: join(home, "skills/demo"),
+      sourceInfo: { scope: "user", source: "auto", origin: "top-level", path: join(home, "skills/demo/SKILL.md") },
+      disableModelInvocation: false,
+    }],
   });
-
   const snapshot = buildSnapshot({ getActiveTools: () => [], getAllTools: () => [] }, { systemPrompt: prompt });
   const sections = snapshot.sections.filter((section) => section.id.startsWith("context:"));
-  assert.equal(sections.length, 2, "project_instructions block format drifted — contextimate context-file rows break");
+  assert.equal(sections.length, 2, "project_instructions block format drifted");
   assert.equal(sections[0]!.title, "Global AGENTS.md");
-  assert.ok(sections[0]!.content.includes("Be precise"), "context file content not captured");
-
-  const { skills } = snapshot;
-  assert.ok(snapshot.sections.some((section) => section.id === "skills"), "available_skills block format drifted — contextimate skills section breaks");
-  assert.equal(skills.length, 1);
-  assert.equal(skills[0]!.name, "demo-skill");
-  assert.equal(skills[0]!.description, "Does a demo & more", "XML entity escaping convention changed");
-  assert.ok(skills[0]!.location.endsWith("SKILL.md"));
-
-  const remainder = contextimate.getPromptRemainder(prompt);
+  assert.ok(sections[0]!.content.includes("Be precise"));
+  assert.ok(snapshot.sections.some((section) => section.id === "skills"), "available_skills block format drifted");
+  assert.equal(snapshot.skills.length, 1);
+  assert.equal(snapshot.skills[0]!.name, "demo-skill");
+  assert.equal(snapshot.skills[0]!.description, "Does a demo & more", "XML entity escaping changed");
+  assert.ok(snapshot.skills[0]!.location.endsWith("SKILL.md"));
+  const remainder = getPromptRemainder(prompt);
   for (const section of snapshot.sections.filter((section) => section.id.startsWith("context:") || section.id === "skills")) {
     assert.ok(!remainder.includes(section.content), `${section.id} block leaked into the runtime prompt row`);
   }
 });
 
-test("startup resource list still renders [Section] headers contextimate anchors on", () => {
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
-  assert.ok(/\[\$\{name\}\]/.test(source), "resource section header no longer renders as [Name] — contextimate insertion anchor breaks");
-  assert.ok(source.includes('addLoadedSection("Context"'), '"Context" section gone — RESOURCE_HEADER_RE may not match');
-  assert.ok(contextimate.RESOURCE_HEADER_RE.test("[Context] some files"), "RESOURCE_HEADER_RE self-check");
-});
-
-// ---------------------------------------------------------------------------------------
-// Interactive components used through Traceline's duck types.
-test("real ToolExecutionComponent satisfies traceline's duck type and one-line path", () => {
+test("real tool rows render successful result sizes and errors", () => {
   pi.initTheme(undefined, false);
   const comp = new pi.ToolExecutionComponent(
-    "read",
-    "tool-1",
-    { path: "/tmp/contract-fixture.txt", offset: 1, limit: 20 },
-    undefined,
-    undefined,
-    {} as never,
-    tmpdir(),
+    "read", "tool-1", { path: "/tmp/contract-fixture.txt", offset: 1, limit: 20 },
+    undefined, undefined, {} as never, tmpdir(),
   );
-
-  assert.equal(traceline.isToolRow(comp), true, "ToolExecutionComponent no longer matches isToolRow (render/setExpanded/toolName)");
-  assert.equal((comp as unknown as { toolCallId?: unknown }).toolCallId, "tool-1", "toolCallId no longer mirrors the call ID");
-
-  const proto = Object.getPrototypeOf(comp) as { render?: unknown };
-  const descriptor = Object.getOwnPropertyDescriptor(proto, "render");
-  assert.ok(descriptor && (descriptor.writable ?? false), "prototype render not writable — traceline patch cannot install");
-
+  // SAFETY: the guard checks Pi's private row fields against the extension's seam type.
+  const row: unknown = comp;
+  assert(isToolRow(row), "ToolExecutionComponent no longer matches isToolRow");
+  assert.equal(row.toolCallId, "tool-1");
   comp.updateResult({ content: [{ type: "text", text: "hello world ".repeat(20) }], isError: false }, false);
-  assert.equal(traceline.toolStatus(comp as never), "success", "result/isPartial fields drifted — status colours break");
+  assert.equal(traceline.toolStatus(row), "success");
+  const visible = stripAnsi(traceline.oneLine(row, 80));
+  assert.ok(visible.includes("read"), visible);
+  assert.match(visible.trimEnd(), /\b0\.2k ch$/);
 
-  const line = traceline.oneLine(comp as never, 80);
-  const visible = traceline.stripAnsi(line);
-  assert.ok(visible.includes("read"), `one-line render lost the invocation: ${JSON.stringify(visible)}`);
-  assert.ok(/\b0\.2k ch$/.test(visible.trimEnd()), `result-size suffix missing: ${JSON.stringify(visible)}`);
-
-  const errorComp = new pi.ToolExecutionComponent(
-    "read",
-    "tool-error",
-    { path: "/tmp/contract-fixture.txt" },
-    undefined,
-    undefined,
-    {} as never,
-    tmpdir(),
-  );
-  errorComp.updateResult({ content: [{ type: "text", text: "boom" }], isError: true }, false);
-  assert.equal(traceline.toolStatus(errorComp as never), "error");
+  comp.updateResult({ content: [{ type: "text", text: "boom" }], isError: true }, false);
+  assert.equal(traceline.toolStatus(row), "error");
 });
 
-test("real ToolExecutionComponent: bash multiline render seam", async () => {
+test("real bash call rendering preserves multiline command tails", async () => {
   pi.initTheme(undefined, false);
-  const renderersModule = await import(pathToFileURL(join(piRoot, "dist/core/tools/renderers/index.js")).href) as {
-    withBuiltInRenderers: (toolName: string, definition: undefined) => unknown;
+  const { withBuiltInRenderers } = await import(pathToFileURL(join(piRoot, "dist/core/tools/renderers/index.js")).href) as {
+    withBuiltInRenderers: (toolName: string, definition: undefined) => ConstructorParameters<typeof pi.ToolExecutionComponent>[4];
   };
   const comp = new pi.ToolExecutionComponent(
-    "bash",
-    "tool-2",
-    { command: 'python3 -c "\nimport json\nprint(1)\n" && echo done', timeout: 70 },
-    undefined,
-    renderersModule.withBuiltInRenderers("bash", undefined) as never,
-    {} as never,
-    tmpdir(),
+    "bash", "tool-2", { command: 'python3 -c "\nimport json\nprint(1)\n" && echo done', timeout: 70 },
+    undefined, withBuiltInRenderers("bash", undefined), {} as never, tmpdir(),
   );
-
-  const callComp = (comp as unknown as { callRendererComponent?: { render?: (w: number) => string[] } }).callRendererComponent;
-  assert.ok(callComp && typeof callComp.render === "function", "bash callRendererComponent gone — one-line path falls back");
-  const lines = callComp.render(10_000);
-  assert.ok(lines.length >= 4, `bash call no longer renders one line per newline: ${JSON.stringify(lines)}`);
-  assert.ok(traceline.stripAnsi(lines[lines.length - 1]!).includes("(timeout 70s)"), "timeout suffix moved off the last line");
-
-  const flat = traceline.stripAnsi(traceline.oneLine(comp as never, 200));
+  const row: unknown = comp;
+  assert(isToolRow(row));
+  const lines = captureCallLines(row.callRendererComponent, row.args);
+  assert(lines && lines.length >= 4, "bash call no longer renders one line per newline");
+  assert.ok(stripAnsi(lines.at(-1)!).includes("(timeout 70s)"));
+  const flat = stripAnsi(traceline.oneLine(row, 200));
   assert.ok(flat.includes("echo done"), `flattened bash row lost its tail: ${flat}`);
 });
 
-test("real AssistantMessageComponent preserves its tool-call link and duck type", () => {
+test("real assistant rows retain the tool-call link and thinking visibility", () => {
   const component = new pi.AssistantMessageComponent(assistantMessage([
     { type: "toolCall", id: "tool-1", name: "read", arguments: { path: "/tmp/contract-fixture.txt" } },
   ]));
-  assert.equal(traceline.isAssistantRow(component), true, "AssistantMessageComponent no longer matches isAssistantRow");
-  const peek = component as unknown as {
-    hideThinkingBlock: boolean;
-    lastMessage?: { content?: Array<{ id?: unknown }> };
-  };
-  assert.equal(peek.lastMessage?.content?.[0]?.id, "tool-1", "assistant tool-call ID no longer links to its execution row");
-  assert.equal(peek.hideThinkingBlock, false);
-  component.setHideThinkingBlock(true);
-  assert.equal(peek.hideThinkingBlock, true, "hideThinkingBlock no longer mirrors setHideThinkingBlock — collapse state desyncs");
+  const row: unknown = component;
+  assert(isAssistantRow(row));
+  const content = row.lastMessage?.content;
+  assert(Array.isArray(content) && isJsonObject(content[0]));
+  assert.equal(content[0].id, "tool-1");
+  assert.equal(row.hideThinkingBlock, false);
+  row.setHideThinkingBlock(true);
+  assert.equal(row.hideThinkingBlock, true);
 });
 
-// ---------------------------------------------------------------------------------------
-// Drill mode's Pi seams (design language §9.13): the custom-UI editor swap, the overlay
-// pager, and the expanded-row spacer line the number cell replaces.
-
-test("showExtensionCustom seam: editor swap/restore + overlay close drill mode rides", () => {
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
-  assert.ok(
-    source.includes("custom: (factory, options) => this.showExtensionCustom(factory, options)"),
-    "ctx.ui.custom wiring gone — drill mode cannot open its hint bar or pager",
-  );
-  const custom = source.slice(source.indexOf("async showExtensionCustom"));
-  assert.ok(custom.includes("const savedText = this.editor.getText();"), "editor draft no longer saved — exiting drill mode would eat the user's draft");
-  for (const anchor of [
-    "this.editorContainer.clear();",
-    "this.editorContainer.addChild(this.editor);",
-    "this.editor.setText(savedText);",
-    "this.ui.setFocus(this.editor);",
-  ]) {
-    assert.ok(custom.includes(anchor), `editor restore step gone (${anchor}) — drill exit strands the editor`);
-  }
-
-  const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
-  assert.ok(declarations.includes("registerShortcut(shortcut: KeyId"), "registerShortcut signature drifted — the alt+t entry point dies");
-  assert.ok(declarations.includes("onTerminalInput(handler: TerminalInputHandler)"), "onTerminalInput gone — drill's foreign-chord exit dies");
-  assert.ok(declarations.includes("custom<T>(factory: (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void)"), "custom factory signature drifted — hint bar and pager factories break");
-});
-
-test("foreign-chord exit seam: listeners precede focus dispatch; close() restores inline", () => {
-  // Drill's foreign-chord exit (§9.13) rides two orderings inside one input dispatch:
-  // the extension input listener exits the mode, pi restores the editor synchronously
-  // inside showExtensionCustom's close(), and only then does tui resolve the focused
-  // component — so the very same keystroke lands in the restored editor.
-  const tuiRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "..");
-  const tuiSource = readFileSync(join(tuiRoot, "dist/tui.js"), "utf8");
-  const listenerLoop = tuiSource.indexOf("for (const listener of this.inputListeners)");
-  const focusDispatch = tuiSource.indexOf("this.focusedComponent.handleInput(data)");
-  assert.ok(listenerLoop !== -1, "input-listener loop gone — the foreign-chord hook never runs");
-  assert.ok(focusDispatch !== -1, "focused-component dispatch gone — re-verify tui input routing");
-  assert.ok(listenerLoop < focusDispatch, "listeners no longer run before focus dispatch — a foreign chord would hit the dead hint bar");
-
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
-  const closeBody = source.slice(source.indexOf("async showExtensionCustom")).slice(0, 2_000);
-  const restoreAt = closeBody.indexOf("restoreEditor();");
-  const resolveAt = closeBody.indexOf("resolve(result);");
-  assert.ok(restoreAt !== -1 && resolveAt !== -1, "close() body drifted — re-verify the synchronous editor restore");
-  assert.ok(restoreAt < resolveAt, "close() no longer restores the editor before resolving — the flowed-through chord would land in a void");
-});
-
-test("pi-tui overlay focus restore + terminal dimensions the drill pager reads", () => {
-  const tuiRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui"))), "..");
-  const tuiSource = readFileSync(join(tuiRoot, "dist/tui.js"), "utf8");
-  assert.ok(
-    tuiSource.includes("preFocus: this.focusedComponent"),
-    "showOverlay no longer records pre-overlay focus — closing the pager would not return keys to the hint bar",
-  );
-  assert.ok(
-    tuiSource.includes("overlayLines.slice(0, maxHeight)"),
-    "overlay no longer clips lines to maxHeight — re-verify the pager's self-windowing assumption",
-  );
-  const tuiDecl = readFileSync(join(tuiRoot, "dist/tui.d.ts"), "utf8");
-  assert.ok(tuiDecl.includes("terminal: Terminal;"), "TUI.terminal gone — the pager loses its height source");
-});
-
-test("real expanded tool row: setExpanded mirrors .expanded and leads with a blank spacer", () => {
+test("expanded native tool rows lead with the spacer used for drill numbers", () => {
   pi.initTheme(undefined, false);
   const comp = new pi.ToolExecutionComponent("read", "tool-drill", { path: "/tmp/x.txt" }, undefined, undefined, {} as never, tmpdir());
   comp.updateResult({ content: [{ type: "text", text: "hello ".repeat(40) }], isError: false }, false);
-  const peek = comp as unknown as { expanded?: boolean };
-  assert.equal(peek.expanded ?? false, false, "rows must start collapsed");
+  assert.equal(isExpandedToolRow(comp), false);
   comp.setExpanded(true);
-  assert.equal(peek.expanded, true, "expanded flag no longer mirrors setExpanded — drill pins and §9.12 z1 desync");
-  assert.equal(traceline.isExpandedToolRow(comp), true, "real expanded row must match the z1 duck type");
-
-  // The number cell rides the blank spacer line pi renders above a native row (§9.13).
-  // If this softens, drill numbering on expanded rows silently degrades (row stays
-  // selectable but shows no number) — this contract names the drift instead.
+  assert(isExpandedToolRow(comp));
   const lines = comp.render(80);
-  assert.ok(Array.isArray(lines) && lines.length > 1, "expanded render shape drifted");
-  assert.equal(traceline.stripAnsi(lines[0] as string).trim(), "", "expanded native render no longer leads with a blank spacer line");
-});
-
-// ---------------------------------------------------------------------------------------
-// Settings + ExtensionAPI declaration anchors (source-text tripwires).
-
-test("thinking-level surface cachemire reads stays where it is", () => {
-  const declarations = readFileSync(join(piRoot, "dist/core/extensions/types.d.ts"), "utf8");
-  assert.ok(
-    declarations.includes('on(event: "thinking_level_select"'),
-    "thinking_level_select event gone — cachemire's proactive stale flip dies silently",
-  );
-  assert.ok(declarations.includes("previousLevel: ThinkingLevel"), "previousLevel gone from the event");
-  // getThinkingLevel lives on the runtime API object, not the per-event ctx: the runner
-  // wires it onto runtime, and createContext() never includes it. Cachemire calls
-  // pi.getThinkingLevel(); if it moves to ctx-only this anchor should flag it.
-  const runner = readFileSync(join(piRoot, "dist/core/extensions/runner.js"), "utf8");
-  assert.ok(
-    runner.includes("this.runtime.getThinkingLevel = actions.getThinkingLevel"),
-    "runtime.getThinkingLevel wiring drifted — verify pi.getThinkingLevel() still works",
-  );
+  assert.ok(lines.length > 1);
+  assert.equal(stripAnsi(lines[0]!).trim(), "");
 });

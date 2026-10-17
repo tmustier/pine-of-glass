@@ -10,6 +10,7 @@ import {
   summarizeCounts,
   type BuildOptions,
   type CountRequest,
+  type CountMeasurement,
 } from "./provider-token-counts.ts";
 
 type Args = BuildOptions & {
@@ -55,8 +56,8 @@ Options:
 Live calls require --provider so a compatible wire shape is never sent to the wrong service.
 Dry runs infer Anthropic, OpenAI, Gemini or Bedrock when the shape is unambiguous.`;
 
-function printTable(providerName: string, model: unknown, summary: ReturnType<typeof summarizeCounts>): void {
-  console.log(`\n${providerName} counts (${String(model)}):`);
+function printTable(providerName: string, model: string, summary: ReturnType<typeof summarizeCounts>): void {
+  console.log(`\n${providerName} counts (${model}):`);
   console.log(`  ${"section".padEnd(28)} ${"tokens".padStart(8)} ${"marginal".padStart(9)} ${"net".padStart(7)} ${"chars".padStart(9)} ${"chars/tok".padStart(10)}`);
   for (const row of summary.rows) {
     console.log(
@@ -109,23 +110,25 @@ async function main(): Promise<void> {
     return;
   }
 
-  const counts: Record<string, number> = {};
-  for (const request of requests) {
-    counts[request.id] = await provider.execute(request.body);
-    process.stderr.write(`counted ${request.id}: ${counts[request.id]}\n`);
+  const measurements: CountMeasurement[] = [];
+  for (const { body, ...request } of requests) {
+    const tokens = await provider.execute(body);
+    measurements.push({ ...request, tokens });
+    process.stderr.write(`counted ${request.id}: ${tokens}\n`);
   }
+  const model = String(args.model ?? payload.model ?? payload.modelId);
 
   if (args.full) {
-    const data = { provider: providerName, model: args.model ?? payload.model ?? payload.modelId, inputTokens: counts.captured };
+    const data = { provider: providerName, model, inputTokens: measurements[0]!.tokens };
     console.log(args.json ? JSON.stringify(data, null, 2) : `${data.inputTokens} input tokens (${providerName}, ${String(data.model)})`);
     return;
   }
 
-  const summary = summarizeCounts(requests, counts);
+  const summary = summarizeCounts(measurements);
   if (args.json) {
-    console.log(JSON.stringify({ provider: providerName, model: args.model ?? payload.model ?? payload.modelId, ...summary }, null, 2));
+    console.log(JSON.stringify({ provider: providerName, model, ...summary }, null, 2));
   } else {
-    printTable(providerName, args.model ?? payload.model ?? payload.modelId, summary);
+    printTable(providerName, model, summary);
   }
 }
 

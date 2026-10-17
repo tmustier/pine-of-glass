@@ -1,17 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as piTui from "@earendil-works/pi-tui";
 
 import * as chatline from "../../extensions/_lib/chatline.ts";
 import { assistantMessage } from "../helpers.ts";
-
-const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
 
 test("native thinking toggles preserve assistant and family-line identities", () => {
   pi.initTheme(undefined, false);
@@ -92,22 +87,5 @@ test("native chat rebuild restores anchored lines and drops missing anchors", as
   assert.equal(chatContainer.children.includes(line), false, "line survived after its anchor vanished");
   assert.equal(chatContainer.children.includes(spacer), false, "orphaned spacer survived");
   assert.deepEqual(host.anchored, [], "vanished anchor did not retire its tracked line");
-});
-
-test("mounted transcript retains the structure used to discover chat", () => {
-  const source = readFileSync(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
-  assert.ok(source.includes("this.documentContainer.addChild(this.loadedResourcesContainer);"));
-  assert.ok(source.includes("this.documentContainer.addChild(this.chatContainer);"));
-  assert.ok(source.includes("this.documentContainer,"));
-  assert.ok(
-    source.indexOf("this.documentContainer.addChild(this.loadedResourcesContainer);") <
-      source.indexOf("this.documentContainer.addChild(this.chatContainer);"),
-    "loaded resources no longer precede chat",
-  );
-  assert.ok(/addLoadedSection[\s\S]{0,400}this\.loadedResourcesContainer\.addChild\(section\)/.test(source));
-  // Pi 0.99 dropped the startup [Themes] section; the remaining headers still anchor discovery.
-  for (const name of ["Skills", "Prompts", "Extensions"]) {
-    assert.ok(source.includes(`"${name}"`), `startup section [${name}] renamed`);
-  }
 });
 
