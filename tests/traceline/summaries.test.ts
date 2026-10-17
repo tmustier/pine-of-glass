@@ -4,48 +4,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { AssistantMessageComponent, initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import type { AssistantRowDataLike, ToolRowLike } from "../../extensions/_lib/chat.ts";
 import piTraceline, { internals } from "../../extensions/pi-traceline/index.ts";
 import { SUMMARY_ENTRY } from "../../extensions/pi-traceline/summaries.ts";
+import { SUMMARY_USAGE_ENTRY } from "../../extensions/pi-traceline/summary-usage.ts";
+import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 import { installThinkingPreviews } from "../../extensions/pi-traceline/thinking-preview.ts";
 import { assistantMessage } from "../helpers.ts";
 import { hostExtension, IsolatedProject, type HostedExtension } from "../harness/extension-host.ts";
 import { nativeBashLines } from "./runtime-fixtures.ts";
+import { PROVIDER, summaryModel, type Asked } from "./summary-fixtures.ts";
 
 const { renderTraceRow, setTracelineThemeGetter } = internals;
 initTheme(undefined, false);
-
-const PROVIDER = "pog-summaries";
-type Asked = { kind: string; text: string };
-
-/** A summary model that answers every item with `gist <n>`, or with `reply` when given, after `delay` ms. */
-function summaryModel(asked: Asked[][], reply?: string, delay = 0) {
-  return (pi: ExtensionAPI) => pi.registerProvider(PROVIDER, {
-    baseUrl: "http://127.0.0.1:9",
-    apiKey: "fixture-never-sent",
-    api: "openai-completions",
-    models: [{ id: "gist", name: "Gist", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200_000, maxTokens: 8_000 }],
-    streamSimple: (_model, context) => {
-      const user = context.messages.find((message) => message.role === "user");
-      const content = user?.role === "user" ? user.content : "";
-      const items: { id: string; kind: string; text: string }[] = JSON.parse(typeof content === "string" ? content : content.map((block) => (block.type === "text" ? block.text : "")).join(""));
-      asked.push(items.map(({ kind, text }) => ({ kind, text })));
-      const gists = Object.fromEntries(items.map(({ id }) => [id, `gist ${asked.flat().length - items.length + Number(id)}`]));
-      const message: AssistantMessage = assistantMessage([{ type: "text", text: reply ?? JSON.stringify(gists) }], { provider: PROVIDER, model: "gist", api: "openai-completions" });
-      const stream = createAssistantMessageEventStream();
-      setTimeout(() => {
-        stream.push({ type: "start", partial: message });
-        stream.push({ type: "done", reason: "stop", message });
-        stream.end(message);
-      }, delay);
-      return stream;
-    },
-  });
-}
 
 function bash(command: string, output?: string): ToolRowLike {
   return {
@@ -63,7 +38,7 @@ const LONG = "cd ~/projects/slack-bridge && git add -A && pnpm lint && pnpm type
 const lines = (row: ToolRowLike, width = 90) => renderTraceRow(row, width).map((line) => stripAnsi(line).trimEnd());
 const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
 
-async function hosted(project: IsolatedProject, asked: Asked[][], check: (host: HostedExtension) => Promise<void>, reply?: string, sessionManager?: HostedExtension["session"]["sessionManager"]) {
+async function hosted(project: IsolatedProject, asked: Asked[][], check: (host: HostedExtension) => Promise<void>, reply?: string | Error, sessionManager?: HostedExtension["session"]["sessionManager"]) {
   const host = await hostExtension((pi) => {
     summaryModel(asked, reply)(pi);
     piTraceline(pi);
@@ -162,9 +137,11 @@ test("a replayed session reads its gists back and asks for nothing", async () =>
       await settle();
     });
     assert.equal(asked.length, 1);
-    await hosted(project, asked, async () => {
+    await hosted(project, asked, async (host) => {
       assert.equal(lines(bash(LONG, "ok")).at(-1), "  ▏   ≈ gist 1");
+      assert.equal(host.ui.statuses.get("traceline-summaries"), "summaries $0.013 extra");
       await settle();
+      assert.equal(host.session.sessionManager.getEntries().filter((entry) => entry.type === "custom" && entry.customType === SUMMARY_USAGE_ENTRY).length, 2);
     }, undefined, first);
     assert.equal(asked.length, 1, "the replay made no request");
   } finally {
@@ -191,7 +168,7 @@ test("a reply that answers nothing leaves the row as it was and is not asked aga
   }
 });
 
-test("a reply that arrives after its session ended is dropped, not stored", async () => {
+test("a late reply stores no gist or reported usage and leaves its original request unknown", async () => {
   const project = new IsolatedProject();
   try {
     project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
@@ -203,9 +180,16 @@ test("a reply that arrives after its session ended is dropped, not stored", asyn
     lines(bash(LONG, "ok"));
     await new Promise((resolve) => setTimeout(resolve, 280));
     assert.equal(asked.length, 1, "the request is in flight");
+    assert.equal(host.ui.statuses.get("traceline-summaries"), "summaries cost unknown (extra)");
     await host.dispose();
     await settle();
-    assert.deepEqual(host.session.sessionManager.getEntries().filter((entry) => entry.type === "custom"), []);
+    const entries = host.session.sessionManager.getEntries();
+    assert.deepEqual(entries.filter((entry) => entry.type === "custom" && entry.customType === SUMMARY_ENTRY), []);
+    const usage = entries.filter((entry) => entry.type === "custom" && entry.customType === SUMMARY_USAGE_ENTRY);
+    assert.equal(usage.length, 1);
+    assert.ok(usage[0]?.type === "custom" && isJsonObject(usage[0].data));
+    assert.equal(usage[0].data.phase, "started");
+    assert.equal(host.ui.statuses.get("traceline-summaries"), undefined);
   } finally {
     project.dispose();
   }
@@ -216,17 +200,19 @@ test("a headless child cannot clear its TUI parent's pending or cached gists", a
   try {
     project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
     const asked: Asked[][] = [];
-    await hosted(project, asked, async () => {
+    await hosted(project, asked, async (host) => {
       const row = bash(LONG, "ok");
       lines(row);
       const child = await hostExtension(piTraceline, { project, interactive: false });
       try {
         await settle();
         assert.equal(lines(row).at(-1), "  ▏   ≈ gist 1");
+        assert.equal(host.ui.statuses.get("traceline-summaries"), "summaries $0.013 extra");
       } finally {
         await child.dispose();
       }
       assert.equal(lines(row).at(-1), "  ▏   ≈ gist 1");
+      assert.equal(host.ui.statuses.get("traceline-summaries"), "summaries $0.013 extra");
       assert.equal(asked.length, 1);
     });
   } finally {

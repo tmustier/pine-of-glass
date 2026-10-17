@@ -1223,10 +1223,31 @@ like a record or a fact:
 
 Gists are asked for in batches as rows settle, and each is stored in the session
 as a custom entry keyed by a hash of its text. A replayed or resumed session
-reads them back and asks for nothing. A row waiting for its gist renders exactly
-as it would without summaries, so the transcript never waits on a model; a gist
-that fails is not asked for again in that session. Their cost is the summary
-model's, outside Pi's session total, and each entry records it.
+reads saved gists back without asking for them again. A row waiting for its gist
+renders exactly as it would without summaries, so the transcript never waits on a
+model; a gist that fails is not asked for again in that installed state.
+
+Summary usage belongs to the request, including replies that contain no usable
+gist. Each request records its id, model and item count before dispatch, then its
+full reported usage and estimated cost before parsing the reply. Gists refer to
+that request rather than allocate shares of its cost. A request without reported
+usage remains unknown, including a transport failure or a reply received after
+its session ended. Late replies never write into a different session.
+
+Pi's session total stays unchanged. Traceline shows its separate summary cost in
+Pi's native footer status slot: `summaries $0.001 extra`. A positive amount that
+would round to zero reads `<$0.001`, using the money grammar's smallest displayed
+unit (§4). Unreported usage adds `+ unknown`; when nothing has reported a cost,
+the status reads `summaries cost unknown (extra)`. Older per-gist cost shares
+contribute their known amounts with `+ unknown`, because missing replies could
+have incurred unrecorded costs. They are never counted again for a request-bound
+gist.
+
+The status totals the whole session file, including abandoned branches, as Pi's
+own cost total does. It restores on reload or resume even when new summaries are
+disabled or their model is unavailable, clears on a session change or shutdown,
+and stays absent before any summary request or saved gist. Headless children
+cannot change the TUI owner's status.
 
 ### 9.16 Notice rows
 

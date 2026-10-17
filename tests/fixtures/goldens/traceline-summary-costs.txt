@@ -1,0 +1,7 @@
+known: summaries $0.013 extra
+tiny: summaries <$0.001 extra
+reported zero: summaries $0.000 extra
+legacy shares: summaries $0.004 extra + unknown
+mixed old and new: summaries $0.017 extra + unknown
+unreported: summaries cost unknown (extra)
+including abandoned branch: summaries $0.025 extra

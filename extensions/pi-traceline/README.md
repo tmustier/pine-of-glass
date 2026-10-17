@@ -394,7 +394,11 @@ A command that had to be cut or wrapped gets a line under it, starting with `≈
 - A gist is the model's reading, not proof. It never replaces the command or an outcome, and the full text is still one click or `Ctrl+O` away.
 - Gists are asked for in small batches once a row has finished. The row shows as normal until its gist arrives.
 - Each gist is saved in the session, so reopening the session shows the same gists without asking again.
-- The summary model's cost is not part of Pi's session total. Each saved gist records its share.
+- Traceline records each request's full usage and estimated cost before reading its reply, including partial or unusable replies.
+
+Summary costs stay outside Pi's own session total. Traceline shows them separately in the footer, for example `summaries $0.001 extra`. A positive cost too small to display reads `<$0.001`.
+
+`+ unknown` means some usage has no reported cost. A failed or interrupted request can leave no usage report. Older sessions saved only the cost shares of usable gists, so their known amounts also carry `+ unknown`. Request costs restore when you reopen the session, even if new summaries are disabled or their model is unavailable.
 
 ## Understand colours and status
 

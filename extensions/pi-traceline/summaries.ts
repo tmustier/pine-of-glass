@@ -1,14 +1,14 @@
 // Summaries (design language §9.15, experimental): gists of cut commands and thinking.
 // Off unless the user's own config enables them; cached gists live in session entries.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { isJsonObject } from "../_lib/boundary.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
+import { summaryCostStatus, SUMMARY_ENTRY, SUMMARY_USAGE_ENTRY, type SummaryUsageRecord } from "./summary-usage.ts";
 
+export { SUMMARY_ENTRY, SUMMARY_USAGE_ENTRY } from "./summary-usage.ts";
 export type GistKind = "command" | "thinking";
-/** The custom entry each gist is stored in: `{ key, gist, model, cost }`. */
-export const SUMMARY_ENTRY = "traceline-summary";
 const DEFAULT_MODEL = "openai-codex/gpt-6-luna";
 // agent-default (not a user rule): 2026-10-18. Batches of up to 8 items, gathered for
 // 250 ms; at most 4000 characters of each item and 120 of each gist.
@@ -38,6 +38,17 @@ export function installSummaries(pi: ExtensionAPI, owns: () => boolean, changed:
   pi.on("session_start", (_event, ctx) => {
     if (!owns()) return;
     stop?.();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const updateCosts = (): void => ctx.ui.setStatus("traceline-summaries", summaryCostStatus(ctx.sessionManager.getEntries()));
+    updateCosts();
+    stop = () => {
+      stopped = true;
+      clearTimeout(timer);
+      summarize = undefined;
+      ctx.ui.setStatus("traceline-summaries", undefined);
+      stop = undefined;
+    };
     const name = readJsonConfig(configPaths("pi-traceline", ctx.cwd)[0]!, (value) => {
       const summaries = isJsonObject(value) ? value.summaries : undefined;
       if (summaries === true) return DEFAULT_MODEL;
@@ -52,9 +63,7 @@ export function installSummaries(pi: ExtensionAPI, owns: () => boolean, changed:
     }
     const gists = new Map<string, string | undefined>();
     const waiting: Item[] = [];
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let asking = false;
-    let stopped = false;
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type !== "custom" || entry.customType !== SUMMARY_ENTRY || !isJsonObject(entry.data)) continue;
       const { key, gist } = entry.data;
@@ -68,17 +77,25 @@ export function installSummaries(pi: ExtensionAPI, owns: () => boolean, changed:
         asking = true;
         try {
           const items = batch.map(({ kind, text }, index) => ({ id: String(index + 1), kind, text }));
+          const request = { requestId: randomUUID(), model: `${model.provider}/${model.id}`, items: batch.length };
+          pi.appendEntry<SummaryUsageRecord>(SUMMARY_USAGE_ENTRY, { ...request, phase: "started" });
+          updateCosts();
           let value: unknown;
-          let cost: number;
           try {
             const answer = await ctx.modelRegistry.streamSimple(model, {
               systemPrompt: SYSTEM,
               messages: [{ role: "user", content: JSON.stringify(items), timestamp: Date.now() }],
             }, { reasoning: "low" }).result();
             if (stopped) return;
+            const usage = answer.usage;
+            // Pi can turn a provider failure into an answer with placeholder zero usage.
+            // Without token or cost evidence, the request's cost stays unknown.
+            if (usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0 || usage.totalTokens > 0 || usage.cost.total > 0) {
+              pi.appendEntry<SummaryUsageRecord>(SUMMARY_USAGE_ENTRY, { ...request, phase: "reported", usage, stopReason: answer.stopReason });
+              updateCosts();
+            }
             const text = answer.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("");
             value = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-            cost = answer.usage.cost.total / batch.length;
           } catch {
             // A failed request or unreadable reply answers nothing; do not ask again.
             return;
@@ -91,7 +108,7 @@ export function installSummaries(pi: ExtensionAPI, owns: () => boolean, changed:
             // Plain words only: a control character in a reply would reach the terminal.
             const gist = raw.replace(/[\s\p{Cc}]+/gu, " ").trim().slice(0, GIST_MAX);
             gists.set(key, gist);
-            pi.appendEntry(SUMMARY_ENTRY, { key, gist, model: `${model.provider}/${model.id}`, cost });
+            pi.appendEntry(SUMMARY_ENTRY, { key, gist, model: request.model, requestId: request.requestId });
             added = true;
           }
           if (added) changed();
@@ -109,12 +126,6 @@ export function installSummaries(pi: ExtensionAPI, owns: () => boolean, changed:
         gather();
       }
       return gists.get(key);
-    };
-    stop = () => {
-      stopped = true;
-      clearTimeout(timer);
-      summarize = undefined;
-      stop = undefined;
     };
   });
   pi.on("session_shutdown", () => stop?.());

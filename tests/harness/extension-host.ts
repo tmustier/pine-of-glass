@@ -24,6 +24,7 @@ type WidgetFactory = (tui: TUI, theme: Theme) => Component;
 // Pi spreads the UI context, so these members must be own properties.
 export class RecordedUi {
   readonly notifications: string[] = [];
+  readonly statuses = new Map<string, string>();
   readonly widgets = new Map<string, string[] | Component>();
   readonly widgetCalls: string[] = [];
   readonly theme: Theme | undefined;
@@ -38,6 +39,11 @@ export class RecordedUi {
 
   readonly notify = (text: string): void => {
     this.notifications.push(text);
+  };
+
+  readonly setStatus: ExtensionUIContext["setStatus"] = (key, text) => {
+    if (text === undefined) this.statuses.delete(key);
+    else this.statuses.set(key, text);
   };
 
   readonly getToolsExpanded = (): boolean => false;
