@@ -8,6 +8,8 @@
 // and 120 columns.
 // Colour is not under test (see docs/testing.md); structure, alignment, folding, and
 // wording are. Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
+import { isToolRow } from "../../extensions/_lib/chat.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -21,13 +23,7 @@ import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantMessage, expectGolden } from "../helpers.ts";
 import { assistantBefore, completedWriteRow, composedRow, nativeBashLines } from "./runtime-fixtures.ts";
 
-const {
-  renderTraceRow,
-  stripAnsi,
-  isToolRow,
-  setTracelineChat,
-  setTracelineThemeGetter,
-} = internals;
+const { renderTraceRow, setTracelineChat, setTracelineThemeGetter } = internals;
 
 function bash(
   command: string,
@@ -45,7 +41,7 @@ function bash(
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => nativeBashLines(command, timeout) },
-  } as ToolRowLike;
+  };
 }
 
 function read(path: string, offset: number, limit: number, chars: number): ToolRowLike {
@@ -57,7 +53,7 @@ function read(path: string, offset: number, limit: number, chars: number): ToolR
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`read ${path}:${offset}-${offset + limit - 1}`] },
-  } as ToolRowLike;
+  };
 }
 
 function edit(path: string, diff: string, chars: number): ToolRowLike {
@@ -69,7 +65,7 @@ function edit(path: string, diff: string, chars: number): ToolRowLike {
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`edit ${path}`] },
-  } as ToolRowLike;
+  };
 }
 
 function prose(text: string, rows: ToolRowLike[]) {

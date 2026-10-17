@@ -1,9 +1,9 @@
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import * as pi from "@earendil-works/pi-coding-agent";
 
-import { internals as traceline } from "../../extensions/pi-traceline/index.ts";
 import { installThinkingPreviews } from "../../extensions/pi-traceline/thinking-preview.ts";
 import { assistantMessage } from "../helpers.ts";
 
@@ -14,7 +14,7 @@ function collapsedLines(content: Parameters<typeof assistantMessage>[0], width =
   const native = component.render(width);
   installThinkingPreviews(component as never);
   const preview = component.render(width);
-  const normalize = (lines: string[]) => lines.map((line) => traceline.stripAnsi(line).trim());
+  const normalize = (lines: string[]) => lines.map((line) => stripAnsi(line).trim());
   return { native: normalize(native), preview: normalize(preview) };
 }
 

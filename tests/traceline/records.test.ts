@@ -4,13 +4,16 @@
 // output, observed state, or quiet success. These tests pin the evidence shapes, the
 // headline placement, and the fact-toned ink; record-vocabulary.test.ts pins the
 // vocabulary and the shell subset it is recognised in.
+import { recordFacts } from "../../extensions/pi-traceline/records.ts";
+import { fitHeadline, mergeHeadlineFacts, recordCellText } from "../../extensions/pi-traceline/headline.ts";
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { recordCells, recordHeadline, toolFactSuffix, oneLine, stripAnsi, setTracelineChat, setTracelineThemeGetter } = internals;
+const { toolFactSuffix, oneLine, setTracelineChat, setTracelineThemeGetter } = internals;
 
 beforeEach(() => {
   setTracelineChat(undefined);
@@ -26,21 +29,29 @@ function bash(command: string, output: string, options: { error?: boolean } = {}
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`$ ${command}`] },
-  } as ToolRowLike;
+  };
+}
+
+function headlineCells(comp: ToolRowLike): string[] {
+  return mergeHeadlineFacts(recordFacts(comp), []).map(recordCellText);
+}
+
+function headline(comp: ToolRowLike, available: number): string {
+  return fitHeadline(undefined, mergeHeadlineFacts(recordFacts(comp), []), available);
 }
 
 const PUSH_OK = `To https://github.com/tmustier/pine-of-glass.git\n   1c75c2a..50cf33f  main -> main\n`;
 
 test("commit porcelain yields a committed fact", () => {
   const comp = bash('git add -A && git commit -m "fix: thing"', "[main a4f21c9] fix: thing\n 1 file changed, 2 insertions(+)\n");
-  assert.deepEqual(recordCells(comp), ["committed a4f21c9"]);
+  assert.deepEqual(headlineCells(comp), ["committed a4f21c9"]);
 });
 
 test("commit variants: root-commit and detached HEAD", () => {
   const root = bash("git commit -m init", "[main (root-commit) abc1234] init\n");
-  assert.deepEqual(recordCells(root), ["committed abc1234"]);
+  assert.deepEqual(headlineCells(root), ["committed abc1234"]);
   const detached = bash("git commit -m wip", "[detached HEAD deadbee] wip\n");
-  assert.deepEqual(recordCells(detached), ["committed deadbee"]);
+  assert.deepEqual(headlineCells(detached), ["committed deadbee"]);
 });
 
 test("commit + push chain yields both facts in output order", () => {
@@ -48,20 +59,20 @@ test("commit + push chain yields both facts in output order", () => {
     'git add -A && git -c user.email=6326440+tmustier@users.noreply.github.com commit -m "docs: x" && git push',
     `[main a4f21c9] docs: x\n 2 files changed\n${PUSH_OK}`,
   );
-  assert.deepEqual(recordCells(comp), ["committed a4f21c9", "pushed main"]);
+  assert.deepEqual(headlineCells(comp), ["committed a4f21c9", "pushed main"]);
 });
 
 test("push shapes: forced update, new branch, new tag; rejected never matches", () => {
   const forced = bash("git push --force", "To github.com:o/r.git\n + 1c75c2a...50cf33f main -> main (forced update)\n");
-  assert.deepEqual(recordCells(forced), ["pushed main"]);
+  assert.deepEqual(headlineCells(forced), ["pushed main"]);
   const branch = bash("git push -u origin feat", "To github.com:o/r.git\n * [new branch]      feat -> feat\n");
-  assert.deepEqual(recordCells(branch), ["pushed feat"]);
+  assert.deepEqual(headlineCells(branch), ["pushed feat"]);
   const tag = bash("git push origin v0.5.9", "To github.com:o/r.git\n * [new tag]         v0.5.9 -> v0.5.9\n");
-  assert.deepEqual(recordCells(tag), ["pushed v0.5.9"]);
+  assert.deepEqual(headlineCells(tag), ["pushed v0.5.9"]);
   const rejected = bash("git push", "To github.com:o/r.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs\n", { error: true });
-  assert.deepEqual(recordCells(rejected), []);
+  assert.deepEqual(headlineCells(rejected), []);
   const upToDate = bash("git push", "Everything up-to-date\n");
-  assert.deepEqual(recordCells(upToDate), []);
+  assert.deepEqual(headlineCells(upToDate), []);
 });
 
 test("consecutive same-verb facts merge their data", () => {
@@ -69,7 +80,7 @@ test("consecutive same-verb facts merge their data", () => {
     "git push --follow-tags",
     "To github.com:o/r.git\n   1c75c2a..50cf33f  main -> main\n * [new tag]         v0.5.9 -> v0.5.9\n",
   );
-  assert.deepEqual(recordCells(comp), ["pushed main, v0.5.9"]);
+  assert.deepEqual(headlineCells(comp), ["pushed main, v0.5.9"]);
 });
 
 test("failed push after good commit keeps only the committed fact", () => {
@@ -78,47 +89,47 @@ test("failed push after good commit keeps only the committed fact", () => {
     "[main a4f21c9] fix\nTo github.com:o/r.git\n ! [rejected]        main -> main (fetch first)\n",
     { error: true },
   );
-  assert.deepEqual(recordCells(comp), ["committed a4f21c9"]);
+  assert.deepEqual(headlineCells(comp), ["committed a4f21c9"]);
 });
 
 test("gh porcelain: merge, close, create, issue close, release", () => {
   const merged = bash("gh pr merge 87 --squash --delete-branch", "✓ Squashed and merged pull request tmustier/pine-of-glass#87 (traceline: records)\n✓ Deleted branch git-records\n");
-  assert.deepEqual(recordCells(merged), ["merged PR #87"]);
+  assert.deepEqual(headlineCells(merged), ["merged PR #87"]);
   const stateChecked = bash(
     'gh pr merge 826 --squash --subject "stills: reorder investor logos (#826)" 2>&1 | tail -1; sleep 5; gh pr view 826 --json state -q .state',
     "MERGED\n",
   );
-  assert.deepEqual(recordCells(stateChecked), ["merged PR #826"]);
+  assert.deepEqual(headlineCells(stateChecked), ["merged PR #826"]);
   const stateCheckedWithSha = bash(
     'gh pr merge 89 --squash --subject "Reorder investor logos (#89)" 2>&1 | tail -1; sleep 5; gh pr view 89 --json state,mergeCommit -q \'.state + " " + .mergeCommit.oid\'',
     "MERGED 4bc400a9e5f3449df65ff96c32d008de0e89d011\n",
   );
-  assert.deepEqual(recordCells(stateCheckedWithSha), ["merged PR #89"]);
+  assert.deepEqual(headlineCells(stateCheckedWithSha), ["merged PR #89"]);
   const stateCheckedWithJsonEquals = bash("gh pr merge 90 --squash && gh pr view 90 --json=state -q .state", "MERGED\n");
-  assert.deepEqual(recordCells(stateCheckedWithJsonEquals), ["merged PR #90"]);
+  assert.deepEqual(headlineCells(stateCheckedWithJsonEquals), ["merged PR #90"]);
   const prUrl = "https://github.com/tmustier/pine-of-glass/pull/91";
   const stateCheckedWithUrl = bash(`gh pr merge ${prUrl} --squash && gh pr view ${prUrl} --json state -q .state`, "MERGED\n");
-  assert.deepEqual(recordCells(stateCheckedWithUrl), ["merged PR #91"]);
+  assert.deepEqual(headlineCells(stateCheckedWithUrl), ["merged PR #91"]);
   const closedPr = bash("gh pr close 12", "✓ Closed pull request tmustier/pine-of-glass#12 (stale)\n");
-  assert.deepEqual(recordCells(closedPr), ["closed PR #12"]);
+  assert.deepEqual(headlineCells(closedPr), ["closed PR #12"]);
   const opened = bash("gh pr create --fill", "https://github.com/tmustier/pine-of-glass/pull/88\n");
-  assert.deepEqual(recordCells(opened), ["opened PR #88"]);
+  assert.deepEqual(headlineCells(opened), ["opened PR #88"]);
   const closedIssue = bash("gh issue close 12", "✓ Closed issue tmustier/pine-of-glass#12 (rail glyphs)\n");
-  assert.deepEqual(recordCells(closedIssue), ["closed #12"]);
+  assert.deepEqual(headlineCells(closedIssue), ["closed #12"]);
   const released = bash("gh release create v0.5.9 --notes x", "https://github.com/tmustier/pine-of-glass/releases/tag/v0.5.9\n");
-  assert.deepEqual(recordCells(released), ["released v0.5.9"]);
+  assert.deepEqual(headlineCells(released), ["released v0.5.9"]);
 });
 
 test("silent terminal gh merges yield a merged fact", () => {
   const direct = bash("gh pr merge 120 --squash --delete-branch\n", "(no output)");
-  assert.deepEqual(recordCells(direct), ["merged PR #120"]);
+  assert.deepEqual(headlineCells(direct), ["merged PR #120"]);
 
   const fromWorktree = bash("cd /tmp/pr-137 && gh pr merge 137 --merge", "(no output)");
-  assert.deepEqual(recordCells(fromWorktree), ["merged PR #137"]);
+  assert.deepEqual(headlineCells(fromWorktree), ["merged PR #137"]);
 
   const url = "https://github.com/tmustier/pine-of-glass/pull/138";
   const withRepo = bash(`gh pr merge --repo tmustier/pine-of-glass ${url} --squash`, "(no output)");
-  assert.deepEqual(recordCells(withRepo), ["merged PR #138"]);
+  assert.deepEqual(headlineCells(withRepo), ["merged PR #138"]);
 });
 
 test("silent merge inference stays attributable to one merge", () => {
@@ -131,7 +142,7 @@ test("silent merge inference stays attributable to one merge", () => {
     bash("gh pr merge 120 --squash", "(no output)", { error: true }),
     bash("gh pr merge 120 --squash", "! Pull request tmustier/pine-of-glass#120 was already merged\n"),
   ];
-  for (const comp of cases) assert.deepEqual(recordCells(comp), []);
+  for (const comp of cases) assert.deepEqual(headlineCells(comp), []);
 });
 
 test("same-row gh state verification accepts JSON output", () => {
@@ -139,53 +150,53 @@ test("same-row gh state verification accepts JSON output", () => {
     "gh pr merge 126 --squash && gh pr view 126 --json state,mergedAt,mergeCommit,url",
     '{"mergeCommit":{"oid":"56692804b905502aaa151bb16f6a506d37e32884"},"mergedAt":"2026-08-05T11:16:46Z","state":"MERGED","url":"https://github.com/Nexcade/website/pull/126"}\n',
   );
-  assert.deepEqual(recordCells(merged), ["merged PR #126"]);
+  assert.deepEqual(headlineCells(merged), ["merged PR #126"]);
 
   const open = bash(
     "gh pr merge 127 --squash && gh pr view 127 --json state",
     '{"state":"OPEN"}\n',
   );
-  assert.deepEqual(recordCells(open), []);
+  assert.deepEqual(headlineCells(open), []);
 });
 
 test("npm publish porcelain yields a published fact", () => {
   const comp = bash("npm publish", "npm notice Publishing to https://registry.npmjs.org/\n+ pine-of-glass@0.5.10\n");
-  assert.deepEqual(recordCells(comp), ["published 0.5.10"]);
+  assert.deepEqual(headlineCells(comp), ["published 0.5.10"]);
 });
 
 test("facts require both the command gate and result evidence", () => {
   // Porcelain-shaped text without the command: no facts.
   const cat = bash("cat CHANGELOG.md", "[main a4f21c9] docs: x\n   1c75c2a..50cf33f  main -> main\n");
-  assert.deepEqual(recordCells(cat), []);
+  assert.deepEqual(headlineCells(cat), []);
   // Command without porcelain (quoted phrase in a message): no facts.
   const quoted = bash('git commit -m "mention git push here"', "nothing committed\n");
-  assert.deepEqual(recordCells(quoted), []);
+  assert.deepEqual(headlineCells(quoted), []);
   // A targetless state word is only proof when the same row explicitly checked PR state.
   const mergeWithoutStateCheck = bash("gh pr merge 826 --squash", "MERGED\n");
-  assert.deepEqual(recordCells(mergeWithoutStateCheck), []);
+  assert.deepEqual(headlineCells(mergeWithoutStateCheck), []);
   const mergeTargetOnlyInSubject = bash(
     'gh pr merge --squash --subject "stills: reorder investor logos (#826)"; gh pr view 826 --json state -q .state',
     "MERGED\n",
   );
-  assert.deepEqual(recordCells(mergeTargetOnlyInSubject), []);
+  assert.deepEqual(headlineCells(mergeTargetOnlyInSubject), []);
   const mismatchedStateCheck = bash("gh pr merge 826 --squash; gh pr view 827 --json state -q .state", "MERGED\n");
-  assert.deepEqual(recordCells(mismatchedStateCheck), []);
+  assert.deepEqual(headlineCells(mismatchedStateCheck), []);
   const stateCheckBeforeMerge = bash("gh pr view 826 --json state -q .state; gh pr merge 826 --squash", "MERGED\n");
-  assert.deepEqual(recordCells(stateCheckBeforeMerge), []);
+  assert.deepEqual(headlineCells(stateCheckBeforeMerge), []);
   const failureBranchStateCheck = bash("gh pr merge 826 --squash || gh pr view 826 --json state -q .state", "MERGED\n");
-  assert.deepEqual(recordCells(failureBranchStateCheck), []);
+  assert.deepEqual(headlineCells(failureBranchStateCheck), []);
   const noisyStateOutput = bash("gh pr merge 826 --squash; gh pr view 826 --json state -q .state", "warning: already merged\nMERGED\n");
-  assert.deepEqual(recordCells(noisyStateOutput), []);
+  assert.deepEqual(headlineCells(noisyStateOutput), []);
   const branchTarget = bash("gh pr merge feature/logos --squash; gh pr view feature/logos --json state -q .state", "MERGED\n");
-  assert.deepEqual(recordCells(branchTarget), []);
+  assert.deepEqual(headlineCells(branchTarget), []);
   const jqNoise = bash("gh pr merge 826 --squash; gh pr view 826 --json state -q '.state + \" #827\"'", "MERGED #827\n");
-  assert.deepEqual(recordCells(jqNoise), []);
+  assert.deepEqual(headlineCells(jqNoise), []);
   // git tag success porcelain is silence: no facts.
   const tag = bash("git tag v9.9.9", "");
-  assert.deepEqual(recordCells(tag), []);
+  assert.deepEqual(headlineCells(tag), []);
   // Non-bash rows never carry records.
   const read = { ...bash("x", "y"), toolName: "read" };
-  assert.deepEqual(recordCells(read), []);
+  assert.deepEqual(headlineCells(read), []);
 });
 
 test("overflow drops whole facts, deletions then the oldest, and counts them; never mangles", () => {
@@ -194,24 +205,24 @@ test("overflow drops whole facts, deletions then the oldest, and counts them; ne
     `[main a4f21c9] x\n${PUSH_OK}`,
   );
   // Plenty of room: both facts.
-  assert.equal(stripAnsi(recordHeadline(comp, 120)), "committed a4f21c9 · pushed main");
+  assert.equal(stripAnsi(headline(comp, 120)), "committed a4f21c9 · pushed main");
   // Tight row (~76 available at 80 cols → cap 25): the oldest fact drops whole, and the
   // row says it did (§9.10).
-  assert.equal(stripAnsi(recordHeadline(comp, 76)), "pushed main +1");
+  assert.equal(stripAnsi(headline(comp, 76)), "pushed main +1");
   // The count fits the cap too, and never costs the last fact its place: on a row too
   // narrow for both, the fact stays and the count goes.
-  assert.equal(stripAnsi(recordHeadline(comp, 40)), "pushed main");
+  assert.equal(stripAnsi(headline(comp, 40)), "pushed main");
   // Too tight for anything: no half-facts.
-  assert.equal(stripAnsi(recordHeadline(comp, 20)), "");
+  assert.equal(stripAnsi(headline(comp, 20)), "");
   // A deletion tidies up after the change the row was for, so it goes first.
   const tidy = bash("git commit -m x && git branch -d docs", "[main a4f21c9] x\nDeleted branch docs (was a4f21c9).\n");
-  assert.equal(stripAnsi(recordHeadline(tidy, 120)), "committed a4f21c9 · deleted branch docs");
-  assert.equal(stripAnsi(recordHeadline(tidy, 76)), "committed a4f21c9 +1");
+  assert.equal(stripAnsi(headline(tidy, 120)), "committed a4f21c9 · deleted branch docs");
+  assert.equal(stripAnsi(headline(tidy, 76)), "committed a4f21c9 +1");
   // But never for a fact that could not show at all: a push too long to fit goes
   // first, and the deletion that fits keeps the row's headline.
   const long = bash("git push origin rebase-94:thomas/tho-94-session-management-list-create && git branch -D rebase-94",
     "To github.com:o/r.git\n * [new branch]      rebase-94 -> thomas/tho-94-session-management-list-create\nDeleted branch rebase-94 (was 1c75c2a).\n");
-  assert.equal(stripAnsi(recordHeadline(long, 96)), "deleted branch rebase-94 +1");
+  assert.equal(stripAnsi(headline(long, 96)), "deleted branch rebase-94 +1");
 });
 
 test("a middle-cut command behind a headline never cuts the headline, its count or its `$` (§9.10)", () => {
@@ -252,7 +263,7 @@ test("a record-less bash row keeps `$ command` at the left edge", () => {
 
 test("records wear the ink of what they state (§9.10)", () => {
   const comp = bash("git commit -m x && git push", `[main a4f21c9] x\n${PUSH_OK}`);
-  const raw = recordHeadline(comp, 200);
+  const raw = headline(comp, 200);
   // No theme in tests, so ink resolves to raw ANSI: success 32, warning 33, dim 90.
   // The committed verb is success-toned bold; the sha is opaque audit data — dim,
   // outside both the tone and the bold span.
@@ -265,29 +276,18 @@ test("records wear the ink of what they state (§9.10)", () => {
 
 test("a forced push tints warning; tones never merge across (§9.10)", () => {
   const forced = bash("git push --force", "To github.com:o/r.git\n + 1c75c2a...50cf33f main -> main (forced update)\n");
-  assert.match(recordHeadline(forced, 200), /\x1b\[33m\x1b\[1mpushed main\x1b\[22m\x1b\[0m/);
+  assert.match(headline(forced, 200), /\x1b\[33m\x1b\[1mpushed main\x1b\[22m\x1b\[0m/);
   // A forced ref and a routine tag in one push stay separate cells: a forced push
   // never hides inside a routine one.
   const mixed = bash(
     "git push --force --follow-tags",
     "To github.com:o/r.git\n + 1c75c2a...50cf33f main -> main (forced update)\n * [new tag]         v0.5.9 -> v0.5.9\n",
   );
-  assert.deepEqual(recordCells(mixed), ["pushed main", "pushed v0.5.9"]);
+  assert.deepEqual(headlineCells(mixed), ["pushed main", "pushed v0.5.9"]);
 });
 
 test("the tone is per-fact, not per-row: failed rows keep surviving facts green (§9.10)", () => {
   // Committed, demonstrably not landed: red discriminators, green fact.
   const failed = bash("git commit -m x && git push", "[main a4f21c9] x\n ! [rejected] main -> main\n", { error: true });
-  assert.match(recordHeadline(failed, 200), /\x1b\[32m\x1b\[1mcommitted\x1b\[22m/);
-});
-
-test("facts cache against result identity", () => {
-  const comp = bash("git commit -m x", "[main a4f21c9] x\n");
-  assert.deepEqual(recordCells(comp), ["committed a4f21c9"]);
-  // Same result object: cached (mutating the text without replacing result is not a
-  // transition pi performs; identity is the honest cache key).
-  assert.deepEqual(recordCells(comp), ["committed a4f21c9"]);
-  // New result object: recomputed.
-  comp.result = { content: [{ type: "text", text: "[main b5e32d0] y\n" }], isError: false };
-  assert.deepEqual(recordCells(comp), ["committed b5e32d0"]);
+  assert.match(headline(failed, 200), /\x1b\[32m\x1b\[1mcommitted\x1b\[22m/);
 });

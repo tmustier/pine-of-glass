@@ -2,6 +2,7 @@
 // commands per call, and a single middle cut kept the opening `cd` and the closing
 // filter while hiding the commands between them. These tests pin the by-command fit,
 // the cwd-relative and nested `cd` context, and check facts parsed from runner output.
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
@@ -18,7 +19,7 @@ import { commandKeys } from "../../extensions/pi-traceline/record-shell.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantBefore, nativeBashLines } from "./runtime-fixtures.ts";
 
-const { stripAnsi, oneLine, renderTraceRow, recordCells, setTracelineChat, setTracelineThemeGetter } = internals;
+const { oneLine, renderTraceRow, setTracelineChat, setTracelineThemeGetter } = internals;
 
 beforeEach(() => {
   setTracelineChat(undefined);
@@ -35,7 +36,7 @@ function bash(command: string, output = "ok", options: { cwd?: string; error?: b
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => nativeBashLines(command) },
-  } as ToolRowLike;
+  };
 }
 
 function fit(body: string, budget: number): string | undefined {
@@ -253,7 +254,7 @@ test("check facts lead the row, keep the size cell, and a failed check under exi
   assert.match(failLine, /\x1b\[33m›/, "exit 0 with a failed check wears a warning bullet");
 
   const lint = bash("pnpm lint && pnpm test", `Found 0 warnings and 0 errors.\n${VITEST_PASS}`);
-  assert.deepEqual(recordCells(lint), ["passed lint, 1731 tests"]);
+  assert.match(stripAnsi(oneLine(lint, 120)), /› passed lint, 1731 tests \$/);
 });
 
 test("a headline over its cap drops other facts before a failed check (§9.10.1)", () => {

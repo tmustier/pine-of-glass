@@ -1,3 +1,4 @@
+import { isJsonObject } from "../_lib/boundary.ts";
 import {
   isAssistantRow,
   isToolRow,
@@ -86,8 +87,7 @@ function assistantStepRows(comp: ToolRowLike, siblings: unknown[]): ToolRowLike[
     if (!Array.isArray(content)) continue;
     const stepIds = new Set<string>();
     for (const block of content) {
-      const call = block && typeof block === "object" ? block as { type?: unknown; id?: unknown } : undefined;
-      if (call?.type === "toolCall" && typeof call.id === "string") stepIds.add(call.id);
+      if (isJsonObject(block) && block.type === "toolCall" && typeof block.id === "string") stepIds.add(block.id);
     }
     if (!stepIds.has(id)) continue;
     return siblings.filter(

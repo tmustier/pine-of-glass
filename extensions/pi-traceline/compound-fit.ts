@@ -120,7 +120,7 @@ function buildUnits(body: string, heads: readonly FitHead[]): Unit[] {
   const first = heads[0]!.start;
   if (first > 0) {
     const text = body.slice(0, first);
-    const contentEnd = first - (TRAILING_CONNECTOR.exec(text)?.[0].length ?? 0);
+    const contentEnd = first - TRAILING_CONNECTOR.exec(text)![0].length;
     const space = text.search(/\s/);
     const lead = space > 0 && space < 8 && space < contentEnd ? space + 1 : Math.min(3, contentEnd);
     // A cut context keeps its opening word and its final path segment (`cd …/fix`),
@@ -133,7 +133,7 @@ function buildUnits(body: string, heads: readonly FitHead[]): Unit[] {
     const end = index + 1 < heads.length ? heads[index + 1]!.start : body.length;
     const text = body.slice(head.start, end);
     const last = index === heads.length - 1;
-    const contentEnd = end - (last ? (/\s*$/.exec(text)?.[0].length ?? 0) : (TRAILING_CONNECTOR.exec(text)?.[0].length ?? 0));
+    const contentEnd = end - (last ? /\s*$/.exec(text)![0].length : TRAILING_CONNECTOR.exec(text)![0].length);
     const unit: Unit = { kind: "command", start: head.start, end, contentEnd, floor: head.end - head.start, last, earned: head.earned === true };
     if (body.slice(head.start, head.end) === "git") {
       let i = head.end;

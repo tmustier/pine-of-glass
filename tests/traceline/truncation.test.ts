@@ -1,12 +1,13 @@
 // ANSI-aware middle truncation: the tail (basename + :range / operative command end) must
 // survive, visible width must never exceed budget, and escape sequences must never tear.
+import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../../extensions/_lib/ansi.ts";
+import { middleTruncate } from "../../extensions/_lib/style.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { internals } from "../../extensions/pi-traceline/index.ts";
 
-const { middleTruncate, rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } = internals;
+
 
 const ELLIPSIS = "\u2026";
 

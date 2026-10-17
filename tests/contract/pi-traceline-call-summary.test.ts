@@ -1,3 +1,4 @@
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createReadTool, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
@@ -24,7 +25,7 @@ function row(call: string, state: "success" | "running" | "error" = "success") {
   return comp;
 }
 function painted(comp: ToolExecutionComponent, width = 100) {
-  return comp.render(width).map(trace.stripAnsi).filter((line) => line.trim());
+  return comp.render(width).map(stripAnsi).filter((line) => line.trim());
 }
 
 test("status-only call headers retain their command for every execution state", () => {
@@ -73,7 +74,7 @@ test("single-line calls keep their presentation and narrow summaries retain the 
 test("clicking a flattened summary still opens native multiline call and result", () => {
   const comp = row("• Ran\n  └ surf tabs.list");
   const compact = comp.render(100);
-  const y = compact.findIndex((line) => trace.stripAnsi(line).includes("surf tabs.list"));
+  const y = compact.findIndex((line) => stripAnsi(line).includes("surf tabs.list"));
   assert.ok(y >= 0);
   assert.ok(comp.handleMouse({
     type: "click", button: "left", x: 12, y, screenX: 12, screenY: y,

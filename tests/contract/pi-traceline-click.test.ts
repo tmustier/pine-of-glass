@@ -1,3 +1,4 @@
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { initTheme, ToolExecutionComponent, createReadTool } from "@earendil-works/pi-coding-agent";
@@ -35,7 +36,7 @@ function chat(rows: ToolExecutionComponent[], hidden = true) {
 function event(y: number, x = 10, type: TuiMouseEvent["type"] = "click", width = 80): TuiMouseEvent {
   return { type, button: "left", x, y, screenX: x, screenY: y, width, height: 100, shift: false, alt: false, ctrl: false };
 }
-function painted(container: Container, width = 80): string[] { return container.render(width).map(trace.stripAnsi); }
+function painted(container: Container, width = 80): string[] { return container.render(width).map(stripAnsi); }
 function clickLine(container: Container, text: string, x = 10, width = 80) {
   const lines = painted(container, width);
   const y = lines.findIndex((line) => line.includes(text));

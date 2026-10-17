@@ -1,24 +1,24 @@
 // Runtime-faithful synthetic chat fixtures. These preserve the causal Pi invariants
 // that traceline depends on while leaving unrelated component fields out of unit tests.
+import { captureWriteCallSnapshot } from "../../extensions/pi-traceline/write-diff.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { JsonObject } from "../../extensions/_lib/boundary.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { captureWriteCallSnapshot } = internals;
+
 
 type AssistantContentBlock = { type: string; [key: string]: unknown };
 
 let nextToolCallId = 0;
 
 export function toolCallFor(row: ToolRowLike) {
-  const linked = row as ToolRowLike & { toolCallId?: string };
-  linked.toolCallId ??= `fixture-tool-${++nextToolCallId}`;
+  const id = typeof row.toolCallId === "string" ? row.toolCallId : `fixture-tool-${++nextToolCallId}`;
+  row.toolCallId = id;
   return {
     type: "toolCall",
-    id: linked.toolCallId,
+    id,
     name: String(row.toolName),
     arguments: row.args ?? {},
   };
@@ -53,7 +53,7 @@ export function completedReadRow(path: string, offset: number, limit: number, re
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`read ${path}:${offset}-${offset + limit - 1}`] },
-  } as ToolRowLike;
+  };
 }
 
 // A whole-file read (no offset/limit), the common shape in sibling-file sweeps.
@@ -66,11 +66,11 @@ export function wholeFileReadRow(path: string, resultChars = 1_000): ToolRowLike
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`read ${path}`] },
-  } as ToolRowLike;
+  };
 }
 
 export function completedWriteRow(cwd: string, path: string, content: string): ToolRowLike {
-  const row = {
+  const row: ToolRowLike = {
     toolName: "write",
     args: { path, content },
     cwd,
@@ -79,7 +79,7 @@ export function completedWriteRow(cwd: string, path: string, content: string): T
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => [`write ${path}`] },
-  } as ToolRowLike;
+  };
 
   const toolCall = toolCallFor(row);
   captureWriteCallSnapshot(toolCall.id, toolCall.arguments, cwd);

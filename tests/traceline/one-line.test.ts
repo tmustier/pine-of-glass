@@ -1,6 +1,12 @@
 // The one-line row grammar: status, result-size suffix fitting, path emphasis, fallback
 // rendering, and tool-group spacing. Comps here are synthetic stand-ins satisfying the
 // duck type; the contract suite proves the duck type matches the real installed pi.
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
+import { rightAlignSuffix, tildify } from "../../extensions/_lib/style.ts";
+import { dimUnstyledSpans } from "../../extensions/pi-traceline/sgr.ts";
+import { bashCrownedHeads } from "../../extensions/pi-traceline/bash-crowns.ts";
+import { lineRange, cwdRelativePath } from "../../extensions/pi-traceline/path-rows.ts";
+import { diffStatsFromText, diffStatsFromContents, writeDiffStats, mutationDiffStats } from "../../extensions/pi-traceline/write-diff.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -13,35 +19,7 @@ import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantBefore, completedWriteRow, nativeBashLines } from "./runtime-fixtures.ts";
 
-const {
-  oneLine,
-  rightAlignSuffix,
-  formatCharCount,
-  charSuffix,
-  diffStatsFromText,
-  diffStatsFromContents,
-  writeDiffStats,
-  mutationDiffStats,
-  toolFactSuffix,
-  configureSizeThresholds,
-  lineRange,
-  tildify,
-  toolStatus,
-  blockSizeColumnLive,
-  boringPrefix,
-  cwdRelativePath,
-  leadingBlank,
-  stripAnsi,
-  isToolRow,
-  isAssistantRow,
-  stripTimeoutSuffix,
-  bashCrownedHeads,
-  inkBashBody,
-  dimUnstyledSpans,
-  flattenInvocationLines,
-  setTracelineChat,
-  setTracelineThemeGetter,
-} = internals;
+const { oneLine, renderTraceRow, toolFactSuffix, configureSizeThresholds, inkBashBody, setTracelineChat, setTracelineThemeGetter } = internals;
 
 // Without a theme handle, all family ink falls back to basic raw ANSI (style.ts):
 const DIM = "\x1b[90m";
@@ -49,7 +27,7 @@ const DIM = "\x1b[90m";
 // A theme whose palette is distinguishable from every raw-ANSI fallback: 256-colour
 // codes per role (real escape sequences, so width math stays honest).
 const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };
-const T = Object.fromEntries(Object.entries(THEME_CODES).map(([role, n]) => [role, `\x1b[38;5;${n}m`])) as Record<string, string>;
+const T = Object.fromEntries(Object.entries(THEME_CODES).map(([role, n]) => [role, `\x1b[38;5;${n}m`]));
 function themed(): Theme {
   return {
     fg: (color: string, text: string) => `\x1b[38;5;${THEME_CODES[color] ?? 250}m${text}\x1b[39m`,
@@ -70,7 +48,7 @@ function toolComp(overrides: SyntheticComp = {}): ToolRowLike {
     setExpanded: () => {},
     callRendererComponent: { render: () => [`read ~/projects/demo/file.ts:1-40`] },
     ...overrides,
-  } as ToolRowLike;
+  };
 }
 
 beforeEach(() => {
@@ -79,26 +57,12 @@ beforeEach(() => {
   configureSizeThresholds(undefined);
 });
 
-test("row grammar units", () => {
-  // Family number grammar (design language §4): one unit everywhere — fixed
-  // one-decimal k so suffixes compare down the column; raw integers never appear.
-  assert.equal(formatCharCount(0), "0.0k");
-  assert.equal(formatCharCount(49), "0.0k");
-  assert.equal(formatCharCount(412), "0.4k");
-  assert.equal(formatCharCount(1437), "1.4k");
-  assert.equal(formatCharCount(10_000), "10.0k");
+test("read ranges keep their user-facing grammar", () => {
   assert.equal(lineRange({ offset: 1, limit: 20 }), ":1-20");
   assert.equal(lineRange({ offset: 5 }), ":5");
   assert.equal(lineRange({ limit: 300 }), ":1-300");
   assert.equal(lineRange({}), "");
   assert.equal(tildify(`${homedir()}/x/y`), "~/x/y");
-});
-
-test("tool status reflects result/partial state", () => {
-  assert.equal(toolStatus({ result: { isError: true } }), "error");
-  assert.equal(toolStatus({ result: { isError: false }, isPartial: false }), "success");
-  assert.equal(toolStatus({ result: { isError: false }, isPartial: true }), "running");
-  assert.equal(toolStatus({}), "running");
 });
 
 test("suffix fitting: right-aligned, never overlapping, suffix wins when starved", () => {
@@ -249,23 +213,26 @@ test("new write rows count all written lines as additions", () => {
 });
 
 test("result-size suffix severity: dim while healthy, warning ≥10k ch, error ≥50k ch", () => {
-  assert.ok(charSuffix(1_437).startsWith(DIM), "healthy sizes stay dim");
-  assert.ok(charSuffix(10_000).startsWith("\x1b[33m"), "≥10k ch must tint warning");
-  assert.ok(charSuffix(50_000).startsWith("\x1b[31m"), "≥50k ch must tint error");
-  assert.equal(charSuffix(undefined), "");
-  assert.equal(stripAnsi(charSuffix(50_000)), "50.0k ch");
+  const suffix = (chars: number | undefined) => toolFactSuffix(toolComp({
+    result: chars === undefined ? undefined : { content: [{ type: "text", text: "x".repeat(chars) }], isError: false },
+  }));
+  assert.ok(suffix(1_437).startsWith(DIM), "healthy sizes stay dim");
+  assert.ok(suffix(10_000).startsWith("\x1b[33m"), "≥10k ch must tint warning");
+  assert.ok(suffix(50_000).startsWith("\x1b[31m"), "≥50k ch must tint error");
+  assert.equal(suffix(undefined), "");
+  assert.equal(stripAnsi(suffix(50_000)), "50.0k ch");
 
   // A fact suffix must carry a fact (§9.7): below 100 ch there is no suffix at all.
-  assert.equal(charSuffix(0), "");
-  assert.equal(charSuffix(99), "");
-  assert.equal(stripAnsi(charSuffix(100)), "0.1k ch");
+  assert.equal(suffix(0), "");
+  assert.equal(suffix(99), "");
+  assert.equal(stripAnsi(suffix(100)), "0.1k ch");
 
   // Thresholds follow the family config convention (~/.pi/agent/pi-traceline.json).
   configureSizeThresholds({ sizeWarningChars: 100, sizeErrorChars: 1_000 });
-  assert.ok(charSuffix(500).startsWith("\x1b[33m"));
-  assert.ok(charSuffix(2_000).startsWith("\x1b[31m"));
+  assert.ok(suffix(500).startsWith("\x1b[33m"));
+  assert.ok(suffix(2_000).startsWith("\x1b[31m"));
   configureSizeThresholds(undefined);
-  assert.ok(charSuffix(500).startsWith(DIM));
+  assert.ok(suffix(500).startsWith(DIM));
 });
 
 test("ink derives from the theme when one is active", () => {
@@ -368,7 +335,6 @@ test("size column is block-scoped: one row over the floor lights every cell (§9
   const c = tiny();
   const d = tiny();
   setTracelineChat({ children: [c, big, d] });
-  assert.equal(blockSizeColumnLive(c), true);
   assert.equal(stripAnsi(toolFactSuffix(c)), "0.0k ch");
   assert.equal(stripAnsi(toolFactSuffix(d)), "0.0k ch");
 
@@ -395,7 +361,6 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   const p2 = edit(`${home}/projects/site/src/data/site.ts`);
   const p3 = edit(`${home}/projects/site/src/components/Cta.astro`);
   setTracelineChat({ children: [p1, p2, p3] });
-  assert.equal(boringPrefix(p1, tildify(String(p1.args?.path))), "~/projects/site/src/");
   const line = oneLine(p1, 100);
   assert.ok(line.includes(`${DIM}~/projects/site/src/\x1b[0m`), `common prefix dims: ${JSON.stringify(line)}`);
   assert.ok(line.includes("\x1b[1mpages/product.astro\x1b[22m"), `divergent tail bold: ${JSON.stringify(line)}`);
@@ -406,16 +371,10 @@ test("path emphasis dims the boring prefix: block-common directory or cwd, tail 
   const inTmp = edit("/tmp/scratch-note.md", `${home}/projects/site`);
   setTracelineChat({ children: [inRepo, inTmp] });
   assert.equal(cwdRelativePath(inRepo, String(inRepo.args?.path)), "./src/lib/util.ts");
-  assert.equal(boringPrefix(inRepo, "./src/lib/util.ts"), "./");
-  assert.equal(boringPrefix(inTmp, "/tmp/scratch-note.md"), "/tmp/");
   const repoLine = oneLine(inRepo, 100);
   assert.ok(repoLine.includes(`${DIM}./\x1b[0m`), `collapsed cwd dims: ${JSON.stringify(repoLine)}`);
   assert.ok(repoLine.includes("\x1b[1msrc/lib/util.ts\x1b[22m"), `sub-cwd tail bold: ${JSON.stringify(repoLine)}`);
 
-  // A lone row (no block siblings) keeps the classic basename-only emphasis.
-  setTracelineChat(undefined);
-  const lone = edit(`${home}/projects/site/src/pages/product.astro`);
-  assert.equal(boringPrefix(lone, "~/projects/site/src/pages/product.astro"), "~/projects/site/src/pages/");
 });
 
 test("cwd collapses to ./: two columns of ambient context instead of thirty (§9.5)", () => {
@@ -447,7 +406,6 @@ test("cwd collapses to ./: two columns of ambient context instead of thirty (§9
   const c = read(`${cwd}/src/pages/product.astro`);
   const d = read(`${cwd}/src/data/site.ts`);
   setTracelineChat({ children: [c, d] });
-  assert.equal(boringPrefix(c, "./src/pages/product.astro"), "./src/");
   const lineC = oneLine(c, 100);
   assert.ok(lineC.includes(`${DIM}./src/\x1b[0m`), JSON.stringify(lineC));
   assert.ok(lineC.includes("\x1b[1mpages/product.astro\x1b[22m"), JSON.stringify(lineC));
@@ -511,7 +469,7 @@ test("no plain ink in native rows: unstyled spans demote to dim, accents and bol
 
     // Unit edges: OSC sequences pass through untouched and are never counted as text.
     const osc = "\x1b]8;;https://x.test\x1b\\\x1b[35mlink\x1b[0m\x1b]8;;\x1b\\ tail";
-    const out = dimUnstyledSpans(osc);
+    const out = dimUnstyledSpans(osc, themed());
     assert.ok(out.includes("\x1b]8;;https://x.test\x1b\\"), `OSC preserved: ${JSON.stringify(out)}`);
     assert.ok(out.includes(`${T.dim} tail`) || out.includes(`${T.dim}tail`), `trailing plain text dims: ${JSON.stringify(out)}`);
   } finally {
@@ -573,8 +531,6 @@ test("bash rows: timeout stripped, $ anchors bold, head command L0-bold, rest on
   assert.ok(inkBashBody("cat <<'EOF'").includes(`${DIM} <<'EOF'\x1b[0m`));
   assert.equal(stripAnsi(inkBashBody("echo 'a&&b'")), "echo 'a&&b'", "unspaced quoted operators are left alone");
   assert.ok(!inkBashBody("echo 'a&&b'").includes(`${DIM}&&`), "a quoted && must not be split out");
-  assert.equal(stripTimeoutSuffix("$ ls (timeout 10s)"), "$ ls");
-  assert.equal(stripTimeoutSuffix("$ ls"), "$ ls");
 });
 
 test("real command heads are bold: sequencers re-arm, filters stay dim, crowns are rationed (§9.4)", () => {
@@ -707,11 +663,6 @@ test("multiline bash flattens to one line: tail survives, breaks marked, timeout
   assert.ok(narrow.includes("python3"), narrow);
   assert.equal(narrow.match(/\btmux\b/g)?.length, 2, narrow);
 
-  // Unit edges: blank-only lines drop out; a single line flattens to itself, unmarked;
-  // the joined line stays plain — inkBashBody dims the marks later.
-  assert.equal(flattenInvocationLines(["", "   "]), undefined);
-  assert.equal(flattenInvocationLines(["$ ls -la"]), "$ ls -la");
-  assert.equal(flattenInvocationLines(["$ cat <<'EOF'", "  body", "EOF"]), "$ cat <<'EOF' \u21b5 body \u21b5 EOF");
 });
 
 test("hyperlinked read rows (OSC 8, ST-terminated): text survives stripAnsi, URL survives tildify, emphasis applies", () => {
@@ -741,18 +692,19 @@ test("native invocation drops per-line expand hints and retains continuation tex
 
 test("tool-group spacing: blank before a group, tight within it, connectors skipped", () => {
   const toolA = toolComp();
-  const toolB = toolComp();
+  const toolB = toolComp({
+    args: { path: `${homedir()}/projects/other/file.ts` },
+    callRendererComponent: { render: () => ["read ~/projects/other/file.ts"] },
+  });
   const toolC = toolComp();
   const visibleAssistantA = assistantBefore([toolA], [{ type: "text", text: "let me look" }]);
   const connector = assistantBefore([toolB]);
   const visibleAssistantC = assistantBefore([toolC], [{ type: "text", text: "let me look again" }]);
-  assert.equal(isToolRow(toolA), true);
-  assert.equal(isAssistantRow(visibleAssistantA), true);
 
   setTracelineChat({ children: [visibleAssistantA, toolA, connector, toolB, visibleAssistantC, toolC] });
-  assert.equal(leadingBlank(toolA), true, "blank after visible assistant content");
-  assert.equal(leadingBlank(toolB), false, "tight through an invisible connector turn");
-  assert.equal(leadingBlank(toolC), true, "new group after visible content");
+  assert.equal(renderTraceRow(toolA, 80)[0] === "", true, "blank after visible assistant content");
+  assert.equal(renderTraceRow(toolB, 80)[0] === "", false, "tight through an invisible connector turn");
+  assert.equal(renderTraceRow(toolC, 80)[0] === "", true, "new group after visible content");
 });
 
 test("thought→action couplet: tight under a collapsed Thinking... line", () => {
@@ -764,7 +716,7 @@ test("thought→action couplet: tight under a collapsed Thinking... line", () =>
     true,
   );
   setTracelineChat({ children: [collapsedThinking, tool] });
-  assert.equal(leadingBlank(tool), false, "reasoning-only turn reads as this call's thought");
+  assert.equal(renderTraceRow(tool, 80)[0] === "", false, "reasoning-only turn reads as this call's thought");
   setTracelineChat({ children: [thinkingWithProse, tool] });
-  assert.equal(leadingBlank(tool), true, "visible prose still opens a new paragraph");
+  assert.equal(renderTraceRow(tool, 80)[0] === "", true, "visible prose still opens a new paragraph");
 });

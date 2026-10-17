@@ -1,12 +1,12 @@
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import { internals } from "../../extensions/pi-traceline/index.ts";
 import { compactReadDisplay } from "../../extensions/pi-traceline/path-rows.ts";
-import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { oneLine, stripAnsi, setTracelineChat, setTracelineThemeGetter } = internals;
+const { oneLine, setTracelineChat, setTracelineThemeGetter } = internals;
 const CODES: Record<string, number> = { dim: 245, text: 255, success: 41, warning: 220, accent: 214 };
 const ansi = (role: string) => `\x1b[38;5;${CODES[role]}m`;
 
@@ -49,7 +49,7 @@ test("compact Pi docs reads keep their label but use ordinary filename ink (§9.
         `${ansi("accent")}\x1b[1mread docs\x1b[22m\x1b[39m ${ansi("accent")}docs/extensions.md\x1b[39m${ansi("warning")}:1364-2763\x1b[39m`,
       ],
     },
-  } as ToolRowLike;
+  };
 
   const line = oneLine(comp, 100);
   const visible = stripAnsi(line);

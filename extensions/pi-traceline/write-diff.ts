@@ -67,8 +67,8 @@ export function diffStatsFromContents(oldContent: string, newContent: string): D
   const newMiddle = newLines.slice(start, newEnd);
   const unchangedMiddle = boundedLcsLength(oldMiddle, newMiddle);
   const stats = {
-    added: Math.max(0, newMiddle.length - unchangedMiddle),
-    removed: Math.max(0, oldMiddle.length - unchangedMiddle),
+    added: newMiddle.length - unchangedMiddle,
+    removed: oldMiddle.length - unchangedMiddle,
   };
   return stats.added > 0 || stats.removed > 0 ? stats : undefined;
 }
@@ -79,22 +79,9 @@ function writeInputFromArgs(args: ToolRowDataLike["args"], cwd: string): WriteIn
   return typeof path === "string" && typeof content === "string" ? { path, content, cwd } : undefined;
 }
 
-function writeInput(comp: ToolRowDataLike | undefined): WriteInput | undefined {
-  if (comp?.toolName !== "write") return undefined;
-  const cwd = typeof comp.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : process.cwd();
-  return writeInputFromArgs(comp.args, cwd);
-}
-
-function readWriteOldContent(input: WriteInput): string {
-  try {
-    return readFileSync(resolve(input.cwd, input.path), "utf8");
-  } catch {
-    return "";
-  }
-}
-
-function writeSnapshot(comp: ToolRowDataLike | undefined): WriteSnapshot | undefined {
-  if (!comp) return undefined;
+function writeSnapshot(comp: ToolRowDataLike): WriteSnapshot | undefined {
+  // SAFETY: this module alone writes the row slot, from its typed pre-write capture.
+  // The slot persists across reloads while the row keeps the same identity.
   let snapshot = comp.__tracelineWriteSnapshot as WriteSnapshot | undefined;
   if (!snapshot && typeof comp.toolCallId === "string") {
     snapshot = pendingWriteSnapshots.get(comp.toolCallId);
@@ -106,10 +93,6 @@ function writeSnapshot(comp: ToolRowDataLike | undefined): WriteSnapshot | undef
   return snapshot;
 }
 
-function sameWriteInput(a: WriteInput | undefined, b: WriteInput | undefined): boolean {
-  return !!a && !!b && a.path === b.path && a.cwd === b.cwd && a.content === b.content;
-}
-
 export function captureWriteCallSnapshot(
   toolCallId: string,
   args: ToolRowDataLike["args"],
@@ -118,7 +101,12 @@ export function captureWriteCallSnapshot(
   pendingWriteSnapshots.delete(toolCallId);
   const input = writeInputFromArgs(args, cwd);
   if (!input) return;
-  const oldContent = readWriteOldContent(input);
+  let oldContent = "";
+  try {
+    oldContent = readFileSync(resolve(input.cwd, input.path), "utf8");
+  } catch {
+    // A new or unreadable file has no available pre-image.
+  }
   pendingWriteSnapshots.set(toolCallId, {
     ...input,
     stats: diffStatsFromContents(oldContent, input.content),
@@ -130,10 +118,12 @@ export function clearWriteCallSnapshots(): void {
 }
 
 export function writeDiffStats(comp: ToolRowDataLike | undefined): DiffStats | undefined {
-  const input = writeInput(comp);
+  if (comp?.toolName !== "write") return undefined;
+  const cwd = typeof comp.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : process.cwd();
+  const input = writeInputFromArgs(comp.args, cwd);
   const snapshot = writeSnapshot(comp);
-  if (!sameWriteInput(snapshot, input)) return undefined;
-  return snapshot?.stats;
+  if (!snapshot || !input || snapshot.path !== input.path || snapshot.cwd !== input.cwd || snapshot.content !== input.content) return undefined;
+  return snapshot.stats;
 }
 
 function diffTextFromComp(comp: ToolRowDataLike | undefined): string | undefined {

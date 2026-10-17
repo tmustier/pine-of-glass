@@ -1,4 +1,5 @@
 import { isAssistantRow, isNoticeRow, isToolRow, type ContainerLike, type AssistantRowLike, type ToolRowDataLike, type ToolRowLike } from "../_lib/chat.ts";
+import { isJsonObject } from "../_lib/boundary.ts";
 import type { TraceRenderCache } from "./render-cache.ts";
 
 export function isExpandedToolRow(row: unknown): boolean { return isToolRow(row) && row.expanded === true; }
@@ -11,10 +12,10 @@ export function isEmptyConnector(row: unknown): boolean {
   const content = row.lastMessage?.content;
   if (!Array.isArray(content)) return true;
   return !content.some((block: unknown) => {
-    if (!block || typeof block !== "object") return false;
-    const b = block as { type?: unknown; text?: unknown; thinking?: unknown };
-    return (b.type === "text" && typeof b.text === "string" && b.text.trim()) ||
-      (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim());
+    return isJsonObject(block) && (
+      (block.type === "text" && typeof block.text === "string" && block.text.trim()) ||
+      (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim())
+    );
   });
 }
 

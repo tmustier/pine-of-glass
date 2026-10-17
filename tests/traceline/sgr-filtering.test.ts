@@ -1,10 +1,10 @@
 // SGR parameter filtering: recolouring without nuking bold/underline.
+import { stripSgrForegrounds, stripSgrBackgrounds } from "../../extensions/pi-traceline/sgr.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-traceline/index.ts";
 
-const { stripSgrForegrounds, stripSgrBackgrounds } = internals;
+
 
 test("foreground stripping drops colour params but keeps text attributes", () => {
   assert.equal(stripSgrForegrounds("\x1b[1;31mX\x1b[0m"), "\x1b[1mX\x1b[0m");

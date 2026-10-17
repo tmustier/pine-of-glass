@@ -98,19 +98,9 @@ export function drillDecorateNativeRow(theme: Theme | undefined, comp: unknown, 
 
 // --- mode lifecycle --------------------------------------------------------------------
 
-function collectTargets(host: DrillHost): ToolRowLike[] {
-  const sibs = host.chatChildren() ?? [];
-  const rows: ToolRowLike[] = [];
-  for (let i = sibs.length - 1; i >= 0; i--) {
-    const c = sibs[i];
-    if (isToolRow(c) && !host.hiddenByFold(c)) rows.push(c);
-  }
-  return rows;
-}
-
 export function enterDrillMode(host: DrillHost): void {
   if (g.__tracelineDrill) return;
-  const rows = collectTargets(host);
+  const rows = (host.chatChildren() ?? []).filter(isToolRow).filter((row) => !host.hiddenByFold(row)).reverse();
   if (rows.length === 0) {
     host.ui.notify("traceline: no tool rows to drill into", "info");
     return;
@@ -118,7 +108,7 @@ export function enterDrillMode(host: DrillHost): void {
   const st: DrillState = {
     host,
     rows,
-    numbers: new Map(rows.map((row, i) => [row as unknown, i + 1])),
+    numbers: new Map(rows.map((row, i) => [row, i + 1])),
     selected: 0,
     digits: "",
   };

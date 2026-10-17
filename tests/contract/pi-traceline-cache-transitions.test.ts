@@ -1,3 +1,4 @@
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { AssistantMessageComponent, createReadTool, initTheme, ToolExecutionComponent, type Theme } from "@earendil-works/pi-coding-agent";
@@ -40,7 +41,7 @@ function chat(...children: (ToolExecutionComponent | AssistantMessageComponent)[
 function equal(rows: ToolExecutionComponent[], width = 80) {
   for (const row of rows) assert.deepEqual(row.render(width), trace.uncachedRenderTraceRow(seam(row), width));
 }
-const text = (row: ToolExecutionComponent) => row.render(80).map(trace.stripAnsi).join();
+const text = (row: ToolExecutionComponent) => row.render(80).map(stripAnsi).join();
 function misses(render: () => void): number {
   trace.renderCacheWorkCounts(true); render(); return trace.renderCacheWorkCounts().outputMisses;
 }
@@ -142,7 +143,7 @@ test("resize truncates a warm row and preserves its wider variant", () => {
   const wide = row.render(100);
   const narrow = row.render(45);
   assert.notDeepEqual(narrow, wide);
-  assert.ok(narrow.map(trace.stripAnsi).join().includes("…"));
+  assert.ok(narrow.map(stripAnsi).join().includes("…"));
   equal([row], 45);
   assert.equal(misses(() => assert.deepEqual(row.render(100), wide)), 0);
 });

@@ -3,6 +3,7 @@
 // fake ExtensionUIContext. Comps are the same synthetic duck types the other suites
 // use; the contract suite proves the duck type (including the expanded flag and the
 // blank leading spacer line of a native render) matches the real installed pi.
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
@@ -21,7 +22,7 @@ import {
 import { handleDrillTerminalInput, isForeignChord } from "../../extensions/pi-traceline/drill-input.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { foldedReadLines, isExpandedToolRow, leadingBlank, oneLine, readRun, renderTraceRow, setTracelineChat, statusTone, stripAnsi } = internals;
+const { foldedReadLines, isExpandedToolRow, oneLine, readRun, renderTraceRow, setTracelineChat, statusTone } = internals;
 
 function toolComp(overrides: Partial<ToolRowLike> = {}): ToolRowLike {
   const args = overrides.args ?? { path: "/tmp/demo/file.ts", offset: 1, limit: 40 };
@@ -30,13 +31,13 @@ function toolComp(overrides: Partial<ToolRowLike> = {}): ToolRowLike {
     result: { content: [{ type: "text", text: "x".repeat(1437) }], isError: false },
     isPartial: false,
     render: () => [],
-    setExpanded(expanded: boolean) {
-      (this as { expanded?: boolean }).expanded = expanded;
+    setExpanded(expanded: unknown) {
+      this.expanded = expanded;
     },
     callRendererComponent: { render: () => [`read ${String(args.path)}:1-40`] },
     ...overrides,
     args,
-  } as ToolRowLike;
+  };
 }
 
 type FakeComponent = { render(width: number): string[]; handleInput?(data: string): void };
@@ -138,13 +139,14 @@ test("selection wears accent bold; other numbers are dim; strangers keep the rai
   assert.equal(drillTracePrefix(undefined, toolComp(), "›"), undefined, "rows streamed in after entry stay unnumbered");
 });
 
-test("numbers above 999 keep the rail; outside the mode the prefix is untouched", () => {
-  const rows = [toolComp()];
-  enterDrillMode(makeHost(rows));
-  drillState()!.numbers.set(rows[0], 1000);
-  assert.equal(drillTracePrefix(undefined, rows[0], "›"), undefined);
+test("a long transcript leaves rows beyond the number cell on their ordinary rail", () => {
+  const rows = Array.from({ length: 1000 }, (_, i) => toolComp({ args: { path: `/tmp/d${i}/file.ts` } }));
+  const host = makeHost(rows);
+  const before = renderTraceRow(rows[0]!, 80);
+  enterDrillMode(host);
+  assert.deepEqual(renderTraceRow(rows[0]!, 80), before);
   exitDrillMode();
-  assert.equal(drillTracePrefix(undefined, rows[0], "›"), undefined);
+  assert.deepEqual(renderTraceRow(rows[0]!, 80), before);
 });
 
 test("drillDecorateNativeRow numbers only a genuinely blank leading spacer line", () => {
@@ -173,9 +175,9 @@ test("an expanded read never folds, and a trace block after it starts with a bla
 
   const after = toolComp({ args: { path: "/tmp/demo/zeta.ts" } });
   setTracelineChat({ children: [page1, page2, after] });
-  assert.equal(leadingBlank(after), true, "a trace block after an expanded row starts with its own blank");
+  assert.equal(renderTraceRow(after, 80)[0] === "", true, "a trace block after an expanded row starts with its own blank");
   page2.setExpanded(false);
-  assert.equal(leadingBlank(after), false, "collapsing back restores the tight group");
+  assert.deepEqual(renderTraceRow(after, 80), [], "collapsing back restores the read fold");
 });
 
 // --- the mode end to end -----------------------------------------------------------------

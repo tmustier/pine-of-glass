@@ -22,6 +22,7 @@ import {
   type KeyId,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { isJsonObject } from "../_lib/boundary.ts";
 import type { ToolRowLike } from "../_lib/chat.ts";
 import { ELLIPSIS, SEP, ink } from "../_lib/style.ts";
 import { applyDigit, setSelected, togglePin, type DrillState } from "./drill.ts";
@@ -43,8 +44,6 @@ const HEADER_LINES = 2;
 const FOOTER_LINES = 1;
 const SECTION_INDENT = "    ";
 
-type TerminalSizeLike = { terminal?: { rows?: number } };
-
 type PagerImage = { start: number; lines: string[] };
 type PagerBody = { lines: string[]; images: PagerImage[] };
 type CachedImage = { data: string; comp: Image };
@@ -54,26 +53,10 @@ type CachedImage = { data: string; comp: Image };
 const livePagers = new Set<DrillPager>();
 let exitGuardInstalled = false;
 
-function ensureExitGuard(): void {
-  if (exitGuardInstalled) return;
-  exitGuardInstalled = true;
-  process.on("exit", () => {
-    for (const pager of livePagers) pager.dispose();
-  });
-}
-
-function writeIgnoringErrors(sequence: string): void {
-  try {
-    process.stdout.write(sequence);
-  } catch {
-    // terminal already gone; nothing to clean up
-  }
-}
-
 export class DrillPager implements Component {
   private readonly st: DrillState;
   private scroll = 0;
-  private tui: TerminalSizeLike | undefined;
+  private tui: TUI | undefined;
   private lastRowIndex: number;
   private cache: { row: unknown; result: unknown; width: number; viewport: number; body: PagerBody } | undefined;
   private imageComps = new Map<string, CachedImage>();
@@ -85,7 +68,7 @@ export class DrillPager implements Component {
   }
 
   attach(tui: TUI): void {
-    this.tui = tui as TerminalSizeLike;
+    this.tui = tui;
   }
 
   scrollBy(delta: number): void {
@@ -224,14 +207,13 @@ export class DrillPager implements Component {
     const before = lines.length;
     let imageIndex = 0;
     for (const block of content) {
-      if (!block || typeof block !== "object") continue;
-      const typed = block as { type?: unknown; text?: unknown };
-      if (typed.type === "text" && typeof typed.text === "string") {
-        for (const line of textBlockLines(theme, typed.text, contentWidth, code)) {
+      if (!isJsonObject(block)) continue;
+      if (block.type === "text" && typeof block.text === "string") {
+        for (const line of textBlockLines(theme, block.text, contentWidth, code)) {
           lines.push(line.length === 0 ? "" : fit(`${SECTION_INDENT}${line}`));
         }
-      } else if (typed.type === "image") {
-        this.pushImage(call, callIndex, imageIndex++, block as ImageBlockLike, theme, width, contentWidth, viewport, lines, images);
+      } else if (block.type === "image") {
+        this.pushImage(call, callIndex, imageIndex++, block, theme, width, contentWidth, viewport, lines, images);
       } else {
         lines.push(fit(`${SECTION_INDENT}${foreignBlockLine(theme, block)}`));
       }
@@ -271,7 +253,12 @@ export class DrillPager implements Component {
     }
     images.push({ start, lines: rendered });
     livePagers.add(this);
-    ensureExitGuard();
+    if (!exitGuardInstalled) {
+      exitGuardInstalled = true;
+      process.on("exit", () => {
+        for (const pager of livePagers) pager.dispose();
+      });
+    }
   }
 
   // One Image component per result block, keyed by call and block index so kitty image
@@ -311,5 +298,10 @@ export class DrillPager implements Component {
 function deleteCompImage(comp: Image): void {
   if (getCapabilities().images !== "kitty") return; // only kitty stores images by id
   const id = comp.getImageId();
-  if (typeof id === "number") writeIgnoringErrors(deleteKittyImage(id));
+  if (id === undefined) return;
+  try {
+    process.stdout.write(deleteKittyImage(id));
+  } catch {
+    // Terminal already gone; nothing to clean up.
+  }
 }

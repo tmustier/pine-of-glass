@@ -1,3 +1,4 @@
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
@@ -15,7 +16,7 @@ function event(y: number, x = 3, type: TuiMouseEvent["type"] = "click", width = 
 }
 
 function painted(comp: AssistantMessageComponent, width = 80): string[] {
-  return comp.render(width).map((line) => trace.stripAnsi(line).trimEnd());
+  return comp.render(width).map((line) => stripAnsi(line).trimEnd());
 }
 
 function clickText(comp: AssistantMessageComponent, text: string, width = 80) {

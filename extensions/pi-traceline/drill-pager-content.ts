@@ -8,7 +8,7 @@
 import { getLanguageFromPath, highlightCode, type Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getImageDimensions, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../_lib/ansi.ts";
-import { isJsonObject } from "../_lib/boundary.ts";
+import { isJsonObject, type JsonFields } from "../_lib/boundary.ts";
 import { resultTextCharCount, type ToolRowLike } from "../_lib/chat.ts";
 import { compactCount } from "../_lib/fmt.ts";
 import { SEP, ink, type Tone } from "../_lib/style.ts";
@@ -41,8 +41,8 @@ const ARG_KEY_WIDTH_CAP = 24;
 /** Aligned `key  value` rows (§9.13): keys dim in one column, string values verbatim,
  * wrapped continuations hanging at the value column, nested objects as indented JSON. */
 export function argumentLines(theme: Theme | undefined, args: unknown, width: number): string[] {
-  if (!args || typeof args !== "object" || Array.isArray(args)) return [];
-  const entries = Object.entries(args as Record<string, unknown>);
+  if (!isJsonObject(args)) return [];
+  const entries = Object.entries(args);
   if (entries.length === 0) return [];
   const keyWidth = Math.min(Math.max(...entries.map(([key]) => key.length)), ARG_KEY_WIDTH_CAP);
   const continuation = " ".repeat(keyWidth + 2);
@@ -94,7 +94,7 @@ const CODE_PRINTERS = new Set(["cat", "sed", "head", "tail", "bat"]);
  * names a language (numbered from the call's offset), or a bash command that is one
  * plain printer of a single code file (no gutter; the true start line is unknown). */
 export function codeContextFor(call: ToolRowLike): CodeContext | undefined {
-  const args = call.args as { path?: unknown; offset?: unknown; command?: unknown } | undefined;
+  const args = call.args;
   if (call.toolName === "read" && typeof args?.path === "string") {
     const language = languageOf(args.path);
     if (!language) return undefined;
@@ -136,8 +136,7 @@ export function textBlockLines(theme: Theme | undefined, text: string, width: nu
   }
   let source: string[];
   try {
-    const highlighted = highlightCode(clean, code.language);
-    source = Array.isArray(highlighted) ? highlighted.map(String) : clean.split("\n");
+    source = highlightCode(clean, code.language);
   } catch {
     source = clean.split("\n");
   }
@@ -182,10 +181,9 @@ export function imageFactLine(theme: Theme | undefined, block: ImageBlockLike): 
 
 /** A block the pager has no richer rendering for shows its type and metadata (§9.13),
  * never a bare bracket. Bulky payload fields stay out; they are not readable anyway. */
-export function foreignBlockLine(theme: Theme | undefined, block: object): string {
-  const typed = block as { type?: unknown };
-  const kind = typeof typed.type === "string" ? typed.type : "block";
-  const meta: Record<string, unknown> = {};
+export function foreignBlockLine(theme: Theme | undefined, block: JsonFields): string {
+  const kind = typeof block.type === "string" ? block.type : "block";
+  const meta: JsonFields = {};
   for (const [key, value] of Object.entries(block)) {
     if (key === "type" || key === "data") continue;
     meta[key] = value;

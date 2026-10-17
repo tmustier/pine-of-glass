@@ -4,6 +4,7 @@
 // severity keeps its own row and splits the run, as an error row does. Comps are
 // synthetic duck-type stand-ins; the contract suite proves the duck types against the
 // real installed pi.
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
@@ -13,7 +14,7 @@ import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantBefore, completedReadRow, wholeFileReadRow } from "./runtime-fixtures.ts";
 
-const { stripAnsi, renderTraceRow, readRun, setTracelineChat, setTracelineThemeGetter } = internals;
+const { renderTraceRow, readRun, setTracelineChat, setTracelineThemeGetter } = internals;
 
 const proseBefore = (rows: ToolRowLike[]) => assistantBefore(rows, [{ type: "text", text: "now let me check" }]);
 const collapsedThinkingBefore = (row: ToolRowLike) => assistantBefore([row], [{ type: "thinking", thinking: "hmm" }], true);

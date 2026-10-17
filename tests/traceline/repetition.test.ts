@@ -3,6 +3,8 @@
 // when it repeats the previous bash row's. Read folding lives in read-folds.test.ts.
 // Comps are synthetic duck-type stand-ins; the contract suite proves the duck types
 // against the real installed pi.
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
+import { bashPreambleRun } from "../../extensions/pi-traceline/bash-preamble.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
@@ -11,15 +13,7 @@ import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantBefore, completedReadRow, nativeBashLines } from "./runtime-fixtures.ts";
 
-const {
-  stripAnsi,
-  oneLine,
-  bashPreambleRun,
-  foldBashPreamble,
-  renderTraceRow,
-  setTracelineChat,
-  setTracelineThemeGetter,
-} = internals;
+const { oneLine, renderTraceRow, setTracelineChat, setTracelineThemeGetter } = internals;
 
 const DIM = "\x1b[90m"; // raw-ANSI fallback for the family dim tone (no theme in tests)
 const FOLD_MARK = "\u22ef";
@@ -37,7 +31,7 @@ function bashComp(command: string): ToolRowLike {
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => nativeBashLines(command) },
-  } as ToolRowLike;
+  };
 }
 
 function mcpComp(id: string, resultChars: number, isError = false): ToolRowLike {
@@ -49,7 +43,7 @@ function mcpComp(id: string, resultChars: number, isError = false): ToolRowLike 
     render: () => [],
     setExpanded: () => {},
     callRendererComponent: { render: () => ["mcp call linear_save_issue"] },
-  } as ToolRowLike;
+  };
 }
 
 const proseBefore = (rows: ToolRowLike[]) => assistantBefore(rows, [{ type: "text", text: "now let me check" }]);
@@ -84,7 +78,7 @@ test("identical invocations in separate assistant steps stay separate", () => {
 
 test("an expanded row splits a same-step repetition fold", () => {
   const a = mcpComp("NEXSELL-1", 100);
-  const expanded = { ...mcpComp("NEXSELL-2", 100), expanded: true } as ToolRowLike;
+  const expanded = { ...mcpComp("NEXSELL-2", 100), expanded: true };
   const c = mcpComp("NEXSELL-3", 100);
   setTracelineChat({ children: [assistantBefore([a, expanded, c]), a, expanded, c] });
 
@@ -170,37 +164,14 @@ test("a different directory prints; an all-hygiene row keeps its head", () => {
   assert.ok(stripAnsi(oneLine(setOnly, 120)).includes("set -e"), "an all-hygiene row keeps its head");
 });
 
-test("bashPreambleRun classifies the leading run; foldBashPreamble reclaims it", () => {
-  const bash = { toolName: "bash" };
-
-  // No preamble: the whole body is the command.
-  const plain = bashPreambleRun("uv run x");
-  assert.equal(plain.contextText, "");
-  assert.equal(plain.firstRealStart, 0);
-
-  // set + cd + real: set is hygiene, cd is context, the run ends at the real head.
-  const full = bashPreambleRun(`set -euo pipefail ${NL} cd ~/x ${NL} uv run y`);
-  assert.equal(full.contextText, "cd ~/x");
-  assert.ok(full.firstRealStart! > 0);
-  // Lever B strips just the leading set, keeping the cd context and the command.
-  assert.equal(
-    foldBashPreamble(bash, `$ set -euo pipefail ${NL} cd ~/x ${NL} uv run y`),
-    `$ cd ~/x ${NL} uv run y`,
-  );
-
-  // All hygiene: nothing to point a ⋯ at and nothing safe to drop — the row is kept.
-  const hygiene = bashPreambleRun("set -e");
-  assert.equal(hygiene.contextText, "");
-  assert.equal(hygiene.firstRealStart, undefined);
-  assert.equal(hygiene.dropStart, undefined);
-  assert.equal(foldBashPreamble(bash, "$ set -e"), "$ set -e");
-
-  // A bare assignment is setup (context); an env-prefixed command is the command.
-  assert.equal(bashPreambleRun(`WORK=$(cat /tmp/x) ${NL} magick foo`).contextText, "WORK=$(cat /tmp/x)");
-  assert.equal(bashPreambleRun("FOO=bar cmd").contextText, "");
-
-  // Non-`$ ` lines pass through untouched.
-  assert.equal(foldBashPreamble({}, "read ~/x.ts:1-2"), "read ~/x.ts:1-2");
+test("assignment-only setup repeats as context but an env-prefixed command does not", () => {
+  const setup = bashComp("WORK=$(cat /tmp/x)\nmagick foo");
+  const repeat = bashComp("WORK=$(cat /tmp/x)\nmagick bar");
+  const env = bashComp("FOO=bar cmd");
+  setTracelineChat({ children: [setup, repeat, env] });
+  assert.match(stripAnsi(oneLine(setup, 120)), /WORK=\$\(cat \/tmp\/x\)/);
+  assert.match(stripAnsi(oneLine(repeat, 120)), /\$ ⋯ magick bar/);
+  assert.match(stripAnsi(oneLine(env, 120)), /\$ FOO=bar cmd/);
 });
 
 test("segment splitting is quote-aware: an && inside a quoted directory never splits", () => {

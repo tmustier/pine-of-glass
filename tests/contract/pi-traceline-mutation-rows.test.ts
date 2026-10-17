@@ -1,3 +1,4 @@
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -29,7 +30,7 @@ function painted(comp: ToolExecutionComponent, result: Result) {
   comp.markExecutionStarted();
   comp.updateResult(result);
   trace.setTracelineChat({ children: [assistantBefore([comp as unknown as ToolRowLike], [], true), comp] });
-  return comp.render(120).map(trace.stripAnsi).filter((line) => line.trim());
+  return comp.render(120).map(stripAnsi).filter((line) => line.trim());
 }
 
 test("edit and write rows are Pi's header line, never its preview, and read ./ through a symlink (§9.5)", async () => {

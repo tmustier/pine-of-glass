@@ -4,6 +4,7 @@
 // model actually received the pixels. It is a what-fact, not a how-big-fact: ink and
 // column policy stay in index.ts.
 import { getImageDimensions } from "@earendil-works/pi-tui";
+import { isJsonObject } from "../_lib/boundary.ts";
 import type { ToolRowDataLike } from "../_lib/chat.ts";
 
 // Dimension parsing decodes the payload, so facts cache per result identity like
@@ -12,12 +13,11 @@ const imageFactCache = new WeakMap<object, string>();
 
 export function resultImageFact(comp: ToolRowDataLike | undefined): string {
   const result = comp?.result;
-  if (!result || typeof result !== "object" || !Array.isArray(result.content)) return "";
+  if (!result || !Array.isArray(result.content)) return "";
   const cached = imageFactCache.get(result);
   if (cached !== undefined) return cached;
   const blocks = result.content.filter(
-    (block): block is { type: "image"; data?: unknown; mimeType?: unknown } =>
-      !!block && typeof block === "object" && (block as { type?: unknown }).type === "image",
+    (block) => isJsonObject(block) && block.type === "image",
   );
   let fact = "";
   if (blocks.length > 1) fact = `${blocks.length} images`;

@@ -42,9 +42,8 @@ import {
 } from "./bash-preamble.ts";
 import { checkFacts, checkFailed } from "./checks.ts";
 import { failureCell as inkFailureFact, failureFact } from "./failure.ts";
-import { fitHeadline, mergeHeadlineFacts, recordCellText, type RecordCellData } from "./headline.ts";
+import { fitHeadline, mergeHeadlineFacts, type RecordCellData } from "./headline.ts";
 import { fitBashLines, type BashLines } from "./bash-lines.ts";
-import { bashCrownedHeads } from "./bash-crowns.ts";
 import {
   drillDecorateNativeRow,
   drillRenderKey,
@@ -79,10 +78,7 @@ import { TraceTopology, isCompactNoticeRow, isEmptyConnector, isCollapsedThinkin
 import {
   captureWriteCallSnapshot,
   clearWriteCallSnapshots,
-  diffStatsFromContents,
-  diffStatsFromText,
   mutationDiffStats as rawMutationDiffStats,
-  writeDiffStats,
   type DiffStats,
 } from "./write-diff.ts";
 import { installThinkingPreviews } from "./thinking-preview.ts";
@@ -110,8 +106,6 @@ const g = globalThis as TracelineGlobal;
 const renderCache = g.__tracelineRenderCache ??= new TraceRenderCache();
 const topology = new TraceTopology(renderCache);
 function topologyChanged(): void { if (g.__tracelineChat) topology.changed(g.__tracelineChat); }
-function setTracelineChat(chat: ContainerLike | undefined): void { g.__tracelineChat = chat; }
-function setTracelineThemeGetter(getTheme: (() => Theme | undefined) | undefined): void { g.__tracelineGetTheme = getTheme; }
 
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
@@ -156,7 +150,7 @@ const rowFailureFact = cachedIntrinsic(renderCache, "failure", (row) => {
 
 function chatChildren(): unknown[] | undefined {
   let chat = g.__tracelineChat;
-  if (!chat || !Array.isArray(chat.children)) {
+  if (!chat) {
     chat = g.__tracelineTui ? findChatContainer(g.__tracelineTui) : undefined;
     g.__tracelineChat = chat;
   }
@@ -187,7 +181,7 @@ type ToolStatus = "success" | "running" | "error";
 
 function toolStatus(comp: ToolRowDataLike | undefined): ToolStatus {
   if (comp?.result?.isError) return "error";
-  if (comp?.result && comp?.isPartial !== true) return "success";
+  if (comp?.result && comp.isPartial !== true) return "success";
   return "running";
 }
 
@@ -200,9 +194,8 @@ function statusTone(comp: ToolRowDataLike | undefined): Tone {
   return "running";
 }
 
-// Verb ink (design language §2/§9.2): identity is neutral bold — status lives in the ›
-// bullet — so a healthy column of read/edit/$ verbs stays calm while assistant prose
-// owns full brightness. Only a real anomaly (a failed call) tints its verb.
+// Discriminators (verbs, basenames and bash heads) share neutral bold ink (§2/§9.2).
+// Status lives in the bullet; only a failed call tints its discriminators.
 function verbTone(comp: ToolRowDataLike | undefined): Tone {
   return toolStatus(comp) === "error" ? "error" : "text";
 }
@@ -211,15 +204,7 @@ function verbInk(comp: ToolRowDataLike | undefined, verb: string): string {
   return ink(currentTheme(), verbTone(comp), `${BOLD}${verb}${BOLD_OFF}`);
 }
 
-// Bold is the trace row's white (design language §9.3) and errors tint the
-// discriminators (§9.2): basenames and bash head commands take exactly the verb's
-// treatment — bold `text` on healthy rows, bold `error` on failed rows — so plain
-// prose-weight white never appears inside a trace row and a failed call is more than
-// one red glyph in a dim wall.
-function discriminatorInk(comp: ToolRowDataLike | undefined, text: string): string {
-  return verbInk(comp, text);
-}
-
+// Trace tools and notices share the same nested rail (§9.1).
 function railPrefix(bullet: string): string {
   return `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`;
 }
@@ -230,10 +215,6 @@ function toolPrefix(tone: Tone, comp?: ToolRowDataLike, disclosure?: string): st
     drillTracePrefix(currentTheme(), comp, bullet) ??
     railPrefix(bullet)
   );
-}
-
-function formatCharCount(value: number): string {
-  return compactCount(Math.max(0, Math.floor(value)));
 }
 
 // Severity thresholds (design language §6): dim while healthy, warning/error when an
@@ -264,13 +245,7 @@ const CHAR_SUFFIX_FLOOR = 100;
 function charSuffix(chars: number | undefined, columnLive = false): string {
   if (chars === undefined) return "";
   if (chars < CHAR_SUFFIX_FLOOR && !columnLive) return "";
-  return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${formatCharCount(chars)} ch`);
-}
-
-// The image what-fact (§9.7, image-fact.ts): dim, never lighting the size column.
-function imageFactCell(comp: ToolRowDataLike | undefined): string {
-  const fact = resultImageFact(comp);
-  return fact ? dim(fact) : "";
+  return ink(currentTheme(), sizeTone(chars, sizeThresholds), `${compactCount(chars)} ch`);
 }
 
 const MUTATION_VERBS = new Set(["edit", "write"]);
@@ -347,10 +322,6 @@ function blockFactsOf(comp: ToolRowLike): BlockFacts {
   return blockFacts(blockToolRows(comp));
 }
 
-function blockSizeColumnLive(comp: ToolRowLike): boolean {
-  return blockFactsOf(comp).sizeColumnLive;
-}
-
 // Rows in a block share one body budget (design language §9.8): reserve the block's
 // widest rendered fact suffix — folded read runs count as their single `N calls · size`
 // cell — plus the two-space gap (§9.1), so every truncated row in the block cuts at
@@ -418,27 +389,10 @@ function recordCellData(comp: ToolRowDataLike): RecordCellData[] {
   return renderCache.memo(comp, "records", () => mergeHeadlineFacts(recordFacts(comp), checkFacts(comp)));
 }
 
-function recordCells(comp: ToolRowDataLike): string[] {
-  return recordCellData(comp).map(recordCellText);
-}
-
-function recordHeadline(comp: ToolRowDataLike, available: number): string {
-  return fitHeadline(currentTheme(), recordCellData(comp), available);
-}
-
 // Only records of consequence suppress the size cell (§9.7); a check row keeps it,
 // because test output is pulled context (§9.10.1).
 function recordRow(comp: ToolRowDataLike): boolean {
   return recordFacts(comp).length > 0;
-}
-
-// A record row's size cell is suppressed as noise (§9.10/§9.7): its result is
-// porcelain about the event, not pulled context. At warning severity (§6) the cell
-// re-earns its berth — an output that balloons is a story of its own.
-function recordCharSuffix(comp: ToolRowDataLike): string {
-  const chars = resultTextCharCount(comp);
-  if (chars === undefined || chars < sizeThresholds.warning) return "";
-  return charSuffix(chars);
 }
 
 // A failed row leads its facts with why (§9.2.1).
@@ -451,7 +405,15 @@ function failureCell(comp: ToolRowDataLike | undefined, available: number): stri
 // §9.2.1), an image what-fact, or the char count; a composed call's `trimmed` fact
 // rides ahead of it (§9.14).
 function sizeBerthCell(comp: ToolRowDataLike, sizeColumnLive: boolean): string {
-  const base = recordRow(comp) || rowFailureFact(comp) ? recordCharSuffix(comp) : imageFactCell(comp) || charSuffix(resultTextCharCount(comp), sizeColumnLive);
+  const chars = resultTextCharCount(comp);
+  let base: string;
+  if (recordRow(comp) || rowFailureFact(comp)) {
+    // Records and failures suppress confirmation-sized text, even in a live column.
+    base = chars !== undefined && chars >= sizeThresholds.warning ? charSuffix(chars) : "";
+  } else {
+    const image = resultImageFact(comp);
+    base = image ? dim(image) : charSuffix(chars, sizeColumnLive);
+  }
   if (!composedFacts(comp)?.trimmed) return base;
   const trimmed = ink(currentTheme(), "warning", "trimmed");
   return base ? `${trimmed}${dim(SEP)}${base}` : trimmed;
@@ -485,10 +447,6 @@ function toolFactSuffix(comp: ToolRowLike, available = Number.POSITIVE_INFINITY,
 // tildify / middleTruncate / rightAlignSuffix live in _lib/style.ts — traceline's rules,
 // promoted to family rules (design language §5).
 
-function displayPath(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 function compactJson(value: unknown): string {
   try {
     return JSON.stringify(value) ?? "";
@@ -497,41 +455,28 @@ function compactJson(value: unknown): string {
   }
 }
 
-// Preserve every command line; taking only the first loses heredoc and script bodies.
-function flattenInvocationLines(lines: string[]): string | undefined {
-  const visible = lines
-    .filter((line) => stripAnsi(line).trim().length > 0)
-    .map((line) => trimLeadingVisibleWhitespace(line.trimEnd()));
-  if (visible.length === 0) return undefined;
-  return visible.join(` ${LINE_BREAK_MARK} `);
-}
+// Flatten every visible bash line with ↵; apply family ink after preamble reclaim.
 
-function stripTimeoutSuffix(text: string): string {
-  return text.replace(/ \(timeout [^)]*\)\s*$/i, "");
-}
-
-// Shape bash as plain text; bashInvocationPlan applies ink last.
 function bashInvocationText(comp: ToolRowDataLike | undefined): string | undefined {
   return comp ? renderCache.memo(comp, "bash-invocation", () => {
     const lines = captureCallLines(comp.callRendererComponent, comp.args);
     if (!lines) return undefined;
-    const flattened = flattenInvocationLines(lines.map((line) => stripAnsi(line)));
-    return flattened ? stripTimeoutSuffix(flattened.replace(/^•\s*/, "")) : undefined;
+    const flattened = lines.map(stripAnsi)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => line.trim())
+      .join(` ${LINE_BREAK_MARK} `);
+    // Timeout is boilerplate; the full invocation stays one zoom away (§9.3).
+    return flattened ? flattened.replace(/^•\s*/, "").replace(/ \(timeout [^)]*\)\s*$/i, "") : undefined;
   }) : undefined;
-}
-
-function commandPrefixLength(comp: ToolRowDataLike | undefined, line: string): number {
-  const visible = stripAnsi(line).trimStart();
-  const name = toolLabel(comp?.toolName);
-  if (visible.startsWith(name)) return name.length;
-  return visible.match(/^\S+/)?.[0].length ?? 0;
 }
 
 function colourCommandPrefix(comp: ToolRowDataLike | undefined, line: string): string {
   const unindented = trimLeadingVisibleWhitespace(line);
   const bullet = stripAnsi(unindented).match(/^•\s*/)?.[0];
   const trimmed = bullet ? unindented.slice(rawIndexAtVisibleIndex(unindented, bullet.length)) : unindented;
-  const prefixLen = commandPrefixLength(comp, trimmed);
+  const visible = stripAnsi(trimmed).trimStart();
+  const name = toolLabel(comp?.toolName);
+  const prefixLen = visible.startsWith(name) ? name.length : visible.match(/^\S+/)?.[0].length ?? 0;
   if (prefixLen <= 0) return trimmed;
   const rawEnd = rawIndexBeforeVisibleIndex(trimmed, prefixLen);
   const prefix = stripSgrForegrounds(trimmed.slice(0, rawEnd));
@@ -558,28 +503,17 @@ function nativeInvocationLine(comp: ToolRowLike): string | undefined {
 
 // Rare fallback for tools without a renderCall component. Keep it intentionally plain;
 // built-in and well-behaved custom tools should use nativeInvocationLine().
-function fallbackInvocationLine(comp: ToolRowDataLike | undefined): string {
+function inkedFallbackLine(comp: ToolRowDataLike | undefined): string {
   const verb = toolLabel(comp?.toolName);
   const args = comp?.args ?? {};
-  const path = displayPath(args.path);
-  const body =
-    verb === "read"
-      ? `${verb} ${path ?? ""}${lineRange(args)}`
-      : path
-        ? `${verb} ${path}`
-        : `${verb} ${compactJson(args)}`;
-  return body.replace(/\s+/g, " ").trim() || verb;
-}
-
-function inkedFallbackLine(comp: ToolRowDataLike | undefined): string {
-  const body = tildify(fallbackInvocationLine(comp));
-  const verb = toolLabel(comp?.toolName);
+  const path = typeof args.path === "string" && args.path.length > 0 ? args.path : undefined;
+  const invocation = verb === "read"
+    ? `${verb} ${path ?? ""}${lineRange(args)}`
+    : `${verb} ${path ?? compactJson(args)}`;
+  const body = tildify(invocation.replace(/\s+/g, " ").trim() || verb);
   if (body === verb) return verbInk(comp, verb);
-  if (body.startsWith(`${verb} `)) {
-    // Argument text at the one supporting grey (§9.3), matching bash argument ink.
-    return `${verbInk(comp, verb)} ${dim(body.slice(verb.length + 1))}`;
-  }
-  return dim(body);
+  // Argument text at the one supporting grey (§9.3), matching bash argument ink.
+  return body.startsWith(`${verb} `) ? `${verbInk(comp, verb)} ${dim(body.slice(verb.length + 1))}` : dim(body);
 }
 
 // Emphasis for plain file reads, edits, and writes (design language §9.5): dim the
@@ -590,8 +524,8 @@ function inkedFallbackLine(comp: ToolRowDataLike | undefined): string {
 const PATH_VERBS = new Set(["read", "edit", "write"]);
 
 function toolPathArg(c: ToolRowDataLike): string | undefined {
-  if (!PATH_VERBS.has(toolLabel(c?.toolName))) return undefined;
-  const path = c?.args?.path ?? c?.args?.file_path;
+  if (!PATH_VERBS.has(toolLabel(c.toolName))) return undefined;
+  const path = c.args?.path ?? c.args?.file_path;
   return typeof path === "string" && path.length > 0 ? cwdRelativePath(c, path) : undefined;
 }
 
@@ -621,20 +555,20 @@ function boringPrefix(comp: ToolRowLike, tildePath: string): string {
 }
 
 function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | undefined {
-  const verb = toolLabel(comp?.toolName);
+  const verb = toolLabel(comp.toolName);
   if (!PATH_VERBS.has(verb)) return undefined;
-  const path = comp?.args?.path ?? comp?.args?.file_path;
+  const path = comp.args?.path ?? comp.args?.file_path;
   if (typeof path !== "string" || path.length === 0) return undefined;
   const tildePath = tildify(path);
   const lastSlash = tildePath.lastIndexOf("/");
   if (lastSlash < 0) return undefined;
   const visible = stripAnsi(nativeColored).trim();
-  const range = lineRange(comp?.args);
+  const range = lineRange(comp.args);
   const compact = verb === "read" ? compactReadDisplay(visible, range) : undefined;
   if (compact) {
     const boring = boringPrefix(comp, compact.path);
     const tail = compact.path.slice(boring.length);
-    return `${verbInk(comp, verb)} ${dim(`${compact.classification} ${boring}`)}${discriminatorInk(comp, tail)}${ink(currentTheme(), "warning", range)}`;
+    return `${verbInk(comp, verb)} ${dim(`${compact.classification} ${boring}`)}${verbInk(comp, tail)}${ink(currentTheme(), "warning", range)}`;
   }
   const matches =
     verb === "read"
@@ -648,8 +582,8 @@ function pathEmphasisLine(comp: ToolRowLike, nativeColored: string): string | un
   // The basename carries one inline qualifier (§9.5): a read's warning `:line-range`,
   // or an edit/write's `+N -M` diff. Both survive truncation as the protected tail.
   const qualifier =
-    verb === "read" ? ink(theme, "warning", lineRange(comp?.args)) : mutationInlineDiffInk(comp);
-  return `${verbInk(comp, verb)} ${dim(boring)}${discriminatorInk(comp, tail)}${qualifier}`;
+    verb === "read" ? ink(theme, "warning", lineRange(comp.args)) : mutationInlineDiffInk(comp);
+  return `${verbInk(comp, verb)} ${dim(boring)}${verbInk(comp, tail)}${qualifier}`;
 }
 
 // A bash body's ink with no budget: crowns bold in the row's tone, the rest dim (§9.3).
@@ -674,7 +608,7 @@ function invocationInk(comp: ToolRowLike, available = Number.POSITIVE_INFINITY, 
       const budget = available - blockSuffixReserve(rows, facts, available);
       return composedBody(currentTheme(), comp, composed, toolStatus(comp) === "error", budget);
     }
-    if (toolLabel(comp?.toolName) === "bash") return bashInvocationPlan(comp, available, bodyBudget, false).first;
+    if (comp.toolName === "bash") return bashInvocationPlan(comp, available, bodyBudget, false).first;
     const native = nativeInvocationLine(comp);
     return native ? tildify(native) : inkedFallbackLine(comp);
   });
@@ -690,7 +624,7 @@ function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: nu
   return renderCache.memo(comp, `bash-plan:${available}:${bodyBudget}:${wrap}:${objectCacheKey(currentTheme())}`, () => {
     const plain = bashInvocationText(comp);
     if (plain === undefined) return { first: inkedFallbackLine(comp), continuations: [], overflow: false, commandColumn: 0 };
-    const headline = recordHeadline(comp, available);
+    const headline = fitHeadline(currentTheme(), recordCellData(comp), available);
     const headlineWidth = headline ? visibleWidth(headline) + 1 : 0;
     const text = foldBashPreamble(comp, bashDisplayLine(comp, plain));
     const commandColumn = headlineWidth + 2;
@@ -704,7 +638,7 @@ function bashInvocationPlan(comp: ToolRowLike, available: number, bodyBudget: nu
 }
 
 function traceRowAvailable(width: number): number {
-  return Math.max(1, Math.max(1, width) - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
+  return Math.max(1, width - TOOL_PREFIX_VISIBLE_WIDTH - TOOL_RIGHT_MARGIN);
 }
 
 function fitTraceLine(prefix: string, body: string, suffix: string, reserve: number, width: number): string {
@@ -857,21 +791,11 @@ function foldBashPreamble(comp: ToolRowDataLike, line: string): string {
 // render nothing; a dir fold that overflows the block's body budget wraps at file
 // boundaries onto rail-only continuation lines (§9.9) instead of truncating
 // basenames away.
-function readPath(comp: ToolRowDataLike): string | undefined {
-  if (toolLabel(comp?.toolName) !== "read") return undefined;
-  const path = comp?.args?.path;
-  return typeof path === "string" && path.length > 0 ? path : undefined;
-}
-
-// A read row that may participate in a fold: error rows never fold — a failed page must
-// keep its own red row, not vanish into a folded one whose tone reflects only the last
-// call. An error therefore also breaks the run on both sides. Warning-size breakout is
-// per file, not per call, and lives in readRun's unit scan.
+// Explicit view choices and failed pages never fold: their own facts must stay visible.
 function foldableReadPath(comp: ToolRowDataLike): string | undefined {
-  const path = readPath(comp);
-  if (path === undefined) return undefined;
-  if (comp.expanded === true || isRevealed(comp)) return undefined; // explicit view choices never fold
-  return toolStatus(comp) === "error" ? undefined : path;
+  if (comp.toolName !== "read" || comp.expanded === true || isRevealed(comp) || toolStatus(comp) === "error") return undefined;
+  const path = comp.args?.path;
+  return typeof path === "string" && path.length > 0 ? path : undefined;
 }
 
 // The maximal run of consecutive foldable reads sharing comp's directory, walked
@@ -1004,7 +928,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
       .map((row) => lineRange(row?.args).slice(1))
       .filter(Boolean)
       .join(",");
-    const body = `${verbInk(last, "read")} ${dim(dir)}${discriminatorInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
+    const body = `${verbInk(last, "read")} ${dim(dir)}${verbInk(last, base)}${ink(theme, "warning", ranges ? `:${ranges}` : "")}`;
     // rows[0] is the carrier: in drill mode the fold is one target and rows[0] renders it.
     return [fitTraceRow(rows[0], tone, body, suffix, reserve, width, "▸")];
   }
@@ -1019,7 +943,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
   const boring = dirEnd > 0 ? boringPrefix(last, shown) : "";
   const headInk =
     dirEnd > 0
-      ? `${verbInk(last, "read")} ${dim(boring)}${discriminatorInk(last, shownDir.slice(boring.length))}`
+      ? `${verbInk(last, "read")} ${dim(boring)}${verbInk(last, shownDir.slice(boring.length))}`
       : verbInk(last, "read");
 
   const cells = adjacentReadGroups(rows).map((group) => {
@@ -1029,7 +953,7 @@ function foldedReadLines(rows: ToolRowLike[], width: number): string[] {
       .filter(Boolean)
       .join(",");
     const rangeText = ranges ? `:${ranges}` : "";
-    return `${discriminatorInk(last, base)}${ink(theme, "warning", rangeText)}`;
+    return `${verbInk(last, base)}${ink(theme, "warning", rangeText)}`;
   });
 
   const bodyBudget = Math.max(1, available - Math.max(visibleWidth(suffix) + 2, reserve));
@@ -1056,7 +980,7 @@ function componentLocation(comp: ChatRowLike): { sibs: unknown[]; index: number 
   if (index === -1) {
     g.__tracelineChat = undefined; // stale container ref — re-find once
     sibs = chatChildren();
-    index = Array.isArray(sibs) ? sibs!.indexOf(comp) : -1;
+    index = Array.isArray(sibs) ? sibs.indexOf(comp) : -1;
   }
   return Array.isArray(sibs) && index >= 0 ? { sibs, index } : undefined;
 }
@@ -1200,42 +1124,13 @@ function tryPatch(): boolean {
 
 // Legacy test/dev access, not a public API. Entries only shrink (docs/testing.md).
 export const internals = {
-  // duck-typed pi-internal detection (contract-tested against the installed pi)
-  isToolRow,
-  isAssistantRow,
-  // ANSI-aware text machinery
-  stripAnsi,
-  stripSgrBackgrounds,
-  stripSgrForegrounds,
-  dimUnstyledSpans: (line: string) => dimUnstyledSpans(line, currentTheme()),
-  rawIndexAtVisibleIndex,
-  rawIndexBeforeVisibleIndex,
-  middleTruncate,
-  rightAlignSuffix,
-  tildify,
-  stripTimeoutSuffix,
-  bashCrownedHeads,
+  // Bash corpus replay.
   inkBashBody,
-  flattenInvocationLines,
   // row grammar
-  formatCharCount,
-  charSuffix,
-  diffStatsFromText,
-  diffStatsFromContents,
-  captureWriteCallSnapshot,
-  writeDiffStats,
-  mutationDiffStats,
   toolFactSuffix,
-  recordCells,
-  recordHeadline,
   configureSizeThresholds,
-  lineRange,
   toolStatus,
-  blockSizeColumnLive,
-  boringPrefix,
-  cwdRelativePath,
   oneLine,
-  leadingBlank,
   renderTraceRow,
   patchToolRowPrototype,
   patchAssistantRowPrototype,
@@ -1243,12 +1138,10 @@ export const internals = {
   statusTone,
   foldedReadLines,
   // repetition folding + preamble reclaim + thinking-label preview/dedupe (issue #14)
-  bashPreambleRun,
-  foldBashPreamble,
   readRun,
   // typed test/dev accessors for traceline's Pi seam globals
-  setTracelineChat,
-  setTracelineThemeGetter,
+  setTracelineChat: (chat: ContainerLike | undefined) => { g.__tracelineChat = chat; },
+  setTracelineThemeGetter: (getTheme: (() => Theme | undefined) | undefined) => { g.__tracelineGetTheme = getTheme; },
   uncachedRenderTraceRow: (row: ToolRowLike, width: number) =>
     renderCache.withoutCache(() => renderTraceRow(row, width)),
   renderCacheWorkCounts: (reset = false) => renderCache.workCounts(reset),
@@ -1363,7 +1256,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     resetRevealedFolds();
     renderCache.reset();
     g.__tracelinePatchVersion = g.__tracelineAssistantPatchVersion = undefined; // rebind both adapters on reload
-    setTracelineChat(undefined);
+    g.__tracelineChat = undefined;
     g.__tracelineTui = undefined;
     configureSizeThresholds(config);
     g.__tracelineGetTheme = () => ctx.ui.theme;
@@ -1394,7 +1287,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     resetRevealedFolds();
     exitDrillMode(); // restores the editor when shutdown interrupts drill mode
     g.__tracelineTui = undefined;
-    setTracelineChat(undefined);
-    setTracelineThemeGetter(undefined);
+    g.__tracelineChat = undefined;
+    g.__tracelineGetTheme = undefined;
   });
 }

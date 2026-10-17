@@ -4,6 +4,7 @@
 // pixels that never render as a sliced escape sequence; kitty image ids are deleted on
 // dispose. Rows are the same synthetic duck types the other suites use; the contract
 // suite pins the real pi shapes (convertedImages, showImages, image result blocks).
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { getCapabilities, setCapabilities, setImageTranscoder, type TUI } from "@earendil-works/pi-tui";
@@ -14,7 +15,7 @@ import { internals } from "../../extensions/pi-traceline/index.ts";
 import type { DrillHost, DrillState } from "../../extensions/pi-traceline/drill.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 
-const { setTracelineChat, stripAnsi, toolFactSuffix } = internals;
+const { setTracelineChat, toolFactSuffix } = internals;
 
 // A syntactically valid PNG header claiming the given dimensions; pi-tui reads only the
 // header for dimensions and embeds the payload opaquely, so the body can be padding.
@@ -43,7 +44,7 @@ function imageRow(overrides: Partial<ToolRowLike> = {}): ToolRowLike {
     render: () => [],
     setExpanded: () => {},
     ...overrides,
-  } as ToolRowLike;
+  };
 }
 
 function pagerFor(rows: ToolRowLike[], terminalRows = 16): DrillPager {
@@ -81,7 +82,7 @@ test("a tool without a call renderer shows its complete arguments, not a bare na
     args: { note, context: "pine-of-glass", surface: "alt+t" },
     result: { content: [{ type: "text", text: "Recorded locally" }], isError: false },
   });
-  delete (row as { callRendererComponent?: unknown }).callRendererComponent;
+  delete row.callRendererComponent;
   const text = pagerFor([row])
     .render(80)
     .map((line) => stripAnsi(line))
@@ -106,7 +107,7 @@ test("argumentLines: wraps at the value column, JSON for nested values, [] for n
 // --- code results (§9.13: code renders as code, ink-only) -------------------------------
 
 test("codeContextFor claims code only when it is provable", () => {
-  const row = (toolName: string, args: object) => ({ ...imageRow(), toolName, args }) as ToolRowLike;
+  const row = (toolName: string, args: ToolRowLike["args"]): ToolRowLike => ({ ...imageRow(), toolName, args });
   assert.deepEqual(codeContextFor(row("read", { path: "a/b.ts", offset: 40 })), { language: "typescript", nextLine: 40 });
   assert.deepEqual(codeContextFor(row("read", { path: "a/b.ts" })), { language: "typescript", nextLine: 1 });
   assert.equal(codeContextFor(row("read", { path: "notes.txt" })), undefined);
