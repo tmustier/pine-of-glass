@@ -24,6 +24,12 @@
   only when each of its examples yields exactly its records; anything wrong shows as a
   notification naming the file or extension and the entry, and the rest still loads.
   Your entries read command output only: silent successes stay built in.
+- `scripts/dev/bash-corpus/draft-vocabulary.ts` drafts an entry for one command from
+  your own session history with a model (`openai-codex/gpt-6-luna` by default). A draft
+  passes only when its examples hold and each one is copied from a real result; the
+  script retries with the problems, then reports where the draft fires across all your
+  results. `--list` shows frequent commands no entry covers, and `extract-results.mjs
+  --all` harvests every bash call for tools beyond git, gh and npm.
 
 ## 0.17.0 (2026-10-17)
 

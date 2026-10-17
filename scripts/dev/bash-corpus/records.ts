@@ -10,12 +10,10 @@
 // Comparing a rule change: run with distinct --census/--dump paths before and after
 // the edit, then join the dumps on `row` to find records gained and lost.
 
-import assert from "node:assert/strict";
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isJsonObject } from "../../../extensions/_lib/boundary.ts";
-import { recordFacts } from "../../../extensions/pi-traceline/records.ts";
+import { readHarvest, replayFacts } from "./corpus.ts";
 
 const args = process.argv.slice(2);
 function argValue(flag: string, fallback = ""): string {
@@ -29,34 +27,13 @@ const censusPath = argValue("--census", join(here, "out", "records-census.json")
 const dumpPath = argValue("--dump");
 const samples = Number(argValue("--samples", "0"));
 
-type Harvested = { cmd: string; text: string; isError: boolean };
-
-// Forked sessions repeat their parent's calls; count each command+result once.
-const seen = new Set<string>();
-const rows: Harvested[] = [];
-for (const line of readFileSync(resultsPath, "utf8").split("\n")) {
-  if (!line) continue;
-  const value: unknown = JSON.parse(line);
-  assert(isJsonObject(value), "Expected a harvested bash result");
-  const { cmd, text, isError } = value;
-  assert(typeof cmd === "string" && typeof text === "string" && typeof isError === "boolean", "Invalid harvested bash result");
-  const row = { cmd, text, isError };
-  const key = JSON.stringify(row);
-  if (seen.has(key)) continue;
-  seen.add(key);
-  rows.push(row);
-}
+const rows = readHarvest(resultsPath);
 
 const byRecord = new Map<string, { rows: number; examples: string[] }>();
 const dump: string[] = [];
 let recordRows = 0;
 rows.forEach((row, index) => {
-  // extract-results.mjs joins text blocks with a trailing newline, as resultText does.
-  const facts = recordFacts({
-    toolName: "bash",
-    args: { command: row.cmd },
-    result: { content: [{ type: "text", text: row.text.replace(/\n$/, "") }], isError: row.isError },
-  });
+  const facts = replayFacts(row);
   if (facts.length === 0) return;
   recordRows++;
   dump.push(JSON.stringify({ row: index, records: facts.map((fact) => `${fact.verb} ${fact.datum} [${fact.evidence}]`) }));
