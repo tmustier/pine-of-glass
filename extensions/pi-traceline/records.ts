@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { isJsonObject } from "../_lib/boundary.ts";
 import type { ToolResultLike, ToolRowDataLike } from "../_lib/chat.ts";
@@ -118,38 +119,7 @@ function optionSet(value: unknown, field: string): Options {
   return { long: options.filter((option) => option.startsWith("--")), short: options.filter((option) => !option.startsWith("--")).map((option) => option[1]).join("") };
 }
 
-function recordRule(value: unknown): RecordRule {
-  if (!isJsonObject(value) || typeof value.output !== "string" || typeof value.verb !== "string" || !value.verb || typeof value.datum !== "string") {
-    throw new Error("each record needs output, verb and datum strings");
-  }
-  const pattern = new RegExp(value.output, "gm");
-  const groups = new Set([...value.output.matchAll(/\(\?<(\w+)>/g)].map((m) => m[1]));
-  const missing = [...value.datum.matchAll(PLACEHOLDER)].map((m) => m[1]!).find((name) => !groups.has(name));
-  if (missing) throw new Error(`datum {${missing}} names no group in its output pattern`);
-  if (value.tone !== undefined && value.tone !== "success" && value.tone !== "warning") throw new Error("tone must be success or warning");
-  if (value.opaque !== undefined && typeof value.opaque !== "boolean") throw new Error("opaque must be true or false");
-  return { pattern, verb: value.verb, datum: value.datum, tone: value.tone ?? "success", opaque: value.opaque ?? false };
-}
-
-function example(value: unknown): VocabularyEntryInput["examples"][number] {
-  const records = isJsonObject(value) ? stringList(value.records) : undefined;
-  if (!isJsonObject(value) || typeof value.command !== "string" || typeof value.output !== "string" || !records || (value.error !== undefined && typeof value.error !== "boolean")) {
-    throw new Error("each example needs command, output and records");
-  }
-  return { command: value.command, output: value.output, error: value.error === true, records };
-}
-
-const label = ({ verb, datum }: RecordFact) => `${verb} ${datum}`;
 const listed = (records: string[]) => (records.length ? records.join(", ") : "nothing");
-
-/** An entry's examples are its specification: each must yield exactly its records with the entry alone. */
-function exampleProblem(entry: VocabularyEntry): string | undefined {
-  for (const [index, { command, output, error, records }] of entry.examples.entries()) {
-    const yields = factsFor([entry], command, `${output}\n`, error !== true).map(label);
-    if (yields.join("\n") !== records.join("\n")) return `example ${index + 1} should yield ${listed(records)} but yields ${listed(yields)}`;
-  }
-  return undefined;
-}
 
 /**
  * Parse vocabulary entries at the boundary (§9.10). An entry with any problem, a failing
@@ -174,13 +144,33 @@ export function parseVocabulary(value: unknown, code: ReadonlyMap<string, EntryC
         commands: commands.map((path) => [path[0]!, ...path.slice(1)]),
         requires: item.requires === undefined ? undefined : optionSet(item.requires, "requires"),
         unless: optionSet(item.unless, "unless"),
-        records: (item.records ?? []).map(recordRule),
-        examples: item.examples.map(example),
+        records: (item.records ?? []).map((value: unknown): RecordRule => {
+          if (!isJsonObject(value) || typeof value.output !== "string" || typeof value.verb !== "string" || !value.verb || typeof value.datum !== "string") {
+            throw new Error("each record needs output, verb and datum strings");
+          }
+          const pattern = new RegExp(value.output, "gm");
+          const groups = new Set([...value.output.matchAll(/\(\?<(\w+)>/g)].map((m) => m[1]));
+          const missing = [...value.datum.matchAll(PLACEHOLDER)].map((m) => m[1]!).find((name) => !groups.has(name));
+          if (missing) throw new Error(`datum {${missing}} names no group in its output pattern`);
+          if (value.tone !== undefined && value.tone !== "success" && value.tone !== "warning") throw new Error("tone must be success or warning");
+          if (value.opaque !== undefined && typeof value.opaque !== "boolean") throw new Error("opaque must be true or false");
+          return { pattern, verb: value.verb, datum: value.datum, tone: value.tone ?? "success", opaque: value.opaque ?? false };
+        }),
+        examples: item.examples.map((value: unknown) => {
+          if (!isJsonObject(value)) throw new Error("each example needs command, output and records");
+          const records = stringList(value.records);
+          if (typeof value.command !== "string" || typeof value.output !== "string" || !records || (value.error !== undefined && typeof value.error !== "boolean")) {
+            throw new Error("each example needs command, output and records");
+          }
+          return { command: value.command, output: value.output, error: value.error === true, records };
+        }),
         code: code.get(id),
       };
       if (!entry.examples.some(({ records }) => records.length > 0)) throw new Error("needs an example that yields a record");
-      const problem = exampleProblem(entry);
-      if (problem) throw new Error(problem);
+      for (const [index, { command, output, error, records }] of entry.examples.entries()) {
+        const yields = factsFor([entry], command, `${output}\n`, error !== true).map(({ verb, datum }) => `${verb} ${datum}`);
+        if (yields.join("\n") !== records.join("\n")) throw new Error(`example ${index + 1} should yield ${listed(records)} but yields ${listed(yields)}`);
+      }
       entries.push(entry);
     } catch (error) {
       problems.push(`${id ?? `entry ${index + 1}`}: ${error instanceof Error ? error.message : String(error)}`);
@@ -216,26 +206,6 @@ const CODE = new Map<string, EntryCode>([
   }],
 ]);
 
-function outputFacts(entry: VocabularyEntry, out: string, ops: Operation[]): RecordFact[] {
-  const adjust = entry.code?.datum;
-  return entry.records.flatMap((rule) => [...out.matchAll(rule.pattern)].flatMap((m): RecordFact[] => {
-    let complete = true;
-    const datum = rule.datum.replace(PLACEHOLDER, (_, name: string) => {
-      const value = m.groups?.[name];
-      if (value === undefined) complete = false;
-      return value ?? "";
-    });
-    if (!complete) return [];
-    return [{ verb: rule.verb, datum: adjust ? adjust(datum, ops) : datum, at: m.index, tone: rule.tone, opaque: rule.opaque, evidence: "output" }];
-  }));
-}
-
-function qualifies(entry: VocabularyEntry, args: ShellWord[]): boolean {
-  if (entry.requires && !hasOption(args, entry.requires.long, entry.requires.short)) return false;
-  if (hasOption(args, entry.unless.long, entry.unless.short)) return false;
-  return entry.code?.qualifies?.(args) ?? true;
-}
-
 export function resultText(comp: ToolRowDataLike | undefined): string {
   const content = comp?.result?.content;
   if (!Array.isArray(content)) return "";
@@ -254,12 +224,22 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
     const invocations = (commands: ShellCommand[]): Operation[] => commands.flatMap((command) =>
       entry.commands.flatMap((path) => {
         const args = operationArgs(command, path);
-        return args && qualifies(entry, args) ? [{ args, command }] : [];
+        if (!args || (entry.requires && !hasOption(args, entry.requires.long, entry.requires.short))) return [];
+        if (hasOption(args, entry.unless.long, entry.unless.short) || entry.code?.qualifies?.(args) === false) return [];
+        return [{ args, command }];
       }));
     const ops = invocations(script.commands);
     const all = [...ops, ...invocations(script.nested)];
     if (all.length === 0) return [];
-    const output = outputFacts(entry, out, all);
+    const output = entry.records.flatMap((rule) => [...out.matchAll(rule.pattern)].flatMap((match): RecordFact[] => {
+      let complete = true;
+      const datum = rule.datum.replace(PLACEHOLDER, (_, name: string) => {
+        const value = match.groups?.[name];
+        if (value === undefined) complete = false;
+        return value ?? "";
+      });
+      return complete ? [{ verb: rule.verb, datum: entry.code?.datum?.(datum, all) ?? datum, at: match.index, tone: rule.tone, opaque: rule.opaque, evidence: "output" }] : [];
+    }));
     const fallback = entry.code?.fallback;
     if (output.length || !fallback) return output;
 
@@ -310,9 +290,8 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
 }
 
 const BUILT_IN = parseVocabulary(BUILT_IN_VOCABULARY, CODE);
-if (BUILT_IN.problems.length > 0) throw new Error(`traceline's built-in vocabulary is invalid: ${BUILT_IN.problems.join("; ")}`);
-const unknownCode = [...CODE.keys()].filter((id) => !BUILT_IN.entries.some((entry) => entry.id === id));
-if (unknownCode.length > 0) throw new Error(`traceline record code names no vocabulary entry: ${unknownCode.join(", ")}`);
+assert.equal(BUILT_IN.problems.length, 0, `traceline's built-in vocabulary is invalid: ${BUILT_IN.problems.join("; ")}`);
+assert([...CODE.keys()].every((id) => BUILT_IN.entries.some((entry) => entry.id === id)), "traceline record code names no vocabulary entry");
 /** The built-in entries, examples included and checked: the first layer of every vocabulary. */
 export const BUILT_IN_ENTRIES: readonly VocabularyEntry[] = BUILT_IN.entries;
 

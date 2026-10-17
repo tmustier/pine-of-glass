@@ -10,39 +10,22 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import { isJsonObject } from "../_lib/boundary.ts";
 import { configPaths } from "../_lib/config.ts";
-import { BUILT_IN_ENTRIES, parseVocabulary, useVocabulary, type ParsedVocabulary, type VocabularyEntry } from "./records.ts";
+import { BUILT_IN_ENTRIES, parseVocabulary, useVocabulary, type VocabularyEntry } from "./records.ts";
 
 /** The event-bus channel another extension sends its layer on. */
 export const VOCABULARY_CHANNEL = "traceline:vocabulary";
 
-/** One layer as its source wrote it. `unreadable` reports a layer that could not be read at all. */
-export type VocabularyLayer = { source: string; vocabulary?: unknown; disableVocabulary?: unknown; unreadable?: string };
+type VocabularyLayer = { source: string; entries: VocabularyEntry[]; disabled: string[]; problems: string[] };
 
-/** Apply layers in order over the built-ins. Every problem names its layer. */
-export function layerVocabulary(layers: readonly VocabularyLayer[]): ParsedVocabulary {
-  const entries = new Map<string, VocabularyEntry>(BUILT_IN_ENTRIES.map((entry) => [entry.id, entry]));
-  const known = new Set(entries.keys());
-  const problems: string[] = [];
-  for (const { source, vocabulary, disableVocabulary, unreadable } of layers) {
-    const report = (problem: string) => problems.push(`${source}: ${problem}`);
-    if (unreadable) report(unreadable);
-    const parsed = vocabulary === undefined ? { entries: [], problems: [] } : parseVocabulary(vocabulary);
-    for (const entry of parsed.entries) known.add(entry.id);
-    if (disableVocabulary !== undefined) {
-      const ids = Array.isArray(disableVocabulary) && disableVocabulary.every((id) => typeof id === "string") ? disableVocabulary : undefined;
-      if (!ids) report("disableVocabulary must list entry ids");
-      for (const id of ids ?? []) {
-        if (known.has(id)) entries.delete(id);
-        else report(`disableVocabulary names no entry: ${id}`);
-      }
-    }
-    parsed.problems.forEach(report);
-    for (const entry of parsed.entries) entries.set(entry.id, entry);
+function parseLayer(source: string, value: unknown): VocabularyLayer {
+  const { vocabulary, disableVocabulary } = isJsonObject(value) ? value : {};
+  const parsed = vocabulary === undefined ? { entries: [], problems: [] } : parseVocabulary(vocabulary);
+  if (disableVocabulary === undefined) return { source, ...parsed, disabled: [] };
+  if (Array.isArray(disableVocabulary) && disableVocabulary.every((id) => typeof id === "string")) {
+    return { source, ...parsed, disabled: disableVocabulary };
   }
-  return { entries: [...entries.values()], problems };
+  return { source, ...parsed, disabled: [], problems: ["disableVocabulary must list entry ids", ...parsed.problems] };
 }
-
-const fromHome = (path: string) => (path.startsWith(`${homedir()}${sep}`) ? `~/${relative(homedir(), path)}` : path);
 
 function fileLayer(path: string, source: string, trusted: boolean): VocabularyLayer[] {
   if (!existsSync(path)) return [];
@@ -50,11 +33,11 @@ function fileLayer(path: string, source: string, trusted: boolean): VocabularyLa
   try {
     value = JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
-    return [{ source, unreadable: `is not valid JSON (${error instanceof Error ? error.message : String(error)})` }];
+    return [{ source, entries: [], disabled: [], problems: [`is not valid JSON (${error instanceof Error ? error.message : String(error)})`] }];
   }
   if (!isJsonObject(value) || (value.vocabulary === undefined && value.disableVocabulary === undefined)) return [];
-  if (!trusted) return [{ source, unreadable: "left out: you told Pi not to trust this project" }];
-  return [{ source, vocabulary: value.vocabulary, disableVocabulary: value.disableVocabulary }];
+  if (!trusted) return [{ source, entries: [], disabled: [], problems: ["left out: you told Pi not to trust this project"] }];
+  return [parseLayer(source, value)];
 }
 
 /**
@@ -67,8 +50,19 @@ export function installVocabulary(pi: ExtensionAPI, owns: () => boolean, changed
   let notify: ((message: string) => void) | undefined;
   const notified = new Set<string>();
   const apply = () => {
-    const { entries, problems } = layerVocabulary([...sent.values(), ...files]);
-    useVocabulary(entries);
+    const entries = new Map(BUILT_IN_ENTRIES.map((entry) => [entry.id, entry]));
+    const known = new Set(entries.keys());
+    const problems: string[] = [];
+    for (const layer of [...sent.values(), ...files]) {
+      for (const entry of layer.entries) known.add(entry.id);
+      for (const id of layer.disabled) {
+        if (known.has(id)) entries.delete(id);
+        else problems.push(`${layer.source}: disableVocabulary names no entry: ${id}`);
+      }
+      problems.push(...layer.problems.map((problem) => `${layer.source}: ${problem}`));
+      for (const entry of layer.entries) entries.set(entry.id, entry);
+    }
+    useVocabulary([...entries.values()]);
     changed();
     const fresh = problems.filter((problem) => !notified.has(problem));
     if (!notify || fresh.length === 0) return;
@@ -77,14 +71,15 @@ export function installVocabulary(pi: ExtensionAPI, owns: () => boolean, changed
   };
   pi.events.on(VOCABULARY_CHANNEL, (data) => {
     const source = isJsonObject(data) && typeof data.source === "string" && data.source ? data.source : undefined;
-    if (!isJsonObject(data) || !source) sent.set("", { source: VOCABULARY_CHANNEL, unreadable: "a layer needs a source name" });
-    else sent.set(source, { source, vocabulary: data.vocabulary, disableVocabulary: data.disableVocabulary });
+    if (!source) sent.set("", { source: VOCABULARY_CHANNEL, entries: [], disabled: [], problems: ["a layer needs a source name"] });
+    else sent.set(source, parseLayer(source, data));
     if (owns()) apply();
   });
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     if (!owns()) return;
     const [user, project] = configPaths("pi-traceline", ctx.cwd);
-    files = [...fileLayer(user!, fromHome(user!), true), ...fileLayer(project!, relative(ctx.cwd, project!), ctx.isProjectTrusted())];
+    const userSource = user!.startsWith(`${homedir()}${sep}`) ? `~/${relative(homedir(), user!)}` : user!;
+    files = [...fileLayer(user!, userSource, true), ...fileLayer(project!, relative(ctx.cwd, project!), ctx.isProjectTrusted())];
     notify = ctx.hasUI ? (message) => ctx.ui.notify(message, "warning") : undefined;
     apply();
   });

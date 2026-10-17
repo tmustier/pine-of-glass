@@ -36,7 +36,7 @@ rows.forEach((row, index) => {
   const facts = replayFacts(row);
   if (facts.length === 0) return;
   recordRows++;
-  dump.push(JSON.stringify({ row: index, records: facts.map((fact) => `${fact.verb} ${fact.datum} [${fact.evidence}]`) }));
+  if (dumpPath) dump.push(JSON.stringify({ row: index, records: facts.map((fact) => `${fact.verb} ${fact.datum} [${fact.evidence}]`) }));
   const counted = new Set<string>();
   for (const fact of facts) {
     const key = `${fact.verb} [${fact.evidence}]`;
@@ -51,13 +51,14 @@ rows.forEach((row, index) => {
   }
 });
 
+const ordered = [...byRecord].sort((a, b) => b[1].rows - a[1].rows);
 const census = {
   rows: rows.length,
   recordRows,
-  records: Object.fromEntries([...byRecord].sort((a, b) => b[1].rows - a[1].rows).map(([key, { rows }]) => [key, rows])),
+  records: Object.fromEntries(ordered.map(([key, { rows }]) => [key, rows])),
 };
 console.log(`rows=${census.rows} with records=${recordRows} (${((100 * recordRows) / Math.max(1, rows.length)).toFixed(1)}%)`);
-for (const [key, { rows: count, examples }] of [...byRecord].sort((a, b) => b[1].rows - a[1].rows)) {
+for (const [key, { rows: count, examples }] of ordered) {
   console.log(`${String(count).padStart(7)}  ${key}`);
   for (const example of examples) console.log(`           ${example}`);
 }

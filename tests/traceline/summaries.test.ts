@@ -210,6 +210,29 @@ test("a reply that arrives after its session ended is dropped, not stored", asyn
   }
 });
 
+test("a headless child cannot clear its TUI parent's pending or cached gists", async () => {
+  const project = new IsolatedProject();
+  try {
+    project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
+    const asked: Asked[][] = [];
+    await hosted(project, asked, async () => {
+      const row = bash(LONG, "ok");
+      lines(row);
+      const child = await hostExtension(piTraceline, { project, interactive: false });
+      try {
+        await settle();
+        assert.equal(lines(row).at(-1), "  ▏   ≈ gist 1");
+      } finally {
+        await child.dispose();
+      }
+      assert.equal(lines(row).at(-1), "  ▏   ≈ gist 1");
+      assert.equal(asked.length, 1);
+    });
+  } finally {
+    project.dispose();
+  }
+});
+
 test("a cut thinking preview shows its ≈ gist once the run is settled", async () => {
   const project = new IsolatedProject();
   try {
