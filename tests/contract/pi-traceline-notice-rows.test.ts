@@ -12,6 +12,8 @@ import {
   initTheme,
   keyText,
   type Theme,
+  type CustomEntry,
+  type EntryRenderer,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Text, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { isNoticeRow, type NoticeRowLike, type NoticeRowPrototypeLike, type ToolRowLike } from "../../extensions/_lib/chat.ts";
@@ -26,7 +28,7 @@ const piRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-work
 // the live theme instance, and CustomEntryComponent next to the exported message one.
 const { theme } = await import(pathToFileURL(join(piRoot, "dist/modes/interactive/theme/theme.js")).href) as { theme: Theme };
 const { CustomEntryComponent } = await import(pathToFileURL(join(piRoot, "dist/modes/interactive/components/custom-entry.js")).href) as {
-  CustomEntryComponent: new (entry: unknown, renderer: unknown, outputPad?: number) => Container & { setExpanded(expanded: boolean): void };
+  CustomEntryComponent: new (entry: CustomEntry, renderer: EntryRenderer, outputPad?: number) => Container & { setExpanded(expanded: boolean): void };
 };
 
 type CustomMessage = ConstructorParameters<typeof CustomMessageComponent>[0];
@@ -49,9 +51,8 @@ const host: NoticeRowHost = {
   changed: () => { trace.resetRenderCache(); if (liveChat) liveChat.children = [...liveChat.children]; },
 };
 // SAFETY: as above, the prototypes are the real classes; the type only names the seam.
-assert.equal(installNoticeRows(CustomMessageComponent.prototype as unknown as NoticeRowPrototypeLike, host), true);
-assert.equal(installNoticeRows(CustomEntryComponent.prototype as unknown as NoticeRowPrototypeLike, host), true);
-assert.equal(installNoticeRows(CustomMessageComponent.prototype as unknown as NoticeRowPrototypeLike, host), false, "a second install is a no-op");
+installNoticeRows(CustomMessageComponent.prototype as unknown as NoticeRowPrototypeLike, host);
+installNoticeRows(CustomEntryComponent.prototype as unknown as NoticeRowPrototypeLike, host);
 trace.setTracelineThemeGetter(() => theme);
 afterEach(() => { trace.setTracelineChat(undefined); trace.resetRenderCache(); hidden = true; });
 
@@ -67,7 +68,7 @@ function toolRow(path: string) {
   return comp;
 }
 function message(customType: string, text: string, details?: unknown): CustomMessage {
-  return { role: "custom", customType, content: [{ type: "text", text }], display: true, details, timestamp: Date.now() } as CustomMessage;
+  return { role: "custom", customType, content: [{ type: "text", text }], display: true, details, timestamp: Date.now() };
 }
 // An extension renderer in the shape pi-subagents and pi's own [skill] block use: a
 // bold label on the label colour, a status word in warning ink, the key hint collapsed.
@@ -199,10 +200,61 @@ test("Ctrl+O's global expansion and margins behave like tool rows; with reasonin
   assert.deepEqual(rendered.slice(rendered.length - reference.length), reference, "z2 is pi's own rendering, byte for byte");
 });
 
-test("the theme's status openers are single SGR sequences, so a kept span is recognisable", () => {
-  for (const tone of ["success", "warning", "error"] as const) {
-    const sample = theme.fg(tone, "x");
-    const open = sample.slice(0, sample.indexOf("x"));
-    assert.match(open, /^\x1b\[[0-9;]*m$/, `${tone} opener: ${JSON.stringify(open)}`);
+test("default headlines strip Markdown and skip empty lines and horizontal rules", () => {
+  for (const [content, expected] of [
+    ["\n\n## Deploy **finished**\n\nbody", "Deploy finished"],
+    ["> - 1. `api-gateway` is [live](https://x)  now", "api-gateway is live now"],
+    ["---\n\n   \nSecond paragraph", "Second paragraph"],
+    ["\n  \n", ""],
+  ] as const) {
+    const msg = new CustomMessageComponent(message("notice", content), undefined);
+    assert.equal(painted(chat([msg]))[1]?.trim(), `▏ › [notice]${expected ? ` ${expected}` : ""}`);
   }
 });
+
+test("empty or failing component renders fall back to message text", () => {
+  for (const render of [() => [], () => ["  "], () => { throw new Error("renderer failed"); }]) {
+    const msg = new CustomMessageComponent(message("notice", "fallback line"), () => ({ render, invalidate() {} }));
+    assert.equal(painted(chat([msg]))[1]?.trim(), "▏ › [notice] fallback line");
+  }
+});
+
+test("summary metadata is optional and only a non-empty string overrides the headline", () => {
+  for (const details of [undefined, null, 42, "summary", { summary: 42 }, { summary: "  " }]) {
+    const msg = new CustomMessageComponent(message("notice", "fallback line", details), undefined);
+    assert.equal(painted(chat([msg]))[1]?.trim(), "▏ › [notice] fallback line");
+  }
+  const entry = new CustomEntryComponent({ type: "custom", customType: "notice", data: { summary: " saved\nthree  files " }, id: "e3", parentId: null, timestamp: "" }, () => new Text("ignored renderer", 0, 0));
+  assert.equal(painted(chat([entry]))[1]?.trim(), "▏ › [notice] saved three files");
+});
+
+test("renderer headlines without a label use customType and only drop a trailing expand hint", () => {
+  for (const [native, expected] of [
+    ["saved 3 files (ctrl+o to expand)", "saved 3 files"],
+    ["(ctrl+o to expand) is not a hint here", "(ctrl+o to expand) is not a hint here"],
+  ] as const) {
+    const msg = new CustomMessageComponent(message("notice", "ignored"), () => new Text(native, 0, 0));
+    assert.equal(painted(chat([msg]))[1]?.trim(), `▏ › [notice] ${expected}`);
+  }
+});
+
+test("message size counts string content and text blocks, not images or entry data", () => {
+  const text = "x".repeat(200);
+  const msg = message("notice", text);
+  msg.content = text;
+  assert.match(painted(chat([new CustomMessageComponent(msg, undefined)]))[1]!, /0\.2k ch$/);
+  msg.content = [{ type: "text", text }, { type: "image", mimeType: "image/png", data: "" }, { type: "text", text }];
+  assert.match(painted(chat([new CustomMessageComponent(msg, undefined)]))[1]!, /0\.4k ch$/);
+  const entry = new CustomEntryComponent({ type: "custom", customType: "notice", data: text, id: "e4", parentId: null, timestamp: "" }, () => new Text("saved", 0, 0));
+  assert.equal(painted(chat([entry]))[1]?.trim(), "▏ › [notice] saved");
+});
+
+for (const tone of ["success", "warning", "error"] as const) {
+  test(`renderer ${tone} ink survives on the compact headline`, () => {
+    const msg = new CustomMessageComponent(message("notice", "ignored"), (_message, _options, t) => new Text(t.fg(tone, "status"), 0, 0));
+    const lines = chat([msg]).render(80);
+    const sample = theme.fg(tone, "status");
+    const opener = sample.slice(0, sample.indexOf("status"));
+    assert.ok(lines.some((line) => line.includes(`${opener}status`)), lines.join("\n"));
+  });
+}

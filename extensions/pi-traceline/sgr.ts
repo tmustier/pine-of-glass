@@ -50,13 +50,6 @@ export function stripSgrForegrounds(text: string): string {
   });
 }
 
-// Notice rows (§9.15) keep only the ink an author applied on purpose: a foreground
-// sequence that is exactly one of `keep` (the theme's status openers) survives, every
-// other foreground drops. Backgrounds and weights are untouched here.
-export function stripSgrForegroundsExcept(text: string, keep: ReadonlySet<string>): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, (seq) => (keep.has(seq) ? seq : stripSgrForegrounds(seq)));
-}
-
 // No plain ink in native rows (design language §9.6): every span a native renderer
 // leaves unstyled would render at the terminal default — prose ink inside a trace row,
 // the §9.3 problem alive on grep/web_search/fetch/mcp rows. Demote such spans to

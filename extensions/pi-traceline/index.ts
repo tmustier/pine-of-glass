@@ -66,7 +66,7 @@ import { clearNestedCaptures, composedFactsOf, recordNestedEnd, recordNestedStar
 import { ledgerEntries, ledgerLines } from "./ledger.ts";
 import { composedBody } from "./nested-rows.ts";
 import { flattenInvocationLines, stripLeadingVisibleBullet, stripTimeoutSuffix, stripTrailingExpandHint } from "./native-lines.ts";
-import { installNoticeRows, noticeExpanded, type NoticeRowHost } from "./notice-rows.ts";
+import { installNoticeRows, type NoticeRowHost } from "./notice-rows.ts";
 import { commonDirSegments, compactReadDisplay, cwdRelativePath, lineRange, readDirKey } from "./path-rows.ts";
 import { recordFacts, resultText } from "./records.ts";
 import { wrapReadCells } from "./read-fold.ts";
@@ -1080,7 +1080,7 @@ function leadingBlank(comp: ChatRowLike): boolean {
     renderCache.depend(prev);
     if (isExpandedToolRow(prev)) return true; // a native-rendered block above → new trace block
     if (isToolRow(prev)) return false; // adjacent (through connectors) to another tool
-    if (isNoticeRow(prev)) return noticeExpanded(prev); // a compact notice is a block member (§9.15)
+    if (isNoticeRow(prev)) return prev._expanded; // a compact notice is a block member (§9.15)
     if (isEmptyConnector(prev)) continue; // skip invisible tool-call-only turns
     if (isCollapsedThinkingRow(prev)) return false; // tight under its Thinking... line
     return true; // hit visible content → blank before the group
@@ -1120,7 +1120,7 @@ const noticeRowHost: NoticeRowHost = {
   drillActive: () => drillState() !== undefined,
   railPrefix: (bullet) => `${TOOL_INDENT}${dim(TOOL_RAIL)} ${bullet}${TOOL_AFTER_BULLET}`,
   available: traceRowAvailable,
-  charSuffix: (chars) => charSuffix(chars),
+  charSuffix,
   leadingBlank,
   changed: (row) => { renderCache.dirty(row); topologyChanged(); },
 };
