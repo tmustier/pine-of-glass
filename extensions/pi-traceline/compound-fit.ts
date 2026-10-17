@@ -1,16 +1,10 @@
-// Fitting a compound bash row by command (design language §9.8). A single middle cut
-// keeps a long row's opening context and closing filter and drops the commands between
-// them, which are why the row exists. This module plans a cut that keeps every crowned
-// head instead. It is plain text in, source ranges out: index.ts inks the kept ranges
-// with the crowns it already computed, so the shell grammar is never re-parsed on a
-// string that has lost its closing quotes.
+// Fit compound bash rows by command (§9.8). Return source ranges so styling can
+// reuse the original crowns without parsing truncated shell text.
 
-/**
- * A crowned head word: a half-open range into the body; `token`, where its shell word
- * starts; and `from`, where its command starts (its leading assignments, §9.4).
- * `earned`: its command earned a record.
- */
-export type FitHead = { start: number; end: number; token: number; from: number; earned?: boolean };
+import type { BashHead } from "./bash-crowns.ts";
+
+/** A command head, optionally protected because it produced a record. */
+export type FitHead = Omit<BashHead, "cls"> & { earned?: boolean };
 
 /** A kept source range, followed by a dim elision mark when `mark` is set. */
 export type FitPiece = { start: number; end: number; mark?: string };
@@ -45,9 +39,7 @@ type Unit = {
   floor: number;
 } & (
   | { kind: "prefix"; lead: number }
-  // cutFrom: where a cut command's text starts, its head's own word; leading assignments
-  // show only while the command is whole (§9.4). word: the head word, where an earned
-  // command's floor counts from (§9.8)
+  // Cuts start at the shell word; record protection counts from the head inside it.
   | { kind: "command"; last: boolean; earned: boolean; cutFrom: number; word: number; skip?: { start: number; end: number } }
 );
 
@@ -67,8 +59,7 @@ function wordEnd(body: string, i: number, limit: number): number {
   return Math.min(i, limit);
 }
 
-// Content length when the unit is cut: a command loses its leading assignments, a git
-// command its global options to a two-column ` …`; everything else counts its source.
+// Cuts drop leading assignments and replace git's global options with ` …`.
 function cutContentLength(unit: Unit): number {
   const length = unit.contentEnd - (unit.kind === "command" ? unit.cutFrom : unit.start);
   return unit.kind === "command" && unit.skip ? length - (unit.skip.end - unit.skip.start) + 2 : length;

@@ -1,46 +1,22 @@
-// Crown selection for bash rows (design language §9.4): which head words in a flattened
-// bash body wear the bold discriminator ink. Plain text in, head ranges out; index.ts
-// applies the family ink.
+// Bold command heads in flattened bash rows (§9.4).
 import { LINE_BREAK_MARK, PREAMBLE_MARK } from "./bash-preamble.ts";
 
-// Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
+// Skip leading assignments unless their value runs a command.
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-// Unless the value runs a command (§9.4): `PR_URL=$(gh pr create …)` crowns `gh`, the
-// substituted command's first word, wherever the substitution starts in the value
-// (`LOG=/tmp/run-$(date +%s).log`). Single quotes run nothing, and arithmetic is skipped
-// to a substitution inside it (`N=$(($(jq .n f) + 1))`). A head word never starts with
-// `(` or `<`, so `$((n + 1))` and `$(< file)` crown nothing.
+// Find `$(` or backticks anywhere in the value, excluding single quotes,
+// arithmetic and file reads. Nested substitutions in arithmetic still count.
 const SUBSTITUTED_HEAD = /^[A-Za-z_][A-Za-z0-9_]*=(?:[^\s`$'()]|\$(?!\()|\$\(\()*(?:\$\(|`)([^\s()`;"'|&<>]*[A-Za-z0-9][^\s()`;"'|&<>]*)/;
-// A value that opens arithmetic or a file read and leaves it open (`N=$(( n + 1 ))`,
-// `ROOT=$(< /tmp/root)`): the words up to its closing `)` are the value, not a head.
-// The skip never outlives its command: whatever re-arms the head slot ends it.
+// Skip arithmetic and file-read values through their closing parentheses.
 const OPEN_VALUE = /\$\(\(|\$\(</;
 
-function parenDepth(text: string): number {
-  return text.split("(").length - text.split(")").length;
-}
-
-// Sequencing operators start a new command whose head word is a discriminator
-// (§9.4). Pipes and redirects continue a command — `| head -240` is a filter, and
-// §9.4's rejection of brightening filters stands — so `|` consumes a pending head
-// slot instead of re-arming it. The attached form of the semicolon (`sleep 60; ps`)
-// sequences too (§9.4); it is detected on the token, quote-aware, in the walk below.
+// Pipes continue a command; only sequencers start a new head.
 const BASH_SEQUENCER = /^(?:&&|\|\||;)$/;
 
-// A heredoc marker arms body-inertness (§9.4): from the `↵` that follows `<<TAG`
-// until the terminator line, tokens are data — no heads, no re-arms, and no quote
-// tracking, so an unbalanced apostrophe in heredoc prose cannot silence the commands
-// after the terminator (§9.4). A bare `<<`/`<<-` takes the next token as its tag;
-// `<<<` is a here-string, not a heredoc, and matches neither form.
+// Heredoc bodies bypass head and quote scanning. `<<<` is a here-string.
 const BASH_HEREDOC_TOKEN = /^<<-?(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))?$/;
 
-// The crown vocabularies (§9.4, measured over a 51k-invocation corpus — see
-// scripts/dev/bash-corpus/). Preambles situate (`cd X && …`, `set -e; …`); plumbing
-// glues (`|| true`, `&& echo done`); neither is why the row exists, so neither wears
-// a crown when a real command in the row does. Closers are the block keywords a
-// sequencer exposes (`; do`, `↵ fi`); they pass the crown to the head that follows.
-// `mktemp` joined when assignments began crowning their command (§9.4): `TMP=$(mktemp -d)`
-// sets up a row the way `cd` does, and was the largest new crown in the corpus.
+// Prefer substantive commands over setup and plumbing. Block keywords pass
+// the head slot to the following command.
 const BASH_PREAMBLE_HEADS = new Set(["cd", "set", "mktemp"]);
 const BASH_PLUMBING_HEADS = new Set(["echo", "true", "false", "printf", "exit"]);
 const BASH_CLOSERS = new Set(["do", "done", "then", "else", "elif", "fi", "esac", "in"]);
@@ -56,21 +32,8 @@ function headClass(word: string): BashHeadClass {
   return BASH_PREAMBLE_HEADS.has(word) ? "preamble" : BASH_PLUMBING_HEADS.has(word) ? "plumbing" : "real";
 }
 
-// Crown selection is row-global (§9.4): every real command head is crowned, and
-// preamble (`cd`, `set`) and plumbing (`echo`, `true`, …) heads render headless
-// beside them. A row with no real head keeps its first operative head — plumbing
-// before preamble — so no row goes dark: `$ cd /tmp` and `$ echo hi > f` still
-// carry one crown each.
+// Crown all substantive heads, or the first plumbing/setup head if there are none.
 export function bashCrownedHeads(body: string): BashHead[] {
-  // One walk over the flattened body collects every command's head candidate (§9.4's
-  // grammar): tokens scan left to right with quote state carried across
-  // them (the gaps are whitespace and hold none), sequencers re-arm the pending head
-  // slot only outside quotes, a token-final unquoted `;` re-arms exactly like the
-  // space-delimited form, and heredoc bodies are skipped whole. Within an armed slot:
-  // env assignments are scanned past (§9.4), block closers pass the crown through,
-  // and a token with no word character (§9.4) or a leading `-` (a flattened
-  // continuation line's flag, §9.4) renders headless and consumes the slot so a
-  // pipe filter cannot inherit it.
   const heads: BashHead[] = [];
   let quote: "'" | '"' | undefined;
   let headPending = true;
@@ -97,10 +60,9 @@ export function bashCrownedHeads(body: string): BashHead[] {
       continue;
     }
     const startsInQuote = quote !== undefined;
-    // Advance the quote scanner across this token. A backslash escapes the next
-    // character except inside single quotes; a `;` counts as a sequencer only when
-    // it is the token's last character and sits outside any quote (`\;` is find's).
+    // Count only unquoted, unescaped parentheses and trailing semicolons.
     let endsWithUnquotedSemi = false;
+    let depthChange = 0;
     for (let k = 0; k < text.length; k++) {
       const ch = text[k];
       if (quote === "'") {
@@ -111,30 +73,24 @@ export function bashCrownedHeads(body: string): BashHead[] {
       } else if (ch === "'") quote = "'";
       else if (ch === '"') quote = '"';
       else if (ch === "\\") k++;
+      else if (ch === "(") depthChange++;
+      else if (ch === ")") depthChange--;
       else if (ch === ";" && k === text.length - 1) endsWithUnquotedSemi = true;
     }
+    const lineBreak = text === LINE_BREAK_MARK;
+    const sequencer = !startsInQuote && (lineBreak || BASH_SEQUENCER.test(text));
+    const inValue = valueDepth > 0 && !sequencer;
+    if (inValue) valueDepth += depthChange;
+    if (sequencer || (inValue && endsWithUnquotedSemi)) {
+      heredocActive = lineBreak && heredocTag !== undefined;
+      headPending = !heredocActive;
+      assignedFrom = undefined;
+      valueDepth = 0;
+      atLineStart = lineBreak;
+      continue;
+    }
+    if (inValue) continue;
     if (!startsInQuote) {
-      if (text === LINE_BREAK_MARK) {
-        if (heredocTag !== undefined) {
-          heredocActive = true;
-          headPending = false;
-        } else headPending = true;
-        assignedFrom = undefined;
-        valueDepth = 0;
-        atLineStart = true;
-        continue;
-      }
-      if (BASH_SEQUENCER.test(text)) {
-        headPending = true;
-        assignedFrom = undefined;
-        valueDepth = 0;
-        continue;
-      }
-      if (valueDepth > 0) {
-        valueDepth = endsWithUnquotedSemi ? 0 : valueDepth + parenDepth(text);
-        if (endsWithUnquotedSemi) headPending = true;
-        continue;
-      }
       if (text === "|") {
         headPending = false;
         continue;
@@ -161,11 +117,9 @@ export function bashCrownedHeads(body: string): BashHead[] {
         headPending = false;
         assignedFrom = undefined;
       } else if (assignment && OPEN_VALUE.test(text)) {
-        valueDepth = Math.max(0, parenDepth(text));
+        valueDepth = depthChange;
       } else if (headPending && !assignment) {
-        // Parens are apparatus (§9.4's spirit): `(cd …` and `… || true)` classify
-        // and crown on the inner word, so a subshell close cannot smuggle glue past
-        // the §9.4 vocabularies and a crown never bolds punctuation.
+        // Classify the word inside subshell parentheses, not the punctuation.
         const trimmed = endsWithUnquotedSemi ? text.slice(0, -1) : text;
         const open = /^\(+/.exec(trimmed)?.[0].length ?? 0;
         const close = /\)+$/.exec(trimmed)?.[0].length ?? 0;

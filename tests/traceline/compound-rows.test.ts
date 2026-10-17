@@ -146,23 +146,19 @@ test("the command that earned a record keeps the command floor; its siblings giv
   const by = commandKeys("git push origin --force-with-lease topic/quote-pack-receipts");
   const shielded = stripAnsi(fitBashLines(undefined, "text", body, 60, undefined, by).first);
   assert.match(shielded, /^rg -n 'quotePack… rg -n 'doorServ… git push origin --force-…$/, shielded);
-  // The command `$(…)` runs is the one that earned the record (§9.4); its floor counts
-  // from `gh`, so the kept `PR_URL=$(` costs the siblings, not the producer.
   const assigned = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && PR_URL=$(gh pr create --fill --title 'Add receipts' --base main)";
   assert.match(stripAnsi(fitBashLines(undefined, "text", assigned, 60).first), / PR_URL=\$\(gh pr cre…$/, "unshielded, it shares the cut");
   const opened = stripAnsi(fitBashLines(undefined, "text", assigned, 60, undefined, commandKeys("gh pr create --fill --title 'Add receipts' --base main")).first);
   assert.match(opened, / PR_URL=\$\(gh pr create --fill --ti…$/, opened);
 });
 
-test("an assignment that runs a command crowns that command, and wrapping keeps them together (§9.4)", () => {
+test("assignments crown substituted commands, not arithmetic or file-read values", () => {
   const crowned = (body: string) => bashCrownedHeads(body).map(({ start, end }) => body.slice(start, end));
   assert.deepEqual(crowned("PR_URL=$(gh pr create --fill) && gh pr view \"$PR_URL\""), ["gh", "gh"]);
   assert.deepEqual(crowned("SHA=`git rev-parse HEAD` && git push"), ["git", "git"]);
   assert.deepEqual(crowned('X="$(git rev-parse HEAD)" && npm test'), ["git", "npm"]);
   assert.deepEqual(crowned("N=$((n + 1)) && npm test"), ["npm"], "arithmetic runs nothing");
   assert.deepEqual(crowned("TMP=$(mktemp -d) && npm test"), ["npm"], "mktemp sets up, like cd");
-  // Part-way through the value, the substitution still runs the command; arithmetic and
-  // a file read run nothing, so nothing inside them up to the `)` is a head.
   assert.deepEqual(crowned("LOG=/tmp/run-$(date +%s).log && npm test"), ["date", "npm"]);
   assert.deepEqual(crowned("TAG=sha-$(git rev-parse --short HEAD) && docker build ."), ["git", "docker"]);
   assert.deepEqual(crowned('backup="$target.$(date +%Y%m%d).bak" && cp "$target" "$backup"'), ["date", "cp"]);
@@ -171,14 +167,16 @@ test("an assignment that runs a command crowns that command, and wrapping keeps 
   assert.deepEqual(crowned("N=$(( n + 1 )) && npm test"), ["npm"]);
   assert.deepEqual(crowned("FOO=$(( 1 + 2 )) npm test"), ["npm"], "the command after a closed value still crowns");
   assert.deepEqual(crowned("X='a-$(not run)' && npm test"), ["npm"], "single quotes run nothing");
-  // A `)` hidden in a quoted word cannot keep the skip open past the command.
-  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent root") && npm test'), ["npm"]);
-  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent root"); npm test'), ["npm"]);
-  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent root") ↵ npm test'), ["npm"]);
-  // A whole command wraps with its assignments, never apart from them. A cut one starts
-  // at its head's own word: `PR_URL=$(gh` stays whole, separate assignments go.
+  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent root") npm test'), ["npm"]);
+  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent) root") npm test'), ["npm"]);
+});
+
+test("wrapping keeps assignments with commands; cuts drop separate assignments", () => {
   const body = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && PR_URL=$(gh pr create --fill --title 'Add receipts to the quote pack' --base main) && FOO=1 npm test";
-  const wrapped = (width: number) => [fitBashLines(undefined, "text", body, width, width)].flatMap(({ first, continuations }) => [first, ...continuations]).map(stripAnsi);
+  const wrapped = (width: number) => {
+    const { first, continuations } = fitBashLines(undefined, "text", body, width, width);
+    return [first, ...continuations].map(stripAnsi);
+  };
   assert.deepEqual(wrapped(90).slice(2), ["PR_URL=$(gh pr create --fill --title 'Add receipts to the quote pack' --base main) &&", "FOO=1 npm test"]);
   assert.match(wrapped(56)[2]!, /^PR_URL=\$\(gh pr create --fill --title 'Ad… FOO=1 npm test$/);
   const env = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && FOO=1 BAR=2 npm test --watch --reporter=verbose";
