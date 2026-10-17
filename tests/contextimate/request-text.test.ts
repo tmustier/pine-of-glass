@@ -5,7 +5,7 @@ import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-respo
 import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { assistantMessage } from "../helpers.ts";
 import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
-import { payloadTextAdditions } from "../../extensions/pi-contextimate/request-text.ts";
+import { payloadTextAdditions } from "../../extensions/pi-contextimate/request-messages.ts";
 
 function route<T extends Api>(api: T): Model<T> {
   return { provider: "fixture", id: "fixture", name: "Fixture", api, baseUrl: "http://127.0.0.1:9",
