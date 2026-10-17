@@ -29,23 +29,6 @@ function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-function boundedLcsLength(a: string[], b: string[]): number {
-  if (a.length === 0 || b.length === 0) return 0;
-  if (a.length * b.length > LCS_CELL_LIMIT) return 0;
-
-  let previous = Array.from({ length: b.length + 1 }, () => 0);
-  let current = Array.from({ length: b.length + 1 }, () => 0);
-  for (let i = 1; i <= a.length; i++) {
-    for (let j = 1; j <= b.length; j++) {
-      current[j] = a[i - 1] === b[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, current[j - 1]!);
-    }
-    // No reset after the swap: index 0 is never written (both arrays start zeroed)
-    // and every other cell is overwritten before the next row reads it.
-    [previous, current] = [current, previous];
-  }
-  return previous[b.length]!;
-}
-
 export function diffStatsFromContents(oldContent: string, newContent: string): DiffStats | undefined {
   const oldNormalized = normalizeLineEndings(oldContent);
   const newNormalized = normalizeLineEndings(newContent);
@@ -65,7 +48,20 @@ export function diffStatsFromContents(oldContent: string, newContent: string): D
 
   const oldMiddle = oldLines.slice(start, oldEnd);
   const newMiddle = newLines.slice(start, newEnd);
-  const unchangedMiddle = boundedLcsLength(oldMiddle, newMiddle);
+  let unchangedMiddle = 0;
+  if (oldMiddle.length > 0 && newMiddle.length > 0 && oldMiddle.length * newMiddle.length <= LCS_CELL_LIMIT) {
+    let previous = Array.from({ length: newMiddle.length + 1 }, () => 0);
+    let current = Array.from({ length: newMiddle.length + 1 }, () => 0);
+    for (let i = 1; i <= oldMiddle.length; i++) {
+      for (let j = 1; j <= newMiddle.length; j++) {
+        current[j] = oldMiddle[i - 1] === newMiddle[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, current[j - 1]!);
+      }
+      // No reset after the swap: index 0 is never written (both arrays start zeroed)
+      // and every other cell is overwritten before the next row reads it.
+      [previous, current] = [current, previous];
+    }
+    unchangedMiddle = previous[newMiddle.length]!;
+  }
   const stats = {
     added: newMiddle.length - unchangedMiddle,
     removed: oldMiddle.length - unchangedMiddle,
@@ -77,20 +73,6 @@ function writeInputFromArgs(args: ToolRowDataLike["args"], cwd: string): WriteIn
   const path = args?.path ?? args?.file_path;
   const content = args?.content;
   return typeof path === "string" && typeof content === "string" ? { path, content, cwd } : undefined;
-}
-
-function writeSnapshot(comp: ToolRowDataLike): WriteSnapshot | undefined {
-  // SAFETY: this module alone writes the row slot, from its typed pre-write capture.
-  // The slot persists across reloads while the row keeps the same identity.
-  let snapshot = comp.__tracelineWriteSnapshot as WriteSnapshot | undefined;
-  if (!snapshot && typeof comp.toolCallId === "string") {
-    snapshot = pendingWriteSnapshots.get(comp.toolCallId);
-    if (snapshot) {
-      comp.__tracelineWriteSnapshot = snapshot;
-      pendingWriteSnapshots.delete(comp.toolCallId);
-    }
-  }
-  return snapshot;
 }
 
 export function captureWriteCallSnapshot(
@@ -121,24 +103,18 @@ export function writeDiffStats(comp: ToolRowDataLike | undefined): DiffStats | u
   if (comp?.toolName !== "write") return undefined;
   const cwd = typeof comp.cwd === "string" && comp.cwd.length > 0 ? comp.cwd : process.cwd();
   const input = writeInputFromArgs(comp.args, cwd);
-  const snapshot = writeSnapshot(comp);
+  // SAFETY: this module alone writes the row slot, from its typed pre-write capture.
+  // The slot persists across reloads while the row keeps the same identity.
+  let snapshot = comp.__tracelineWriteSnapshot as WriteSnapshot | undefined;
+  if (!snapshot && typeof comp.toolCallId === "string") {
+    snapshot = pendingWriteSnapshots.get(comp.toolCallId);
+    if (snapshot) {
+      comp.__tracelineWriteSnapshot = snapshot;
+      pendingWriteSnapshots.delete(comp.toolCallId);
+    }
+  }
   if (!snapshot || !input || snapshot.path !== input.path || snapshot.cwd !== input.cwd || snapshot.content !== input.content) return undefined;
   return snapshot.stats;
-}
-
-function diffTextFromComp(comp: ToolRowDataLike | undefined): string | undefined {
-  const details = comp?.result?.details;
-  if (typeof details?.diff === "string") return details.diff;
-  if (typeof details?.patch === "string") return details.patch;
-
-  // Pi's edit renderer computes a diff preview before the tool has settled. The preview
-  // lives on the call renderer component, so collapsed rows can show `+N -M` while the
-  // mutation is still pending, then switch to the result-backed diff once available.
-  const preview = comp?.callRendererComponent?.preview;
-  if (preview && typeof preview === "object" && !("error" in preview) && typeof preview.diff === "string") {
-    return preview.diff;
-  }
-  return undefined;
 }
 
 export function diffStatsFromText(diff: string | undefined): DiffStats | undefined {
@@ -162,7 +138,19 @@ export function diffStatsFromText(diff: string | undefined): DiffStats | undefin
 const diffTextStatsCache = new WeakMap<object, { text: string; stats: DiffStats | undefined }>();
 
 export function mutationDiffStats(comp: ToolRowDataLike): DiffStats | undefined {
-  const text = diffTextFromComp(comp);
+  const details = comp?.result?.details;
+  let text: string | undefined;
+  if (typeof details?.diff === "string") text = details.diff;
+  else if (typeof details?.patch === "string") text = details.patch;
+  else {
+    // Pi's edit renderer computes a diff preview before the tool has settled. The preview
+    // lives on the call renderer component, so collapsed rows can show `+N -M` while the
+    // mutation is still pending, then switch to the result-backed diff once available.
+    const preview = comp?.callRendererComponent?.preview;
+    if (preview && typeof preview === "object" && !("error" in preview) && typeof preview.diff === "string") {
+      text = preview.diff;
+    }
+  }
   if (text === undefined) return writeDiffStats(comp);
   const cached = diffTextStatsCache.get(comp);
   if (cached && cached.text === text) return cached.stats ?? writeDiffStats(comp);

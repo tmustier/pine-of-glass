@@ -78,7 +78,13 @@ export function groupedReadRun(run: FoldRun, warningChars: number): FoldRun | un
   return readPlan(run.rows, warningChars, () => run).get(run.rows[run.index]!);
 }
 
-function assistantStepRows(comp: ToolRowLike, siblings: unknown[]): ToolRowLike[] | undefined {
+// Pi's durable toolCallId link scopes the fold. Adjacency alone would merge sequential
+// assistant steps whose compact MCP rows happen to look the same.
+export function groupedRepetitionRun(
+  comp: ToolRowLike,
+  siblings: unknown[],
+  keyOf: (row: ToolRowLike) => string | undefined,
+): FoldRun | undefined {
   const id = typeof comp.toolCallId === "string" ? comp.toolCallId : undefined;
   if (!id) return undefined;
   for (const sibling of siblings) {
@@ -90,22 +96,11 @@ function assistantStepRows(comp: ToolRowLike, siblings: unknown[]): ToolRowLike[
       if (isJsonObject(block) && block.type === "toolCall" && typeof block.id === "string") stepIds.add(block.id);
     }
     if (!stepIds.has(id)) continue;
-    return siblings.filter(
+    const step = siblings.filter(
       (row): row is ToolRowLike =>
         isToolRow(row) && typeof row.toolCallId === "string" && stepIds.has(row.toolCallId),
     );
+    return repetitionPlan(step, keyOf).get(comp);
   }
   return undefined;
-}
-
-// Pi's durable toolCallId link scopes the fold. Adjacency alone would merge sequential
-// assistant steps whose compact MCP rows happen to look the same.
-export function groupedRepetitionRun(
-  comp: ToolRowLike,
-  siblings: unknown[],
-  keyOf: (row: ToolRowLike) => string | undefined,
-): FoldRun | undefined {
-  const step = assistantStepRows(comp, siblings);
-  if (!step) return undefined;
-  return repetitionPlan(step, keyOf).get(comp);
 }

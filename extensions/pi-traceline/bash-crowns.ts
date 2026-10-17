@@ -32,16 +32,21 @@ const BASH_CLOSERS = new Set(["do", "done", "then", "else", "elif", "fi", "esac"
 export type BashHeadClass = "real" | "plumbing" | "preamble";
 export type BashHead = { start: number; end: number; cls: BashHeadClass };
 
-// One walk over the flattened body collects every command's head candidate (§9.4's
-// grammar): tokens scan left to right with quote state carried across
-// them (the gaps are whitespace and hold none), sequencers re-arm the pending head
-// slot only outside quotes, a token-final unquoted `;` re-arms exactly like the
-// space-delimited form, and heredoc bodies are skipped whole. Within an armed slot:
-// env assignments are scanned past (§9.4), block closers pass the crown through,
-// and a token with no word character (§9.4) or a leading `-` (a flattened
-// continuation line's flag, §9.4) renders headless and consumes the slot so a
-// pipe filter cannot inherit it.
-function bashHeadCandidates(body: string): BashHead[] {
+// Crown selection is row-global (§9.4): every real command head is crowned, and
+// preamble (`cd`, `set`) and plumbing (`echo`, `true`, …) heads render headless
+// beside them. A row with no real head keeps its first operative head — plumbing
+// before preamble — so no row goes dark: `$ cd /tmp` and `$ echo hi > f` still
+// carry one crown each.
+export function bashCrownedHeads(body: string): BashHead[] {
+  // One walk over the flattened body collects every command's head candidate (§9.4's
+  // grammar): tokens scan left to right with quote state carried across
+  // them (the gaps are whitespace and hold none), sequencers re-arm the pending head
+  // slot only outside quotes, a token-final unquoted `;` re-arms exactly like the
+  // space-delimited form, and heredoc bodies are skipped whole. Within an armed slot:
+  // env assignments are scanned past (§9.4), block closers pass the crown through,
+  // and a token with no word character (§9.4) or a leading `-` (a flattened
+  // continuation line's flag, §9.4) renders headless and consumes the slot so a
+  // pipe filter cannot inherit it.
   const heads: BashHead[] = [];
   let quote: "'" | '"' | undefined;
   let headPending = true;
@@ -138,16 +143,6 @@ function bashHeadCandidates(body: string): BashHead[] {
     atLineStart = false;
     if (endsWithUnquotedSemi) headPending = true;
   }
-  return heads;
-}
-
-// Crown selection is row-global (§9.4): every real command head is crowned, and
-// preamble (`cd`, `set`) and plumbing (`echo`, `true`, …) heads render headless
-// beside them. A row with no real head keeps its first operative head — plumbing
-// before preamble — so no row goes dark: `$ cd /tmp` and `$ echo hi > f` still
-// carry one crown each.
-export function bashCrownedHeads(body: string): BashHead[] {
-  const heads = bashHeadCandidates(body);
   const real = heads.filter((head) => head.cls === "real");
   if (real.length > 0) return real;
   const fallback = heads.find((head) => head.cls === "plumbing") ?? heads[0];

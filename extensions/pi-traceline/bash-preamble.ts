@@ -59,15 +59,23 @@ export function bashTopLevelSegments(body: string): { start: number; text: strin
   return segs;
 }
 
-// One env-assignment-only segment (`WORK=$(cat x)`, `A=1 B=2`) is setup, not a command,
-// so it situates; `FOO=bar cmd` is the command `cmd` and does not. Consumes each
-// `VAR=value` token quote/substitution-aware, then checks nothing but assignments remain.
-export function isEnvAssignmentOnly(text: string): boolean {
+export type BashSegmentClass = "hygiene" | "context" | "real";
+
+// `set -…` is hygiene (drop-always); `cd`, `export …` and bare assignments situate
+// (fold-on-repeat); everything else is the reason the row exists and stops the run.
+export function classifyBashSegment(text: string): BashSegmentClass {
+  if (/^set(\s|$)/.test(text)) return "hygiene";
+  if (/^cd(\s|$)/.test(text)) return "context";
+  if (/^export\s+[A-Za-z_]/.test(text)) return "context";
+  if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(text)) return "real";
+  // One env-assignment-only segment (`WORK=$(cat x)`, `A=1 B=2`) is setup, not a command,
+  // so it situates; `FOO=bar cmd` is the command `cmd` and does not. Consumes each
+  // `VAR=value` token quote/substitution-aware, then checks nothing but assignments remain.
   let i = 0;
   while (i < text.length) {
     while (i < text.length && /\s/.test(text[i]!)) i++;
-    if (i >= text.length) return true;
-    if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(text.slice(i))) return false;
+    if (i >= text.length) return "context";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(text.slice(i))) return "real";
     let quote: "'" | '"' | undefined;
     let paren = 0;
     let backtick = false;
@@ -86,19 +94,7 @@ export function isEnvAssignmentOnly(text: string): boolean {
       i++;
     }
   }
-  return true;
-}
-
-export type BashSegmentClass = "hygiene" | "context" | "real";
-
-// `set -…` is hygiene (drop-always); `cd`, `export …` and bare assignments situate
-// (fold-on-repeat); everything else is the reason the row exists and stops the run.
-export function classifyBashSegment(text: string): BashSegmentClass {
-  if (/^set(\s|$)/.test(text)) return "hygiene";
-  if (/^cd(\s|$)/.test(text)) return "context";
-  if (/^export\s+[A-Za-z_]/.test(text)) return "context";
-  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(text)) return isEnvAssignmentOnly(text) ? "context" : "real";
-  return "real";
+  return "context";
 }
 
 // A `cd` target under the row's working directory prints relative to it (§9.4), the

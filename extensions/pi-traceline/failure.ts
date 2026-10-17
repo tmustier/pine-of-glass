@@ -17,15 +17,6 @@ export type FailureFact = {
 const SEARCH_HEADS = new Set(["rg", "grep", "egrep", "fgrep"]);
 const QUOTED_OR_ESCAPED = /'[^']*'|"(?:[^"\\]|\\.)*"|\\./g;
 
-// Silence and one unpiped search make exit 1 unambiguously "nothing matched".
-function isLoneSearch(command: string): boolean {
-  const body = command.split("\n").map((line) => line.trim()).filter(Boolean).join(" \u21b5 ");
-  const real = bashTopLevelSegments(body).filter((segment) => classifyBashSegment(segment.text) === "real");
-  const heads = bashCrownedHeads(body);
-  if (real.length !== 1 || heads.length !== 1 || !SEARCH_HEADS.has(body.slice(heads[0]!.start, heads[0]!.end))) return false;
-  return !/(^|[^|])\|([^|]|$)/.test(real[0]!.text.replace(QUOTED_OR_ESCAPED, ""));
-}
-
 /** Read the failure's status or diagnostic, without borrowing incidental output (§9.2.1). */
 export function failureFact(toolName: string, errorText: string, command?: string): FailureFact | undefined {
   const thrown = toolName === "codemode" ? /^Script error:\n\s*(.+)/m.exec(errorText)?.[1]!.trim() : undefined;
@@ -42,7 +33,15 @@ export function failureFact(toolName: string, errorText: string, command?: strin
 
   const exit = /^Command exited with code (\d+)$/.exec(last);
   if (exit) {
-    const silentMiss = exit[1] === "1" && lines.length === 1 && command !== undefined && isLoneSearch(command);
+    // Silence and one unpiped search make exit 1 unambiguously "nothing matched".
+    let silentMiss = false;
+    if (exit[1] === "1" && lines.length === 1 && command !== undefined) {
+      const body = command.split("\n").map((line) => line.trim()).filter(Boolean).join(" \u21b5 ");
+      const real = bashTopLevelSegments(body).filter((segment) => classifyBashSegment(segment.text) === "real");
+      const heads = bashCrownedHeads(body);
+      silentMiss = real.length === 1 && heads.length === 1 && SEARCH_HEADS.has(body.slice(heads[0]!.start, heads[0]!.end))
+        && !/(^|[^|])\|([^|]|$)/.test(real[0]!.text.replace(QUOTED_OR_ESCAPED, ""));
+    }
     return { text: silentMiss ? "no matches" : `exit ${exit[1]}`, parsed: true };
   }
   const timeout = /^Command timed out after (\S+) seconds$/.exec(last);
