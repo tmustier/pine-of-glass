@@ -145,10 +145,29 @@ test("the command that earned a record keeps the command floor; its siblings giv
   const by = commandKeys("git push origin --force-with-lease topic/quote-pack-receipts");
   const shielded = stripAnsi(fitBashLines(undefined, "text", body, 60, undefined, by).first);
   assert.match(shielded, /^rg -n 'quotePack… rg -n 'doorServ… git push origin --force-…$/, shielded);
-  // A crown inside its command (`pr`) does not move the protected start past `gh`.
+  // The command `$(…)` runs is the one that earned the record (§9.4); its floor counts
+  // from `gh`, so the kept `PR_URL=$(` costs the siblings, not the producer.
   const assigned = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && PR_URL=$(gh pr create --fill --title 'Add receipts' --base main)";
+  assert.match(stripAnsi(fitBashLines(undefined, "text", assigned, 60).first), / PR_URL=\$\(gh pr cre…$/, "unshielded, it shares the cut");
   const opened = stripAnsi(fitBashLines(undefined, "text", assigned, 60, undefined, commandKeys("gh pr create --fill --title 'Add receipts' --base main")).first);
-  assert.match(opened, /gh pr create --fill --ti…$/, opened);
+  assert.match(opened, / PR_URL=\$\(gh pr create --fill --ti…$/, opened);
+});
+
+test("an assignment that runs a command crowns that command, and wrapping keeps them together (§9.4)", () => {
+  const crowned = (body: string) => bashCrownedHeads(body).map(({ start, end }) => body.slice(start, end));
+  assert.deepEqual(crowned("PR_URL=$(gh pr create --fill) && gh pr view \"$PR_URL\""), ["gh", "gh"]);
+  assert.deepEqual(crowned("SHA=`git rev-parse HEAD` && git push"), ["git", "git"]);
+  assert.deepEqual(crowned('X="$(git rev-parse HEAD)" && npm test'), ["git", "npm"]);
+  assert.deepEqual(crowned("N=$((n + 1)) && npm test"), ["npm"], "arithmetic runs nothing");
+  assert.deepEqual(crowned("TMP=$(mktemp -d) && npm test"), ["npm"], "mktemp sets up, like cd");
+  // A whole command wraps with its assignments, never apart from them. A cut one starts
+  // at its head's own word: `PR_URL=$(gh` stays whole, separate assignments go.
+  const body = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && PR_URL=$(gh pr create --fill --title 'Add receipts to the quote pack' --base main) && FOO=1 npm test";
+  const wrapped = (width: number) => [fitBashLines(undefined, "text", body, width, width)].flatMap(({ first, continuations }) => [first, ...continuations]).map(stripAnsi);
+  assert.deepEqual(wrapped(90).slice(2), ["PR_URL=$(gh pr create --fill --title 'Add receipts to the quote pack' --base main) &&", "FOO=1 npm test"]);
+  assert.match(wrapped(56)[2]!, /^PR_URL=\$\(gh pr create --fill --title 'Ad… FOO=1 npm test$/);
+  const env = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && FOO=1 BAR=2 npm test --watch --reporter=verbose";
+  assert.match(stripAnsi(fitBashLines(undefined, "text", env, 60).first), / npm test --watch -…$/, "a long run of assignments never hides the command");
 });
 
 test("a folded repetition of a long compound row stays one line: it fits by command, never wraps", () => {

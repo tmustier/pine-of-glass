@@ -5,6 +5,9 @@ import { LINE_BREAK_MARK, PREAMBLE_MARK } from "./bash-preamble.ts";
 
 // Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// Unless the value runs a command (§9.4): `PR_URL=$(gh pr create …)` crowns `gh`, the
+// substituted command's first word. `$((…))` is arithmetic and runs nothing.
+const SUBSTITUTED_HEAD = /^[A-Za-z_][A-Za-z0-9_]*="?(?:\$\((?!\()|`)([^\s()`;"'|&<>]*[A-Za-z0-9][^\s()`;"'|&<>]*)/;
 
 // Sequencing operators start a new command whose head word is a discriminator
 // (§9.4). Pipes and redirects continue a command — `| head -240` is a filter, and
@@ -25,12 +28,22 @@ const BASH_HEREDOC_TOKEN = /^<<-?(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-
 // glues (`|| true`, `&& echo done`); neither is why the row exists, so neither wears
 // a crown when a real command in the row does. Closers are the block keywords a
 // sequencer exposes (`; do`, `↵ fi`); they pass the crown to the head that follows.
-const BASH_PREAMBLE_HEADS = new Set(["cd", "set"]);
+// `mktemp` joined when assignments began crowning their command (§9.4): `TMP=$(mktemp -d)`
+// sets up a row the way `cd` does, and was the largest new crown in the corpus.
+const BASH_PREAMBLE_HEADS = new Set(["cd", "set", "mktemp"]);
 const BASH_PLUMBING_HEADS = new Set(["echo", "true", "false", "printf", "exit"]);
 const BASH_CLOSERS = new Set(["do", "done", "then", "else", "elif", "fi", "esac", "in"]);
 
 export type BashHeadClass = "real" | "plumbing" | "preamble";
-export type BashHead = { start: number; end: number; cls: BashHeadClass };
+/**
+ * A head word's range; `token`, where the shell word holding it starts (`PR_URL=$(gh`); and
+ * `from`, where its command starts, leading assignments included (§9.4).
+ */
+export type BashHead = { start: number; end: number; token: number; from: number; cls: BashHeadClass };
+
+function headClass(word: string): BashHeadClass {
+  return BASH_PREAMBLE_HEADS.has(word) ? "preamble" : BASH_PLUMBING_HEADS.has(word) ? "plumbing" : "real";
+}
 
 // One walk over the flattened body collects every command's head candidate (§9.4's
 // grammar): tokens scan left to right with quote state carried across
@@ -49,6 +62,7 @@ function bashHeadCandidates(body: string): BashHead[] {
   let heredocTagFromNext = false; // armed by a bare `<<`; the next token names the tag
   let heredocActive = false;
   let atLineStart = false; // inside a heredoc: was the previous token a ↵?
+  let assignedFrom: number | undefined; // the first leading assignment of the pending command
   const tokens = /\S+/g;
   let match: RegExpExecArray | null;
   while ((match = tokens.exec(body))) {
@@ -88,11 +102,13 @@ function bashHeadCandidates(body: string): BashHead[] {
           heredocActive = true;
           headPending = false;
         } else headPending = true;
+        assignedFrom = undefined;
         atLineStart = true;
         continue;
       }
       if (BASH_SEQUENCER.test(text)) {
         headPending = true;
+        assignedFrom = undefined;
         continue;
       }
       if (text === "|") {
@@ -112,7 +128,15 @@ function bashHeadCandidates(body: string): BashHead[] {
         else heredocTagFromNext = true;
         continue;
       }
-      if (headPending && !ENV_ASSIGNMENT.test(text)) {
+      const assignment = headPending && ENV_ASSIGNMENT.test(text);
+      if (assignment) assignedFrom ??= match.index;
+      const substituted = assignment ? SUBSTITUTED_HEAD.exec(text) : null;
+      if (substituted) {
+        const wordStart = match.index + substituted[0].length - substituted[1]!.length;
+        heads.push({ start: wordStart, end: wordStart + substituted[1]!.length, token: match.index, from: assignedFrom ?? match.index, cls: headClass(substituted[1]!) });
+        headPending = false;
+        assignedFrom = undefined;
+      } else if (headPending && !assignment) {
         // Parens are apparatus (§9.4's spirit): `(cd …` and `… || true)` classify
         // and crown on the inner word, so a subshell close cannot smuggle glue past
         // the §9.4 vocabularies and a crown never bolds punctuation.
@@ -124,19 +148,18 @@ function bashHeadCandidates(body: string): BashHead[] {
         if (!/[A-Za-z0-9]/.test(word) || word.startsWith("-")) {
           headPending = false; // §9.4: apparatus and flags consume the slot
         } else if (!BASH_CLOSERS.has(word)) {
-          const cls: BashHeadClass = BASH_PREAMBLE_HEADS.has(word)
-            ? "preamble"
-            : BASH_PLUMBING_HEADS.has(word)
-              ? "plumbing"
-              : "real";
-          heads.push({ start: wordStart, end: wordStart + word.length, cls });
+          heads.push({ start: wordStart, end: wordStart + word.length, token: wordStart, from: assignedFrom ?? wordStart, cls: headClass(word) });
           headPending = false;
         }
+        assignedFrom = undefined;
         // a closer falls through with the slot still armed: `; do gh …` crowns gh
       }
     }
     atLineStart = false;
-    if (endsWithUnquotedSemi) headPending = true;
+    if (endsWithUnquotedSemi) {
+      headPending = true;
+      assignedFrom = undefined;
+    }
   }
   return heads;
 }
