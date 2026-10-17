@@ -428,6 +428,17 @@ are validated against a corpus of 51k real invocations
 - every command gets a head candidate: `&&`, `||`, `;` (attached or
   space-delimited) and flattened `↵` breaks each start a new command whose first
   non-assignment token is its head
+- an assignment whose value runs a command (`PR_URL=$(gh pr create …)`, or the
+  backtick form) hands the crown to that command's first word, `gh`: the
+  substituted command is what the row runs, and the word after it is only an
+  argument. Arithmetic (`$((n + 1))`) runs nothing and crowns nothing
+- a command's leading assignments belong to it. Wrapping (§9.8) treats
+  `PR_URL=$(gh pr create …)` and `FOO=1 npm test` as one unit from the
+  assignment on, so a wrapped row never strands `PR_URL=$(` or `FOO=1` at the end
+  of the line before its command. A command that has to be cut starts at its
+  head's own word: `FOO=1 npm test --watch` cuts to `npm test --w…`, so a long run
+  of assignments can never hide the command, while `PR_URL=$(gh pr create …)`
+  keeps `PR_URL=$(gh`, which is one word, so its closing `)` still has an opening
 - pipes and redirects continue a command: `| head -240` is a filter and stays
   dim. Brightening a single "operative segment" was considered and rejected: a
   pipeline tail is as often a filter as the point
@@ -443,7 +454,8 @@ are validated against a corpus of 51k real invocations
   `fi`, and kin) passes the crown through to the real head that follows. The
   miss is deliberately conservative: under-brightening is the family's bias
 - the crown is rationed to commands that inform. Two vocabularies demote:
-  preambles (`cd <dir> &&`, `set -…`) are situating throat-clearing, and
+  preambles (`cd <dir> &&`, `set -…`, `TMP=$(mktemp -d)`) are situating
+  throat-clearing, and
   plumbing (`echo`, `true`, `false`, `printf`, `exit`) is flow-control glue
   (`|| true`, `&& echo done`). A preamble or plumbing head renders headless
   whenever any real command in the row wears a crown; selection is row-global,
@@ -603,7 +615,8 @@ row that overflows its budget fits by command instead:
 - a command that earned a record (§9.10) is never cut below the floor. The
   headline names an outcome, so the command that produced it must stay readable
   beside it: it keeps its whole text when that is shorter than the floor, and at
-  least the floor's columns otherwise, and the other commands give way first.
+  least the floor's columns otherwise, counted from its own head word so a kept
+  `PR_URL=$(` (§9.4) never spends them, and the other commands give way first.
   When even the others' bare heads leave too little room, the earning command
   shares the cut like any other
 - the record also buys the row its room. When a command longer than a line comes

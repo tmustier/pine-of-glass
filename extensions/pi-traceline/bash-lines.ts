@@ -40,12 +40,13 @@ export function fitBashLines(theme: Theme | undefined, tone: Tone, body: string,
       if (!identities.has(tildify(commandKey(command)))) continue;
       const { start, end } = command.head;
       const commandEnd = command.args.at(-1)?.end ?? end;
-      // A fitting boundary is not a crown. Start protection at the producer, not
-      // at an earlier rg or env whose slice happens to contain it. A conservative
-      // crown inside this command (unquoted `PR_URL=$(gh …)` crowns `pr`) is replaced
-      // only for fitting; the ink below still uses the original whole-body crowns.
+      // Protection starts at the producer, not at an earlier rg or env whose slice
+      // happens to contain it. Its own crown, when it has one, keeps its assignments
+      // (§9.4); otherwise a fitting boundary stands in for it. A boundary is not a
+      // crown: the ink below still uses the original whole-body crowns.
+      const crown = heads.find((head) => head.start === start) ?? { start, end, token: start, from: start };
       heads = heads.filter((head) => head.start < start || head.start >= commandEnd);
-      heads.push({ start, end, earned: true });
+      heads.push({ ...crown, earned: true });
     }
     heads.sort((a, b) => a.start - b.start);
   }
