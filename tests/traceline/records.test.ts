@@ -188,17 +188,37 @@ test("facts require both the command gate and result evidence", () => {
   assert.deepEqual(recordCells(read), []);
 });
 
-test("overflow drops whole facts oldest first, never mangles", () => {
+test("overflow drops whole facts, deletions then the oldest, and counts them; never mangles", () => {
   const comp = bash(
     "git commit -m x && git push",
     `[main a4f21c9] x\n${PUSH_OK}`,
   );
   // Plenty of room: both facts.
   assert.equal(stripAnsi(recordHeadline(comp, 120)), "committed a4f21c9 · pushed main");
-  // Tight row (~76 available at 80 cols → cap 25): the oldest fact drops whole.
-  assert.equal(stripAnsi(recordHeadline(comp, 76)), "pushed main");
+  // Tight row (~76 available at 80 cols → cap 25): the oldest fact drops whole, and the
+  // row says it did (§9.10).
+  assert.equal(stripAnsi(recordHeadline(comp, 76)), "pushed main +1");
+  // The count fits the cap too, and never costs the last fact its place: on a row too
+  // narrow for both, the fact stays and the count goes.
+  assert.equal(stripAnsi(recordHeadline(comp, 40)), "pushed main");
   // Too tight for anything: no half-facts.
   assert.equal(stripAnsi(recordHeadline(comp, 20)), "");
+  // A deletion tidies up after the change the row was for, so it goes first.
+  const tidy = bash("git commit -m x && git branch -d docs", "[main a4f21c9] x\nDeleted branch docs (was a4f21c9).\n");
+  assert.equal(stripAnsi(recordHeadline(tidy, 120)), "committed a4f21c9 · deleted branch docs");
+  assert.equal(stripAnsi(recordHeadline(tidy, 76)), "committed a4f21c9 +1");
+  // But never for a fact that could not show at all: a push too long to fit goes
+  // first, and the deletion that fits keeps the row's headline.
+  const long = bash("git push origin rebase-94:thomas/tho-94-session-management-list-create && git branch -D rebase-94",
+    "To github.com:o/r.git\n * [new branch]      rebase-94 -> thomas/tho-94-session-management-list-create\nDeleted branch rebase-94 (was 1c75c2a).\n");
+  assert.equal(stripAnsi(recordHeadline(long, 96)), "deleted branch rebase-94 +1");
+});
+
+test("a middle-cut command behind a headline never cuts the headline, its count or its `$` (§9.10)", () => {
+  const command = `cd .worktrees/approval && pnpm test 2>&1 | tail -3; gh pr create --title "${"t".repeat(80)}" --body "${"b".repeat(200)}"`;
+  const comp = bash(command, " Test Files  1 failed | 3 passed (4)\n      Tests  1 failed | 1471 passed (1472)\n", { error: true });
+  const line = stripAnsi(oneLine(comp, 80));
+  assert.match(line, /› failed 1 of 1472 tests( \+\d+)? \$ \S/, line);
 });
 
 test("records lead the row; the command trails behind its `$` (§9.10)", () => {
@@ -212,7 +232,7 @@ test("records lead the row; the command trails behind its `$` (§9.10)", () => {
   // On a tighter row the cap (about a third, §9.10) drops the oldest fact whole,
   // and the command keeps its width.
   const tight = stripAnsi(oneLine(comp, 100));
-  assert.ok(tight.includes("pushed main $ git commit -m x && git push"), tight);
+  assert.ok(tight.includes("pushed main +1 $ git commit -m x && git push"), tight);
   assert.ok(!tight.includes("committed"), tight);
 });
 

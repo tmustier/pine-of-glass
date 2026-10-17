@@ -183,7 +183,7 @@ Successful commands can lead with a verified outcome:
   ▏ › pushed main $ git push
   ▏ › merged PR #87 $ gh pr merge 87 --squash
   ▏ › created worktree release/0.16.0 $ git worktree add -b release/0.16.0 /tmp/pog-release origin/main
-  ▏ › deleted fix, origin/fix $ git branch -D fix && git push origin --delete fix
+  ▏ › deleted branch fix, origin/fix $ git branch -D fix && git push origin --delete fix
 ```
 
 Traceline knows commits, pushes, rebases, branches and worktrees created or deleted,

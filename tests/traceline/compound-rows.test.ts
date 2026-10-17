@@ -13,6 +13,8 @@ import { fitCompoundCommand } from "../../extensions/pi-traceline/compound-fit.t
 import { checkFacts } from "../../extensions/pi-traceline/checks.ts";
 import { relativizeContextCd } from "../../extensions/pi-traceline/bash-preamble.ts";
 import { bashCrownedHeads } from "../../extensions/pi-traceline/bash-crowns.ts";
+import { fitBashLines } from "../../extensions/pi-traceline/bash-lines.ts";
+import { commandKeys } from "../../extensions/pi-traceline/record-shell.ts";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { assistantBefore, nativeBashLines } from "./runtime-fixtures.ts";
 
@@ -108,6 +110,45 @@ test("five searches in one call wrap so every pattern survives; a wide terminal 
   const wide = renderTraceRow(comp, 220).map(stripAnsi).slice(1);
   assert.equal(wide.length, 1, "a row that fits never wraps");
   assert.match(wide[0]!, /rg -n "contract" src\/server {2,}3\.2k ch$/);
+});
+
+// The row from a dogfooding screenshot: a branch made, committed, merged and deleted.
+const DOCS_CHAIN = "git switch -c docs && printf '# Docs\\n' > DOCS.md && git add DOCS.md && git commit -m 'Add docs page' && git switch main && git merge --no-ff docs -m 'Merge docs' && git branch -d docs";
+const DOCS_OUTPUT = "Switched to a new branch 'docs'\n[docs 3f2a1b9] Add docs page\n 1 file changed, 1 insertion(+)\nSwitched to branch 'main'\nMerge made by the 'ort' strategy.\nDeleted branch docs (was 3f2a1b9).\n";
+
+test("a cramped record row keeps its change, counts what it dropped and keeps the earning command readable (§9.8, §9.10)", () => {
+  const comp = bash(DOCS_CHAIN, DOCS_OUTPUT);
+  setTracelineChat({ children: [assistantBefore([comp]), comp] });
+  const wide = renderTraceRow(comp, 200).map(stripAnsi).filter(Boolean);
+  assert.match(wide[0]!, /› created branch docs · committed 3f2a1b9 · deleted branch docs \$ git switch -c docs/, "a deleted branch says what it deleted");
+  for (const width of [80, 84]) {
+    const lines = renderTraceRow(comp, width).map(stripAnsi).filter(Boolean);
+    const shown = lines.join("\n");
+    // The deletion goes first, then the oldest; the row says two facts are hidden.
+    assert.match(lines[0]!, /^ {2}▏ › committed 3f2a1b9 \+2 \$ git switch -c docs && /, shown);
+    assert.equal(lines.length, 4, shown);
+    // The commands behind the records stay readable: the commit whole, and the branch
+    // deletion whole at the end of the capped last line, where the merge gives way.
+    assert.ok(lines.some((line) => line.includes("git commit -m 'Add docs page' &&")), shown);
+    assert.match(lines[3]!, /git merge .*… git branch -d docs$/, shown);
+    for (const line of lines) assert.ok(line.length <= width, line);
+  }
+  // At 80 the first command is wider than its line: it is cut on a line of its own,
+  // ending with its connector, and the row wraps on rather than squeezing every command.
+  assert.match(renderTraceRow(comp, 80).map(stripAnsi).filter(Boolean)[0]!, /printf '# Docs\\n' > DO… &&$/);
+});
+
+test("the command that earned a record keeps the command floor; its siblings give way first (§9.8)", () => {
+  const body = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && git push origin --force-with-lease topic/quote-pack-receipts";
+  const plain = stripAnsi(fitBashLines(undefined, "text", body, 60).first);
+  assert.match(plain, /git push origin --…$/, "unshielded, all three share the cut");
+  const by = commandKeys("git push origin --force-with-lease topic/quote-pack-receipts");
+  const shielded = stripAnsi(fitBashLines(undefined, "text", body, 60, undefined, by).first);
+  assert.match(shielded, /^rg -n 'quotePack… rg -n 'doorServ… git push origin --force-…$/, shielded);
+  // A crown inside its command still names it: `PR_URL=$(gh pr create …)` crowns `pr`.
+  const assigned = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && PR_URL=$(gh pr create --fill --title 'Add receipts' --base main)";
+  const opened = stripAnsi(fitBashLines(undefined, "text", assigned, 60, undefined, commandKeys("gh pr create --fill --title 'Add receipts' --base main")).first);
+  assert.match(opened, / pr create --fill --title…$/, opened);
 });
 
 test("a folded repetition of a long compound row stays one line: it fits by command, never wraps", () => {
@@ -220,7 +261,7 @@ test("a headline over its cap drops other facts before a failed check (§9.10.1)
     "Checking formatting...\n[warn] package.json\n[warn] Code style issues found in the above file. Run Prettier with --write to fix.\n";
   const row = bash("cd pkg && (tsc --noEmit -p . 2>&1 | tail -15) ; npx prettier --check math.test.mjs package.json 2>&1 | tail -3", output);
   const narrow = stripAnsi(oneLine(row, 100));
-  assert.match(narrow, /› found type errors \$/, narrow);
+  assert.match(narrow, /› found type errors \+1 \$/, narrow);
   assert.doesNotMatch(narrow, /unformatted/, "the warning gives way to the failure");
   assert.match(stripAnsi(oneLine(row, 200)), /› found type errors · found 1 unformatted file \$/, "both fit when there is room");
 });

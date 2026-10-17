@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { stripAnsi } from "../_lib/ansi.ts";
 import { isJsonObject } from "../_lib/boundary.ts";
 import type { ToolResultLike, ToolRowDataLike } from "../_lib/chat.ts";
-import { readShell, type ShellCommand, type ShellWord } from "./record-shell.ts";
+import { commandKey, readShell, type ShellCommand, type ShellWord } from "./record-shell.ts";
 import { BUILT_IN_VOCABULARY } from "./vocabulary.ts";
 
 // Records of consequence (design language §9.10): vocabulary entries are plain data
@@ -13,7 +13,8 @@ import { BUILT_IN_VOCABULARY } from "./vocabulary.ts";
 export type RecordTone = "success" | "warning";
 /** Which of §9.10's evidence sources produced the fact. */
 export type RecordEvidence = "output" | "state" | "quiet";
-export type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence };
+/** `by`: the keys (record-shell.ts) of the commands that earned it; the fitter keeps them readable (§9.8). */
+export type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence; by: string[] };
 
 /** A vocabulary entry as written (§9.10): plain data, the shape a JSON file would hold. */
 export type VocabularyEntryInput = {
@@ -231,6 +232,7 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
     const ops = invocations(script.commands);
     const all = [...ops, ...invocations(script.nested)];
     if (all.length === 0) return [];
+    const by = all.map(({ command }) => commandKey(command));
     const output = entry.records.flatMap((rule) => [...out.matchAll(rule.pattern)].flatMap((match): RecordFact[] => {
       let complete = true;
       const datum = rule.datum.replace(PLACEHOLDER, (_, name: string) => {
@@ -238,7 +240,7 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
         if (value === undefined) complete = false;
         return value ?? "";
       });
-      return complete ? [{ verb: rule.verb, datum: entry.code?.datum?.(datum, all) ?? datum, at: match.index, tone: rule.tone, opaque: rule.opaque, evidence: "output" }] : [];
+      return complete ? [{ verb: rule.verb, datum: entry.code?.datum?.(datum, all) ?? datum, at: match.index, tone: rule.tone, opaque: rule.opaque, evidence: "output", by }] : [];
     }));
     const fallback = entry.code?.fallback;
     if (output.length || !fallback) return output;
@@ -268,7 +270,7 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
         const hasState = view?.some(({ text }, i) =>
           (text === "--json" ? view[i + 1]?.text : text.startsWith("--json=") ? text.slice("--json=".length) : undefined)?.split(",").includes("state"));
         if (viewed?.number === target.number && sameRepo && hasState) {
-          return [{ verb: "merged", datum: `PR #${target.number}`, at: out.indexOf(trimmed), tone: "success", opaque: false, evidence: "state" }];
+          return [{ verb: "merged", datum: `PR #${target.number}`, at: out.indexOf(trimmed), tone: "success", opaque: false, evidence: "state", by }];
         }
         if (["cd", "pushd", "popd"].includes(command.head.text)) break;
       }
@@ -280,11 +282,11 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
     if (op.command !== script.statusOwner) return [];
     if (fallback === "worktree") {
       const [path] = positionals(op.args, new Set());
-      return path?.literal ? [{ verb: "removed worktree", datum: path.text, at: 0, tone: "success", opaque: false, evidence: "quiet" }] : [];
+      return path?.literal ? [{ verb: "removed worktree", datum: path.text, at: 0, tone: "success", opaque: false, evidence: "quiet", by }] : [];
     }
     const target = prTarget(op.args);
     return target && !hasOption(op.args, ["--auto", "--disable-auto"])
-      ? [{ verb: "merged", datum: `PR #${target.number}`, at: 0, tone: "success", opaque: false, evidence: "quiet" }]
+      ? [{ verb: "merged", datum: `PR #${target.number}`, at: 0, tone: "success", opaque: false, evidence: "quiet", by }]
       : [];
   }).sort((a, b) => a.at - b.at);
 }

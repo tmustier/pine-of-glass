@@ -101,10 +101,10 @@ test("headlines collapse identical reruns and keep the newest datum, records and
   try {
     assert.match(painted(repeated, 200), /› passed 17 tests \$/, "identical reruns collapse; no `51 tests`");
     assert.match(painted(comparison, 200), /› failed 1 of 2 tests · passed 2 tests \$/, "a comparison reads in output order");
-    assert.match(painted(crowded, 80), /› passed 1731 tests \$/);
-    assert.match(painted(crowded, 200), /› passed (\d+ tests, )+1731 tests \$/, "wide rows keep more of the chain");
+    assert.match(painted(crowded, 80), /› passed 1731 tests \+5 \$/, "a crowded row counts the runs it dropped");
+    assert.match(painted(crowded, 200), /› passed (\d+ tests, )+1731 tests \+\d+ \$/, "wide rows keep more of the chain");
     assert.match(painted(landed, 200), /› committed 96c35aa · passed 11 tests \$/);
-    assert.match(painted(landed, 90), /› committed 96c35aa \$/, "a pass gives way to a record");
+    assert.match(painted(landed, 90), /› committed 96c35aa \+1 \$/, "a pass gives way to a record");
     assert.match(painted(files, 80), /› failed 5 of 22 test files \$/);
   } finally {
     await host.dispose();

@@ -5,8 +5,8 @@
 // with the crowns it already computed, so the shell grammar is never re-parsed on a
 // string that has lost its closing quotes.
 
-/** A crowned head word: a half-open range into the body. */
-export type FitHead = { start: number; end: number };
+/** A crowned head word: a half-open range into the body. `earned`: its command earned a record. */
+export type FitHead = { start: number; end: number; earned?: boolean };
 
 /** A kept source range, followed by a dim elision mark when `mark` is set. */
 export type FitPiece = { start: number; end: number; mark?: string };
@@ -41,7 +41,7 @@ type Unit = {
   floor: number;
 } & (
   | { kind: "prefix"; lead: number }
-  | { kind: "command"; last: boolean; skip?: { start: number; end: number } }
+  | { kind: "command"; last: boolean; earned: boolean; skip?: { start: number; end: number } }
 );
 
 // One shell word at `i`, quote-aware; returns its end.
@@ -134,7 +134,7 @@ function buildUnits(body: string, heads: readonly FitHead[]): Unit[] {
     const text = body.slice(head.start, end);
     const last = index === heads.length - 1;
     const contentEnd = end - (last ? (/\s*$/.exec(text)?.[0].length ?? 0) : (TRAILING_CONNECTOR.exec(text)?.[0].length ?? 0));
-    const unit: Unit = { kind: "command", start: head.start, end, contentEnd, floor: head.end - head.start, last };
+    const unit: Unit = { kind: "command", start: head.start, end, contentEnd, floor: head.end - head.start, last, earned: head.earned === true };
     if (body.slice(head.start, head.end) === "git") {
       let i = head.end;
       let optionsEnd: number | undefined;
@@ -174,7 +174,17 @@ function fitsByUnit(heads: readonly FitHead[]): boolean {
   return heads.length >= 2 || (heads.length === 1 && heads[0]!.start > 0);
 }
 
+// A command that earned a record is never cut below the floor (§9.8): whole when shorter,
+// so the headline's outcome keeps its command beside it. When even that leaves the others
+// too little room, it shares the cut like any other.
 function fitUnits(body: string, units: Unit[], budget: number): CompoundFit | undefined {
+  const shielded = units.map((unit) => unit.kind === "command" && unit.earned
+    ? { ...unit, floor: Math.max(unit.floor, Math.min(cutContentLength(unit), COMMAND_FLOOR_COLS)) }
+    : unit);
+  return waterFill(body, shielded, budget) ?? waterFill(body, units, budget);
+}
+
+function waterFill(body: string, units: Unit[], budget: number): CompoundFit | undefined {
   if (totalWidth(units, 0) > budget) return undefined;
   // Water-filling over the commands: the highest common keep level that fits. Short
   // commands render whole below it; long ones are cut back to it.
@@ -227,6 +237,18 @@ function lineEndWidth(body: string, unit: Unit): number {
   return fullWidth(unit) - trailingSpace(body, unit.start, unit.end);
 }
 
+function isEarned(unit: Unit): boolean {
+  return unit.kind === "command" && unit.earned;
+}
+
+// A unit cut to fill a line of its own, its connector kept at the end.
+function aloneLine(body: string, unit: Unit, budget: number): FitPiece[] | undefined {
+  const ending = { start: unit.contentEnd, end: unit.end - trailingSpace(body, unit.start, unit.end) };
+  const own: Unit = unit.kind === "command" ? { ...unit, end: unit.contentEnd, last: true } : { ...unit, end: ending.end };
+  const fit = fitUnits(body, [own], budget - (unit.kind === "command" ? ending.end - ending.start : 0));
+  return fit && (unit.kind === "command" ? [...fit.pieces, ending] : fit.pieces);
+}
+
 function closeLine(body: string, line: FitPiece[]): FitPiece[] {
   const last = line[line.length - 1]!;
   return last.mark ? line : [...line.slice(0, -1), { start: last.start, end: last.end - trailingSpace(body, last.start, last.end) }];
@@ -245,6 +267,7 @@ export function wrapCompoundCommand(body: string, heads: readonly FitHead[], bud
   const units = buildUnits(body, heads);
   const lines: FitPiece[][] = [];
   let line: FitPiece[] = [];
+  let lineFrom = 0; // the first unit on the current line
   let used = 0;
   let lineBudget = budget;
   for (let index = 0; index < units.length; index++) {
@@ -267,6 +290,7 @@ export function wrapCompoundCommand(body: string, heads: readonly FitHead[], bud
     if (line.length > 0 && lines.length < WRAP_LINE_CAP - 1) {
       lines.push(closeLine(body, line));
       line = [];
+      lineFrom = index;
       used = 0;
       lineBudget = contBudget;
       if (lineEndWidth(body, unit) <= lineBudget) {
@@ -276,10 +300,24 @@ export function wrapCompoundCommand(body: string, heads: readonly FitHead[], bud
       }
     }
     // The last allowed line, or a unit wider than a fresh line: fit the remainder by
-    // command into what this line has left.
+    // command into what this line has left. A command behind a record still to come
+    // (§9.8) buys more: the line's commands share it with the remainder, so they yield
+    // to its floor, and a unit wider than a fresh line is cut on a line of its own,
+    // ending `… &&` like any wrapped line.
     const rest = units.slice(index);
-    const fit = fitUnits(body, rest, lineBudget - used);
-    lines.push(closeLine(body, [...line, ...(fit ? fit.pieces : [{ start: rest[0]!.start, end: body.length }])]));
+    const earnedAhead = rest.some(isEarned);
+    const fit = earnedAhead ? fitUnits(body, units.slice(lineFrom), lineBudget) : fitUnits(body, rest, lineBudget - used);
+    const alone = earnedAhead && line.length === 0 && lines.length < WRAP_LINE_CAP - 1 && (!fit || fit.starved)
+      ? aloneLine(body, unit, lineBudget)
+      : undefined;
+    if (alone) {
+      lines.push(alone);
+      lineFrom = index + 1;
+      lineBudget = contBudget;
+      continue;
+    }
+    const kept = earnedAhead && fit ? fit.pieces : [...line, ...(fit ? fit.pieces : [{ start: rest[0]!.start, end: body.length }])];
+    lines.push(closeLine(body, kept));
     return lines.length > 1 ? lines : undefined;
   }
   if (line.length > 0) lines.push(closeLine(body, line));

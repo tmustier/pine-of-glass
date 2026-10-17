@@ -65,12 +65,15 @@ export const BUILT_IN_VOCABULARY = [
     ],
   },
   {
+    // `deleted branch fix`, not `deleted fix`: a bare name reads as files. The datum, not
+    // the verb, carries "branch", so a remote deletion (`origin/fix`, a branch or a tag)
+    // still merges into the same cell: `deleted branch fix, origin/fix` (§9.10).
     id: "git.branch.delete",
     commands: ["git branch"],
     requires: ["--delete", "-d", "-D"],
-    records: [{ output: String.raw`^Deleted branch (?<branch>\S+) \(was [0-9a-f]+\)\.$`, verb: "deleted", datum: "{branch}" }],
+    records: [{ output: String.raw`^Deleted branch (?<branch>\S+) \(was [0-9a-f]+\)\.$`, verb: "deleted", datum: "branch {branch}" }],
     examples: [
-      { command: "git branch -D fix", output: "Deleted branch fix (was a4f21c9).\n", records: ["deleted fix"] },
+      { command: "git branch -D fix", output: "Deleted branch fix (was a4f21c9).\n", records: ["deleted branch fix"] },
       { command: "git branch -D fix", output: "error: branch 'fix' not found\n", error: true, records: [] },
     ],
   },

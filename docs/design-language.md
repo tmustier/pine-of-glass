@@ -595,10 +595,25 @@ row that overflows its budget fits by command instead:
   command column (after `$ `), and a wrapped line ends with its dim connector so
   the command visibly continues. The fact suffix stays on the bullet line, so the
   block's fact column stays aligned against bullets. Lines share the block's body
-  budget (§9.8); a lone command longer than a line still middle-cuts
+  budget (§9.8); a lone command longer than a line still middle-cuts, and the
+  row stops wrapping there
 - wrapping is capped at 4 lines (agent default, not a user rule: 2026-10-20). A
   row with more commands than that packs the remainder onto its last line with the
   by-command fit above, so every head still shows; the rest is one zoom away
+- a command that earned a record (§9.10) is never cut below the floor. The
+  headline names an outcome, so the command that produced it must stay readable
+  beside it: it keeps its whole text when that is shorter than the floor, and at
+  least the floor's columns otherwise, and the other commands give way first.
+  When even the others' bare heads leave too little room, the earning command
+  shares the cut like any other
+- the record also buys the row its room. When a command longer than a line comes
+  before a command that earned a record, that long command middle-cuts on a line
+  of its own, ending with its connector (`… &&`), and the row wraps on. On the
+  last line, the commands already there share it with the remainder, so a short
+  earning command at the end is never squeezed into what a long one left over
+  (`git merge … && git branc…`). Without a record ahead, neither applies: the row
+  stops wrapping at a long command, as above, because a long script is not worth
+  four lines for its own sake
 
 A single-command row with no leading context keeps the middle cut: its tail (the
 target file, the final filter) is usually what discriminates it.
@@ -660,7 +675,7 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
   follows ran in a shell, which is why a record may never sit between `$` and
   the command (`$ pushed main git push` reads as a command named `pushed`)
 - the headline survives truncation: the middle cut (§9.8) lands in the command,
-  never in the record
+  never in the record, its count or its `$`
 - a record row's size cell is suppressed (§9.7): the record is the row's story,
   and a confirmation's length is not. At warning severity (§6) the cell
   re-earns its berth
@@ -671,9 +686,21 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
 - facts chain in output order with the `·` separator; consecutive same-verb
   facts merge their data (`pushed main, v0.5.9`) only when their tones agree,
   so a forced push never hides inside a routine one
-- overflow drops whole facts, oldest first; a merged cell's data are separate
-  facts, so `pushed main, v0.5.9` narrows to `pushed v0.5.9`. Records take at most about a third
-  of the row, so the command keeps its width; a mangled sha is worse than none
+- overflow drops whole facts. A fact too long to fit even alone goes first, so
+  the order below never spends a fact that fits on one that never will.
+  Deletions go next (`deleted …`, `removed …`): they tidy up after the change
+  the row was for, so a cramped `committed a4f21c9 · deleted branch docs` keeps
+  the commit. Then the oldest go, because a row's later facts are usually its
+  culmination (`committed` → `pushed` → `opened`). A merged cell's data are
+  separate facts, so `pushed main, v0.5.9` narrows to `pushed v0.5.9`. Records
+  take at most about a third of the row, so the command keeps its width; a
+  mangled sha is worse than none
+- a row that dropped facts says so: a dim `+N` closes the headline
+  (`pushed main +1`), so a cramped row never hides that it did more. The count
+  fits inside the cap like any fact, because a headline past its cap starves the
+  command it stands for. It never costs the last fact its place: on a row too
+  narrow for both, the fact stays and the count goes. The dropped facts are one
+  zoom away
 - records wear the ink of what they state: the cell renders success-toned bold,
   verb and datum together (`pushed main`, `released v0.5.9`), because a refname,
   tag or PR number is the event's identity. A commit sha stays dim beside its
@@ -789,9 +816,11 @@ sends a layer on Pi's event bus from its `session_start` handler or later,
 
 - a worktree's datum is its branch, from git's line; a detached worktree shows
   its sha, dim like a commit's. A worktree removed shows its path as typed
-- a remote deletion is qualified by the remote the command names (`origin/fix`),
-  since the output only names the ref; with a local delete it merges into one
-  cell, `deleted fix, origin/fix`
+- a local branch deletion names what it deleted, `deleted branch fix`: a bare
+  `deleted docs` reads as files. A remote deletion is qualified by the remote the
+  command names (`origin/fix`), since the output only names the ref, and keeps the
+  bare verb because that ref may be a branch or a tag; with a local delete it
+  merges into one cell, `deleted branch fix, origin/fix`
 - `git tag` earns nothing. It succeeds in silence and would qualify for quiet
   success, but the release flow pushes the tag moments later and `pushed v0.5.9`
   states the same event with completion output
@@ -853,8 +882,9 @@ fact, in the record position: `passed 1731 tests $ ⋯ pnpm test`.
 - check facts share the record headline: they chain in output order with
   records, merge same-verb neighbours of the same tone
   (`passed 1731 tests, lint`), and obey the same one-third cap. On overflow a
-  pass goes first, because it is health, not news; then records and warnings,
-  oldest first; a failed check is dropped last. A cramped row keeps
+  pass goes first, because it is health, not news; then deletions (§9.10); then
+  records and warnings, oldest first; a failed check is dropped last. Dropped
+  checks count in the headline's `+N`. A cramped row keeps
   `committed a4f21c9` over `passed 8 tests` and `found type errors` over an
   older pass or warning, and a merged cell gives up its oldest datum before
   the cell goes: `passed 30 tests, 13 tests` narrows to `passed 13 tests`. A
