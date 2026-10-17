@@ -431,7 +431,11 @@ are validated against a corpus of 51k real invocations
 - an assignment whose value runs a command (`PR_URL=$(gh pr create …)`, or the
   backtick form) hands the crown to that command's first word, `gh`: the
   substituted command is what the row runs, and the word after it is only an
-  argument. Arithmetic (`$((n + 1))`) runs nothing and crowns nothing
+  argument. The substitution may come part-way through the value:
+  `LOG=/tmp/run-$(date +%s).log` crowns `date` and `TAG=sha-$(git rev-parse HEAD)`
+  crowns `git`. Arithmetic (`$(( n + 1 ))`) and a file read (`$(< file)`) run
+  nothing and crown nothing: the words inside them, up to the closing `)`, belong to
+  the value
 - a command's leading assignments belong to it. Wrapping (§9.8) treats
   `PR_URL=$(gh pr create …)` and `FOO=1 npm test` as one unit from the
   assignment on, so a wrapped row never strands `PR_URL=$(` or `FOO=1` at the end

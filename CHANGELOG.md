@@ -12,6 +12,8 @@
   row keeps a command with its assignments (`PR_URL=$(gh pr create …)`, `FOO=1 npm test`)
   instead of ending a line on `PR_URL=$(`; a cut command starts at its own word, so a long
   run of `FOO=1 BAR=2` never hides it. `TMP=$(mktemp -d)` counts as set-up, like `cd`.
+  The substitution may come part-way through the value (`LOG=/tmp/run-$(date +%s).log`
+  bolds `date`), and `$(< file)` and `$(( n + 1 ))` bold nothing inside them.
 - `npm run typecheck` now covers the bash-corpus scripts, so they cannot drift out of
   type again.
 - The commands behind a headline stay readable. A command that earned a record is

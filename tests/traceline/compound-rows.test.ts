@@ -161,6 +161,20 @@ test("an assignment that runs a command crowns that command, and wrapping keeps 
   assert.deepEqual(crowned('X="$(git rev-parse HEAD)" && npm test'), ["git", "npm"]);
   assert.deepEqual(crowned("N=$((n + 1)) && npm test"), ["npm"], "arithmetic runs nothing");
   assert.deepEqual(crowned("TMP=$(mktemp -d) && npm test"), ["npm"], "mktemp sets up, like cd");
+  // Part-way through the value, the substitution still runs the command; arithmetic and
+  // a file read run nothing, so nothing inside them up to the `)` is a head.
+  assert.deepEqual(crowned("LOG=/tmp/run-$(date +%s).log && npm test"), ["date", "npm"]);
+  assert.deepEqual(crowned("TAG=sha-$(git rev-parse --short HEAD) && docker build ."), ["git", "docker"]);
+  assert.deepEqual(crowned('backup="$target.$(date +%Y%m%d).bak" && cp "$target" "$backup"'), ["date", "cp"]);
+  assert.deepEqual(crowned("N=$(($(jq .n f) + 1)) && npm test"), ["jq", "npm"]);
+  assert.deepEqual(crowned("ROOT=$(< /tmp/agent.root) && npm test"), ["npm"]);
+  assert.deepEqual(crowned("N=$(( n + 1 )) && npm test"), ["npm"]);
+  assert.deepEqual(crowned("FOO=$(( 1 + 2 )) npm test"), ["npm"], "the command after a closed value still crowns");
+  assert.deepEqual(crowned("X='a-$(not run)' && npm test"), ["npm"], "single quotes run nothing");
+  // A `)` hidden in a quoted word cannot keep the skip open past the command.
+  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent root") && npm test'), ["npm"]);
+  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent root"); npm test'), ["npm"]);
+  assert.deepEqual(crowned('ROOT=$(< "/tmp/agent root") ↵ npm test'), ["npm"]);
   // A whole command wraps with its assignments, never apart from them. A cut one starts
   // at its head's own word: `PR_URL=$(gh` stays whole, separate assignments go.
   const body = "rg -n 'quotePack' src/features/cowork/canvas && rg -n 'doorServices' src/features/cowork/server && PR_URL=$(gh pr create --fill --title 'Add receipts to the quote pack' --base main) && FOO=1 npm test";

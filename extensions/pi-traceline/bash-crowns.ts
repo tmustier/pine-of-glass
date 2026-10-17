@@ -6,9 +6,19 @@ import { LINE_BREAK_MARK, PREAMBLE_MARK } from "./bash-preamble.ts";
 // Env-var assignments (`FOO=1 npm test`) are not the command; the head scans past them.
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 // Unless the value runs a command (§9.4): `PR_URL=$(gh pr create …)` crowns `gh`, the
-// substituted command's first word. `$((…))` is arithmetic and runs nothing: a head word
-// never starts with `(`.
-const SUBSTITUTED_HEAD = /^[A-Za-z_][A-Za-z0-9_]*="?(?:\$\(|`)([^\s()`;"'|&<>]*[A-Za-z0-9][^\s()`;"'|&<>]*)/;
+// substituted command's first word, wherever the substitution starts in the value
+// (`LOG=/tmp/run-$(date +%s).log`). Single quotes run nothing, and arithmetic is skipped
+// to a substitution inside it (`N=$(($(jq .n f) + 1))`). A head word never starts with
+// `(` or `<`, so `$((n + 1))` and `$(< file)` crown nothing.
+const SUBSTITUTED_HEAD = /^[A-Za-z_][A-Za-z0-9_]*=(?:[^\s`$'()]|\$(?!\()|\$\(\()*(?:\$\(|`)([^\s()`;"'|&<>]*[A-Za-z0-9][^\s()`;"'|&<>]*)/;
+// A value that opens arithmetic or a file read and leaves it open (`N=$(( n + 1 ))`,
+// `ROOT=$(< /tmp/root)`): the words up to its closing `)` are the value, not a head.
+// The skip never outlives its command: whatever re-arms the head slot ends it.
+const OPEN_VALUE = /\$\(\(|\$\(</;
+
+function parenDepth(text: string): number {
+  return text.split("(").length - text.split(")").length;
+}
 
 // Sequencing operators start a new command whose head word is a discriminator
 // (§9.4). Pipes and redirects continue a command — `| head -240` is a filter, and
@@ -69,6 +79,7 @@ export function bashCrownedHeads(body: string): BashHead[] {
   let heredocActive = false;
   let atLineStart = false; // inside a heredoc: was the previous token a ↵?
   let assignedFrom: number | undefined; // the first leading assignment of the pending command
+  let valueDepth = 0; // open parens of an OPEN_VALUE assignment; its words are skipped
   const tokens = /\S+/g;
   let match: RegExpExecArray | null;
   while ((match = tokens.exec(body))) {
@@ -109,12 +120,19 @@ export function bashCrownedHeads(body: string): BashHead[] {
           headPending = false;
         } else headPending = true;
         assignedFrom = undefined;
+        valueDepth = 0;
         atLineStart = true;
         continue;
       }
       if (BASH_SEQUENCER.test(text)) {
         headPending = true;
         assignedFrom = undefined;
+        valueDepth = 0;
+        continue;
+      }
+      if (valueDepth > 0) {
+        valueDepth = endsWithUnquotedSemi ? 0 : valueDepth + parenDepth(text);
+        if (endsWithUnquotedSemi) headPending = true;
         continue;
       }
       if (text === "|") {
@@ -142,6 +160,8 @@ export function bashCrownedHeads(body: string): BashHead[] {
         heads.push({ start: wordStart, end: wordStart + substituted[1]!.length, token: match.index, from: assignedFrom ?? match.index, cls: headClass(substituted[1]!) });
         headPending = false;
         assignedFrom = undefined;
+      } else if (assignment && OPEN_VALUE.test(text)) {
+        valueDepth = Math.max(0, parenDepth(text));
       } else if (headPending && !assignment) {
         // Parens are apparatus (§9.4's spirit): `(cd …` and `… || true)` classify
         // and crown on the inner word, so a subshell close cannot smuggle glue past
@@ -165,6 +185,7 @@ export function bashCrownedHeads(body: string): BashHead[] {
     if (endsWithUnquotedSemi) {
       headPending = true;
       assignedFrom = undefined;
+      valueDepth = 0;
     }
   }
   const real = heads.filter((head) => head.cls === "real");
