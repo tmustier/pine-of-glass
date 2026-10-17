@@ -105,17 +105,11 @@ function rowNotes(call: CallTiming, prior: CallTiming[], config: MeantimeConfig)
   if (slowStream) notes.push(`slow stream (median ${formatRate(slowStream.medianRate, { exact: true })})`);
   if (call.silentReasoning) notes.push("wait incl. silent reasoning");
   if ((call.toolsOverlapMs ?? 0) >= OVERLAP_NOTE_MS) notes.push(`${call.toolsCount} tools overlapped`);
-  if ((call.harnessMs ?? 0) >= HARNESS_NOTE_MS) notes.push(`harness ${formatLatency(call.harnessMs!)}`);
+  if (call.harnessMs !== undefined && call.harnessMs >= HARNESS_NOTE_MS) notes.push(`harness ${formatLatency(call.harnessMs)}`);
   return notes.join(SEP);
 }
 
 const BAR_CELLS = 25;
-
-function shareBar(theme: Theme | undefined, activeMs: number, spanMs: number): string {
-  const filled = spanMs > 0 ? Math.max(activeMs > 0 ? 1 : 0, Math.round((activeMs / spanMs) * BAR_CELLS)) : 0;
-  const clamped = Math.min(BAR_CELLS, filled);
-  return ink(theme, "accent", "\u2588".repeat(clamped)) + ink(theme, "dim", "\u2592".repeat(BAR_CELLS - clamped));
-}
 
 export interface PaceOptions {
   config: MeantimeConfig;
@@ -166,8 +160,12 @@ export function renderPace(calls: CallTiming[], totals: SessionTotals, options: 
     `${SEP}harness ${formatLatency(totals.harnessMs)}`,
   );
   const activePct = totals.spanMs > 0 ? Math.round((totals.activeMs / totals.spanMs) * 100) : 0;
+  const filled = totals.spanMs > 0
+    ? Math.min(BAR_CELLS, Math.max(totals.activeMs > 0 ? 1 : 0, Math.round(totals.activeMs / totals.spanMs * BAR_CELLS)))
+    : 0;
+  const bar = ink(options.theme, "accent", "\u2588".repeat(filled)) + ink(options.theme, "dim", "\u2592".repeat(BAR_CELLS - filled));
   lines.push(
-    `  timed ${formatDuration(totals.spanMs)}   ${shareBar(options.theme, totals.activeMs, totals.spanMs)}` +
+    `  timed ${formatDuration(totals.spanMs)}   ${bar}` +
     `  active ${formatDuration(totals.activeMs)} (${activePct}%)${SEP}idle ${formatDuration(totals.idleMs)}`,
   );
   return lines;

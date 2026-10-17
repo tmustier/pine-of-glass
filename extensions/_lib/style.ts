@@ -134,7 +134,7 @@ function activeSgrAt(line: string, rawIndex: number): string {
   const sgr = /\x1b\[([0-9;]*)m/g;
   let match: RegExpExecArray | null;
   while ((match = sgr.exec(line)) && match.index < rawIndex) {
-    const params = match[1] ?? "";
+    const params = match[1]!;
     if (params === "" || params === "0") {
       state.clear();
       continue;
@@ -226,8 +226,6 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   const tailPadding = Math.max(0, maxTail - tailWidth);
 
   const headEnd = budget - maxTail;
-  if (headEnd <= 0) return `${dimEllipsis}${" ".repeat(tailPadding)}${tailRaw}`;
-
   const headBoundary = columnBoundary(vis, headEnd, "down");
   const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headBoundary.plainIndex));
   const headPadding = Math.max(0, headEnd - headBoundary.column);

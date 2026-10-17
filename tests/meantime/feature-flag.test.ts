@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import type { JsonObject } from "../../extensions/_lib/boundary.ts";
 import piMeantime from "../../extensions/pi-meantime/index.ts";
+import { assistantMessage } from "../helpers.ts";
 import { hostExtension, IsolatedProject, type HostedExtension } from "../harness/extension-host.ts";
 
 async function withProject(config: JsonObject | undefined, run: (host: HostedExtension) => Promise<void>) {
@@ -62,23 +63,9 @@ test("cache-warming provider hooks cannot replace a live tool phase with a phant
     await session.extensionRunner.emitBeforeProviderRequest({ model: "fixture", messages: [] });
     await session.extensionRunner.emitMessageEnd({
       type: "message_end",
-      message: {
-        role: "assistant",
-        content: [],
-        api: "openai-responses",
-        provider: "openai",
-        model: "fixture",
-        stopReason: "toolUse",
-        timestamp: Date.now(),
-        usage: {
-          input: 1,
-          output: 1,
-          cacheRead: 100,
-          cacheWrite: 0,
-          totalTokens: 102,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-      },
+      message: assistantMessage([
+        { type: "toolCall", id: "tool-1", name: "read", arguments: { path: "README.md" } },
+      ], { stopReason: "toolUse" }),
     });
     await session.extensionRunner.emit({
       type: "tool_execution_start",
@@ -92,5 +79,37 @@ test("cache-warming provider hooks cannot replace a live tool phase with a phant
     const line = ui.widgetLines("pi-meantime")?.join("\n") ?? "";
     assert.match(line, /tools/, "the real call's tool phase remains live");
     assert.doesNotMatch(line, /waiting/, "background provider traffic does not start a call");
+  });
+});
+
+test("slow-start notices use completed prior calls, not the call being resolved", async (t) => {
+  await withProject({ enabled: true }, async ({ session, ui }) => {
+    let now = Date.now();
+    t.mock.method(Date, "now", () => now);
+    await session.extensionRunner.emit({ type: "agent_start" });
+    for (const waitMs of [1_900, 1_700, 2_100, 14_200]) {
+      await session.extensionRunner.emitContext([]);
+      await session.extensionRunner.emitBeforeProviderRequest({ model: "fixture", messages: [] });
+      now += waitMs;
+      const message = assistantMessage([{ type: "text", text: "" }]);
+      await session.extensionRunner.emit({
+        type: "message_update",
+        message,
+        assistantMessageEvent: { type: "text_start", contentIndex: 0, partial: message },
+      });
+      now += 500;
+      message.content = [{ type: "text", text: "answer" }];
+      await session.extensionRunner.emit({
+        type: "message_update",
+        message,
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "answer", partial: message },
+      });
+      now += 500;
+      await session.extensionRunner.emitMessageEnd({ type: "message_end", message });
+    }
+    assert.equal(ui.notifications.length, 1, "healthy calls stay silent");
+    assert.match(ui.notifications[0]!, /slow start · first token 14s \(median 1.9s\)/);
+    await session.prompt("/pace");
+    assert.match(ui.notifications[1]!, /totals: 4 calls/);
   });
 });

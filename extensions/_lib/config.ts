@@ -1,7 +1,7 @@
 // Shared config-file convention for the pine-of-glass extension family:
 // user-level `~/.pi/agent/<name>.json`, then project-level `<cwd>/.pi/<name>.json`.
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -14,9 +14,7 @@ export function expandHomePath(filePath: string): string {
 /** Read JSON config through a domain parser; undefined on absence or any parse error. */
 export function readJsonConfig<T>(filePath: string, parse: (value: unknown) => T): T | undefined {
   try {
-    const expanded = expandHomePath(filePath);
-    if (!existsSync(expanded)) return undefined;
-    const parsed: unknown = JSON.parse(readFileSync(expanded, "utf8"));
+    const parsed: unknown = JSON.parse(readFileSync(expandHomePath(filePath), "utf8"));
     return parse(parsed);
   } catch {
     return undefined;

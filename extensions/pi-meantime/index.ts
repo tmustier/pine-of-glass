@@ -233,9 +233,7 @@ export default function piMeantime(pi: ExtensionAPI): void {
   pi.on("message_update", async (event) => {
     if (!s.live) return;
     const streamEvent = event.assistantMessageEvent;
-    const deltaLength = "delta" in streamEvent && typeof streamEvent.delta === "string"
-      ? streamEvent.delta.length
-      : 0;
+    const deltaLength = "delta" in streamEvent ? streamEvent.delta.length : 0;
     applyStreamEvent(s.live, streamEvent.type, deltaLength, Date.now());
   });
 
@@ -248,18 +246,17 @@ export default function piMeantime(pi: ExtensionAPI): void {
     }
     const now = Date.now();
     const call = resolveCall(s.live, usage, now, s.currentModel);
-    const prior = s.calls.slice();
-    s.calls.push(call);
     s.live = undefined;
     s.pendingPhase = { callIndex: call.index, startedAt: now };
     if (s.config.notices) {
-      const slowStart = detectSlowStart(call, prior, s.config);
+      const slowStart = detectSlowStart(call, s.calls, s.config);
       if (slowStart) {
         appendChatLine(tempoLine("warning", renderSlowStartLine(call, slowStart, s.config.prefillCauseTokens)));
       }
-      const slowStream = detectSlowStream(call, prior, s.config);
+      const slowStream = detectSlowStream(call, s.calls, s.config);
       if (slowStream) appendChatLine(tempoLine("warning", renderSlowStreamLine(call, slowStream)));
     }
+    s.calls.push(call);
     updateWidget(now);
   });
 

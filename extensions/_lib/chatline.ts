@@ -19,7 +19,6 @@
 import { Spacer } from "@earendil-works/pi-tui";
 import { ThemedText, type TextContent } from "./themed-text.ts";
 import { stripAnsi } from "./ansi.ts";
-import { isJsonObject } from "./boundary.ts";
 import { findChatContainer, type ContainerLike } from "./chat.ts";
 
 export interface AnchoredLine<C = unknown> {
@@ -94,29 +93,23 @@ export interface ChatLineHost {
 
 const CHAT_CLEAR_HOOK_VERSION = 1;
 
-type HookableChatContainer = ContainerLike & {
-  clear?: () => unknown;
-  [key: string]: unknown;
-};
-
-function isHookableChatContainer(value: unknown): value is HookableChatContainer {
-  return isJsonObject(value) && Array.isArray(value.children);
-}
-
 // Wrap the chat container's clear() (instance-level, original preserved) so every
 // rebuild is followed by a re-attach. The rebuild that follows clear() is synchronous;
 // a microtask runs after it completes, including pi's own trailing status line, so
 // anchors are matched against the final rebuilt children. Keys are namespaced per
 // extension: when two family members hook the same container their wrappers chain, and
 // each re-attaches only its own lines.
-function ensureChatClearHook(chat: unknown, ns: string, host: ChatLineHost): void {
-  if (!isHookableChatContainer(chat)) return;
-  const versionKey = `__piChatline_${ns}_ClearVersion`;
-  const originalKey = `__piChatline_${ns}_OriginalClear`;
+function ensureChatClearHook(container: ContainerLike, ns: string, host: ChatLineHost): void {
+  // SAFETY: findChatContainer validates children; these namespaced properties are
+  // owned by this hook. Contract tests pin Pi's mutable clear()+children seam.
+  const chat = container as ContainerLike & {
+    [key: `__piChatline_${string}_ClearVersion`]: number | undefined;
+    [key: `__piChatline_${string}_OriginalClear`]: ContainerLike["clear"];
+  };
+  const versionKey = `__piChatline_${ns}_ClearVersion` as const;
+  const originalKey = `__piChatline_${ns}_OriginalClear` as const;
   if (typeof chat.clear !== "function" || chat[versionKey] === CHAT_CLEAR_HOOK_VERSION) return;
-  // SAFETY: the container's clear() is a zero-arg method; the stored original is only
-  // ever what this hook put there. Contract tests pin the clear()+children seam.
-  const original = (chat[originalKey] as (() => unknown) | undefined) ?? chat.clear.bind(chat);
+  const original = chat[originalKey] ?? chat.clear.bind(chat);
   chat[originalKey] = original;
   chat.clear = () => {
     const result = original();

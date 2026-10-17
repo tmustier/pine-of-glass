@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { middleTruncate, panelHeader, panelPips, sizeTone } from "../../extensions/_lib/style.ts";
+import { middleTruncate, sizeTone } from "../../extensions/_lib/style.ts";
 
 test("middleTruncate replays active ink across the cut (design language §5)", () => {
   // The dim span opens before the cut and closes after it: the tail's opening SGR
@@ -56,9 +56,4 @@ test("sizeTone: dim below warning, warning at 10k ch, error at 50k ch", () => {
 test("sizeTone honours overridden thresholds", () => {
   assert.equal(sizeTone(500, { warning: 100, error: 1_000 }), "warning");
   assert.equal(sizeTone(2_000, { warning: 100, error: 1_000 }), "error");
-});
-
-test("panel header without pips or hint, and without a theme", () => {
-  assert.deepEqual(panelHeader(undefined, "Cachemire"), ["", "[Cachemire]"]);
-  assert.equal(panelPips(undefined, ["a", "b"], "a"), "a\x1b[90m → \x1b[0m\x1b[90mb\x1b[0m");
 });

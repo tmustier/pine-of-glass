@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { renderPace } from "../../extensions/pi-meantime/render.ts";
-import { DEFAULT_CONFIG, type CallTiming, type SessionTotals } from "../../extensions/pi-meantime/timing.ts";
+import { DEFAULT_CONFIG, sessionTotals, type CallTiming } from "../../extensions/pi-meantime/timing.ts";
 
 function call(index: number, model: string): CallTiming {
   return {
@@ -20,22 +20,11 @@ function call(index: number, model: string): CallTiming {
   };
 }
 
-const TOTALS: SessionTotals = {
-  calls: 2,
-  waitingMs: 2_000,
-  thinkingMs: 0,
-  writingMs: 2_000,
-  toolsMs: 0,
-  harnessMs: 0,
-  idleMs: 0,
-  spanMs: 4_000,
-  activeMs: 4_000,
-};
-
 test("renderPace identifies provider-qualified model transitions", () => {
+  const calls = [call(1, "anthropic/shared-id"), call(2, "openai/shared-id")];
   const lines = renderPace(
-    [call(1, "anthropic/shared-id"), call(2, "openai/shared-id")],
-    TOTALS,
+    calls,
+    sessionTotals(calls, { startedAt: 0, now: 4_000, idleMs: 0 }),
     { config: DEFAULT_CONFIG, modelLabel: "openai/current-model" },
   );
   const rendered = lines.join("\n");

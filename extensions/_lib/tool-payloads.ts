@@ -15,10 +15,6 @@ export type ToolDefinition = {
 
 // --- JSON schema readers shared by the tool estimators -----------------------------------
 
-function trimFinalPeriod(text: string): string {
-  return text.endsWith(".") ? text.slice(0, -1) : text;
-}
-
 export function getSchemaProperties(schema: unknown): Record<string, unknown> {
   if (!isJsonObject(schema) || !isJsonObject(schema.properties)) return {};
   return schema.properties;
@@ -36,7 +32,8 @@ export function schemaPropertyType(property: unknown): string {
 
 export function schemaPropertyDescription(property: unknown): string {
   if (!isJsonObject(property)) return "";
-  return typeof property.description === "string" ? trimFinalPeriod(property.description) : "";
+  const description = typeof property.description === "string" ? property.description : "";
+  return description.endsWith(".") ? description.slice(0, -1) : description;
 }
 
 export function getSchemaRequired(schema: unknown): string[] {

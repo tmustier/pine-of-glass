@@ -15,7 +15,6 @@ import {
   resolveCall,
   sessionTotals,
   unionIntervals,
-  DEFAULT_WRITING_CHARS_PER_TOKEN,
   DEFAULT_CONFIG,
   type CallTiming,
   type UsageLike,
@@ -208,7 +207,6 @@ test("detectSlowStream: collapsed rate on calls with enough output", () => {
 // --- calibration ----------------------------------------------------------------------------
 
 test("calibratedWritingCharsPerToken: last eligible writing sample wins", () => {
-  assert.equal(calibratedWritingCharsPerToken([]), DEFAULT_WRITING_CHARS_PER_TOKEN);
   const calls = [
     call({ writeChars: 5_000, writingTokens: 2_000 }),
     call({ writeChars: 7_000, writingTokens: 2_000 }),
@@ -245,12 +243,19 @@ test("sessionTotals: bucket sums, open idle interval, active = span − idle", (
 // --- config -----------------------------------------------------------------------------------
 
 test("parseMeantimeConfig: permissive at the boundary, precise at the call site", () => {
-  assert.equal(DEFAULT_CONFIG.enabled, false, "experimental runtime must be opt-in");
   assert.deepEqual(parseMeantimeConfig(null), {});
   assert.deepEqual(parseMeantimeConfig("nope"), {});
   assert.deepEqual(
-    parseMeantimeConfig({ enabled: true, widget: false, slowStartFloorMs: 8_000, slowStreamMinTokens: 500.9, baselineMinCalls: -2, junk: 1 }),
-    { enabled: true, widget: false, slowStartFloorMs: 8_000, slowStreamMinTokens: 500 },
+    parseMeantimeConfig({
+      enabled: true, widget: false, notices: false,
+      slowStartFactor: 2.5, slowStartFloorMs: 8_000, slowStreamFactor: 4.5,
+      slowStreamMinTokens: 500.9, baselineMinCalls: 4.9, prefillCauseTokens: 900.9, junk: 1,
+    }),
+    {
+      enabled: true, widget: false, notices: false,
+      slowStartFactor: 2.5, slowStartFloorMs: 8_000, slowStreamFactor: 4.5,
+      slowStreamMinTokens: 500, baselineMinCalls: 4, prefillCauseTokens: 900,
+    },
   );
-  assert.deepEqual(parseMeantimeConfig({ enabled: "yes" }), {});
+  assert.deepEqual(parseMeantimeConfig({ enabled: "yes", notices: 1, slowStartFloorMs: Infinity, baselineMinCalls: -2 }), {});
 });

@@ -17,7 +17,6 @@ import {
   sessionTotals,
   DEFAULT_CONFIG,
   type CallTiming,
-  type LiveCall,
 } from "../../extensions/pi-meantime/timing.ts";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { expectGolden, plainTheme } from "../helpers.ts";
@@ -66,25 +65,6 @@ const CALLS: CallTiming[] = [
   }),
 ];
 
-function liveThinking(): LiveCall {
-  const live = newLiveCall(6, 0);
-  live.firstTokenAt = 1_900;
-  live.segment = { kind: "thinking", startedAt: 1_900 };
-  live.lastKind = "thinking";
-  live.thinkingStreamed = true;
-  return live;
-}
-
-function liveWriting(): LiveCall {
-  const live = newLiveCall(6, 0);
-  live.firstTokenAt = 1_000;
-  live.thinkMs = 30_000;
-  live.segment = { kind: "writing", startedAt: 31_000 };
-  live.lastKind = "writing";
-  live.writeChars = 1_150;
-  return live;
-}
-
 test("meantime widget, notices, and /pace panel golden", () => {
   const widget = (label: string, snap: WidgetSnapshot) => {
     const line = tempoWidget(snap);
@@ -99,8 +79,20 @@ test("meantime widget, notices, and /pace panel golden", () => {
       ...base, now: 14_000, live: newLiveCall(6, 0),
       slowStartBar: { medianMs: 1_900, thresholdMs: 5_700 },
     }),
-    widget("thinking", { ...base, now: 43_900, live: liveThinking() }),
-    widget("writing", { ...base, now: 39_000, live: liveWriting() }),
+    widget("thinking", {
+      ...base, now: 43_900,
+      live: {
+        ...newLiveCall(6, 0), firstTokenAt: 1_900,
+        segment: { kind: "thinking", startedAt: 1_900 }, lastKind: "thinking", thinkingStreamed: true,
+      },
+    }),
+    widget("writing", {
+      ...base, now: 39_000,
+      live: {
+        ...newLiveCall(6, 0), firstTokenAt: 1_000, thinkMs: 30_000, writeChars: 1_150,
+        segment: { kind: "writing", startedAt: 31_000 }, lastKind: "writing",
+      },
+    }),
     widget("tools", { ...base, now: 31_000, openTools: 1, toolElapsedMs: 31_000 }),
     widget("tools-parallel", { ...base, now: 31_000, openTools: 3, toolElapsedMs: 31_000 }),
     widget("idle", { ...base, now: 1_000, runActive: false }),

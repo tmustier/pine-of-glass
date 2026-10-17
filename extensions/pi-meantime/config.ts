@@ -35,23 +35,17 @@ export const DEFAULT_CONFIG: MeantimeConfig = {
 export function parseMeantimeConfig(value: unknown): Partial<MeantimeConfig> {
   if (!isJsonObject(value)) return {};
   const config: Partial<MeantimeConfig> = {};
-  const enabled = booleanValue(value.enabled);
-  const widget = booleanValue(value.widget);
-  const notices = booleanValue(value.notices);
-  const slowStartFactor = positiveNumberValue(value.slowStartFactor);
-  const slowStartFloorMs = positiveNumberValue(value.slowStartFloorMs);
-  const slowStreamFactor = positiveNumberValue(value.slowStreamFactor);
-  const slowStreamMinTokens = positiveNumberValue(value.slowStreamMinTokens);
-  const baselineMinCalls = positiveNumberValue(value.baselineMinCalls);
-  const prefillCauseTokens = positiveNumberValue(value.prefillCauseTokens);
-  if (enabled !== undefined) config.enabled = enabled;
-  if (widget !== undefined) config.widget = widget;
-  if (notices !== undefined) config.notices = notices;
-  if (slowStartFactor !== undefined) config.slowStartFactor = slowStartFactor;
-  if (slowStartFloorMs !== undefined) config.slowStartFloorMs = slowStartFloorMs;
-  if (slowStreamFactor !== undefined) config.slowStreamFactor = slowStreamFactor;
-  if (slowStreamMinTokens !== undefined) config.slowStreamMinTokens = Math.floor(slowStreamMinTokens);
-  if (baselineMinCalls !== undefined) config.baselineMinCalls = Math.floor(baselineMinCalls);
-  if (prefillCauseTokens !== undefined) config.prefillCauseTokens = Math.floor(prefillCauseTokens);
+  for (const key of ["enabled", "widget", "notices"] as const) {
+    const parsed = booleanValue(value[key]);
+    if (parsed !== undefined) config[key] = parsed;
+  }
+  for (const key of ["slowStartFactor", "slowStartFloorMs", "slowStreamFactor"] as const) {
+    const parsed = positiveNumberValue(value[key]);
+    if (parsed !== undefined) config[key] = parsed;
+  }
+  for (const key of ["slowStreamMinTokens", "baselineMinCalls", "prefillCauseTokens"] as const) {
+    const parsed = positiveNumberValue(value[key]);
+    if (parsed !== undefined) config[key] = Math.floor(parsed);
+  }
   return config;
 }
