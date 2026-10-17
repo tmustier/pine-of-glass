@@ -7,6 +7,10 @@
   because the remote ref may be a tag. A crowded headline drops the tidy-up first, so
   `committed a4f21c9 · deleted branch docs` keeps the commit, and a dim `+1` says what
   it left out. A fact too long to show no longer takes a shorter one down with it.
+- Traceline highlights commands inside assignments: `PR_URL=$(gh pr create …)`
+  bolds `gh`, not `pr`. Wrapping keeps assignments with their command; cutting
+  drops separate assignments so the command stays visible. `mktemp` counts as setup.
+- `npm run typecheck` now covers the bash-corpus scripts.
 - The commands behind a headline stay readable. A command that earned a record is
   never cut below 24 columns (or shown whole when shorter), the other commands give
   way first, and a row wraps past a long command to reach it. A command cut to fit

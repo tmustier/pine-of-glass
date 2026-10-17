@@ -1,8 +1,11 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import { convertToLlm } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ModelSummary } from "../_lib/heuristics.ts";
 import { keepsAllClaudeThinking, keepsAllOpenAIReasoning } from "../_lib/heuristics.ts";
+
+import { countTextContent, countToolCallContent } from "./message-size.ts";
+import { accountingSession } from "./request-messages.ts";
 
 const OPENAI_REASONING_REPLAY_APIS = new Set([
   "openai-responses",
@@ -16,6 +19,8 @@ export type SessionBreakdown = {
   reasoningTokens?: number;
   toolOutputChars: number;
   messageChars: number;
+  /** Additions in the request behind the latest trusted usage, not saved messages. */
+  requestOnly?: { chars: number };
   messageCount: number;
   /** Pi's current total includes a local estimate after the last trusted assistant usage. */
   contextUsageEstimated: boolean;
@@ -41,6 +46,7 @@ export type SessionEstimate = {
   harnessSource: "measured" | "estimate";
   toolOutputTokens: number;
   messageTokens: number;
+  requestOnlyTokens: number;
   thinkingSummaryTokens: number;
   reasoningTokens?: number;
   unattributedTokens: number;
@@ -58,8 +64,9 @@ export function estimateSessionBreakdown(
   const unmeasuredToolChars = Math.max(0, session.toolOutputChars - session.measuredToolOutputChars);
   const toolOutputTokens = session.measuredToolOutputTokens + estimate(unmeasuredToolChars);
   const messageTokens = estimate(session.messageChars);
+  const requestOnlyTokens = estimate(session.requestOnly?.chars ?? 0);
   const thinkingSummaryTokens = estimate(session.thinkingSummaryChars);
-  const attributedTokens = toolOutputTokens + messageTokens + thinkingSummaryTokens + (session.reasoningTokens ?? 0);
+  const attributedTokens = toolOutputTokens + messageTokens + requestOnlyTokens + thinkingSummaryTokens + (session.reasoningTokens ?? 0);
   const preludeTokens = estimate(session.firstPrompt?.preludeChars ?? 0);
   const measuredHarness = session.firstPrompt && preludeTokens <= MAX_PRELUDE_TOKENS
     ? session.firstPrompt.tokens - preludeTokens
@@ -76,6 +83,7 @@ export function estimateSessionBreakdown(
     harnessSource: measuredHarness === undefined ? "estimate" : "measured",
     toolOutputTokens,
     messageTokens,
+    requestOnlyTokens,
     thinkingSummaryTokens,
     reasoningTokens: session.reasoningTokens,
     unattributedTokens: Math.max(0, Math.round(totalTokens - attributedTokens)),
@@ -88,15 +96,6 @@ export type SessionSource = {
   getEntries(): SessionEntry[];
   getLeafId(): string | null;
 };
-
-function countTextContent(content: Message["content"]): number {
-  if (typeof content === "string") return content.length;
-  return content.reduce((sum, block) => {
-    if (block.type === "text") return sum + block.text.length;
-    if (block.type === "image") return sum + `[image:${block.mimeType}:${block.data.length} chars]`.length;
-    return sum;
-  }, 0);
-}
 
 function reportedReasoning(message: AssistantMessage): number | undefined {
   const tokens = message.usage.reasoning;
@@ -149,7 +148,9 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
   // Session entries are arbitrary historical content; a malformed session should cost
   // the session rows, not the whole panel.
   try {
-    const { messages } = buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId());
+    const entries = sessionManager.getEntries();
+    const leafId = sessionManager.getLeafId();
+    const { messages, requestMessages } = accountingSession(entries, leafId);
     if (messages.length === 0) return {};
 
     const llmMessages = convertToLlm(messages);
@@ -166,6 +167,8 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
       message.role === "assistant" && hasTrustedUsage(message) ? [{ index, message }] : []);
     const lastTrustedUsageIndex = trusted.at(-1)?.index ?? -1;
     const anchor = trusted.at(-1)?.message;
+    const additions = anchor && requestMessages.get(anchor);
+    if (additions?.additive) breakdown.requestOnly = { chars: additions.chars };
     let lastTrustedContextIndex = -1;
     for (let index = 0; index < messages.length; index++) {
       const message = messages[index]!;
@@ -225,14 +228,16 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
       const appended = llmMessages.slice(trusted[k]!.index + 1, next.index);
       const replayed = previous.usage.output - (hasReasoningCarrier(previous) ? 0 : reportedReasoning(previous) ?? 0);
       const measured = promptTokens(next.message) - promptTokens(previous) - replayed;
-      if (!sameModel(previous, anchor!) || !reusedPrompt(previous, next.message) || measured < 0
+      if (requestMessages.has(previous) || requestMessages.has(next.message)
+        || !sameModel(previous, anchor!) || !reusedPrompt(previous, next.message) || measured < 0
         || appended.some((message) => message.role !== "toolResult")) continue;
       breakdown.measuredToolOutputTokens += measured;
       breakdown.measuredToolOutputChars += appended.reduce((sum, message) => sum + countTextContent(message.content), 0);
     }
 
     // The first prompt is harness plus prelude, and still the anchor's harness while every later request reused it.
-    const firstPromptHolds = !messages.some((message) => message.role === "compactionSummary")
+    const firstPromptHolds = !trusted.some(({ message }) => requestMessages.has(message))
+      && !messages.some((message) => message.role === "compactionSummary")
       && trusted.every(({ message }, k) => sameModel(message, anchor!) && (k === 0 || reusedPrompt(trusted[k - 1]!.message, message)));
     const firstPromptIndex = firstPromptHolds ? trusted[0]?.index : undefined;
 
@@ -263,7 +268,7 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
               breakdown.thinkingSummaryChars += block.thinking.length;
             }
           } else if (block.type === "toolCall") {
-            breakdown.messageChars += JSON.stringify({ id: block.id, name: block.name, arguments: block.arguments }, null, 2).length;
+            breakdown.messageChars += countToolCallContent(block);
           } else {
             breakdown.messageChars += countTextContent([block]);
           }

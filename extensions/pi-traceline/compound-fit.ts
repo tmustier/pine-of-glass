@@ -1,12 +1,10 @@
-// Fitting a compound bash row by command (design language §9.8). A single middle cut
-// keeps a long row's opening context and closing filter and drops the commands between
-// them, which are why the row exists. This module plans a cut that keeps every crowned
-// head instead. It is plain text in, source ranges out: index.ts inks the kept ranges
-// with the crowns it already computed, so the shell grammar is never re-parsed on a
-// string that has lost its closing quotes.
+// Fit compound bash rows by command (§9.8). Return source ranges so styling can
+// reuse the original crowns without parsing truncated shell text.
 
-/** A crowned head word: a half-open range into the body. `earned`: its command earned a record. */
-export type FitHead = { start: number; end: number; earned?: boolean };
+import type { BashHead } from "./bash-crowns.ts";
+
+/** A command head, optionally protected because it produced a record. */
+export type FitHead = Omit<BashHead, "cls"> & { earned?: boolean };
 
 /** A kept source range, followed by a dim elision mark when `mark` is set. */
 export type FitPiece = { start: number; end: number; mark?: string };
@@ -41,7 +39,8 @@ type Unit = {
   floor: number;
 } & (
   | { kind: "prefix"; lead: number }
-  | { kind: "command"; last: boolean; earned: boolean; skip?: { start: number; end: number } }
+  // Cuts start at the shell word; record protection counts from the head inside it.
+  | { kind: "command"; last: boolean; earned: boolean; cutFrom: number; word: number; skip?: { start: number; end: number } }
 );
 
 // One shell word at `i`, quote-aware; returns its end.
@@ -60,10 +59,9 @@ function wordEnd(body: string, i: number, limit: number): number {
   return Math.min(i, limit);
 }
 
-// Content length when the unit is cut: a git command loses its global options to a
-// two-column ` …`; everything else counts its own source.
+// Cuts drop leading assignments and replace git's global options with ` …`.
 function cutContentLength(unit: Unit): number {
-  const length = unit.contentEnd - unit.start;
+  const length = unit.contentEnd - (unit.kind === "command" ? unit.cutFrom : unit.start);
   return unit.kind === "command" && unit.skip ? length - (unit.skip.end - unit.skip.start) + 2 : length;
 }
 
@@ -106,18 +104,18 @@ function pieces(body: string, unit: Unit, keep: number): FitPiece[] {
     ];
   }
   const mark = unit.last ? CUT_MARK : `${CUT_MARK} `;
-  if (!unit.skip) return [{ start: unit.start, end: safeCut(body, unit.start + keep), mark }];
-  const headLength = unit.skip.start - unit.start;
+  if (!unit.skip) return [{ start: unit.cutFrom, end: safeCut(body, unit.cutFrom + keep), mark }];
+  const headLength = unit.skip.start - unit.cutFrom;
   const rest = keep - headLength - 2;
   return [
-    { start: unit.start, end: unit.skip.start, mark: ` ${CUT_MARK}` },
+    { start: unit.cutFrom, end: unit.skip.start, mark: ` ${CUT_MARK}` },
     { start: unit.skip.end, end: safeCut(body, unit.skip.end + rest), mark },
   ];
 }
 
 function buildUnits(body: string, heads: readonly FitHead[]): Unit[] {
   const units: Unit[] = [];
-  const first = heads[0]!.start;
+  const first = heads[0]!.from;
   if (first > 0) {
     const text = body.slice(0, first);
     const contentEnd = first - TRAILING_CONNECTOR.exec(text)![0].length;
@@ -130,11 +128,11 @@ function buildUnits(body: string, heads: readonly FitHead[]): Unit[] {
     units.push({ kind: "prefix", start: 0, end: first, contentEnd, floor: Math.min(contentEnd, lead + finalSegment), lead });
   }
   heads.forEach((head, index) => {
-    const end = index + 1 < heads.length ? heads[index + 1]!.start : body.length;
-    const text = body.slice(head.start, end);
+    const end = index + 1 < heads.length ? heads[index + 1]!.from : body.length;
+    const text = body.slice(head.from, end);
     const last = index === heads.length - 1;
     const contentEnd = end - (last ? /\s*$/.exec(text)![0].length : TRAILING_CONNECTOR.exec(text)![0].length);
-    const unit: Unit = { kind: "command", start: head.start, end, contentEnd, floor: head.end - head.start, last, earned: head.earned === true };
+    const unit: Unit = { kind: "command", start: head.from, end, contentEnd, floor: head.end - head.token, last, earned: head.earned === true, cutFrom: head.token, word: head.start };
     if (body.slice(head.start, head.end) === "git") {
       let i = head.end;
       let optionsEnd: number | undefined;
@@ -153,7 +151,7 @@ function buildUnits(body: string, heads: readonly FitHead[]): Unit[] {
         } else {
           if (optionsEnd !== undefined) {
             unit.skip = { start: head.end, end: optionsEnd };
-            unit.floor = head.end - head.start + 2 + end - optionsEnd;
+            unit.floor = head.end - head.token + 2 + end - optionsEnd;
           }
           break;
         }
@@ -171,7 +169,7 @@ export type CompoundFit = { pieces: FitPiece[]; starved: boolean };
 // (§9.8): the context is the cuttable unit, and the single middle cut must not land on
 // the command because a `cd` spent the budget.
 function fitsByUnit(heads: readonly FitHead[]): boolean {
-  return heads.length >= 2 || (heads.length === 1 && heads[0]!.start > 0);
+  return heads.length >= 2 || (heads.length === 1 && heads[0]!.from > 0);
 }
 
 // A command that earned a record is never cut below the floor (§9.8): whole when shorter,
@@ -179,7 +177,7 @@ function fitsByUnit(heads: readonly FitHead[]): boolean {
 // too little room, it shares the cut like any other.
 function fitUnits(body: string, units: Unit[], budget: number): CompoundFit | undefined {
   const shielded = units.map((unit) => unit.kind === "command" && unit.earned
-    ? { ...unit, floor: Math.max(unit.floor, Math.min(cutContentLength(unit), COMMAND_FLOOR_COLS)) }
+    ? { ...unit, floor: Math.max(unit.floor, Math.min(cutContentLength(unit), unit.word - unit.cutFrom + COMMAND_FLOOR_COLS)) }
     : unit);
   return waterFill(body, shielded, budget) ?? waterFill(body, units, budget);
 }

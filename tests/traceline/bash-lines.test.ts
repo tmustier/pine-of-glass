@@ -54,7 +54,9 @@ test("a quoted substitution keeps the PR producer, not the preceding search, rea
   assert.match(shown.join("\n"), /gh pr create --fill --ti/, "the nested producer itself must retain at least 24 columns");
   assert.match(shown[0]!, /opened PR #88 \$/);
   assert.ok(shown.every((line) => visibleWidth(line) <= 80));
-  assert.doesNotMatch(row.render(80).join("\n"), /\x1b\[1mgh/, "a fitting boundary must not invent a crown inside a quote");
+  const ink = row.render(80).join("\n");
+  assert.match(ink, /\x1b\[1mgh\x1b\[22m/, "the substitution's command is the crown (§9.4), not a fitting boundary");
+  assert.doesNotMatch(ink, /\x1b\[1mpr\b/, "its argument is not");
 
   const fitted = fitBashLines(undefined, "text", command, 60, undefined, recordFacts(data).flatMap(({ by }) => by));
   assert.match(stripAnsi(fitted.first), /gh pr create --fill --ti/, "a one-line fit protects the producer rather than a containing crown slice");

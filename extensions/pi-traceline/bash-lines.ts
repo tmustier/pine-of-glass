@@ -40,12 +40,11 @@ export function fitBashLines(theme: Theme | undefined, tone: Tone, body: string,
       if (!identities.has(tildify(commandKey(command)))) continue;
       const { start, end } = command.head;
       const commandEnd = command.args.at(-1)?.end ?? end;
-      // A fitting boundary is not a crown. Start protection at the producer, not
-      // at an earlier rg or env whose slice happens to contain it. A conservative
-      // crown inside this command (unquoted `PR_URL=$(gh …)` crowns `pr`) is replaced
-      // only for fitting; the ink below still uses the original whole-body crowns.
+      // Keep the producer's assignments when crowned. Otherwise protect it without
+      // adding bold: styling below uses only the original crowns.
+      const crown = heads.find((head) => head.start === start) ?? { start, end, token: start, from: start };
       heads = heads.filter((head) => head.start < start || head.start >= commandEnd);
-      heads.push({ start, end, earned: true });
+      heads.push({ ...crown, earned: true });
     }
     heads.sort((a, b) => a.start - b.start);
   }
@@ -53,10 +52,7 @@ export function fitBashLines(theme: Theme | undefined, tone: Tone, body: string,
   const wrapped = contBudget !== undefined && body.length > budget && (!fit || fit.starved)
     ? wrapCompoundCommand(body, heads, budget, contBudget)
     : undefined;
-  // The kept ranges ink with the crowns computed on the whole body, so the shell grammar is
-  // never re-parsed on text that has lost its closing quotes. Everything between crowned
-  // head words dims in maximal spans, each crowned word takes the discriminator ink (§9.3;
-  // §9.2's error tint on failed rows), and each cut wears a dim `…`.
+  // Style original crowns, not heads inferred from truncated shell text.
   const [first, ...continuations] = (wrapped ?? [fit?.pieces ?? whole]).map((pieces) => {
     let out = "";
     for (const piece of pieces) {

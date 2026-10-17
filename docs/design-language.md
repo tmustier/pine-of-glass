@@ -326,8 +326,23 @@ at the user boundary. Historical reasoning must fit inside the exact reported pr
 across input, cache reads and cache writes. Provider-generated summaries
 not covered by exact retained reasoning get a separate estimated `Thinking summaries`
 row; opaque signatures are never sized as reasoning.
+Request-local conversation additions observed through Pi's `context_with_system` event
+get a separate estimated `Request-only` row, after `Messages`, with their character count
+and `(not saved)` label. The row describes only the request behind the latest trusted
+provider usage, not the sum of earlier injections. Saved custom messages remain in
+`Messages` and are never counted twice. Counts, not message text, are saved as non-context
+session metadata so reload and branch selection retain the attribution.
+
+The observer sees every `context` transformation and preceding `context_with_system`
+transformations. Native OpenAI Responses (including Codex) and Anthropic text additions
+are reconciled against the outgoing payload, after all `context_with_system` handlers.
+Other wire formats and requests containing images retain only the hook observation. Later provider-payload rewrites,
+unobserved non-text changes and non-additive conversation edits are not claimed as
+measured additions. Observed conversation changes disable harness measurement and
+tool-growth measurement where they could contaminate them.
+
 The remaining gap can still include prefix-estimation error, provider overhead, images,
-opaque replay carriers and reasoning when no breakdown was reported. If Pi's context
+opaque replay carriers, unobserved transformations and reasoning when no breakdown was reported. If Pi's context
 total includes local estimates for messages after the last provider usage, the total
 keeps its `~`.
 
@@ -428,6 +443,13 @@ are validated against a corpus of 51k real invocations
 - every command gets a head candidate: `&&`, `||`, `;` (attached or
   space-delimited) and flattened `↵` breaks each start a new command whose first
   non-assignment token is its head
+- assignments crown the command inside `$()` or backticks, including mid-value
+  substitutions: `PR_URL=$(gh pr create …)` crowns `gh`, and
+  `LOG=/tmp/run-$(date +%s).log` crowns `date`. Single-quoted values, arithmetic
+  and file reads (`$(< file)`) add no crown
+- wrapping keeps leading assignments with their command (§9.8). Cutting drops
+  separate assignments (`FOO=1 npm test` becomes `npm test…`) but keeps the shell
+  word containing the head (`PR_URL=$(gh`), so a retained `)` has its opening
 - pipes and redirects continue a command: `| head -240` is a filter and stays
   dim. Brightening a single "operative segment" was considered and rejected: a
   pipeline tail is as often a filter as the point
@@ -443,7 +465,7 @@ are validated against a corpus of 51k real invocations
   `fi`, and kin) passes the crown through to the real head that follows. The
   miss is deliberately conservative: under-brightening is the family's bias
 - the crown is rationed to commands that inform. Two vocabularies demote:
-  preambles (`cd <dir> &&`, `set -…`) are situating throat-clearing, and
+  preambles (`cd`, `set`, `mktemp`) provide context, and
   plumbing (`echo`, `true`, `false`, `printf`, `exit`) is flow-control glue
   (`|| true`, `&& echo done`). A preamble or plumbing head renders headless
   whenever any real command in the row wears a crown; selection is row-global,
@@ -602,8 +624,8 @@ row that overflows its budget fits by command instead:
   by-command fit above, so every head still shows; the rest is one zoom away
 - a command that earned a record (§9.10) is never cut below the floor. The
   headline names an outcome, so the command that produced it must stay readable
-  beside it: it keeps its whole text when that is shorter than the floor, and at
-  least the floor's columns otherwise, and the other commands give way first.
+  beside it. It keeps at least 24 columns from its head word, or its whole text
+  when shorter. Leading assignments do not count; other commands give way first.
   When even the others' bare heads leave too little room, the earning command
   shares the cut like any other
 - the record also buys the row its room. When a command longer than a line comes

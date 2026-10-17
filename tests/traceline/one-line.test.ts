@@ -627,8 +627,8 @@ test("crown selection over real shell shapes: attached ;, quote state, preambles
   assert.deepEqual(crowns("for i in 1 2; do gh issue view $i; done"), ["for", "gh"]);
   assert.deepEqual(crowns("find . -name '*.ts' -exec grep -l foo {} \\;"), ["find"]);
 
-  // An attached `;` after a command substitution re-arms once the quotes close.
-  assert.deepEqual(crowns("pane=$(tmux list-panes -F '#{pane_pid}'); ps -p 7 -o pid="), ["list-panes", "ps"]);
+  // The substituted command wears the crown, and an attached `;` after it re-arms once the quotes close.
+  assert.deepEqual(crowns("pane=$(tmux list-panes -F '#{pane_pid}'); ps -p 7 -o pid="), ["tmux", "ps"]);
 
   // Parens are apparatus: classification and the crown read the inner word, so a
   // subshell close cannot smuggle `true)` past the vocabulary.

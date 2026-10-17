@@ -54,7 +54,10 @@ How to read the numbers:
 - opaque signatures are never treated as token-sized text, and cross-model reasoning is not counted as retained
 - `Tool outputs` are measured from the provider-reported growth of the prompt between responses when the prompt cache proves nothing else changed; the detail says `measured`, or names the measured share, and the rest is estimated
 - `Total harness` is the first request's measured prompt when every later request provably reused it; the detail then shows the section rows' estimated sum beside it
-- `Unattributed` is the remaining accounting gap and can include estimation error, provider overhead, images and reasoning when the provider reports no breakdown
+- `Request-only` estimates conversation additions an extension sends without saving them, for the latest billed request only; saved custom messages stay in `Messages`. Contextimate saves counts, never the injected text, so reload and branch selection retain the attribution
+- native OpenAI Responses (including Codex) and Anthropic text additions are checked in the outgoing payload after all context hooks; other formats and requests containing images use the context hook observation. Later payload rewrites and unobserved non-text changes can still leave a gap
+- requests with observed conversation changes do not supply measured harness or tool-growth attribution
+- `Unattributed` is the remaining accounting gap and can include estimation error, unobserved request changes, provider overhead, images and reasoning when the provider reports no breakdown
 
 The panel's visual grammar is the family design language: see `docs/design-language.md`.
 

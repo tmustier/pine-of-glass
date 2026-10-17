@@ -92,12 +92,21 @@ The session split anchors on that total and claims only what it can count:
 
 ```text
 Tool outputs:        y         measured from prompt growth where proven, otherwise estimated from chars
-Messages:            z         estimated from visible message text and tool-call structure
+Messages:            z         estimated from saved visible message text and tool-call structure
+Request-only:        q         estimated from observed additions in the latest billed request
 Thinking summaries:  s         estimated from summaries not covered by exact retained reasoning
 Reasoning context:   r         exact reported reasoning retained in the anchored request
-Unattributed:        x-y-z-s-r remaining accounting gap
+Unattributed:        x-y-z-q-s-r remaining accounting gap
 Total session:       x         Pi's total minus the harness (measured where proven, otherwise estimated)
 ```
+
+### Request-only messages
+
+Extensions can add conversation messages through `context` or `context_with_system` without saving them. `Request-only` counts observed additions against the unchanged saved conversation, with duplicate occurrences kept distinct. Its estimate uses the session divisor and is already included in Pi's total, so it reduces `Unattributed` rather than increasing the total. Each request replaces the count; tool rounds do not accumulate repeated injections. Saved custom messages remain in `Messages`.
+
+Contextimate observes the provider-neutral `context_with_system` event after every `context` handler. Native OpenAI Responses, Codex, Azure Responses and Anthropic text fields are also reconciled at `before_provider_request`, after all context hooks. Other wire formats and requests containing images retain the earlier hook observation. Later payload rewrites, later non-text additions and arbitrary conversation replacements or deletions are not claimed as complete attribution. The native payload comparison excludes system instructions, tool declarations and tool-result fields. It follows Pi's message normalization for omitted aborted replies and Anthropic's unsigned thinking text. Requests containing images keep only hook coverage, because Pi settings and provider adapters can replace, split or caption them after the hooks.
+
+Only counts are saved in non-context session metadata immediately before the response, so selecting or forking at that response keeps its attribution. Projection provenance preserves the link when context edits replace its content. The injected text is never saved by Contextimate. Reload restores the counts for the latest trusted response on the selected branch, and compaction discards old request additions. Historical requests recorded before this metadata existed cannot recover their missing messages.
 
 ### Measured tool outputs
 
@@ -109,6 +118,7 @@ A step is measured only when all of these hold:
 - only tool results sit between them; a user or custom message makes the step unmeasured
 - the later request's cache read reaches within 2,048 tokens of the earlier prompt, which proves the earlier prompt was reused unchanged; Codex caches in blocks and often stops a few hundred tokens short, while a harness change breaks the cache far earlier
 - the growth is at least the replayed response
+- neither request has a recorded conversation change that could explain the growth
 
 Unmeasured tool results keep the chars ÷ session divisor estimate. The row detail says `measured` when every tool result is measured and names the measured share of characters when only some are. The measured figure includes the provider's per-item framing, about 11 tokens per tool result on Codex.
 
@@ -116,10 +126,11 @@ The first real case was a binary file dumped by `head`: 28.1k characters that co
 
 ### Measured harness
 
-The first request's prompt is the harness plus whatever preceded the first response, usually one user message. Contextimate uses it as `Total harness` when both of these hold:
+The first request's prompt is the harness plus whatever preceded the first response, usually one user message. Contextimate uses it as `Total harness` when all of these hold:
 
 - every later trusted response up to the anchor comes from the anchor model and passes the same cache check against the one before it, and no compaction summary sits on the active path
 - the preceding messages estimate at 4,096 tokens or fewer, so subtracting them as an estimate cannot swamp the measurement
+- no trusted request in the chain has recorded request-only additions or another observed conversation change
 
 The section rows stay estimates. The total's detail reads `(measured · rows ~17.2k · ~7% ctx)`, so the gap between the measured total and the sum of the rows stays visible. A cache miss anywhere in the chain, typically after an idle pause, returns the harness to its estimate: the miss is also what a resumed session with a rebuilt system prompt looks like, and the two cannot be told apart. In the replay above, about a third of Codex sessions had such a miss. A harness change made after the anchor, such as a reload or a tool toggle, shows in the rows at once and in the measured total after the next response.
 
