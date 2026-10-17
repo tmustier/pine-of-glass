@@ -382,7 +382,7 @@ A long command or a long stretch of reasoning can lose most of itself to a one-l
 
 That uses `openai-codex/gpt-6-luna`. To use another model, write `{ "summaries": { "model": "provider/id" } }`. A project's `.pi/pi-traceline.json` cannot turn summaries on, because they send your commands and reasoning to a model.
 
-A command that had to be cut or wrapped gets one dim line under it, starting with `≈`. A collapsed thinking line that had to be cut shows its gist instead of its first words:
+A command that had to be cut or wrapped gets a line under it, starting with `≈`, in a lighter grey than the command's arguments. A collapsed thinking line that had to be cut shows its gist instead of its first words. A long gist wraps onto further lines rather than being cut:
 
 ```
   ▏ › committed a4f21c9 $ cd ~/projects/slack-bridge && git add -A && pnpm lint &&

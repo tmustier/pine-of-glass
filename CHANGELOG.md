@@ -4,7 +4,8 @@
 
 - Traceline summaries (experimental, off by default). With `"summaries": true` in your
   own `~/.pi/agent/pi-traceline.json`, a command that had to be cut or wrapped gets a
-  dim `≈` line with a model's gist of it, and a cut thinking preview shows its gist.
+  `≈` line with a model's gist of it, and a cut thinking preview shows its gist. A gist
+  is a lighter grey than the command's arguments and wraps rather than being cut.
   `openai-codex/gpt-6-luna` by default, or `{ "model": "provider/id" }`. Gists are asked
   for in batches once rows settle and saved in the session, so a reopened session asks
   for nothing. A project file cannot turn summaries on.

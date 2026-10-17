@@ -1160,19 +1160,32 @@ like a record or a fact:
   can turn it on (`"summaries": true`, or `{ "model": "provider/id" }`;
   `openai-codex/gpt-6-luna` by default): a project must not be able to send the
   user's commands and reasoning to a model
-- it opens with `≈`, the mark of a gist, beside `~` for estimates (principle 4),
-  and renders dim. It never takes the record slot (§9.10), never wears status or
-  outcome ink, and states what the row does, not whether it worked
+- it opens with `≈`, the mark of a gist, beside `~` for estimates (principle 4).
+  It never takes the record slot (§9.10), never wears status or outcome ink, and
+  states what the row does, not whether it worked
+- the `≈` is a marker, L3 dim; the words are L2 muted, the level of a
+  description (§2). A gist is the one sentence in a trace row, read rather than
+  scanned, and the apparatus grey is too faint to read as prose. It is the stated
+  exception to §9.3's single supporting grey: it sits on its own line behind `≈`,
+  so it does not read as a second shade of argument text. It stays below `text`,
+  so a gist never outshines the row it describes. A thinking gist keeps Pi's own
+  thinking-label ink, which sits at the same level
+- a gist is never cut. It wraps at word boundaries, each further line hanging
+  under its first word. It is short by request (60 characters) and capped at 120,
+  so wrapping costs a line or two only on narrow rows, which are the rows whose
+  command was cut hardest and need the gist most. Control characters in a reply
+  are dropped: a gist is plain words
 - a bash row earns one when its command is wider than the row's first line, so
-  traceline had to cut or wrap it (§9.8). The gist takes one line under the row,
+  traceline had to cut or wrap it (§9.8). The gist takes the lines under the row,
   after any wrapped continuation: rail, no bullet, at the body column under the
   row's first word, `≈ lints, type-checks and commits slack-bridge`. It is a note
   about the row, not more command, so it does not indent to the command column,
   and it has the row's full width, since it carries no fact suffix. The command
   keeps its place as provenance; the gist never replaces it
 - a collapsed thinking run (§9.11) earns one when its preview had to be cut. The
-  gist takes the preview's place on the run's one line, `≈ checks whether the
-  push landed before merging`; the run's own words stay one click away
+  gist takes the preview's place, `≈ checks whether the push landed before
+  merging`, wrapping under its first word when the line is too narrow; the run's
+  own words stay one click away
 - only settled text earns a gist: a call once its result arrives, a thinking run
   once anything follows it in the message. Text that is still streaming would
   ask again with every token

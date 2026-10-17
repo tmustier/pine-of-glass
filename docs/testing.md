@@ -167,9 +167,11 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   once with its layer.
 - **Summaries** (`summaries.test.ts`, §9.15): hosted through the SDK with a scripted
   summary model registered through Pi's provider API, so every request is counted.
-  Only the user's own file turns summaries on; a cut or wrapped command gets one `≈`
-  line at the command column once its result arrives and the record keeps its slot; a
-  cut thinking preview shows its gist once the run is settled; requests batch; gists
+  Only the user's own file turns summaries on; a cut or wrapped command gets a `≈`
+  gist under the row's first word once its result arrives and the record keeps its
+  slot; a cut thinking preview shows its gist once the run is settled; a long gist
+  wraps under its first word in muted words, never cut, and a reply's control
+  characters never reach the terminal; requests batch; gists
   are stored as session entries and a replay asks for nothing; a reply that answers
   nothing, or arrives after its session ended, changes nothing.
 - **Composed calls** (`composed-calls.test.ts`, design language §9.14): a codemode row

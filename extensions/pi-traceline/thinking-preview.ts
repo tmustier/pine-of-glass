@@ -1,4 +1,4 @@
-import { Markdown, MouseRegion, Text, visibleWidth, type Component, type MarkdownTheme, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { Markdown, MouseRegion, Text, visibleWidth, wrapTextWithAnsi, type Component, type MarkdownTheme, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import type { AssistantRowDataLike } from "../_lib/chat.ts";
@@ -58,14 +58,25 @@ function previewForBlock(block: { type?: unknown; thinking?: unknown }): string 
   return preview;
 }
 
-function replaceVisibleLabel(line: string, preview: string, width: number): string {
+/** Pi's label line around its visible words: indent and opening ink, then closing ink. */
+function labelFrame(line: string) {
   const visible = stripAnsi(line);
-  const leading = visible.match(/^\s*/)?.[0].length ?? 0;
+  const indent = visible.match(/^\s*/)?.[0].length ?? 0;
   const trailing = visible.match(/\s*$/)?.[0].length ?? 0;
-  const start = rawIndexAtVisibleIndex(line, leading);
-  const end = rawIndexBeforeVisibleIndex(line, visible.length - trailing);
-  const suffix = line.slice(end).replace(/[ \t]+$/g, "");
-  return middleTruncate(`${line.slice(0, start)}${preview}${suffix}`, width);
+  const open = line.slice(0, rawIndexAtVisibleIndex(line, indent));
+  const close = line.slice(rawIndexBeforeVisibleIndex(line, visible.length - trailing)).replace(/[ \t]+$/g, "");
+  return { open, close, indent };
+}
+
+function replaceVisibleLabel(line: string, preview: string, width: number): string {
+  const { open, close } = labelFrame(line);
+  return middleTruncate(`${open}${preview}${close}`, width);
+}
+
+/** A gist in the label's place and ink, wrapped under its first word, never cut (§9.15). */
+function gistLabelLines(line: string, gist: string, width: number): string[] {
+  const { open, close, indent } = labelFrame(line);
+  return wrapTextWithAnsi(gist, Math.max(1, width - indent - 2)).map((text, i) => `${open}${i ? "  " : "≈ "}${text}${close}`);
 }
 
 // A run is settled once anything follows it in the message (§9.15): its text is final.
@@ -138,7 +149,7 @@ export function installThinkingPreviews(comp: AssistantPreviewRow): void {
         const cut = visibleWidth(replaceVisibleLabel(line, preview.text, Number.POSITIVE_INFINITY)) > width;
         const gist = cut ? gistFor("thinking", preview.text, preview.settled) : undefined;
         if (last?.width !== width || last.line !== line || last.gist !== gist) {
-          last = { width, line, gist, lines: [replaceVisibleLabel(line, gist ? `≈ ${gist}` : preview.text, width)] };
+          last = { width, line, gist, lines: gist ? gistLabelLines(line, gist, width) : [replaceVisibleLabel(line, preview.text, width)] };
         }
         return last.lines;
       },

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type KeyId, type TUI } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type KeyId, type TUI } from "@earendil-works/pi-tui";
 import { rawIndexAtVisibleIndex, rawIndexBeforeVisibleIndex, stripAnsi } from "../_lib/ansi.ts";
 import { captureTui } from "../_lib/capture.ts";
 import {
@@ -733,7 +733,7 @@ function oneLine(comp: ToolRowLike, width: number): string {
 
 // One row's lines: the bullet line, then a wrapped bash row's continuation lines (§9.8)
 // at the command column, rail-only like a dir fold's (§9.9), then a cut or wrapped
-// command's dim `≈` gist at the body column, across the row's width (§9.15).
+// command's `≈` gist at the body column, wrapped across the row's width, never cut (§9.15).
 function rowLines(comp: ToolRowLike, width: number): string[] {
   const rows = blockToolRows(comp);
   const facts = blockFacts(rows);
@@ -751,8 +751,8 @@ function rowLines(comp: ToolRowLike, width: number): string[] {
   const gist = plan?.overflow && typeof command === "string" ? gistFor("command", command, comp.result !== undefined) : undefined;
   if (!plan || (plan.continuations.length === 0 && !gist)) return [line];
   const railed = (column: number, budget: number, text: string) => truncateToWidth(`${TOOL_INDENT}${dim(TOOL_RAIL)}${" ".repeat(TOOL_PREFIX_VISIBLE_WIDTH - TOOL_INDENT.length - 1 + column)}${middleTruncate(text, budget, currentTheme())}`, Math.max(1, width), ELLIPSIS);
-  const contBudget = Math.max(1, bodyBudget - plan.commandColumn);
-  return [line, ...plan.continuations.map((text) => railed(plan.commandColumn, contBudget, text)), ...(gist ? [railed(0, available, dim(`≈ ${gist}`))] : [])];
+  const gistLines = gist ? wrapTextWithAnsi(gist, Math.max(1, available - 2)).map((text, i) => railed(0, available, `${i ? " " : dim("≈")} ${ink(currentTheme(), "muted", text)}`)) : [];
+  return [line, ...plan.continuations.map((text) => railed(plan.commandColumn, Math.max(1, bodyBudget - plan.commandColumn), text)), ...gistLines];
 }
 
 // --- repetition folding + preamble reclaim (issue #14, design language §9.4/§9.9) ---

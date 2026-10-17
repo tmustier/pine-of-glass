@@ -88,7 +88,8 @@ export function installSummaries(pi: ExtensionAPI, owns: () => boolean, changed:
           for (const [index, { key }] of batch.entries()) {
             const raw = value[String(index + 1)];
             if (typeof raw !== "string" || !raw.trim()) continue;
-            const gist = raw.replace(/\s+/g, " ").trim().slice(0, GIST_MAX);
+            // Plain words only: a control character in a reply would reach the terminal.
+            const gist = raw.replace(/[\s\p{Cc}]+/gu, " ").trim().slice(0, GIST_MAX);
             gists.set(key, gist);
             pi.appendEntry(SUMMARY_ENTRY, { key, gist, model: `${model.provider}/${model.id}`, cost });
             added = true;

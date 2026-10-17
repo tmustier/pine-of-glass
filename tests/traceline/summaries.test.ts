@@ -15,7 +15,7 @@ import { assistantMessage } from "../helpers.ts";
 import { hostExtension, IsolatedProject, type HostedExtension } from "../harness/extension-host.ts";
 import { nativeBashLines } from "./runtime-fixtures.ts";
 
-const { stripAnsi, renderTraceRow } = internals;
+const { stripAnsi, renderTraceRow, setTracelineThemeGetter } = internals;
 initTheme(undefined, false);
 
 const PROVIDER = "pog-summaries";
@@ -228,6 +228,70 @@ test("a headless child cannot clear its TUI parent's pending or cached gists", a
       assert.equal(lines(row).at(-1), "  ▏   ≈ gist 1");
       assert.equal(asked.length, 1);
     });
+  } finally {
+    project.dispose();
+  }
+});
+
+// A reply long enough to wrap, with control characters a model could send: the rendered
+// gist is these words exactly, with the control characters gone.
+const RAMBLING = "stages everything,\u0007 runs lint and type checks, checks formatting with prettier,\u009b then commits the bridge fix";
+const RAMBLING_SHOWN = "stages everything, runs lint and type checks, checks formatting with prettier, then commits the bridge fix";
+
+test("a long gist wraps under the row's first word in muted words, never cut, with control characters dropped", async () => {
+  const project = new IsolatedProject();
+  try {
+    project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
+    const asked: Asked[][] = [];
+    const row = bash(LONG, "ok");
+    await hosted(project, asked, async () => {
+      lines(row, 60);
+      await settle();
+      // A theme whose muted and dim differ, so the ink of each part is visible.
+      setTracelineThemeGetter(() => ({ fg: (color: string, text: string) => `\x1b[38;5;${color === "muted" ? 246 : color === "dim" ? 245 : 250}m${text}\x1b[39m`, bold: (text: string) => text, bg: (_color: string, text: string) => text }) as unknown as ReturnType<NonNullable<Parameters<typeof setTracelineThemeGetter>[0]>>);
+      try {
+        const raw = renderTraceRow(row, 60);
+        const shown = raw.map((line) => stripAnsi(line).trimEnd());
+        const start = shown.findIndex((line) => line.includes("≈"));
+        const gist = shown.slice(start);
+        assert.ok(gist.length >= 2, `a gist wider than the row wraps: ${JSON.stringify(gist)}`);
+        assert.match(gist[0]!, /^ {2}▏ {3}≈ \S/);
+        for (const line of gist.slice(1)) assert.match(line, /^ {2}▏ {5}\S/, "further lines hang under the gist's first word");
+        assert.equal(gist.map((line) => line.replace(/^ {2}▏ {3}(?:≈ | {2})/, "")).join(" "), RAMBLING_SHOWN);
+        assert.ok(shown.every((line) => [...line].length <= 60), "every line fits the width");
+        assert.ok(raw[start]!.includes("\x1b[38;5;245m≈") && raw[start]!.includes("\x1b[38;5;246mstages everything,"), "≈ is dim, the words muted");
+        assert.ok(raw.slice(start + 1).every((line) => line.includes("\x1b[38;5;246m")), "wrapped words stay muted");
+        assert.ok(!raw.some((line) => /[\u0007\u009b]/.test(line)), "no control character reaches the terminal");
+      } finally {
+        setTracelineThemeGetter(undefined);
+      }
+    }, JSON.stringify({ 1: RAMBLING }));
+  } finally {
+    project.dispose();
+  }
+});
+
+test("a cut thinking gist wraps under its first word in the label's place, never cut", async () => {
+  const project = new IsolatedProject();
+  try {
+    project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
+    const asked: Asked[][] = [];
+    const comp = new AssistantMessageComponent(assistantMessage([{ type: "thinking", thinking: "first I check whether the push landed\nthen I compare the branches" }, { type: "text", text: "Merging now." }]), true);
+    installThinkingPreviews(comp as unknown as AssistantRowDataLike);
+    const render = () => comp.render(38).map((line) => stripAnsi(line).trimEnd());
+    await hosted(project, asked, async () => {
+      render();
+      await settle();
+      const shown = render();
+      const start = shown.findIndex((line) => line.includes("≈"));
+      const end = shown.findIndex((line) => line.includes("Merging now."));
+      const gist = shown.slice(start, end).filter(Boolean);
+      const indent = gist[0]!.indexOf("≈");
+      assert.ok(gist.length >= 2, `a gist wider than the line wraps: ${JSON.stringify(shown)}`);
+      for (const line of gist.slice(1)) assert.equal(line.search(/\S/), indent + 2, "further lines hang under the gist's first word");
+      assert.equal(gist.map((line) => line.trim().replace(/^≈ /, "")).join(" "), RAMBLING_SHOWN);
+      assert.ok(shown.every((line) => [...line].length <= 38), "every line fits the width");
+    }, JSON.stringify({ 1: RAMBLING }));
   } finally {
     project.dispose();
   }
