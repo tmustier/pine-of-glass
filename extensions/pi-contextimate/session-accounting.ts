@@ -5,7 +5,7 @@ import type { ModelSummary } from "../_lib/heuristics.ts";
 import { keepsAllClaudeThinking, keepsAllOpenAIReasoning } from "../_lib/heuristics.ts";
 
 import { countTextContent, countToolCallContent } from "./message-size.ts";
-import { projectAccountingSession, readRequestMessages } from "./request-messages.ts";
+import { accountingSession } from "./request-messages.ts";
 
 const OPENAI_REASONING_REPLAY_APIS = new Set([
   "openai-responses",
@@ -20,7 +20,7 @@ export type SessionBreakdown = {
   toolOutputChars: number;
   messageChars: number;
   /** Additions in the request behind the latest trusted usage, not saved messages. */
-  requestOnly?: { chars: number; count: number };
+  requestOnly?: { chars: number };
   messageCount: number;
   /** Pi's current total includes a local estimate after the last trusted assistant usage. */
   contextUsageEstimated: boolean;
@@ -150,9 +150,7 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
   try {
     const entries = sessionManager.getEntries();
     const leafId = sessionManager.getLeafId();
-    const projection = projectAccountingSession(entries, leafId);
-    const requestMessages = readRequestMessages(entries, leafId, projection.entries);
-    const { messages } = projection;
+    const { messages, requestMessages } = accountingSession(entries, leafId);
     if (messages.length === 0) return {};
 
     const llmMessages = convertToLlm(messages);
@@ -170,9 +168,7 @@ export function scanSession(sessionManager?: SessionSource): SessionScan {
     const lastTrustedUsageIndex = trusted.at(-1)?.index ?? -1;
     const anchor = trusted.at(-1)?.message;
     const additions = anchor && requestMessages.get(anchor);
-    if (additions?.additive && additions.count > 0) {
-      breakdown.requestOnly = { chars: additions.chars, count: additions.count };
-    }
+    if (additions?.additive) breakdown.requestOnly = { chars: additions.chars };
     let lastTrustedContextIndex = -1;
     for (let index = 0; index < messages.length; index++) {
       const message = messages[index]!;

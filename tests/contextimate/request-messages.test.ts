@@ -1,6 +1,7 @@
 // Real SDK dispatch, with Contextimate and the injector loaded as separate extensions.
 // The scripted provider exercises the outgoing-payload hook without a network request.
 import { test } from "node:test";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import assert from "node:assert/strict";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -20,14 +21,11 @@ const INJECTION = "Request-only audit text. ".repeat(100);
 
 async function fixture(event: "context" | "context_with_system", api: "openai-responses" | "anthropic-messages", toolRound = false, virtual = false) {
   const project = new IsolatedProject();
-  let injected = INJECTION;
-  let injectImage = false;
-  const image = { type: "image" as const, data: "AA==", mimeType: "image/png" };
+  let injection: AgentMessage | undefined = { role: "user", content: INJECTION, timestamp: 1 };
   const errors: string[] = [];
   const outgoing: string[] = [];
   const inject: ExtensionFactory = (pi) => {
-    const handler = (e: ContextEvent | ContextWithSystemEvent) => injected || injectImage ? { messages: [...e.messages,
-      { role: "user" as const, content: injectImage ? [image] : [{ type: "text" as const, text: injected }], timestamp: 1 }] } : undefined;
+    const handler = (e: ContextEvent | ContextWithSystemEvent) => injection ? { messages: [...e.messages, injection] } : undefined;
     if (event === "context") pi.on("context", handler);
     else pi.on("context_with_system", handler);
     pi.registerTool({ name: "fixture_tool", label: "Fixture tool", description: "Return fixture output",
@@ -87,8 +85,9 @@ async function fixture(event: "context" | "context_with_system", api: "openai-re
   const model = session.modelRuntime.getModel(PROVIDER, virtual ? "virtual" : "fixture");
   assert.ok(model);
   await session.setModel(model);
-  return { project, session, manager, outgoing, setInjection: (text: string) => { injected = text; },
-    setImageInjection: () => { injected = ""; injectImage = true; },
+  return { session, manager, outgoing,
+    setInjection: (text: string) => { injection = text ? { role: "user", content: text, timestamp: 1 } : undefined; },
+    setMessageInjection: (message: AgentMessage) => { injection = message; },
     async dispose() {
       await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
       session.dispose(); project.dispose(); assert.deepEqual(errors, []);
@@ -103,8 +102,8 @@ for (const event of ["context", "context_with_system"] as const) {
         await host.session.prompt("go");
         assert.ok(host.outgoing.at(-1)?.includes(INJECTION));
         assert.ok(!JSON.stringify(host.manager.getEntries()).includes(INJECTION), "only counts persist, never injection text");
-        let breakdown = scanSession(host.manager).breakdown!;
-        assert.deepEqual(breakdown.requestOnly, { chars: INJECTION.length, count: 1 });
+        const breakdown = scanSession(host.manager).breakdown!;
+        assert.deepEqual(breakdown.requestOnly, { chars: INJECTION.length });
         assert.equal(breakdown.messageChars, 4, "only go and OK are saved messages");
         assert.equal(breakdown.firstPrompt, undefined, "injection must not become measured harness");
         const options = { denominator: 4, harnessTokens: 1_000, contextTokens: 10_010 };
@@ -113,26 +112,43 @@ for (const event of ["context", "context_with_system"] as const) {
         assert.equal(estimate.totalTokens, 9_010, "the estimate is not added to the provider total");
         assert.equal(estimate.unattributedTokens, 9_010 - 1 - INJECTION.length / 4);
 
-        await host.session.prompt("again");
-        breakdown = scanSession(host.manager).breakdown!;
-        assert.equal(breakdown.requestOnly?.chars, INJECTION.length, "replace each request, never accumulate");
-        assert.equal(breakdown.measuredToolOutputTokens, 0, "request-only growth is not measured tool output");
-
-        host.setInjection("smaller");
-        await host.session.prompt("change");
-        assert.equal(scanSession(host.manager).breakdown?.requestOnly?.chars, 7);
-        host.setInjection("");
-        await host.session.prompt("stop");
-        assert.equal(scanSession(host.manager).breakdown?.requestOnly, undefined, "a clean request clears the row");
       } finally { await host.dispose(); }
     });
   }
 }
 
+test("each request replaces its additions and a clean request clears them", async () => {
+  const host = await fixture("context", "openai-responses");
+  try {
+    await host.session.prompt("go");
+    await host.session.prompt("again");
+    assert.equal(scanSession(host.manager).breakdown?.requestOnly?.chars, INJECTION.length);
+    host.setInjection("smaller");
+    await host.session.prompt("change");
+    assert.equal(scanSession(host.manager).breakdown?.requestOnly?.chars, 7);
+    host.setInjection("");
+    await host.session.prompt("stop");
+    assert.equal(scanSession(host.manager).breakdown?.requestOnly, undefined);
+  } finally { await host.dispose(); }
+});
+
+test("zero-character additions still prevent contaminated harness and tool measurements", async () => {
+  const host = await fixture("context", "openai-responses", true);
+  try {
+    host.setMessageInjection(assistantMessage([{ type: "thinking", thinking: "opaque reasoning",
+      thinkingSignature: JSON.stringify({ type: "reasoning", encrypted_content: "opaque" }) }]));
+    await host.session.prompt("go");
+    const breakdown = scanSession(host.manager).breakdown!;
+    assert.deepEqual(breakdown.requestOnly, { chars: 0 });
+    assert.equal(breakdown.firstPrompt, undefined);
+    assert.equal(breakdown.measuredToolOutputTokens, 0);
+  } finally { await host.dispose(); }
+});
+
 test("injected image conversions do not get counted in addition to the observed image marker", async () => {
   const host = await fixture("context", "openai-responses");
   try {
-    host.setImageInjection();
+    host.setMessageInjection({ role: "user", content: [{ type: "image", data: "AA==", mimeType: "image/png" }], timestamp: 1 });
     await host.session.prompt("go");
     assert.ok(host.outgoing.at(-1)?.includes("Image reading is disabled."));
     assert.equal(scanSession(host.manager).breakdown?.requestOnly?.chars, "[image:image/png:4 chars]".length);
@@ -193,9 +209,9 @@ test("saved custom messages are not counted again, and branch selection restores
     // Replay uses serialized entries, so attribution cannot depend on a live object cache.
     const restoredEntries = structuredClone(host.manager.getEntries());
     const restored = { getEntries: () => restoredEntries, getLeafId: () => injectedLeaf };
-    assert.deepEqual(scanSession(restored).breakdown?.requestOnly, { chars: INJECTION.length, count: 1 });
+    assert.deepEqual(scanSession(restored).breakdown?.requestOnly, { chars: INJECTION.length });
     host.manager.appendContextEdit(injectedLeaf, { content: [{ type: "text", text: "edited reply" }] });
-    assert.deepEqual(scanSession(host.manager).breakdown?.requestOnly, { chars: INJECTION.length, count: 1 });
+    assert.deepEqual(scanSession(host.manager).breakdown?.requestOnly, { chars: INJECTION.length });
     assert.equal(scanSession(host.manager).breakdown?.firstPrompt, undefined, "context edits cannot restore a contaminated measurement");
     host.manager.appendCompaction("compacted", injectedLeaf, 10_000);
     assert.equal(scanSession(host.manager).breakdown?.requestOnly, undefined, "compaction drops old request additions");

@@ -22,16 +22,16 @@ test("payload attribution preserves duplicate occurrences and ignores system and
     item("same"), item("same"), item("extra"),
     { type: "function_call_output", output: "not user text" },
   ] };
-  assert.deepEqual(await payloadTextAdditions(saved, payload, route("openai-codex-responses")), { chars: 9, count: 2, additive: true });
+  assert.deepEqual(await payloadTextAdditions(saved, payload, route("openai-codex-responses")), { chars: 9, additive: true });
 });
 
 test("deletions, replacements and reordering are not falsely presented as additive counts", async () => {
   assert.deepEqual(await payloadTextAdditions(saved, { input: [item("replacement")] }, route("openai-responses")),
-    { chars: 0, count: 0, additive: false });
+    { additive: false });
   assert.deepEqual(await payloadTextAdditions(saved, { input: [] }, route("openai-responses")),
-    { chars: 0, count: 0, additive: false });
+    { additive: false });
   assert.deepEqual(await payloadTextAdditions([...saved, { role: "user", content: "next", timestamp: 2 }],
-    { input: [item("next"), item("same")] }, route("openai-responses")), { chars: 0, count: 0, additive: false });
+    { input: [item("next"), item("same")] }, route("openai-responses")), { additive: false });
 });
 
 test("unknown routes and malformed payloads do not claim outgoing text coverage", async () => {
@@ -48,9 +48,9 @@ test("native OpenAI replay drops aborted replies without losing genuine addition
   ];
   const context = normalizeContext({ messages: history });
   const input = convertResponsesMessages(model, context, new Set());
-  assert.deepEqual(await payloadTextAdditions(history, { input }, model), { chars: 0, count: 0, additive: true });
+  assert.deepEqual(await payloadTextAdditions(history, { input }, model), { chars: 0, additive: true });
   assert.deepEqual(await payloadTextAdditions(history, { input: [...input, item("injected")] }, model),
-    { chars: 8, count: 1, additive: true });
+    { chars: 8, additive: true });
 });
 
 test("native Anthropic unsigned thinking is not counted a second time", async () => {
@@ -64,7 +64,7 @@ test("native Anthropic unsigned thinking is not counted a second time", async ()
   const response = await stream.result();
   assert.equal(response.stopReason, "error");
   assert.ok(payload);
-  assert.deepEqual(await payloadTextAdditions(history, payload, model), { chars: 0, count: 0, additive: true });
+  assert.deepEqual(await payloadTextAdditions(history, payload, model), { chars: 0, additive: true });
 });
 
 test("image conversions retain only hook coverage rather than mistaking generated captions for additions", async () => {
@@ -82,5 +82,5 @@ test("Anthropic tool-result blocks and system instructions are not request-only 
     { role: "user", content: [{ type: "text", text: "same" }, { type: "tool_result", content: "tool output" }] },
     { role: "assistant", content: [{ type: "text", text: "injected" }] },
   ] };
-  assert.deepEqual(await payloadTextAdditions(saved, payload, route("anthropic-messages")), { chars: 8, count: 1, additive: true });
+  assert.deepEqual(await payloadTextAdditions(saved, payload, route("anthropic-messages")), { chars: 8, additive: true });
 });
