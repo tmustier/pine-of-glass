@@ -11,6 +11,7 @@ import { ink } from "../_lib/style.ts";
 import { toModelSummary, loadContextimateConfig } from "./heuristic-config.ts";
 import { buildSnapshot, type PrefixSnapshot } from "./snapshot.ts";
 import { renderSummary, renderCompact, renderExpanded, type ViewMode } from "./render.ts";
+import { observeRequestMessages } from "./request-messages.ts";
 
 type ContextimateGlobal = typeof globalThis & {
   __piContextimateTui?: TUI;
@@ -182,6 +183,8 @@ export default function piContextimate(pi: ExtensionAPI) {
   const markDirty = () => {
     cache.dirty = true;
   };
+
+  observeRequestMessages(pi, markDirty);
 
   // Pi keeps before_agent_start rewrites (such as pi-skill-gate's filtered skill index) only
   // while a run is active, so count the prompt the latest run sent once it has one.

@@ -233,6 +233,13 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
 - **Token label alignment** (`tokenLabelLayout`/`estimatedTokenField`/`exactTokenLabel`):
   for value sets spanning <1k/≥1k/≥100k, all emitted fields share one visible width and
   `~`/exact variants align; this is the invariant behind the recent column-alignment commits.
+- **Request-only additions** (`request-messages.test.ts`): separate SDK-loaded injector and
+  Contextimate extensions exercise both context hooks and native OpenAI/Anthropic payload
+  reconciliation. Tests cover saved custom messages, changing and disappearing injections,
+  tool rounds, measurement gates, serialized replay, branch selection, compaction and the
+  aligned row at 48, 80 and 120 columns. `request-text.test.ts` covers duplicate text,
+  excluded system/tool fields, unsupported edits and unknown payloads. Live acceptance uses
+  an approved model and verifies the actual tool result and outgoing request separately.
 - **Snapshot signature**: identical inputs → identical signature; changing the active tool
   set, model, config, or session chars each changes it (render-cache invalidation).
 

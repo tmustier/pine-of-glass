@@ -326,8 +326,23 @@ at the user boundary. Historical reasoning must fit inside the exact reported pr
 across input, cache reads and cache writes. Provider-generated summaries
 not covered by exact retained reasoning get a separate estimated `Thinking summaries`
 row; opaque signatures are never sized as reasoning.
+Request-local conversation additions observed through Pi's `context_with_system` event
+get a separate estimated `Request-only` row, after `Messages`, with their character count
+and `(not saved)` label. The row describes only the request behind the latest trusted
+provider usage, not the sum of earlier injections. Saved custom messages remain in
+`Messages` and are never counted twice. Counts, not message text, are saved as non-context
+session metadata so reload and branch selection retain the attribution.
+
+The observer sees every `context` transformation and preceding `context_with_system`
+transformations. Native OpenAI Responses (including Codex) and Anthropic text additions
+are reconciled against the outgoing payload, after all `context_with_system` handlers.
+Other wire formats and requests containing images retain only the hook observation. Later provider-payload rewrites,
+unobserved non-text changes and non-additive conversation edits are not claimed as
+measured additions. Observed conversation changes disable harness measurement and
+tool-growth measurement where they could contaminate them.
+
 The remaining gap can still include prefix-estimation error, provider overhead, images,
-opaque replay carriers and reasoning when no breakdown was reported. If Pi's context
+opaque replay carriers, unobserved transformations and reasoning when no breakdown was reported. If Pi's context
 total includes local estimates for messages after the last provider usage, the total
 keeps its `~`.
 

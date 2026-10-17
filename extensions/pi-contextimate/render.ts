@@ -89,6 +89,10 @@ function sessionMetrics(snapshot: PrefixSnapshot): SessionMetrics | undefined {
     { label: "Tool outputs", tokens: estimate.toolOutputTokens, detail: countDetail(toolOutputChars, measuredToolOutputChars > 0 ? measured : undefined) },
     { label: "Messages", tokens: estimate.messageTokens, detail: countDetail(snapshot.session.messageChars) },
   ];
+  if (snapshot.session.requestOnly) {
+    rows.push({ label: "Request-only", tokens: estimate.requestOnlyTokens,
+      detail: countDetail(snapshot.session.requestOnly.chars, "· not saved") });
+  }
   if (estimate.thinkingSummaryTokens > 0) {
     rows.push({
       label: "Thinking summaries",
@@ -181,6 +185,7 @@ function summaryTokenLayout(snapshot: PrefixSnapshot): TokenLabelLayout {
     sessionEstimate.totalTokens,
     sessionEstimate.toolOutputTokens,
     sessionEstimate.messageTokens,
+    sessionEstimate.requestOnlyTokens,
     sessionEstimate.thinkingSummaryTokens,
     sessionEstimate.unattributedTokens,
   );
