@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { AssistantMessageComponent, initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import type { AssistantRowDataLike, ToolRowLike } from "../../extensions/_lib/chat.ts";
 import piTraceline, { internals } from "../../extensions/pi-traceline/index.ts";
 import { SUMMARY_ENTRY } from "../../extensions/pi-traceline/summaries.ts";
@@ -15,7 +16,7 @@ import { assistantMessage } from "../helpers.ts";
 import { hostExtension, IsolatedProject, type HostedExtension } from "../harness/extension-host.ts";
 import { nativeBashLines } from "./runtime-fixtures.ts";
 
-const { stripAnsi, renderTraceRow, setTracelineThemeGetter } = internals;
+const { renderTraceRow, setTracelineThemeGetter } = internals;
 initTheme(undefined, false);
 
 const PROVIDER = "pog-summaries";
