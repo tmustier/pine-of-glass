@@ -55,6 +55,29 @@ Temporary live-session data was removed.
 - Real Pi TUI replay screenshots at 100 and 48 columns were reviewed. The new row
   shares the existing token column, and its detail wraps without overlap.
 
+## Rebase and simplification verification
+
+Runtime revision `460c6e260acaf8c45a37fb227e2ef13474df8a13` includes the rebase onto
+`7d0e5df` and the simplified observation module. Verification used Pi 1.3.0.
+
+- `npm run check` passed lint, typecheck and all 521 tests. Render goldens were unchanged.
+- The startup smoke passed, including reload and Ctrl+T persistence.
+- The new zero-character addition regression failed when the old clearing condition
+  was restored, then passed with the fix.
+- The live prompt above ran through the file-extension loader using
+  `openai-codex/gpt-6.1-sol`, medium thinking. Eight phases made 16 provider requests
+  across the three scenarios above, including clean requests after each injection.
+- Each phase executed the marker tool once. Independent file reads verified the nonce.
+  Default tools stayed available, and no extension errors occurred.
+- Every injected request contained the 112,937-character sample exactly once.
+  Attribution stayed at 28,235 estimated tokens across tool rounds and cleared on clean
+  requests. Saved entries contained no sample text. Temporary sessions were removed.
+
+The new sample tokenized more efficiently than the character heuristic, so the remaining
+unattributed estimate clamped to zero. The estimate is not an exact token measurement.
+The complete smoke suite, screenshots and minimum-version loading were not rerun during
+simplification; the earlier results above apply to the original implementation.
+
 ## Remaining limits
 
 The complete smoke suite did not pass. Its Traceline empty-thinking replay timed out;
