@@ -81,10 +81,6 @@ const RULE_MESSAGES = {
   ],
 };
 
-function usage() {
-  console.log(`Usage: node scripts/dev/agent-lint.mjs [--update-baseline] [--show-baseline]\n\nDeterministic source checks for the pine-of-glass agent coding standard.`);
-}
-
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -162,9 +158,7 @@ function hasLocalRecordProof(lines, index) {
   return window.includes("typeof") && window.includes("object") && window.includes("Array.isArray");
 }
 
-function scanTsFile(absPath, findings) {
-  const file = rel(absPath);
-  const lines = readText(absPath).split(/\r?\n/);
+function scanTsFile({ file, lines }, findings) {
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
     const trimmed = line.trim();
@@ -208,9 +202,7 @@ function scanTsFile(absPath, findings) {
   }
 }
 
-function scanMarkdownFile(absPath, findings) {
-  const file = rel(absPath);
-  const lines = readText(absPath).split(/\r?\n/);
+function scanMarkdownFile({ file, lines }, findings) {
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
     if (line.includes("—") && !hasDisable(lines, index, "POG007")) {
@@ -219,16 +211,15 @@ function scanMarkdownFile(absPath, findings) {
   }
 }
 
-function scanFileBudgets(files, baseline, findings) {
+function scanFileBudgets(sources, baseline, findings) {
   const budgets = baseline.lineBudgets ?? {};
   const defaultMax = budgets.defaultTsMax ?? DEFAULT_TS_MAX_LINES;
   const fileBudgets = budgets.files ?? {};
   const seenBudgetFiles = new Set();
-  for (const absPath of files) {
-    const file = rel(absPath);
+  for (const { file, lines } of sources.values()) {
     if (!file.endsWith(".ts")) continue;
     if (!inPath(file, "extensions") && !inPath(file, "tests")) continue;
-    const lineCount = readText(absPath).split(/\r?\n/).length;
+    const lineCount = lines.length;
     const storedBudget = fileBudgets[file];
     if (storedBudget !== undefined) seenBudgetFiles.add(file);
     const allowed = storedBudget ?? defaultMax;
@@ -248,7 +239,7 @@ function scanFileBudgets(files, baseline, findings) {
 
 // Oxlint diagnostics (rules in .oxlintrc.json) join the ledger under their own rule id,
 // e.g. `anti-slop(no-unknown-returns)`, keyed by source line like the POG findings.
-function scanWithOxlint(findings) {
+function scanWithOxlint(sources, findings) {
   if (!existsSync(join(ROOT, ".oxlintrc.json"))) return;
   const oxlint = join(ROOT, "node_modules", ".bin", "oxlint");
   const result = spawnSync(oxlint, [".", "--format", "json"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -260,12 +251,11 @@ function scanWithOxlint(findings) {
     process.exit(1);
   }
   const report = JSON.parse(result.stdout);
-  const sources = new Map();
   for (const diagnostic of report.diagnostics) {
     const file = diagnostic.filename.split(sep).join("/");
     const line = diagnostic.labels[0].span.line;
-    if (!sources.has(file)) sources.set(file, readText(join(ROOT, file)).split(/\r?\n/));
-    const lineText = sources.get(file)[line - 1] ?? "";
+    const lines = sources.get(file)?.lines ?? readText(join(ROOT, file)).split(/\r?\n/);
+    const lineText = lines[line - 1] ?? "";
     const message = [
       diagnostic.message,
       ...(diagnostic.help ? [diagnostic.help] : []),
@@ -274,24 +264,6 @@ function scanWithOxlint(findings) {
     ].join("\n");
     findings.push(makeFinding(diagnostic.code, file, line, lineText, message));
   }
-}
-
-function internalsEntryCount(file, text) {
-  const { program, errors } = parseSync(file, text);
-  if (errors.length > 0) throw new Error(`Could not parse ${file} while counting internals: ${errors[0].message}`);
-
-  let entries = 0;
-  for (const statement of program.body) {
-    if (statement.type !== "ExportNamedDeclaration") continue;
-    const declaration = statement.declaration;
-    if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
-    for (const item of declaration.declarations) {
-      if (item.id.type === "Identifier" && item.id.name === "internals" && item.init?.type === "ObjectExpression") {
-        entries += item.init.properties.length;
-      }
-    }
-  }
-  return entries;
 }
 
 // --- POG014: a private function parameter every caller leaves constant -----------------
@@ -325,9 +297,7 @@ function lineOf(text, offset) {
   return text.slice(0, offset).split("\n").length;
 }
 
-function scanConstantParameters(file, text, findings) {
-  const { program, errors } = parseSync(file, text);
-  if (errors.length > 0) throw new Error(`Could not parse ${file}: ${errors[0].message}`);
+function scanConstantParameters({ file, text, lines, program }, findings) {
   const exported = new Set();
   const declared = new Map();
   for (const statement of program.body) {
@@ -361,7 +331,6 @@ function scanConstantParameters(file, text, findings) {
       // A required parameter nobody passes is a type error, not this rule's; one caller
       // passing a literal is just one caller.
       if (omitted ? param.type !== "AssignmentPattern" : sites.length < 2) return;
-      const lines = text.split(/\r?\n/);
       const line = lineOf(text, param.start);
       if (hasDisable(lines, line - 1, "POG014")) return;
       findings.push(makeFinding("POG014", file, line, lines[line - 1], `${messageFor("POG014")}\n${name}(${target.name}) is always ${omitted ? "left to its default" : "the same literal"} across ${sites.length} call(s).`));
@@ -371,29 +340,8 @@ function scanConstantParameters(file, text, findings) {
 
 // --- POG015: an `internals` entry nothing outside extensions/ reads ----------------------
 
-function internalsEntries(file, text) {
-  const { program, errors } = parseSync(file, text);
-  if (errors.length > 0) throw new Error(`Could not parse ${file} while reading internals: ${errors[0].message}`);
-  const entries = [];
-  for (const statement of program.body) {
-    if (statement.type !== "ExportNamedDeclaration") continue;
-    const declaration = statement.declaration;
-    if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
-    for (const item of declaration.declarations) {
-      if (item.id.type !== "Identifier" || item.id.name !== "internals" || item.init?.type !== "ObjectExpression") continue;
-      for (const property of item.init.properties) {
-        if (property.type === "Property" && property.key.type === "Identifier") entries.push({ name: property.key.name, start: property.key.start });
-      }
-    }
-  }
-  return entries;
-}
-
 // The names each consumer file reads from each extension's `internals`, by resolved path.
-function internalsReads(absPath, text) {
-  const file = rel(absPath);
-  const { program, errors } = parseSync(file, text);
-  if (errors.length > 0) throw new Error(`Could not parse ${file} while reading internals uses: ${errors[0].message}`);
+function internalsReads({ absPath, program }) {
   const locals = new Map();
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration") continue;
@@ -419,37 +367,34 @@ function internalsReads(absPath, text) {
   return reads;
 }
 
-function scanInternalsUses(files, findings) {
+function scanInternalsUses(sources, findings) {
   const used = new Map();
-  for (const absPath of files) {
-    const file = rel(absPath);
+  for (const source of sources.values()) {
+    const { file } = source;
     if (!file.endsWith(".ts") || !(inPath(file, "tests") || inPath(file, "scripts"))) continue;
-    for (const [target, names] of internalsReads(absPath, readText(absPath))) {
+    for (const [target, names] of internalsReads(source)) {
       if (!used.has(target)) used.set(target, new Set());
       for (const name of names) used.get(target).add(name);
     }
   }
-  for (const absPath of files) {
-    const file = rel(absPath);
-    if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
-    const text = readText(absPath);
-    const lines = text.split(/\r?\n/);
-    for (const entry of internalsEntries(file, text)) {
-      if (used.get(file)?.has(entry.name)) continue;
-      const line = lineOf(text, entry.start);
+  for (const { file, text, lines, internalsProperties } of sources.values()) {
+    for (const property of internalsProperties) {
+      if (property.type !== "Property" || property.key.type !== "Identifier") continue;
+      const { name, start } = property.key;
+      if (used.get(file)?.has(name)) continue;
+      const line = lineOf(text, start);
       if (hasDisable(lines, line - 1, "POG015")) continue;
-      findings.push(makeFinding("POG015", file, line, lines[line - 1], `${messageFor("POG015")}\ninternals.${entry.name} has no reader under tests/ or scripts/.`));
+      findings.push(makeFinding("POG015", file, line, lines[line - 1], `${messageFor("POG015")}\ninternals.${name} has no reader under tests/ or scripts/.`));
     }
   }
 }
 
-function scanInternalsBudgets(files, baseline, findings) {
+function scanInternalsBudgets(sources, baseline, findings) {
   const budgets = baseline.internalsBudgets ?? {};
   const seen = new Set();
-  for (const absPath of files) {
-    const file = rel(absPath);
+  for (const { file, internalsProperties } of sources.values()) {
     if (!file.endsWith(".ts") || !inPath(file, "extensions")) continue;
-    const count = internalsEntryCount(file, readText(absPath));
+    const count = internalsProperties.length;
     const budget = budgets[file];
     if (budget !== undefined) seen.add(file);
     if (count > (budget ?? 0)) {
@@ -465,26 +410,25 @@ function scanInternalsBudgets(files, baseline, findings) {
 }
 
 // Budgets already in the baseline may only shrink; new files are never added.
-function buildInternalsBudgets(files, previous) {
-  const sources = new Map(files.map((path) => [rel(path), path]));
+function buildInternalsBudgets(sources, previous) {
   const budgets = {};
   for (const [file, oldBudget] of Object.entries(previous)) {
-    const absPath = sources.get(file);
-    if (!absPath) continue;
-    const count = internalsEntryCount(file, readText(absPath));
+    const source = sources.get(file);
+    if (!source) continue;
+    const count = source.internalsProperties.length;
     if (count > 0) budgets[file] = Math.min(count, oldBudget);
   }
   return sortObjectDeep(budgets);
 }
 
-function scanStructural(findings) {
+function scanStructural(sources, findings) {
   if (existsSync(join(ROOT, "extensions", "_lib", "index.ts"))) {
     findings.push(makeFinding("POG008", "extensions/_lib/index.ts", 1, "extensions/_lib/index.ts"));
   }
 
-  const packagePath = join(ROOT, "package.json");
-  if (existsSync(packagePath)) {
-    const pkg = JSON.parse(readText(packagePath));
+  const packageSource = sources.get("package.json");
+  if (packageSource) {
+    const pkg = JSON.parse(packageSource.text);
     const deps = pkg.dependencies && typeof pkg.dependencies === "object" ? Object.keys(pkg.dependencies) : [];
     if (deps.length > 0) {
       findings.push(makeFinding("POG009", "package.json", 1, `dependencies:${deps.join(",")}`));
@@ -523,13 +467,12 @@ function buildKnownFindings(findings) {
   return sortObjectDeep(knownFindings);
 }
 
-function buildLineBudgets(files, previous) {
-  const sources = new Map(files.map((path) => [rel(path), path]));
+function buildLineBudgets(sources, previous) {
   const budgets = {};
   for (const [file, oldBudget] of Object.entries(previous.files ?? {})) {
-    const absPath = sources.get(file);
-    if (!absPath) continue;
-    const lineCount = readText(absPath).split(/\r?\n/).length;
+    const source = sources.get(file);
+    if (!source) continue;
+    const lineCount = source.lines.length;
     if (lineCount > DEFAULT_TS_MAX_LINES) budgets[file] = Math.min(lineCount, oldBudget);
   }
   return { defaultTsMax: DEFAULT_TS_MAX_LINES, files: sortObjectDeep(budgets) };
@@ -566,42 +509,66 @@ function formatFinding(finding) {
   return `${finding.file}:${finding.line} ${finding.code} ${finding.message}\n  > ${finding.lineText.trim()}`;
 }
 
-function collectFiles() {
-  return walk(ROOT).filter((path) => {
-    const file = rel(path);
-    if (file.startsWith("scripts/dev/bash-corpus/out/")) return false;
+function collectSources() {
+  const sources = new Map();
+  for (const absPath of walk(ROOT)) {
+    const file = rel(absPath);
+    if (file.startsWith("scripts/dev/bash-corpus/out/")) continue;
     // Other git worktrees and vendored lint plugins are not this checkout's source.
-    if (file.startsWith(".worktrees/") || file.startsWith("tools/oxlint/")) return false;
-    return isTsLike(file) || isMarkdown(file) || file === "package.json";
-  });
+    if (file.startsWith(".worktrees/") || file.startsWith("tools/oxlint/")) continue;
+    if (!isTsLike(file) && !isMarkdown(file) && file !== "package.json") continue;
+    const text = readText(absPath);
+    const lines = text.split(/\r?\n/);
+    let program;
+    const internalsProperties = [];
+    if (file.endsWith(".ts") && ["extensions", "tests", "scripts"].some((prefix) => inPath(file, prefix))) {
+      const parsed = parseSync(file, text);
+      if (parsed.errors.length > 0) throw new Error(`Could not parse ${file}: ${parsed.errors[0].message}`);
+      program = parsed.program;
+      if (inPath(file, "extensions")) {
+        for (const statement of program.body) {
+          if (statement.type !== "ExportNamedDeclaration") continue;
+          const declaration = statement.declaration;
+          if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
+          for (const item of declaration.declarations) {
+            if (item.id.type === "Identifier" && item.id.name === "internals" && item.init?.type === "ObjectExpression") {
+              internalsProperties.push(...item.init.properties);
+            }
+          }
+        }
+      }
+    }
+    sources.set(file, { absPath, file, text, lines, program, internalsProperties });
+  }
+  return sources;
 }
 
-function collectFindings(files, baseline) {
+function collectFindings(sources, baseline) {
   const findings = [];
-  for (const absPath of files) {
-    const file = rel(absPath);
-    if (isTsLike(file)) scanTsFile(absPath, findings);
-    if (file.endsWith(".ts") && inPath(file, "extensions")) scanConstantParameters(file, readText(absPath), findings);
-    if (isMarkdown(file)) scanMarkdownFile(absPath, findings);
+  for (const source of sources.values()) {
+    const { file } = source;
+    if (isTsLike(file)) scanTsFile(source, findings);
+    if (file.endsWith(".ts") && inPath(file, "extensions")) scanConstantParameters(source, findings);
+    if (isMarkdown(file)) scanMarkdownFile(source, findings);
   }
-  scanFileBudgets(files, baseline, findings);
-  scanInternalsBudgets(files, baseline, findings);
-  scanInternalsUses(files, findings);
-  scanStructural(findings);
-  scanWithOxlint(findings);
+  scanFileBudgets(sources, baseline, findings);
+  scanInternalsBudgets(sources, baseline, findings);
+  scanInternalsUses(sources, findings);
+  scanStructural(sources, findings);
+  scanWithOxlint(sources, findings);
   return findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.code.localeCompare(b.code));
 }
 
 function main() {
   const args = new Set(process.argv.slice(2));
   if (args.has("--help") || args.has("-h")) {
-    usage();
+    console.log(`Usage: node scripts/dev/agent-lint.mjs [--update-baseline] [--show-baseline]\n\nDeterministic source checks for the pine-of-glass agent coding standard.`);
     return;
   }
 
-  const files = collectFiles();
+  const sources = collectSources();
   const baseline = loadBaseline();
-  const findings = collectFindings(files, baseline);
+  const findings = collectFindings(sources, baseline);
 
   const { known, fresh, stale } = partitionFindings(findings, baseline);
   if (args.has("--update-baseline")) {
@@ -618,8 +585,8 @@ function main() {
       version: 1,
       generatedBy: "node scripts/dev/agent-lint.mjs --update-baseline",
       knownFindings: buildKnownFindings(known),
-      lineBudgets: buildLineBudgets(files, baseline.lineBudgets ?? {}),
-      internalsBudgets: buildInternalsBudgets(files, baseline.internalsBudgets ?? {}),
+      lineBudgets: buildLineBudgets(sources, baseline.lineBudgets ?? {}),
+      internalsBudgets: buildInternalsBudgets(sources, baseline.internalsBudgets ?? {}),
     };
     writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
     console.log(`Pruned ${relative(ROOT, BASELINE_PATH)}; no new findings or budget growth were admitted.`);

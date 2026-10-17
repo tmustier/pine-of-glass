@@ -147,6 +147,44 @@ test("test-only internals exports may shrink but not grow through --update-basel
   assert.equal(JSON.parse(readFileSync(baselinePath, "utf8")).internalsBudgets["extensions/demo/index.ts"], 1);
 });
 
+test("internals budgets count every property while usage checks only eligible names", () => {
+  const dir = fixtureRepo();
+  const source = join(dir, "extensions", "demo", "index.ts");
+  writeFileSync(source, [
+    "const extra = { spread: 1 };",
+    "export const internals = {",
+    "  ...extra,",
+    '  "quoted": 2,',
+    '  ["computed"]: 3,',
+    "  named: 4,",
+    "  method() { return 5; },",
+    "};",
+    "",
+  ].join("\n"));
+  mkdirSync(join(dir, "scripts", "consumers"), { recursive: true });
+  const consumer = join(dir, "scripts", "consumers", "demo.ts");
+  writeFileSync(consumer, 'import { internals as demo } from "../../extensions/demo/index.ts";\nconst { named } = demo;\ndemo.method();\n');
+  const baselinePath = writeBaseline(dir, { internalsBudgets: { "extensions/demo/index.ts": 4 } });
+  const growth = runLint(dir);
+  assert.notEqual(growth.status, 0);
+  assert.match(growth.stderr, /internals-entries:5 budget:4/);
+  assert.doesNotMatch(growth.stderr, /POG015/);
+  const before = readFileSync(baselinePath, "utf8");
+  assert.notEqual(runLint(dir, "--update-baseline").status, 0);
+  assert.equal(readFileSync(baselinePath, "utf8"), before);
+
+  writeBaseline(dir, { internalsBudgets: { "extensions/demo/index.ts": 6 } });
+  assert.equal(runLint(dir, "--update-baseline").status, 0);
+  assert.equal(JSON.parse(readFileSync(baselinePath, "utf8")).internalsBudgets["extensions/demo/index.ts"], 5);
+  assert.equal(runLint(dir).status, 0);
+
+  writeFileSync(consumer, 'import { internals as demo } from "../../extensions/demo/index.ts";\ndemo.method();\n');
+  const unread = runLint(dir);
+  assert.notEqual(unread.status, 0);
+  assert.match(unread.stderr, /index\.ts:6 POG015/);
+  assert.match(unread.stderr, /internals\.named has no reader/);
+});
+
 test("line budgets for existing files ratchet down while new oversized files are refused", () => {
   const dir = fixtureRepo();
   const source = join(dir, "extensions", "demo", "index.ts");
@@ -215,6 +253,33 @@ test("a private function's parameter that every caller leaves constant is flagge
   // A function whose name escapes as a value has callers the file cannot see.
   writeFileSync(source, "function row(text: string, wrap = false): string { return wrap ? text : text.trim(); }\nrow('a');\nexport const api = { row };\n");
   assert.equal(runLint(dir).status, 0);
+});
+
+test("AST rules preserve CRLF line numbers and local exemptions", () => {
+  const dir = fixtureRepo();
+  writeFileSync(join(dir, "extensions", "demo", "index.ts"), [
+    "function row(",
+    "  text: string,",
+    "  // agent-lint-disable-next-line POG014",
+    "  wrap = false,",
+    "  trim = true,",
+    ") { return wrap ? text : trim ? text.trim() : text; }",
+    'row("a");',
+    "export const internals = {",
+    "  // agent-lint-disable-next-line POG015",
+    "  ignored: 1,",
+    "  unread: 2,",
+    "};",
+    "",
+  ].join("\r\n"));
+  writeBaseline(dir, { internalsBudgets: { "extensions/demo/index.ts": 2 } });
+  const failed = runLint(dir);
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /index\.ts:5 POG014/);
+  assert.match(failed.stderr, /row\(trim\) is always left to its default/);
+  assert.match(failed.stderr, /index\.ts:11 POG015/);
+  assert.match(failed.stderr, /internals\.unread has no reader/);
+  assert.doesNotMatch(failed.stderr, /row\(wrap\)|internals\.ignored/);
 });
 
 test("an internals entry no test or script reads is flagged (POG015)", () => {
