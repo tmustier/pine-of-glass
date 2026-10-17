@@ -57,10 +57,10 @@ Temporary live-session data was removed.
 
 ## Rebase and simplification verification
 
-Runtime revision `460c6e260acaf8c45a37fb227e2ef13474df8a13` includes the rebase onto
-`7d0e5df` and the simplified observation module. Verification used Pi 1.3.0.
+Runtime revision `e50e5e742af76c868446da7f25a826480efd8f9a` includes the final rebase onto
+`c7a26d2` and the simplified observation module. Verification used Pi 1.3.0.
 
-- `npm run check` passed lint, typecheck and all 521 tests. Render goldens were unchanged.
+- `npm run check` passed lint, typecheck and all 523 tests. Render goldens were unchanged.
 - The startup smoke passed, including reload and Ctrl+T persistence.
 - The new zero-character addition regression failed when the old clearing condition
   was restored, then passed with the fix.
