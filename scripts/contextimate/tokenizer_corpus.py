@@ -36,15 +36,15 @@ def count_summary(
 
 
 def pinned_corpus() -> dict[str, str]:
-    def read(path: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(ROOT), "show", f"{CORPUS_REVISION}:{path}"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-
     return {
-        name: "\n".join(read(path) for path in files)
+        name: "\n".join(
+            subprocess.run(
+                ["git", "-C", str(ROOT), "show", f"{CORPUS_REVISION}:{path}"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            for path in files
+        )
         for name, files in CORPUS_FILES.items()
     }

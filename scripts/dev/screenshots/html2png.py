@@ -11,7 +11,7 @@ PAGE_BG = (0x0B, 0x0C, 0x10)
 MARGIN = 56  # device px at scale 2 == 28 css px of page background kept around the frame
 
 
-def main() -> int:
+if __name__ == "__main__":
     html, out = sys.argv[1], sys.argv[2]
     width = next((sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--width"), "1800")
     height = next((sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--height"), "2600")
@@ -31,15 +31,11 @@ def main() -> int:
         bbox = diff.getbbox()
         if bbox is None:
             print("nothing rendered", file=sys.stderr)
-            return 1
+            sys.exit(1)
         left = max(bbox[0] - MARGIN, 0)
         top = max(bbox[1] - MARGIN, 0)
         right = min(bbox[2] + MARGIN, img.width)
         bottom = min(bbox[3] + MARGIN, img.height)
         img.crop((left, top, right, bottom)).save(out)
         print(f"wrote {out} ({right - left}x{bottom - top})")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(0)

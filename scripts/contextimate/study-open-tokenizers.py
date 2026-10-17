@@ -476,65 +476,6 @@ def extract_kimi_pattern(source_path: str) -> str:
     raise RuntimeError("Kimi tokenizer source no longer contains a literal pat_str")
 
 
-def tokenizer_bpe_sha256(path: str) -> str:
-    with open(path) as handle:
-        model = json.load(handle)["model"]
-    merges = [
-        merge if isinstance(merge, list) else merge.split(" ", 1)
-        for merge in model["merges"]
-    ]
-    encoded = json.dumps(
-        {"vocab": model["vocab"], "merges": merges},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def check_artifact(
-    spec: ArtifactSpec, hf_hub_download: Callable[..., str]
-) -> dict[str, str]:
-    artifact = hf_hub_download(spec.repository, spec.filename, revision=spec.revision)
-    actual_hash = sha256(artifact)
-    if actual_hash != spec.sha256:
-        raise RuntimeError(f"{spec.repository} artifact hash changed: {actual_hash}")
-    result = {
-        "repository": spec.repository,
-        "revision": spec.revision,
-        "sha256": actual_hash,
-    }
-    if spec.core_sha256 is not None:
-        with open(artifact) as handle:
-            model = json.load(handle)["model"]
-        encoded = json.dumps(
-            model, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode()
-        core_hash = hashlib.sha256(encoded).hexdigest()
-        if core_hash != spec.core_sha256:
-            raise RuntimeError(
-                f"{spec.repository} tokenizer core hash changed: {core_hash}"
-            )
-        result["coreSha256"] = core_hash
-    if spec.bpe_sha256 is not None:
-        bpe_hash = tokenizer_bpe_sha256(artifact)
-        if bpe_hash != spec.bpe_sha256:
-            raise RuntimeError(
-                f"{spec.repository} tokenizer BPE hash changed: {bpe_hash}"
-            )
-    if spec.pattern_sha256 is not None:
-        source = hf_hub_download(
-            spec.repository, "tokenization_kimi.py", revision=spec.revision
-        )
-        pattern_hash = hashlib.sha256(extract_kimi_pattern(source).encode()).hexdigest()
-        if pattern_hash != spec.pattern_sha256:
-            raise RuntimeError(
-                f"{spec.repository} tokenizer pattern changed: {pattern_hash}"
-            )
-        result["patternSha256"] = pattern_hash
-    return result
-
-
 def load_encoder(
     spec: TokenizerSpec,
     hf_hub_download: Callable[..., str],
@@ -594,108 +535,148 @@ def token_stream_sha256(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Count the repository's public calibration corpus with pinned open tokenizers.",
-    )
-    parser.add_argument("--json", action="store_true", help="emit structured JSON")
-    parser.add_argument(
-        "--list-corpus",
-        action="store_true",
-        help="list corpus files without downloading tokenizers",
-    )
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    if args.list_corpus:
-        print(
-            json.dumps({"revision": CORPUS_REVISION, "files": CORPUS_FILES}, indent=2)
-        )
-        return
-    dependencies = ("huggingface_hub", "tiktoken", "tokenizers")
-    if any(find_spec(dependency) is None for dependency in dependencies):
-        raise RuntimeError(
-            "run with: uv run --with 'huggingface-hub==1.26.0' --with 'tokenizers==0.22.2' "
-            "--with 'tiktoken==0.13.0'"
-        )
-    from huggingface_hub import hf_hub_download
-
-    texts = pinned_corpus()
-    rows = []
-    for spec in TOKENIZERS:
-        artifacts = [
-            check_artifact(member, hf_hub_download)
-            for member in (spec.representative, *spec.family_members)
-        ]
-        encode = load_encoder(spec, hf_hub_download)
-        if spec.token_stream_sha256 is not None:
-            stream_hash = token_stream_sha256(encode, texts)
-            if stream_hash != spec.token_stream_sha256:
-                raise RuntimeError(
-                    f"{spec.representative.repository} token stream changed: {stream_hash}"
-                )
-            for member in spec.family_members:
-                member_encode = load_encoder(
-                    TokenizerSpec(spec.label, member), hf_hub_download
-                )
-                member_hash = token_stream_sha256(member_encode, texts)
-                if member_hash != spec.token_stream_sha256:
-                    raise RuntimeError(
-                        f"{member.repository} token stream differs: {member_hash}"
-                    )
-        samples = {}
-        for name, text in texts.items():
-            tokens = len(encode(text))
-            samples[name] = {
-                "chars": len(text),
-                "tokens": tokens,
-                "charsPerToken": round(len(text) / tokens, 4),
-            }
-        row = {
-            "profile": spec.label,
-            "familyArtifacts": artifacts,
-            "samples": samples,
-            "text": count_summary(
-                samples, ["instructions-core", "instructions-design"]
-            ),
-            "session": count_summary(samples, ["session-code", "session-tests"]),
-        }
-        if spec.representative.filename == "tiktoken.model":
-            row["configurationSha256"] = KIMI_CONFIG_HASH
-        if spec.representative.bpe_sha256 is not None:
-            row["bpeSha256"] = spec.representative.bpe_sha256
-        if spec.token_stream_sha256 is not None:
-            row["tokenStreamSha256"] = spec.token_stream_sha256
-        rows.append(row)
-
-    result = {
-        "corpusVersion": "2026-08-05.1",
-        "corpusRevision": CORPUS_REVISION,
-        "corpusFiles": CORPUS_FILES,
-        "pythonVersion": sys.version.split()[0],
-        "dependencies": {
-            "huggingface-hub": version("huggingface-hub"),
-            "tiktoken": version("tiktoken"),
-            "tokenizers": version("tokenizers"),
-        },
-        "profiles": rows,
-    }
-    if args.json:
-        print(json.dumps(result, indent=2))
-        return
-    for row in rows:
-        print(
-            f"{row['profile']:<18} text ÷ {row['text']['recommendedDenominator']:.1f}"
-            f"  session ÷ {row['session']['recommendedDenominator']:.1f}"
-        )
-    print("Use --json for artifact hashes and per-corpus counts.")
-
-
 if __name__ == "__main__":
     try:
-        main()
+        parser = argparse.ArgumentParser(
+            description="Count the repository's public calibration corpus with pinned open tokenizers.",
+        )
+        parser.add_argument("--json", action="store_true", help="emit structured JSON")
+        parser.add_argument(
+            "--list-corpus",
+            action="store_true",
+            help="list corpus files without downloading tokenizers",
+        )
+        args = parser.parse_args()
+        if args.list_corpus:
+            print(
+                json.dumps({"revision": CORPUS_REVISION, "files": CORPUS_FILES}, indent=2)
+            )
+            raise SystemExit(0)
+        dependencies = ("huggingface_hub", "tiktoken", "tokenizers")
+        if any(find_spec(dependency) is None for dependency in dependencies):
+            raise RuntimeError(
+                "run with: uv run --with 'huggingface-hub==1.26.0' --with 'tokenizers==0.22.2' "
+                "--with 'tiktoken==0.13.0'"
+            )
+        from huggingface_hub import hf_hub_download
+
+        texts = pinned_corpus()
+        rows = []
+        for spec in TOKENIZERS:
+            artifacts = []
+            for member in (spec.representative, *spec.family_members):
+                artifact = hf_hub_download(member.repository, member.filename, revision=member.revision)
+                actual_hash = sha256(artifact)
+                if actual_hash != member.sha256:
+                    raise RuntimeError(f"{member.repository} artifact hash changed: {actual_hash}")
+                artifact_result = {
+                    "repository": member.repository,
+                    "revision": member.revision,
+                    "sha256": actual_hash,
+                }
+                if member.core_sha256 is not None:
+                    with open(artifact) as handle:
+                        model = json.load(handle)["model"]
+                    encoded = json.dumps(
+                        model, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                    ).encode()
+                    core_hash = hashlib.sha256(encoded).hexdigest()
+                    if core_hash != member.core_sha256:
+                        raise RuntimeError(
+                            f"{member.repository} tokenizer core hash changed: {core_hash}"
+                        )
+                    artifact_result["coreSha256"] = core_hash
+                if member.bpe_sha256 is not None:
+                    with open(artifact) as handle:
+                        model = json.load(handle)["model"]
+                    merges = [
+                        merge if isinstance(merge, list) else merge.split(" ", 1)
+                        for merge in model["merges"]
+                    ]
+                    encoded = json.dumps(
+                        {"vocab": model["vocab"], "merges": merges},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                    bpe_hash = hashlib.sha256(encoded).hexdigest()
+                    if bpe_hash != member.bpe_sha256:
+                        raise RuntimeError(
+                            f"{member.repository} tokenizer BPE hash changed: {bpe_hash}"
+                        )
+                if member.pattern_sha256 is not None:
+                    source = hf_hub_download(
+                        member.repository, "tokenization_kimi.py", revision=member.revision
+                    )
+                    pattern_hash = hashlib.sha256(extract_kimi_pattern(source).encode()).hexdigest()
+                    if pattern_hash != member.pattern_sha256:
+                        raise RuntimeError(
+                            f"{member.repository} tokenizer pattern changed: {pattern_hash}"
+                        )
+                    artifact_result["patternSha256"] = pattern_hash
+                artifacts.append(artifact_result)
+            encode = load_encoder(spec, hf_hub_download)
+            if spec.token_stream_sha256 is not None:
+                stream_hash = token_stream_sha256(encode, texts)
+                if stream_hash != spec.token_stream_sha256:
+                    raise RuntimeError(
+                        f"{spec.representative.repository} token stream changed: {stream_hash}"
+                    )
+                for member in spec.family_members:
+                    member_encode = load_encoder(
+                        TokenizerSpec(spec.label, member), hf_hub_download
+                    )
+                    member_hash = token_stream_sha256(member_encode, texts)
+                    if member_hash != spec.token_stream_sha256:
+                        raise RuntimeError(
+                            f"{member.repository} token stream differs: {member_hash}"
+                        )
+            samples = {}
+            for name, text in texts.items():
+                tokens = len(encode(text))
+                samples[name] = {
+                    "chars": len(text),
+                    "tokens": tokens,
+                    "charsPerToken": round(len(text) / tokens, 4),
+                }
+            row = {
+                "profile": spec.label,
+                "familyArtifacts": artifacts,
+                "samples": samples,
+                "text": count_summary(
+                    samples, ["instructions-core", "instructions-design"]
+                ),
+                "session": count_summary(samples, ["session-code", "session-tests"]),
+            }
+            if spec.representative.filename == "tiktoken.model":
+                row["configurationSha256"] = KIMI_CONFIG_HASH
+            if spec.representative.bpe_sha256 is not None:
+                row["bpeSha256"] = spec.representative.bpe_sha256
+            if spec.token_stream_sha256 is not None:
+                row["tokenStreamSha256"] = spec.token_stream_sha256
+            rows.append(row)
+
+        result = {
+            "corpusVersion": "2026-08-05.1",
+            "corpusRevision": CORPUS_REVISION,
+            "corpusFiles": CORPUS_FILES,
+            "pythonVersion": sys.version.split()[0],
+            "dependencies": {
+                "huggingface-hub": version("huggingface-hub"),
+                "tiktoken": version("tiktoken"),
+                "tokenizers": version("tokenizers"),
+            },
+            "profiles": rows,
+        }
+        if args.json:
+            print(json.dumps(result, indent=2))
+            raise SystemExit(0)
+        for row in rows:
+            print(
+                f"{row['profile']:<18} text ÷ {row['text']['recommendedDenominator']:.1f}"
+                f"  session ÷ {row['session']['recommendedDenominator']:.1f}"
+            )
+        print("Use --json for artifact hashes and per-corpus counts.")
     except (
         OSError,
         RuntimeError,
