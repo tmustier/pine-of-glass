@@ -10,8 +10,7 @@ import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import type { AssistantRowDataLike, ToolRowLike } from "../../extensions/_lib/chat.ts";
 import piTraceline, { internals } from "../../extensions/pi-traceline/index.ts";
-import { SUMMARY_ENTRY } from "../../extensions/pi-traceline/summaries.ts";
-import { SUMMARY_USAGE_ENTRY } from "../../extensions/pi-traceline/summary-usage.ts";
+import { SUMMARY_ENTRY, SUMMARY_USAGE_ENTRY } from "../../extensions/pi-traceline/summary-usage.ts";
 import { isJsonObject } from "../../extensions/_lib/boundary.ts";
 import { installThinkingPreviews } from "../../extensions/pi-traceline/thinking-preview.ts";
 import { assistantMessage } from "../helpers.ts";
@@ -40,7 +39,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
 
 async function hosted(project: IsolatedProject, asked: Asked[][], check: (host: HostedExtension) => Promise<void>, reply?: string | Error, sessionManager?: HostedExtension["session"]["sessionManager"]) {
   const host = await hostExtension((pi) => {
-    summaryModel(asked, reply)(pi);
+    summaryModel(pi, asked, reply);
     piTraceline(pi);
   }, { project, sessionManager });
   try {
@@ -174,7 +173,7 @@ test("a late reply stores no gist or reported usage and leaves its original requ
     project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
     const asked: Asked[][] = [];
     const host = await hostExtension((pi) => {
-      summaryModel(asked, undefined, 300)(pi);
+      summaryModel(pi, asked, undefined, 300);
       piTraceline(pi);
     }, { project });
     lines(bash(LONG, "ok"));

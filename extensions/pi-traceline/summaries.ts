@@ -7,7 +7,6 @@ import { isJsonObject } from "../_lib/boundary.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { summaryCostStatus, SUMMARY_ENTRY, SUMMARY_USAGE_ENTRY, type SummaryUsageRecord } from "./summary-usage.ts";
 
-export { SUMMARY_ENTRY, SUMMARY_USAGE_ENTRY } from "./summary-usage.ts";
 export type GistKind = "command" | "thinking";
 const DEFAULT_MODEL = "openai-codex/gpt-6-luna";
 // agent-default (not a user rule): 2026-10-18. Batches of up to 8 items, gathered for

@@ -15,8 +15,7 @@ export type SummaryUsageRecord = { requestId: string; model: string; items: numb
 /** Restore request costs from the whole session, without treating missing usage as zero. */
 export function summaryCostStatus(entries: readonly SessionEntry[]): string | undefined {
   const requests = new Map<string, number | undefined>();
-  let cost = 0;
-  let reported = false;
+  let cost: number | undefined;
   let unknown = false;
   for (const entry of entries) {
     if (entry.type !== "custom" || !isJsonObject(entry.data)) continue;
@@ -36,8 +35,7 @@ export function summaryCostStatus(entries: readonly SessionEntry[]): string | un
         // Their sum is known, but cannot prove the session's full summary cost.
         unknown = true;
         if (typeof data.cost === "number" && Number.isFinite(data.cost) && data.cost >= 0) {
-          cost += data.cost;
-          reported = true;
+          cost = (cost ?? 0) + data.cost;
         }
       }
     }
@@ -45,12 +43,9 @@ export function summaryCostStatus(entries: readonly SessionEntry[]): string | un
   if (requests.size === 0 && !unknown) return undefined;
   for (const total of requests.values()) {
     if (total === undefined) unknown = true;
-    else {
-      cost += total;
-      reported = true;
-    }
+    else cost = (cost ?? 0) + total;
   }
-  if (!reported) return "summaries cost unknown (extra)";
+  if (cost === undefined) return "summaries cost unknown (extra)";
   let amount = formatUsd(cost);
   // Keep a positive charge visible below the family money grammar's precision.
   if (cost > 0 && amount === "$0.000") amount = "<$0.001";

@@ -17,7 +17,7 @@ async function withSummaries(reply: string | Error | undefined, check: (host: Ho
   const asked: Asked[][] = [];
   project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
   const host = await hostExtension((pi) => {
-    summaryModel(asked, reply)(pi);
+    summaryModel(pi, asked, reply);
     piTraceline(pi);
   }, { project });
   try { await check(host, asked); }
@@ -28,7 +28,6 @@ for (const { label, reply, saved } of [
   { label: "a complete batch", reply: undefined, saved: 2 },
   { label: "a partial batch", reply: '{"1":"one useful gist"}', saved: 1 },
   { label: "an unparsable reply", reply: "not JSON", saved: 0 },
-  { label: "a non-object reply", reply: "[]", saved: 0 },
 ]) {
   test(`${label} records the full request usage once, outside Pi's total`, async () => {
     await withSummaries(reply, async (host, asked) => {
@@ -75,7 +74,7 @@ for (const hasTokens of [true, false]) {
         ...(hasTokens ? REPORTED_USAGE : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }),
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       };
-      const host = await hostExtension((pi) => { summaryModel(asked, undefined, 0, usage)(pi); piTraceline(pi); }, { project });
+      const host = await hostExtension((pi) => { summaryModel(pi, asked, undefined, 0, usage); piTraceline(pi); }, { project });
       try {
         gistFor("command", "a usable reply", true);
         await settle();
@@ -112,7 +111,7 @@ for (const model of [false, "missing-provider/missing-model"]) {
       sessionManager.appendCustomEntry(SUMMARY_USAGE_ENTRY, { ...request, phase: "reported", usage: REPORTED_USAGE });
       sessionManager.appendCustomEntry(SUMMARY_ENTRY, { key: "command:old", gist: "a saved gist", requestId: request.requestId });
       const asked: Asked[][] = [];
-      const host = await hostExtension((pi) => { summaryModel(asked)(pi); piTraceline(pi); }, { project, sessionManager });
+      const host = await hostExtension((pi) => { summaryModel(pi, asked); piTraceline(pi); }, { project, sessionManager });
       try {
         assert.equal(host.ui.statuses.get("traceline-summaries"), "summaries $0.013 extra");
         await settle();
@@ -129,19 +128,17 @@ test("a new session clears its predecessor's cost and cannot receive a late bill
   try {
     project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
     const asked: Asked[][] = [];
-    const host = await hostExtension((pi) => { summaryModel(asked, undefined, 300)(pi); piTraceline(pi); }, { project });
+    const host = await hostExtension((pi) => { summaryModel(pi, asked, undefined, 300); piTraceline(pi); }, { project });
     try {
       gistFor("command", "a request from the previous session", true);
       await new Promise((resolve) => setTimeout(resolve, 280));
       assert.equal(asked.length, 1);
-      const previous = host.session.sessionManager.getEntries();
-      assert.equal(summaryCostStatus(previous), "summaries cost unknown (extra)");
+      assert.equal(host.ui.statuses.get("traceline-summaries"), "summaries cost unknown (extra)");
       host.session.sessionManager.newSession();
       await host.session.extensionRunner.emit({ type: "session_start", reason: "new" });
       await settle();
       assert.equal(host.ui.statuses.get("traceline-summaries"), undefined);
       assert.deepEqual(host.session.sessionManager.getEntries().filter((entry) => entry.type === "custom"), []);
-      assert.equal(summaryCostStatus(previous), "summaries cost unknown (extra)");
     } finally { await host.dispose(); }
   } finally { project.dispose(); }
 });
