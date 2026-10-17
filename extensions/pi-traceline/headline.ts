@@ -51,9 +51,10 @@ const DELETION = /^(?:deleted|removed)\b/;
 export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], available: number): string {
   // A fact longer than its cap alone can never show, so it goes before any choice:
   // the drop order below must not spend a fact that fits on one that never will.
-  const fits = (verb: string, datum: string, tone: RecordCellData["tone"]) =>
-    `${verb} ${datum}`.length <= Math.floor(available * (tone === "error" ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
-  const cells = all.map((cell) => ({ ...cell, data: cell.data.filter((datum) => fits(cell.verb, datum, cell.tone)) })).filter((cell) => cell.data.length > 0);
+  const cells = all.map((cell) => {
+    const maxWidth = Math.floor(available * (cell.tone === "error" ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
+    return { ...cell, data: cell.data.filter((datum) => `${cell.verb} ${datum}`.length <= maxWidth) };
+  }).filter((cell) => cell.data.length > 0);
   const lone = () => cells.length === 1 && cells[0]!.data.length === 1;
   const cap = () => Math.floor(available * (lone() && cells[0]!.tone === "error" ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
   const width = () => cells.map(recordCellText).join(SEP).length;
