@@ -7,6 +7,13 @@
   because the remote ref may be a tag. A crowded headline drops the tidy-up first, so
   `committed a4f21c9 · deleted branch docs` keeps the commit, and a dim `+1` says what
   it left out. A fact too long to show no longer takes a shorter one down with it.
+- An assignment that runs a command crowns that command: `PR_URL=$(gh pr create …)` bolds
+  `gh`, not `pr`, and `SHA=$(git rev-parse HEAD)` bolds `git`, not `rev-parse`. A wrapped
+  row keeps a command with its assignments (`PR_URL=$(gh pr create …)`, `FOO=1 npm test`)
+  instead of ending a line on `PR_URL=$(`; a cut command starts at its own word, so a long
+  run of `FOO=1 BAR=2` never hides it. `TMP=$(mktemp -d)` counts as set-up, like `cd`.
+- `scripts/dev/bash-corpus/report.ts` typechecks again, and `npm run typecheck` now covers
+  the corpus scripts.
 - The commands behind a headline stay readable. A command that earned a record is
   never cut below 24 columns (or shown whole when shorter), the other commands give
   way first, and a row wraps past a long command to reach it. A command cut to fit

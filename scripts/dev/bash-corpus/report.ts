@@ -16,6 +16,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { internals } from "../../../extensions/pi-traceline/index.ts";
 
 const { inkBashBody, flattenInvocationLines, stripAnsi, setTracelineThemeGetter } = internals;
@@ -36,11 +37,15 @@ const seed = Number(argValue("--seed", "7"));
 // Marker theme (same shape as the test suite's): text=255 makes crowns parseable
 // out of rendered ANSI regardless of which renderer version produced them.
 const THEME_CODES: Record<string, number> = { dim: 245, muted: 246, text: 255, success: 41, warning: 220, error: 196, accent: 214 };
-setTracelineThemeGetter(() => ({
+const markerTheme = {
   fg: (color: string, text: string) => `\x1b[38;5;${THEME_CODES[color] ?? 250}m${text}\x1b[39m`,
   bold: (text: string) => text,
   bg: (_color: string, text: string) => text,
-}));
+} satisfies Pick<Theme, "fg" | "bold" | "bg">;
+// SAFETY: this script renders only through inkBashBody, whose family ink reads theme.fg
+// and theme.bold and nothing else (extensions/_lib/style.ts); the rest of Theme is never
+// touched. The test suite renders with the same partial theme (tests/traceline/one-line.test.ts).
+setTracelineThemeGetter(() => markerTheme as Theme);
 
 const CROWN = /\x1b\[38;5;255m\x1b\[1m([^\x1b]*)\x1b\[22m/g;
 
