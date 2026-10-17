@@ -127,6 +127,28 @@ test("a cut command gets one ≈ line once settled, asked for in one batch; the 
   }
 });
 
+test("a cut wide-character command earns a gist by terminal columns", async () => {
+  const project = new IsolatedProject();
+  try {
+    project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
+    const asked: Asked[][] = [];
+    const command = `echo '${"界".repeat(20)}'`;
+    const cut = bash(command, "ok");
+    const fits = bash(`echo '${"界".repeat(8)}'`, "ok");
+    await hosted(project, asked, async () => {
+      const before = lines(cut, 40);
+      assert.match(before[1]!, /…/, "the wide command is visibly cut");
+      lines(fits, 40);
+      await settle();
+      assert.deepEqual(asked, [[{ kind: "command", text: command }]]);
+      assert.deepEqual(lines(cut, 40), [...before, "  ▏   ≈ gist 1"]);
+      assert.ok(!lines(fits, 40).some((line) => line.includes("≈")));
+    });
+  } finally {
+    project.dispose();
+  }
+});
+
 test("a replayed session reads its gists back and asks for nothing", async () => {
   const project = new IsolatedProject();
   try {

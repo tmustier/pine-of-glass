@@ -3,6 +3,7 @@
 // overflows its budget fitted by command or wrapped at command boundaries. Shared by the
 // top-level bash row (index.ts) and the composed ledger (ledger.ts).
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { ink, type Tone } from "../_lib/style.ts";
 import { bashCrownedHeads, type BashHead } from "./bash-crowns.ts";
 import { fitCompoundCommand, wrapCompoundCommand, type FitPiece } from "./compound-fit.ts";
@@ -51,5 +52,5 @@ export function fitBashLines(theme: Theme | undefined, tone: Tone, body: string,
     ? wrapCompoundCommand(body, crowns, budget, contBudget)
     : undefined;
   const [first, ...continuations] = (wrapped ?? [fit?.pieces ?? whole]).map((pieces) => inkPieces(theme, tone, body, crowns, pieces));
-  return { first: first!, continuations, overflow: body.length > budget };
+  return { first: first!, continuations, overflow: visibleWidth(body) > budget };
 }

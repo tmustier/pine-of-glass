@@ -282,7 +282,7 @@
     "files": {
       "extensions/pi-cachemire/index.ts": 694,
       "extensions/pi-contextimate/index.ts": 847,
-      "extensions/pi-traceline/index.ts": 1402,
+      "extensions/pi-traceline/index.ts": 1401,
       "tests/traceline/one-line.test.ts": 771
     }
   },
