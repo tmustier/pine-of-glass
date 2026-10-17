@@ -5,8 +5,8 @@
 // an extension-registered provider can transform it afterwards (Pi documents this), so
 // the billed verdict outranks both the contract and the send-time payload.
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isJsonObject, type JsonFields, nonNegativeNumberValue, stringValue } from "../_lib/boundary.ts";
+import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { nonNegativeNumberValue } from "../_lib/boundary.ts";
 import type { CallClassification, ThinkingEvidence, UsageLike } from "./types.ts";
 
 type RouteIdentity = {
@@ -66,7 +66,7 @@ export function wireThinkingEffort(
 ): string {
 	if (level === "off") return "off";
 	const mapped = map?.[level];
-	if (typeof mapped === "string") return mapped;
+	if (mapped != null) return mapped;
 	if (level === "minimal" || level === "low") return "low";
 	if (level === "medium" || level === "high") return level;
 	return "high";
@@ -158,35 +158,34 @@ const EFFORT_MEMORY_MS = 24 * 60 * 60 * 1000;
  */
 export function restoreBilledThinking(
 	ledger: ThinkingEvidenceLedger,
-	entries: readonly unknown[],
+	entries: readonly SessionEntry[],
 	leafId: string | null,
 	model: ExtensionContext["model"],
 	now: number,
 ): string | undefined {
 	if (!model || leafId === null) return undefined;
 	const route: RouteIdentity = { provider: model.provider, model: model.id, api: model.api };
-	const byId = new Map<string, JsonFields>();
-	for (const entry of entries) {
-		if (isJsonObject(entry) && typeof entry.id === "string") byId.set(entry.id, entry);
-	}
-	const path: JsonFields[] = [];
-	for (let id: string | undefined = leafId; id !== undefined; id = stringValue(path.at(-1)?.parentId)) {
+	const byId = new Map(entries.map((entry) => [entry.id, entry]));
+	const path: SessionEntry[] = [];
+	for (let id: string | null = leafId; id !== null;) {
 		const entry = byId.get(id);
 		if (!entry) break;
 		path.push(entry);
+		id = entry.parentId;
 	}
 	const record = routeRecord(ledger, route);
 	let level: string | undefined;
 	let lastBilledLevel: string | undefined;
 	for (const entry of path.reverse()) {
 		if (entry.type === "thinking_level_change") {
-			level = stringValue(entry.thinkingLevel);
+			level = entry.thinkingLevel;
 			continue;
 		}
-		if (entry.type !== "message" || !isJsonObject(entry.message) || entry.message.role !== "assistant") continue;
+		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
 		lastBilledLevel = level;
 		const { message } = entry;
 		if (message.provider !== route.provider || message.api !== route.api || message.model !== route.model) continue;
+		// Legacy session messages can lack the embedded timestamp, even after SDK loading.
 		const at = nonNegativeNumberValue(message.timestamp);
 		if (level === undefined || at === undefined || now - at > EFFORT_MEMORY_MS) continue;
 		record.billedEfforts.add(wireThinkingEffort(model.thinkingLevelMap, level));

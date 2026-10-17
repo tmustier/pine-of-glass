@@ -1,18 +1,8 @@
-import assert from "node:assert/strict";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Usage } from "@earendil-works/pi-ai";
+import { classifyCall } from "./classify.ts";
 import { sessionEntryAt } from "./lineage-persistence.ts";
-import type { CallCause, CallClassification, CallRecord, UsageLike } from "./types.ts";
-
-type RestoreClassifier = (args: {
-  isFirst: boolean;
-  gapMs?: number;
-  usage: UsageLike;
-  expectedRead: number;
-  modelSwitched?: boolean;
-  compacted?: boolean;
-  fingerprintCause?: CallCause;
-}) => CallClassification;
+import type { CallCause, CallRecord } from "./types.ts";
 
 function identityChanged(a: string | undefined, b: string | undefined): boolean {
   return a !== undefined && b !== undefined && a !== b;
@@ -29,7 +19,6 @@ type PersistedCall = {
 
 export function restoreBranchRecords(
   entries: readonly SessionEntry[],
-  classify: RestoreClassifier,
 ): CallRecord[] {
   const records: CallRecord[] = [];
   let previousAt: number | undefined;
@@ -71,21 +60,17 @@ export function restoreBranchRecords(
       ? previousIdentity.api
       : undefined;
     const identity = { provider: call.provider, model: call.model, api: call.api ?? inheritedApi };
-    const switched = previousIdentity !== undefined && (
+    const fingerprintCause: CallCause | undefined = previousIdentity !== undefined && (
       identityChanged(previousIdentity.provider, identity.provider) ||
       identityChanged(previousIdentity.model, identity.model) ||
       identityChanged(previousIdentity.api, identity.api)
-    );
+    ) ? {
+      kind: "model",
+      detail: `model switched ${previousIdentity.model ?? "previous model"} \u2192 ${identity.model ?? "current model"}`,
+    } : undefined;
+    const switched = fingerprintCause !== undefined;
     const gapMs = previousAt === undefined ? undefined : call.at - previousAt;
-    let fingerprintCause: CallCause | undefined;
-    if (switched) {
-      assert(previousIdentity);
-      fingerprintCause = {
-        kind: "model",
-        detail: `model switched ${previousIdentity.model ?? "previous model"} \u2192 ${identity.model ?? "current model"}`,
-      };
-    }
-    const classification = classify({
+    const classification = classifyCall({
       isFirst: records.length === 0,
       gapMs,
       usage,
@@ -95,7 +80,7 @@ export function restoreBranchRecords(
       fingerprintCause,
     });
     if (
-      classification.cause && classification.kind !== "cold" && classification.kind !== "hit" &&
+      classification.kind !== "cold" && classification.kind !== "hit" &&
       classification.cause.kind !== "model" && classification.cause.kind !== "compaction"
     ) {
       classification.cause = { kind: "restored", detail: "restored session (cause unknown)" };

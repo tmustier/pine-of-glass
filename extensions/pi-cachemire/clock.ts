@@ -1,15 +1,10 @@
 import { compactCount, formatDuration, formatUsd } from "../_lib/fmt.ts";
-import { contractExpiryMs, pastWindow } from "./classify.ts";
+import { contractExpiryMs, pastWindow, withinWarmPromise } from "./classify.ts";
 import type { SwitchForecast } from "./forecast.ts";
 import type { CacheWindow } from "./types.ts";
 
 export const UNKNOWN_WINDOW: CacheWindow = { kind: "unknown" };
 const EXACT_WARNING_MAX_MS = 5 * 60 * 1000;
-
-export function withinWarmHorizon(window: CacheWindow | undefined, sinceMs: number): boolean {
-  if (window?.kind === "contract") return sinceMs < contractExpiryMs(window);
-  return (window?.kind === "minimum" || window?.kind === "bounded") && sinceMs < window.minMs;
-}
 
 function warningLeadMs(window: Extract<CacheWindow, { kind: "contract" }>): number {
   return Math.min(EXACT_WARNING_MAX_MS, window.ttlMs * 0.2);
@@ -55,7 +50,7 @@ export function cacheClock(input: ClockInput): ClockState {
     if (forecast?.prior) {
       const prior = forecast.prior;
       const priorAge = input.now - prior.refreshedAt;
-      if (withinWarmHorizon(prior.window, priorAge)) {
+      if (withinWarmPromise(prior.window, priorAge)) {
         return {
           phase: "warm-unknown",
           text: `cache may still be warm \u00b7 switched back to ${forecast.targetId} \u00b7 next send confirms`,

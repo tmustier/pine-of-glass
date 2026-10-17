@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals, type CallRecord } from "../../extensions/pi-cachemire/index.ts";
-
-const { renderHeldLine, renderMissLine } = internals;
+import { renderHeldLine, renderMissLine } from "../../extensions/pi-cachemire/render.ts";
+import type { CallRecord } from "../../extensions/pi-cachemire/types.ts";
 
 const COMPACTED: CallRecord = {
   index: 5,

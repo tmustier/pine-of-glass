@@ -1,9 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-cachemire/index.ts";
-
-const { fingerprintPayload, diffFingerprints, classifyCall } = internals;
+import { fingerprintPayload, diffFingerprints, classifyCall } from "../../extensions/pi-cachemire/classify.ts";
 
 const MIN = 60_000;
 

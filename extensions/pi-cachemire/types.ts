@@ -37,10 +37,9 @@ export type CauseKind =
 
 export interface CallCause { kind: CauseKind; detail: string }
 
-export interface CallClassification {
-  kind: "cold" | "hit" | "partial" | "miss";
-  cause?: CallCause;
-}
+export type CallClassification =
+  | { kind: "hit"; cause?: never }
+  | { kind: "cold" | "partial" | "miss"; cause: CallCause };
 
 /** Billed verdict on one effort-to-effort change: the usage, not the keystroke, decides. */
 export interface ThinkingEvidence {
@@ -65,7 +64,7 @@ export interface CallRecord {
   /** Usage arrived through a different model identity than the tracked expectation:
    * expectedRead is denominated in the previous model's tokenizer and must never be
    * composed with this call's counts (design language §7). */
-  switched?: boolean;
+  switched?: true;
   postCompaction?: { modelSwitched: boolean };
   /** This call billed an effort change on the same route as the previous one. */
   thinkingChange?: ThinkingEvidence;
@@ -73,7 +72,7 @@ export interface CallRecord {
   uncachedUsd?: number;
   /** Pi's persisted background cache refresh rather than an agent-loop response. */
   warm?: true;
-  restored?: boolean;
+  restored?: true;
 }
 
 export interface RunAggregate {

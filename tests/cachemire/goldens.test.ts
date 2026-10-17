@@ -5,15 +5,12 @@
 // Regenerate with UPDATE_GOLDENS=1 npm test and review the diff like code.
 import { test } from "node:test";
 
-import { internals } from "../../extensions/pi-cachemire/index.ts";
-import type { CallRecord } from "../../extensions/pi-cachemire/index.ts";
+import { renderLedger, renderRunSummary, renderMissLine, renderHeldLine, renderBreakingLine } from "../../extensions/pi-cachemire/render.ts";
+import { cacheClock } from "../../extensions/pi-cachemire/clock.ts";
+import type { CallRecord } from "../../extensions/pi-cachemire/types.ts";
 import { CEREBRAS_BOUNDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { expectGolden } from "../helpers.ts";
-
-const {
-  renderLedger, renderRunSummary, renderMissLine, renderHeldLine, renderBreakingLine, cacheClock,
-} = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
 const MIN = 60_000;

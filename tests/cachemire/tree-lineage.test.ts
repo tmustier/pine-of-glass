@@ -3,19 +3,11 @@ import assert from "node:assert/strict";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, Message, Usage } from "@earendil-works/pi-ai";
 
-import { internals } from "../../extensions/pi-cachemire/index.ts";
+import { diffFingerprints, fingerprintPayload } from "../../extensions/pi-cachemire/classify.ts";
+import { predictBreak } from "../../extensions/pi-cachemire/economics.ts";
+import { findBranchBaseline, hydrateLineageResponseIds, resolveCacheLineage, restoreLineageSnapshots } from "../../extensions/pi-cachemire/lineage.ts";
 import { cacheStateForLineage } from "../../extensions/pi-cachemire/lineage.ts";
 import type { CacheLineageSnapshot } from "../../extensions/pi-cachemire/types.ts";
-
-const {
-  diffFingerprints,
-  findBranchBaseline,
-  fingerprintPayload,
-  hydrateLineageResponseIds,
-  predictBreak,
-  resolveCacheLineage,
-  restoreLineageSnapshots,
-} = internals;
 
 function usage(input: number, cacheRead: number, cacheWrite: number, output = 10): Usage {
   return {

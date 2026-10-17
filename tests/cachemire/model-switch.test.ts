@@ -4,16 +4,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-cachemire/index.ts";
+import { cacheClock, nextClockUpdateMs } from "../../extensions/pi-cachemire/clock.ts";
+import { predictBreak } from "../../extensions/pi-cachemire/economics.ts";
+import { renderBreakingLine } from "../../extensions/pi-cachemire/render.ts";
+import { restoreLineageSnapshots } from "../../extensions/pi-cachemire/lineage.ts";
 import { computeSwitchForecast, type SwitchTarget } from "../../extensions/pi-cachemire/forecast.ts";
 import { CEREBRAS_BOUNDED_WINDOW, OPENAI_MINIMUM_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
 import { VERSION, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { foreignThinkingFor } from "../../extensions/_lib/forecast.ts";
-
-const {
-  cacheClock, nextClockUpdateMs, predictBreak, renderBreakingLine,
-  restoreLineageSnapshots, withinWarmHorizon,
-} = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
 const UNKNOWN = { kind: "unknown" } as const;
@@ -105,21 +103,6 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
 
   const compacted = cacheClock({ now: MIN, lastRefreshedAt: 0, window: CONTRACT_5M, modelSwitched: true, compacted: true, switchForecast: anthropicForecast });
   assert.equal(compacted.text, "cache stale after compaction \u00b7 next send may re-write changed history");
-});
-
-test("warm horizon requires a contract or minimum", () => {
-  assert.equal(withinWarmHorizon(CONTRACT_5M, 4 * MIN), true);
-  assert.equal(withinWarmHorizon(CONTRACT_5M, 5 * MIN), false, "the exact TTL boundary is expired");
-  assert.equal(withinWarmHorizon(OPENAI_MINIMUM_WINDOW, 29 * MIN), true);
-  assert.equal(withinWarmHorizon(OPENAI_MINIMUM_WINDOW, 30 * MIN), false, "the minimum has ended");
-  assert.equal(withinWarmHorizon(CEREBRAS_BOUNDED_WINDOW, 5 * MIN - 1), true);
-  assert.equal(withinWarmHorizon(CEREBRAS_BOUNDED_WINDOW, 5 * MIN), false);
-  assert.equal(
-    withinWarmHorizon({ kind: "maximum", maxMs: 24 * 60 * MIN }, 4 * MIN),
-    false,
-    "a maximum does not promise minimum warmth",
-  );
-  assert.equal(withinWarmHorizon(undefined, 1 * MIN), false, "unknown retention must not guess at warmth");
 });
 
 test("break prediction: model switch sized in the target currency, or silent when warm", () => {

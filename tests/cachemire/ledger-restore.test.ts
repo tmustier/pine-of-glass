@@ -6,17 +6,12 @@ import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { Usage } from "@earendil-works/pi-ai";
 
-import { classifyCall } from "../../extensions/pi-cachemire/classify.ts";
 import { restoreBranchRecords } from "../../extensions/pi-cachemire/ledger.ts";
 import { restoreLineageSnapshots } from "../../extensions/pi-cachemire/lineage-persistence.ts";
 import { renderLedger } from "../../extensions/pi-cachemire/render.ts";
 import { assistantMessage } from "../helpers.ts";
 
 const zeroCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
-
-function restore(manager: SessionManager) {
-  return restoreBranchRecords(manager.getBranch(), classifyCall);
-}
 
 test("resume uses the session-entry time when a legacy message has no embedded timestamp", () => {
   const dir = mkdtempSync(join(tmpdir(), "cachemire-legacy-time-"));
@@ -39,7 +34,7 @@ test("resume uses the session-entry time when a legacy message has no embedded t
   writeFileSync(path, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
   try {
     const manager = SessionManager.open(path);
-    assert.equal(restore(manager)[0]!.at, Date.parse(at));
+    assert.equal(restoreBranchRecords(manager.getBranch())[0]!.at, Date.parse(at));
     assert.equal(restoreLineageSnapshots(manager.getEntries())[0]!.responseAt, Date.parse(at));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -70,7 +65,7 @@ test("ledger restore from a continued session's assistant messages", () => {
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: zeroCost },
   }));
 
-  const records = restore(manager);
+  const records = restoreBranchRecords(manager.getBranch());
   assert.equal(records.length, 2);
   assert.equal(records[0]!.classification.kind, "cold");
   assert.equal(records[1]!.classification.kind, "hit");
@@ -95,7 +90,7 @@ test("ledger restore across a model switch classifies in the new model's own cur
     input: 100, output: 400, cacheRead: 0, cacheWrite: 21_000, totalTokens: 21_500, cost,
   });
 
-  const records = restore(manager);
+  const records = restoreBranchRecords(manager.getBranch());
   assert.equal(records[1]!.classification.kind, "hit");
   assert.equal(records[1]!.switched, true);
   assert.equal(records[2]!.classification.kind, "miss");
@@ -114,7 +109,7 @@ test("ledger restore includes persisted cache warming usage", () => {
     input: 100, output: 1, cacheRead: 99_900, cacheWrite: 0, totalTokens: 100_001, cost,
   });
 
-  const records = restore(manager);
+  const records = restoreBranchRecords(manager.getBranch());
   assert.equal(records.length, 2);
   assert.equal(records[1]!.warm, true);
   assert.equal(records[1]!.classification.kind, "hit");
@@ -138,7 +133,7 @@ test("ledger restore preserves a compaction boundary on the next billed call", (
     usage: { input: 10_000, output: 20, cacheRead: 20_000, cacheWrite: 70_000, totalTokens: 100_020, cost },
   }));
 
-  const records = restore(manager);
+  const records = restoreBranchRecords(manager.getBranch());
   assert.equal(records[1]!.classification.cause?.kind, "compaction");
   assert.deepEqual(records[1]!.postCompaction, { modelSwitched: false });
   assert.match(renderLedger(records).join("\n"), /compaction rewrote history/);

@@ -1,348 +1,161 @@
-// Model-switch event flow (issue #57): the real extension wired to a probe pi,
-// driven through session_start, model_select, before_provider_request and
-// message_end; asserts on the widget and notice strings users actually see.
+// SDK event flow: observe the widget and notices, not a hand-wired ExtensionAPI.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { Model } from "@earendil-works/pi-ai";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { ANTHROPIC, OPENAI, billed, finish, hostCachemire, payload, request } from "./event-fixtures.ts";
 
-import piCachemire from "../../extensions/pi-cachemire/index.ts";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-function usage(input: number, cacheRead: number, cacheWrite: number) {
-  return { input, output: 10, cacheRead, cacheWrite, totalTokens: input + cacheRead + cacheWrite + 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-}
-
-type Handler = (...args: unknown[]) => unknown;
-
-function extensionProbe(): { handlers: Map<string, Handler[]> } {
-  const handlers = new Map<string, Handler[]>();
-  const pi = {
-    on(event: string, handler: Handler): void {
-      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-    },
-    registerCommand(): void {},
-    registerProvider(): void {},
-    unregisterProvider(): void {},
-    appendEntry(): void {},
-    getThinkingLevel: () => "off",
-    getActiveTools: () => [],
-    getAllTools: () => [],
-  } as unknown as ExtensionAPI;
-  piCachemire(pi);
-  return { handlers };
-}
-
-async function fire(probe: ReturnType<typeof extensionProbe>, event: string, ...args: unknown[]): Promise<void> {
-  for (const handler of probe.handlers.get(event) ?? []) await handler(...args);
-}
-
-async function request(probe: ReturnType<typeof extensionProbe>, event: unknown, ctx: unknown): Promise<void> {
-  await fire(probe, "context", { type: "context", messages: [] }, ctx);
-  await fire(probe, "before_provider_request", event, ctx);
-}
-
-function billedAssistant(model: string, api: string, prompt: number, userChars: number) {
-  return [
-    { type: "message", id: "u1", parentId: null, timestamp: "2026-07-01T10:00:00.000Z", message: { role: "user", content: "q".repeat(userChars), timestamp: 1_000 } },
-    { type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-01T10:00:05.000Z", message: {
-      role: "assistant", content: [{ type: "text", text: "answer" }], provider: "anthropic", api, model,
-      stopReason: "stop", timestamp: Date.now(), usage: usage(2, prompt - 2, 0),
-    } },
-  ];
-}
-
-function probeContext(entries: unknown[], api: string, notifications: string[], widgets: string[]) {
-  return {
-    hasUI: true,
-    ui: {
-      theme: undefined,
-      setWidget(key: string, widget?: unknown): void {
-        if (key !== "pi-cachemire" || typeof widget !== "function") return;
-        let component: { render(width: number): string[] };
-        const tui = { requestRender: () => widgets.push(component.render(200).join("\n")) };
-        component = widget(tui);
-        widgets.push(component.render(200).join("\n"));
-      },
-      notify(text: string): void {
-        notifications.push(text);
-      },
-    },
-    model: {
-      id: "claude-opus-4-8", provider: "anthropic", api, reasoning: false, contextWindow: 200_000,
-      cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
-    },
-    modelRegistry: {
-      getRegisteredNativeProvider: () => undefined,
-      getRegisteredProviderConfig: () => undefined,
-    },
-    sessionManager: {
-      getEntries: () => entries,
-      getBranch: () => entries,
-      getLeafId: () => {
-        const last = entries.at(-1);
-        return typeof last === "object" && last !== null && "id" in last && typeof last.id === "string" ? last.id : null;
-      },
-    },
-    getSystemPrompt: () => "",
-  };
-}
-
-const ANTHROPIC_PAYLOAD = {
-  model: "claude-opus-4-8",
-  system: [{ type: "text", text: "fixture", cache_control: { type: "ephemeral" } }],
-  messages: [{ role: "user", content: [{ type: "text", text: "next" }] }],
+const CODEX: Model<"openai-codex-responses"> = {
+  ...OPENAI, id: "gpt-6-astra", name: "GPT-6 Astra", provider: "openai-codex", api: "openai-codex-responses",
+  baseUrl: "https://chatgpt.com/backend-api",
 };
 
-test("event flow: a healthy first send and an abort both stay silent", async () => {
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const probe = extensionProbe();
-  const ctx = probeContext([], "anthropic-messages", notifications, widgets);
+function restoredSession(model: Pick<Model<string>, "provider" | "id" | "api"> = ANTHROPIC, prompt = 80_000, userChars = 200): SessionManager {
+  const manager = SessionManager.inMemory(process.cwd());
+  manager.appendMessage({ role: "user", content: "q".repeat(userChars), timestamp: Date.now() });
+  manager.appendMessage(billed(model, 2, prompt - 2));
+  return manager;
+}
 
-  await fire(probe, "session_start", {}, ctx);
+test("a healthy first send and an abort both stay silent", async () => {
+  const host = await hostCachemire();
   try {
-    await request(probe, { payload: ANTHROPIC_PAYLOAD }, ctx);
-    assert.equal(widgets.at(-1), "", "a healthy cache must not show ambient status");
-    await fire(probe, "agent_end", {}, ctx);
-    assert.equal(widgets.at(-1), "", "an abort without usage must not leave a fictitious warning");
+    await request(host, payload(["next"]));
+    assert.deepEqual(host.ui.widgetLines("pi-cachemire"), []);
+    await host.session.extensionRunner.emit({ type: "agent_end", messages: [] });
+    assert.deepEqual(host.ui.widgetLines("pi-cachemire"), []);
+    assert.deepEqual(host.ui.notifications, []);
   } finally {
-    await fire(probe, "session_shutdown", {});
+    await host.dispose();
   }
 });
 
-test("event flow: restored GPT-6 Astra Codex reaches unknown at its 30m minimum", async (t) => {
-  const startedAt = Date.UTC(2026, 8, 8, 12);
-  const now = startedAt + 30 * 60_000;
+test("restored GPT-6 Astra Codex reaches unknown at its 30m minimum", async (t) => {
+  let now = Date.UTC(2026, 8, 8, 12);
   t.mock.method(Date, "now", () => now);
-  const model = {
-    id: "gpt-6-astra", provider: "openai-codex", api: "openai-codex-responses",
-    reasoning: true, contextWindow: 200_000,
-    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
-  };
-  const entries: unknown[] = [
-    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: startedAt } },
-    { type: "message", id: "a1", parentId: "u1", message: {
-      role: "assistant", content: [], provider: model.provider, api: model.api, model: model.id,
-      stopReason: "stop", timestamp: startedAt + 1_000, usage: usage(0, 100_000, 0),
-    } },
-  ];
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const ctx = probeContext(entries, model.api, notifications, widgets);
-  ctx.model = model;
-  const probe = extensionProbe();
-  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
-  await fire(probe, "session_start", {}, ctx);
-  assert.match(widgets.at(-1)!, /cache state unknown .* 30m retention minimum reached/);
-});
-
-test("event flow: an Anthropic-shaped gateway payload keeps retention unknown", async (t) => {
-  let now = Date.UTC(2026, 7, 4, 12);
-  t.mock.method(Date, "now", () => now);
-  const entries: unknown[] = [
-    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: now } },
-  ];
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const ctx = probeContext(entries, "pi-messages", notifications, widgets);
-  ctx.model = {
-    id: "claude-fable-5", provider: "radius", api: "pi-messages", reasoning: true, contextWindow: 200_000,
-    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
-  };
-  const payload = { ...ANTHROPIC_PAYLOAD, model: "claude-fable-5" };
-  const probe = extensionProbe();
-  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
-
-  await fire(probe, "session_start", {}, ctx);
-  await request(probe, { payload }, ctx);
-  const firstMessage = {
-    role: "assistant", content: [], provider: "radius", api: "pi-messages", model: "claude-fable-5",
-    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 0, 100_000),
-  };
-  await fire(probe, "message_end", { message: firstMessage }, ctx);
-  entries.push({ type: "message", id: "a1", parentId: "u1", message: firstMessage });
-
-  now += 5 * 60_000;
-  await request(probe, { payload }, ctx);
-  assert.equal(notifications.length, 0, "gateway payload shape must not create an Anthropic TTL");
-  assert.equal(widgets.at(-1), "", "unknown gateway retention stays silent");
-});
-
-test("event flow: the same model over a different wire API is a switch", async () => {
-  // Baseline billed over anthropic-messages; the session resumes on bedrock-anthropic.
-  const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200);
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const probe = extensionProbe();
-  const ctx = probeContext(entries, "bedrock-anthropic", notifications, widgets);
-
-  await fire(probe, "session_start", {}, ctx);
+  const manager = restoredSession(CODEX, 100_000);
+  now += 30 * 60_000;
+  const host = await hostCachemire({ model: CODEX, sessionManager: manager });
   try {
-    assert.match(widgets.at(-1)!, /model switched/, "an API-only switch must flip the clock at session_start");
-    assert.match(widgets.at(-1)!, /\(est\)/, "the forecast must be marked as an estimate");
-
-    await request(probe, { payload: ANTHROPIC_PAYLOAD }, ctx);
-    assert.equal(notifications.length, 0, "an immaterial estimated re-write must not post a notice");
-    assert.match(widgets.at(-1)!, /model switched/);
-
-    // Usage billed over the new API re-baselines: the switch state clears.
-    await fire(probe, "message_end", { message: {
-      role: "assistant", content: [], provider: "anthropic", api: "bedrock-anthropic", model: "claude-opus-4-8",
-      stopReason: "stop", timestamp: Date.now(), usage: usage(80_000, 0, 0),
-    } }, ctx);
-    assert.doesNotMatch(widgets.at(-1)!, /model switched/, "fresh usage must re-baseline the currency");
+    assert.match(host.ui.widgetLines("pi-cachemire")!.join("\n"), /cache state unknown .* 30m retention minimum reached/);
   } finally {
-    await fire(probe, "session_shutdown", {});
+    await host.dispose();
   }
 });
 
-test("event flow: the model-switch forecast remains stable through send", async () => {
-  const entries: unknown[] = billedAssistant("claude-opus-4-8", "anthropic-messages", 80_000, 200_000);
-  const next = "n".repeat(26_000);
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const probe = extensionProbe();
-  const ctx = probeContext(entries, "bedrock-anthropic", notifications, widgets);
-  ctx.getSystemPrompt = () => "fixture";
-
-  await fire(probe, "session_start", {}, ctx);
+test("an Anthropic-shaped gateway payload keeps retention unknown", async (t) => {
+  let now = Date.UTC(2026, 7, 4, 12);
+  t.mock.method(Date, "now", () => now);
+  const gateway = { ...ANTHROPIC, id: "claude-fable-5", provider: "radius", api: "pi-messages" };
+  const host = await hostCachemire({ model: gateway });
   try {
-    assert.match(widgets.at(-1)!, /next prompt ~76\.9k tokens/);
-    assert.doesNotMatch(widgets.at(-1)!, /cache cold|uncached/);
-    entries.push({
-      type: "message", id: "u2", parentId: "a1", timestamp: "2026-07-01T10:01:00.000Z",
-      message: { role: "user", content: next, timestamp: 6_000 },
-    });
-    await request(probe, { payload: {
-      ...ANTHROPIC_PAYLOAD,
-      messages: [
-        { role: "user", content: [{ type: "text", text: "q".repeat(200_000) }] },
-        { role: "assistant", content: [{ type: "text", text: "answer" }] },
-        { role: "user", content: [{ type: "text", text: next }] },
-      ],
-    } }, ctx);
-    assert.equal(notifications.length, 1);
-    assert.match(notifications[0]!, /sending ~76\.9k prompt tokens to anthropic \(est\) · cache read unknown/);
-    assert.doesNotMatch(notifications[0]!, /cache breaking|uncached/);
+    host.session.sessionManager.appendMessage({ role: "user", content: "first", timestamp: now });
+    const body = { ...payload(["first"]), model: gateway.id };
+    await request(host, body);
+    await finish(host, billed(gateway, 0, 0, 100_000));
+    now += 5 * 60_000;
+    await request(host, body);
+    assert.deepEqual(host.ui.notifications, [], "gateway shape must not create an Anthropic TTL");
+    assert.deepEqual(host.ui.widgetLines("pi-cachemire"), []);
   } finally {
-    await fire(probe, "session_shutdown", {});
+    await host.dispose();
   }
 });
 
-test("event flow: classification uses the previous policy and abort restores it", async (t) => {
-  let now = Date.UTC(2026, 7, 4, 12);
-  t.mock.method(Date, "now", () => now);
-  const entries: unknown[] = [
-    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: now } },
-  ];
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const ctx = probeContext(entries, "openai-responses", notifications, widgets);
-  ctx.model = {
-    id: "gpt-5.4", provider: "openai", api: "openai-responses", reasoning: true, contextWindow: 200_000,
-    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
-  };
-  const probe = extensionProbe();
-  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
-  await fire(probe, "session_start", {}, ctx);
-  await request(probe, {
-    payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" },
-  }, ctx);
-  const firstMessage = {
-    role: "assistant", content: [], provider: "openai", api: "openai-responses", model: "gpt-5.4",
-    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 100_000, 0),
-  };
-  await fire(probe, "message_end", { message: firstMessage }, ctx);
-  entries.push({ type: "message", id: "a1", parentId: "u1", message: firstMessage });
-
-  now += 24 * 60 * 60_000;
-  notifications.length = 0;
-  await request(probe, {
-    payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }] },
-  }, ctx);
-  assert.equal(notifications.length, 1, "the prior 24h policy classifies the exact-boundary expiry");
-  assert.match(notifications[0]!, /24h retention maximum reached after 24h idle/);
-  assert.equal(widgets.at(-1), "", "the outgoing omitted policy is unknown and stays silent");
-
-  await fire(probe, "agent_end", {}, ctx);
-  assert.match(widgets.at(-1)!, /24h retention maximum reached/, "abort restores the prior policy");
-});
-
-test("event flow: switching back before an OpenAI maximum stays unknown", async (t) => {
-  let now = Date.UTC(2026, 7, 4, 12);
-  t.mock.method(Date, "now", () => now);
-  const entries: unknown[] = [
-    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "first", timestamp: now } },
-  ];
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const ctx = probeContext(entries, "openai-responses", notifications, widgets);
-  const openaiModel = {
-    id: "gpt-5.4", provider: "openai", api: "openai-responses", reasoning: true, contextWindow: 200_000,
-    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
-  };
-  ctx.model = openaiModel;
-  const probe = extensionProbe();
-  t.after(async () => fire(probe, "session_shutdown", {}, ctx));
-
-  await fire(probe, "session_start", {}, ctx);
-  await request(probe, {
-    payload: { model: "gpt-5.4", input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" },
-  }, ctx);
-  const openaiMessage = {
-    role: "assistant", content: [], provider: "openai", api: "openai-responses", model: "gpt-5.4",
-    stopReason: "stop", timestamp: now + 1_000, usage: usage(0, 100_000, 0),
-  };
-  await fire(probe, "message_end", { message: openaiMessage }, ctx);
-  entries.push({ type: "message", id: "a1", parentId: "u1", message: openaiMessage });
-
-  entries.push({ type: "message", id: "u2", parentId: "a1", message: { role: "user", content: "second", timestamp: now + 2_000 } });
-  ctx.model = {
-    id: "claude-opus-4-8", provider: "anthropic", api: "anthropic-messages", reasoning: true, contextWindow: 200_000,
-    cost: { input: 1, output: 1, cacheRead: 0.1, cacheWrite: 1 },
-  };
-  await fire(probe, "model_select", { model: ctx.model }, ctx);
-  await request(probe, { payload: ANTHROPIC_PAYLOAD }, ctx);
-  const anthropicMessage = {
-    role: "assistant", content: [], provider: "anthropic", api: "anthropic-messages", model: "claude-opus-4-8",
-    stopReason: "stop", timestamp: now + 3_000, usage: usage(0, 0, 100_000),
-  };
-  await fire(probe, "message_end", { message: anthropicMessage }, ctx);
-  entries.push({ type: "message", id: "a2", parentId: "u2", message: anthropicMessage });
-
-  now += 60 * 60_000;
-  notifications.length = 0;
-  ctx.model = openaiModel;
-  await fire(probe, "model_select", { model: openaiModel }, ctx);
-  assert.match(widgets.at(-1)!, /cache state unknown · model switched/);
-  await request(probe, {
-    payload: { model: "gpt-5.4", input: [{ role: "user", content: "third" }], prompt_cache_retention: "24h" },
-  }, ctx);
-  assert.equal(notifications.length, 0, "a maximum cannot make a pre-maximum switch-back cold");
-  assert.match(widgets.at(-1)!, /cache state unknown · model switched/);
-});
-
-test("event flow: model_select flips the clock before any send, and back again", async () => {
-  const entries = billedAssistant("claude-opus-4-8", "anthropic-messages", 3_000, 2_000);
-  const notifications: string[] = [];
-  const widgets: string[] = [];
-  const probe = extensionProbe();
-  const ctx = probeContext(entries, "anthropic-messages", notifications, widgets);
-
-  await fire(probe, "session_start", {}, ctx);
+test("the same model over a different wire API is a switch", async () => {
+  const target = { ...ANTHROPIC, api: "bedrock-anthropic" };
+  const host = await hostCachemire({ model: target, sessionManager: restoredSession() });
+  const clock = () => host.ui.widgetLines("pi-cachemire", 200)!.join("\n");
   try {
-    assert.doesNotMatch(widgets.at(-1)!, /model switched/, "same identity: no switch at session_start");
-    await fire(probe, "model_select", { model: {
-      id: "gpt-5.6-sol", provider: "openai-codex", api: "openai-codex-responses", reasoning: true,
-      contextWindow: 272_000, cost: { input: 1, output: 4, cacheRead: 0.1, cacheWrite: 0 },
-    } }, ctx);
-    const line = widgets.at(-1)!;
-    assert.match(line, /model switched/, "the pre-send widget must flip on model_select");
-    assert.match(line, /next prompt ~[\d.]+k tokens to openai-codex/, "sized in the target's own currency");
-    // Switching back before any send revives the old entry: the switch state clears.
-    await fire(probe, "model_select", { model: ctx.model }, ctx);
-    assert.doesNotMatch(widgets.at(-1)!, /model switched/);
-    assert.equal(notifications.length, 0, "selection alone must never post a notice");
+    assert.match(clock(), /model switched/);
+    assert.match(clock(), /\(est\)/);
+    await request(host, payload(["next"]));
+    assert.deepEqual(host.ui.notifications, [], "an immaterial estimate must not post a notice");
+    assert.match(clock(), /model switched/);
+    await finish(host, billed(target, 80_000, 0));
+    assert.doesNotMatch(clock(), /model switched/, "fresh usage re-baselines the currency");
   } finally {
-    await fire(probe, "session_shutdown", {});
+    await host.dispose();
+  }
+});
+
+test("the model-switch forecast remains stable through send", async () => {
+  const manager = restoredSession(ANTHROPIC, 80_000, 200_000);
+  const target = { ...ANTHROPIC, api: "bedrock-anthropic" };
+  const host = await hostCachemire({ model: target, sessionManager: manager });
+  try {
+    const clock = host.ui.widgetLines("pi-cachemire", 240)!.join("\n");
+    const estimate = /next prompt (~[\d.]+k) tokens/.exec(clock)?.[1];
+    assert.ok(estimate, clock);
+    assert.doesNotMatch(clock, /cache cold|uncached/);
+    manager.appendMessage({ role: "user", content: "n".repeat(26_000), timestamp: Date.now() });
+    await request(host, payload(["q".repeat(200_000), "answer", "n".repeat(26_000)]));
+    assert.equal(host.ui.notifications.length, 1);
+    assert.ok(host.ui.notifications[0]!.includes(`sending ${estimate} prompt tokens to anthropic (est) · cache read unknown`));
+    assert.doesNotMatch(host.ui.notifications[0]!, /cache breaking|uncached/);
+  } finally {
+    await host.dispose();
+  }
+});
+
+test("classification uses the previous policy and abort restores it", async (t) => {
+  let now = Date.UTC(2026, 7, 4, 12);
+  t.mock.method(Date, "now", () => now);
+  const host = await hostCachemire({ model: OPENAI });
+  try {
+    host.session.sessionManager.appendMessage({ role: "user", content: "first", timestamp: now });
+    await request(host, { model: OPENAI.id, input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" });
+    await finish(host, billed(OPENAI, 0, 100_000));
+    now += 24 * 60 * 60_000;
+    await request(host, { model: OPENAI.id, input: [{ role: "user", content: "first" }] });
+    assert.equal(host.ui.notifications.length, 1);
+    assert.match(host.ui.notifications[0]!, /24h retention maximum reached after 24h idle/);
+    assert.deepEqual(host.ui.widgetLines("pi-cachemire"), [], "the outgoing omitted policy stays unknown");
+    await host.session.extensionRunner.emit({ type: "agent_end", messages: [] });
+    assert.match(host.ui.widgetLines("pi-cachemire", 200)!.join("\n"), /24h retention maximum reached/);
+  } finally {
+    await host.dispose();
+  }
+});
+
+test("switching back before an OpenAI maximum stays unknown", async (t) => {
+  let now = Date.UTC(2026, 7, 4, 12);
+  t.mock.method(Date, "now", () => now);
+  const host = await hostCachemire({ model: OPENAI });
+  const manager = host.session.sessionManager;
+  try {
+    manager.appendMessage({ role: "user", content: "first", timestamp: now });
+    await request(host, { model: OPENAI.id, input: [{ role: "user", content: "first" }], prompt_cache_retention: "24h" });
+    await finish(host, billed(OPENAI, 0, 100_000));
+    manager.appendMessage({ role: "user", content: "second", timestamp: now + 2_000 });
+    await host.session.setModel(ANTHROPIC);
+    await request(host, payload(["first", "second"]));
+    await finish(host, billed(ANTHROPIC, 0, 0, 100_000));
+
+    now += 60 * 60_000;
+    host.ui.notifications.length = 0;
+    await host.session.setModel(OPENAI);
+    assert.match(host.ui.widgetLines("pi-cachemire", 200)!.join("\n"), /cache state unknown · model switched/);
+    await request(host, { model: OPENAI.id, input: [{ role: "user", content: "third" }], prompt_cache_retention: "24h" });
+    assert.deepEqual(host.ui.notifications, [], "a maximum cannot make a pre-maximum switch-back cold");
+    assert.match(host.ui.widgetLines("pi-cachemire", 200)!.join("\n"), /cache state unknown · model switched/);
+  } finally {
+    await host.dispose();
+  }
+});
+
+test("model selection flips the clock before any send, and back again", async () => {
+  const host = await hostCachemire({ sessionManager: restoredSession(ANTHROPIC, 3_000, 2_000) });
+  const clock = () => host.ui.widgetLines("pi-cachemire", 200)!.join("\n");
+  try {
+    assert.doesNotMatch(clock(), /model switched/);
+    await host.session.setModel(OPENAI);
+    assert.match(clock(), /model switched/);
+    assert.match(clock(), /next prompt ~[\d.]+k tokens to openai/);
+    await host.session.setModel(ANTHROPIC);
+    assert.doesNotMatch(clock(), /model switched/);
+    assert.deepEqual(host.ui.notifications, [], "selection alone must never post a notice");
+  } finally {
+    await host.dispose();
   }
 });

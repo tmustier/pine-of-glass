@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Model } from "@earendil-works/pi-ai";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { assistantMessage } from "../helpers.ts";
 
 import { diffFingerprints, fingerprintPayload, withheldThinkingCause, withinWarmPromise } from "../../extensions/pi-cachemire/classify.ts";
 import { OPENAI_EXTENDED_WINDOW } from "../../extensions/pi-cachemire/retention.ts";
@@ -170,7 +172,7 @@ test("a billed hit on a fresh effort, or an attributable miss, is evidence; noth
 	});
 	const miss = { kind: "miss", cause: { kind: "thinking", detail: "thinking changed (effort low \u2192 effort high)" } } as const;
 	assert.equal(observe({ classification: miss, ...bill(0) })?.held, false);
-	assert.equal(observe({ classification: { kind: "partial" }, ...bill(1_000) })?.held, false);
+	assert.equal(observe({ classification: { kind: "partial", cause: { kind: "thinking", detail: "effort changed" } }, ...bill(1_000) })?.held, false);
 
 	// A hit on an effort the route already billed reads that effort's own cache entry
 	// back (stock Pi on Astra: low → high missed, then medium → high hit): no evidence.
@@ -185,7 +187,7 @@ test("a billed hit on a fresh effort, or an attributable miss, is evidence; noth
 	assert.equal(observe({ thinkingNamedAtSend: false })?.held, true);
 
 	// Not an effort-to-effort change on a comparable prefix.
-	assert.equal(observe({ classification: { kind: "cold" }, ...bill(0) }), undefined);
+	assert.equal(observe({ classification: { kind: "cold", cause: { kind: "cold", detail: "cold start" } }, ...bill(0) }), undefined);
 	assert.equal(observe({ incomparable: true }), undefined);
 	assert.equal(observe({ lastCallLevel: undefined }), undefined);
 	assert.equal(observe({ lastCallLevel: "minimal", currentLevel: "low" }), undefined, "same wire effort");
@@ -269,11 +271,13 @@ test("a resumed session remembers which efforts its history billed within retent
 		baseUrl: "https://chatgpt.com/backend-api", reasoning: true, thinkingLevelMap: astraMap, input: ["text"],
 		cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }, contextWindow: 272_000, maxTokens: 128_000,
 	};
-	const assistant = (id: string, parentId: string, at: number, modelId = model.id) => ({
+	const assistant = (id: string, parentId: string, at: number, modelId = model.id): SessionEntry => ({
 		type: "message", id, parentId, timestamp: new Date(at).toISOString(),
-		message: { role: "assistant", provider: model.provider, api: model.api, model: modelId, timestamp: at, content: [] },
+		message: assistantMessage([], { provider: model.provider, api: model.api, model: modelId, timestamp: at }),
 	});
-	const level = (id: string, parentId: string | null, thinkingLevel: string) => ({ type: "thinking_level_change", id, parentId, thinkingLevel });
+	const level = (id: string, parentId: string | null, thinkingLevel: string): SessionEntry => ({
+		type: "thinking_level_change", id, parentId, thinkingLevel, timestamp: new Date(now).toISOString(),
+	});
 	const entries = [
 		level("t0", null, "medium"),
 		assistant("a1", "t0", now - OPENAI_EXTENDED_WINDOW.maxMs - 60_000), // medium, but too old to be warm

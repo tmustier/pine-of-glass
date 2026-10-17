@@ -60,7 +60,7 @@ export function computeSwitchForecast(args: {
   }
   let history: ForecastMessage[] | undefined;
   try {
-    history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages) as unknown as ForecastMessage[];
+    history = convertToLlm(buildSessionContext(args.entries, args.activeLeafId).messages);
   } catch {
     // SAFETY: buildSessionContext/convertToLlm are pi seams; a shape drift must degrade
     // to an unsized model-switch clock, never break the model switch itself.

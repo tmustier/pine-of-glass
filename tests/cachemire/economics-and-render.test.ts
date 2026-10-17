@@ -2,19 +2,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-cachemire/index.ts";
-import type { CallRecord } from "../../extensions/pi-cachemire/index.ts";
+import { uncachedCostUsd, rewriteCostUsd, sessionSavings, predictBreak } from "../../extensions/pi-cachemire/economics.ts";
+import { compactCount, formatUsd, formatDuration } from "../../extensions/_lib/fmt.ts";
+import { cacheClock, nextClockUpdateMs } from "../../extensions/pi-cachemire/clock.ts";
+import { renderRunSummary, renderMissLine, renderLedger, renderBreakingLine, renderHeldLine } from "../../extensions/pi-cachemire/render.ts";
+import type { CallRecord } from "../../extensions/pi-cachemire/types.ts";
 import {
   CEREBRAS_BOUNDED_WINDOW, inferAnthropicTtlMs, OPENAI_EXTENDED_WINDOW, OPENAI_MINIMUM_WINDOW,
 } from "../../extensions/pi-cachemire/retention.ts";
-
-const {
-  uncachedCostUsd, rewriteCostUsd, sessionSavings,
-  compactCount, formatUsd, formatDuration,
-  cacheClock, renderRunSummary, renderMissLine, renderLedger,
-  predictBreak, renderBreakingLine, renderHeldLine,
-  nextClockUpdateMs,
-} = internals;
 
 const CONTRACT_5M = { kind: "contract", ttlMs: 5 * 60_000, source: "observed" } as const;
 const CONTRACT_1H = { kind: "contract", ttlMs: 60 * 60_000, source: "observed" } as const;

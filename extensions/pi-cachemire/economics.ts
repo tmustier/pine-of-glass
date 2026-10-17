@@ -4,7 +4,7 @@
 // send time lets the notice sit between the user's action and the response, where the
 // causality lives, and the resolved actuals replace it in place when usage arrives.
 
-import { expiryCause, pastWindow } from "./classify.ts";
+import { expiryCause } from "./classify.ts";
 import type { SwitchForecast } from "./forecast.ts";
 import type { BreakPrediction, CacheWindow, CallCause, CallRecord, ModelRates, UsageLike } from "./types.ts";
 
@@ -65,10 +65,8 @@ export function predictBreak(args: {
     return sized(args.fingerprintCause);
   }
   // Only a definite contract expiry or reached maximum earns an in-flight line.
-  if (pastWindow(args.window, args.gapMs)) {
-    return sized(expiryCause(args.window, args.gapMs)!);
-  }
-  return undefined;
+  const idleCause = expiryCause(args.window, args.gapMs);
+  return idleCause && sized(idleCause);
 }
 
 export function uncachedCostUsd(usage: UsageLike, rates?: ModelRates): number | undefined {
@@ -87,10 +85,13 @@ export function rewriteCostUsd(tokens: number, rates?: ModelRates): number | und
 }
 
 export function sessionSavings(records: CallRecord[]): { actual: number; uncached: number; saved: number; pct: number } | undefined {
-  const usable = records.filter((record) => record.costUsd !== undefined && record.uncachedUsd !== undefined);
-  if (usable.length === 0) return undefined;
-  const actual = usable.reduce((sum, record) => sum + (record.costUsd ?? 0), 0);
-  const uncached = usable.reduce((sum, record) => sum + (record.uncachedUsd ?? 0), 0);
+  let actual = 0;
+  let uncached = 0;
+  for (const record of records) {
+    if (record.costUsd === undefined || record.uncachedUsd === undefined) continue;
+    actual += record.costUsd;
+    uncached += record.uncachedUsd;
+  }
   if (uncached <= 0) return undefined;
   return { actual, uncached, saved: uncached - actual, pct: (1 - actual / uncached) * 100 };
 }

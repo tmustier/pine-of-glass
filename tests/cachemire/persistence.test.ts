@@ -6,10 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { internals } from "../../extensions/pi-cachemire/index.ts";
-import type { AnchoredLine } from "../../extensions/pi-cachemire/index.ts";
-
-const { childAnchorKey, anchorForAppend, reattachAnchored } = internals;
+import { childAnchorKey, anchorForAppend, reattachAnchored, type AnchoredLine } from "../../extensions/_lib/chatline.ts";
 
 const tool = (id: string) => ({ toolCallId: id, render: () => [] });
 const assistant = (timestamp: number) => ({ lastMessage: { role: "assistant", timestamp }, render: () => [] });

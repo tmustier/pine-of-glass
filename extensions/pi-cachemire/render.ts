@@ -123,7 +123,7 @@ export function renderLedger(
     } else if (kind === "cold") {
       event = `${prefix}cold start`;
     } else {
-      event = `${prefix}${kind} \u2014 ${cause?.detail ?? "unknown"}`;
+      event = `${prefix}${kind} \u2014 ${cause.detail}`;
     }
     lines.push(
       `  ${col(String(record.index), 4)} ${col(record.gapMs !== undefined ? formatDuration(record.gapMs) : "\u2014", 7)}` +
