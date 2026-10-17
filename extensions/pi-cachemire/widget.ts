@@ -1,5 +1,4 @@
-import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { LiveWidget } from "../_lib/live-widget.ts";
+import type { LiveWidget } from "../_lib/live-widget.ts";
 import { type ClockInput, cacheClock, nextClockUpdateMs } from "./clock.ts";
 import type { Tone } from "../_lib/style.ts";
 import type { TextContent } from "../_lib/themed-text.ts";
@@ -13,20 +12,6 @@ interface CacheWidgetInput {
   enabled: boolean;
   clock: ClockInput;
   renderLine: (tone: Tone, text: string) => TextContent;
-}
-
-export function mountCacheWidget(runtime: CacheWidgetRuntime, ui: Pick<ExtensionUIContext, "setWidget">, enabled: boolean): void {
-  runtime.widget = undefined;
-  if (!enabled) return;
-  ui.setWidget("pi-cachemire", (tui) => {
-    runtime.widget = new LiveWidget(tui);
-    return runtime.widget;
-  });
-}
-
-export function unmountCacheWidget(runtime: CacheWidgetRuntime, ui: Pick<ExtensionUIContext, "setWidget">): void {
-  if (runtime.widget) ui.setWidget("pi-cachemire", undefined);
-  runtime.widget = undefined;
 }
 
 export function clearCacheWidgetTimer(runtime: CacheWidgetRuntime): void {

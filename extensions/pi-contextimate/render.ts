@@ -9,11 +9,10 @@ import {
   ratioDetail, renderMetricRow, tokenLabelLayout,
   type MetricLayout, type MetricRow, type TokenLabelLayout,
 } from "./metric-rows.ts";
-import type { ResolvedHeuristic } from "./heuristic-config.ts";
 import type { SessionEstimate } from "./session-accounting.ts";
 import {
   estimateSnapshotSession, sectionTokens, singleLine, totalTokens,
-  type PrefixSection, type PrefixSnapshot, type ScanRow,
+  type PrefixSnapshot, type ScanRow,
 } from "./snapshot.ts";
 import { renderExpandedToolsBlock } from "./tool-table.ts";
 
@@ -26,7 +25,9 @@ function accent(theme: Theme, text: string): string {
 
 // State methodology once in the header; data rows carry only raw sizes. Disclose
 // session/tool methods here only when they differ from the text ratio.
-function methodologyHint(heuristic: ResolvedHeuristic): string {
+function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): string[] {
+  const ctrlO = keyText("app.tools.expand") || "Ctrl+O";
+  const heuristic = snapshot.heuristic;
   const sessionPart = heuristic.sessionDenominator !== heuristic.textDenominator
     ? `${SEP}session ${ratioDetail(heuristic.sessionDenominator)}`
     : "";
@@ -35,25 +36,11 @@ function methodologyHint(heuristic: ResolvedHeuristic): string {
     : heuristic.toolDenominator !== heuristic.textDenominator
       ? `${SEP}tools ${ratioDetail(heuristic.toolDenominator)}`
       : "";
-  return `counts ch ${ratioDetail(heuristic.textDenominator)}${sessionPart}${toolsPart} (${heuristic.label})`;
-}
-
-function renderHeader(snapshot: PrefixSnapshot, mode: ViewMode, theme: Theme): string[] {
-  const ctrlO = keyText("app.tools.expand") || "Ctrl+O";
   return panelHeader(theme, "Contextimate", {
     modes: ["summary", "compact", "expanded"],
     active: mode,
-    hint: `${ctrlO}: cycle view${SEP}model ${snapshot.model ? `${snapshot.model.provider}/${snapshot.model.id}` : "unknown model"}${SEP}${methodologyHint(snapshot.heuristic)}`,
+    hint: `${ctrlO}: cycle view${SEP}model ${snapshot.model ? `${snapshot.model.provider}/${snapshot.model.id}` : "unknown model"}${SEP}counts ch ${ratioDetail(heuristic.textDenominator)}${sessionPart}${toolsPart} (${heuristic.label})`,
   });
-}
-
-function renderExpandedSectionHeader(section: PrefixSection, theme: Theme, width: number): string {
-  const tokens = sectionTokens(section);
-  const chars = section.content.length;
-  const left = `  ${theme.bold(section.title)}  ${accent(theme, `${estimatedTokenLabel(tokens)} tokens`)}`;
-  const right = theme.fg("dim", `${compactCount(chars)} ch ${section.detail}`);
-  const used = stripAnsi(left).length + stripAnsi(right).length;
-  return `${left}${" ".repeat(Math.max(2, Math.max(40, width) - used))}${right}`;
 }
 
 function renderExpandedNote(note: string, theme: Theme): string {
@@ -85,25 +72,6 @@ function harnessDetail(snapshot: PrefixSnapshot): string {
   return estimateSnapshotSession(snapshot)?.harnessSource === "measured"
     ? `(measured${SEP}rows ~${compactCount(totalTokens(snapshot))}${share ? `${SEP}${share}` : ""})`
     : countDetail(snapshot.sections.reduce((sum, section) => sum + section.content.length, 0), share ? `· ${share}` : undefined);
-}
-
-// One stacked bar under Total request: the carried part (harness + session) in accent,
-// free window dim — the half-second "how full am I?" answer.
-function renderContextBar(snapshot: PrefixSnapshot, estimate: SessionEstimate, theme: Theme, width: number): string[] {
-  const usage = snapshot.contextUsage;
-  if (!usage || usage.tokens === null || usage.contextWindow <= 0) return [];
-  const free = Math.max(0, usage.contextWindow - usage.tokens);
-  const legend =
-    `harness ~${compactCount(estimate.harnessTokens)}${SEP}session ~${compactCount(estimate.totalTokens)}${SEP}free ${compactCount(free)}`;
-  const room = Math.max(0, width - 4 - legend.length - 2);
-  const sameLine = room >= 12;
-  const barWidth = Math.min(28, Math.max(12, sameLine ? room : width - 4));
-  const carried = Math.min(1, Math.max(0, usage.tokens / usage.contextWindow));
-  const filled = Math.min(barWidth, Math.max(usage.tokens > 0 ? 1 : 0, Math.round(carried * barWidth)));
-  const bar = `${accent(theme, "█".repeat(filled))}${theme.fg("dim", "▒".repeat(barWidth - filled))}`;
-  return sameLine
-    ? [`  ${bar}  ${theme.fg("dim", legend)}`]
-    : [`  ${bar}`, `  ${theme.fg("dim", legend)}`];
 }
 
 type SessionMetrics = { rows: MetricRow[]; estimate: SessionEstimate; bar: boolean };
@@ -179,11 +147,27 @@ function sessionMetrics(snapshot: PrefixSnapshot): SessionMetrics | undefined {
 
 function renderSessionRows(session: SessionMetrics | undefined, snapshot: PrefixSnapshot, theme: Theme, layout: MetricLayout): string[] {
   if (!session) return [];
-  return [
-    "",
-    ...session.rows.flatMap((row) => renderMetricRow(row, theme, layout)),
-    ...(session.bar ? renderContextBar(snapshot, session.estimate, theme, layout.width) : []),
-  ];
+  const lines = ["", ...session.rows.flatMap((row) => renderMetricRow(row, theme, layout))];
+  // One stacked bar under Total request: the carried part (harness + session) in accent,
+  // free window dim — the half-second "how full am I?" answer.
+  const usage = snapshot.contextUsage;
+  if (session.bar && usage && usage.tokens !== null) {
+    if (usage.contextWindow <= 0) return lines;
+    const estimate = session.estimate;
+    const free = Math.max(0, usage.contextWindow - usage.tokens);
+    const legend =
+      `harness ~${compactCount(estimate.harnessTokens)}${SEP}session ~${compactCount(estimate.totalTokens)}${SEP}free ${compactCount(free)}`;
+    const room = Math.max(0, layout.width - 4 - legend.length - 2);
+    const sameLine = room >= 12;
+    const barWidth = Math.min(28, Math.max(12, sameLine ? room : layout.width - 4));
+    const carried = Math.min(1, Math.max(0, usage.tokens / usage.contextWindow));
+    const filled = Math.min(barWidth, Math.max(usage.tokens > 0 ? 1 : 0, Math.round(carried * barWidth)));
+    const bar = `${accent(theme, "█".repeat(filled))}${theme.fg("dim", "▒".repeat(barWidth - filled))}`;
+    lines.push(...(sameLine
+      ? [`  ${bar}  ${theme.fg("dim", legend)}`]
+      : [`  ${bar}`, `  ${theme.fg("dim", legend)}`]));
+  }
+  return lines;
 }
 
 function harnessTotalRow(snapshot: PrefixSnapshot): MetricRow {
@@ -238,22 +222,6 @@ function numericRowTokens(rows: ScanRow[]): number[] {
   return rows.flatMap((row) => row.inactive ? [] : [row.tokens]);
 }
 
-function compactLayout(snapshot: PrefixSnapshot): CompactLayout {
-  const rows = snapshot.sections.flatMap((section) => section.compactRows ?? []);
-  const labels = [
-    ...snapshot.sections.map((section) => section.title),
-    ...rows.map((row) => row.name),
-    "Total harness",
-  ];
-  const labelWidth = Math.min(26, Math.max(0, ...labels.map((label) => label.length)));
-  const tokenLayout = tokenLabelLayout([
-    ...snapshot.sections.map(sectionTokens),
-    ...numericRowTokens(rows),
-    harnessTokens(snapshot),
-  ]);
-  return { labelWidth, tokenLayout };
-}
-
 function renderScanRows(rows: ScanRow[], theme: Theme, width: number, layout?: CompactLayout): string[] {
   const labelWidth = layout?.labelWidth ?? Math.min(26, Math.max(...rows.map((row) => row.name.length)));
   const tokenLayout = layout?.tokenLayout ?? tokenLabelLayout(numericRowTokens(rows));
@@ -275,7 +243,19 @@ function renderScanRows(rows: ScanRow[], theme: Theme, width: number, layout?: C
 
 export function renderCompact(snapshot: PrefixSnapshot, theme: Theme, width: number): string[] {
   const lines = renderHeader(snapshot, "compact", theme);
-  const layout = compactLayout(snapshot);
+  const rows = snapshot.sections.flatMap((section) => section.compactRows ?? []);
+  const labels = [
+    ...snapshot.sections.map((section) => section.title),
+    ...rows.map((row) => row.name),
+    "Total harness",
+  ];
+  const labelWidth = Math.min(26, Math.max(0, ...labels.map((label) => label.length)));
+  const tokenLayout = tokenLabelLayout([
+    ...snapshot.sections.map(sectionTokens),
+    ...numericRowTokens(rows),
+    harnessTokens(snapshot),
+  ]);
+  const layout = { labelWidth, tokenLayout };
   for (const section of snapshot.sections) {
     const title = compactLabel(section.title, layout.labelWidth);
     const counts = `${estimatedTokenLabel(sectionTokens(section), layout.tokenLayout)} tokens ${countDetail(section.content.length)}`;
@@ -305,7 +285,12 @@ export function renderExpanded(snapshot: PrefixSnapshot, theme: Theme, width: nu
   );
 
   for (const section of snapshot.sections) {
-    lines.push("", renderExpandedSectionHeader(section, theme, width));
+    const tokens = sectionTokens(section);
+    const chars = section.content.length;
+    const left = `  ${theme.bold(section.title)}  ${accent(theme, `${estimatedTokenLabel(tokens)} tokens`)}`;
+    const right = theme.fg("dim", `${compactCount(chars)} ch ${section.detail}`);
+    const used = stripAnsi(left).length + stripAnsi(right).length;
+    lines.push("", `${left}${" ".repeat(Math.max(2, Math.max(40, width) - used))}${right}`);
     const expanded = section.expanded;
     if (expanded.kind === "tools") {
       lines.push(...renderExpandedToolsBlock(expanded, theme, width));

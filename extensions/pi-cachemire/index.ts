@@ -14,6 +14,7 @@ import {
   type AnchoredLine,
 } from "../_lib/chatline.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
+import { LiveWidget } from "../_lib/live-widget.ts";
 import { GLYPH, ink, type Tone } from "../_lib/style.ts";
 import {
   classifyCall,
@@ -36,11 +37,7 @@ import {
   restoreLineageSnapshots,
 } from "./lineage.ts";
 import { renderBreakingLine, renderHeldLine, renderLedger, renderMissLine, renderRunSummary } from "./render.ts";
-import {
-  confirmedWindow,
-  retentionForRequest,
-  type RetentionMatch,
-} from "./retention.ts";
+import { confirmedWindow, retentionForRequest, type RetentionMatch } from "./retention.ts";
 import {
   recordBilledThinking,
   restoreBilledThinking,
@@ -50,7 +47,7 @@ import {
   thinkingRoute,
 } from "./thinking.ts";
 import { isWarmUsageEntry, syncWarmEntries, type WarmSyncState } from "./warm.ts";
-import { clearCacheWidgetTimer, mountCacheWidget, unmountCacheWidget, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
+import { clearCacheWidgetTimer, type CacheWidgetRuntime, updateCacheWidget } from "./widget.ts";
 import type {
   CacheWindow,
   CachemireConfig,
@@ -76,7 +73,6 @@ export type {
 } from "./types.ts";
 
 // Cachemire explains Pi's provider-reported cache usage and loop cost.
-
 const DEFAULT_CONFIG: CachemireConfig = {
   debug: false, // agent-default (not a user rule): 2026-09-24
   widget: true,
@@ -86,11 +82,6 @@ const DEFAULT_CONFIG: CachemireConfig = {
   missWarnUsd: 0.05,
   missWarnTokens: 20_000,
 };
-
-// --- chat scrollback append (display-only; never touches LLM context) -------------------
-// Anchored-line machinery lives in _lib/chatline.ts (shared with pi-meantime): lines
-// are appended straight to pi's chat container and re-attached across pi's chat
-// rebuilds via durable anchors.
 
 // --- live state ------------------------------------------------------------------------
 
@@ -315,14 +306,23 @@ export default function piCachemire(pi: ExtensionAPI): void {
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
       s.tui = tui;
     });
-    mountCacheWidget(cacheWidget, ctx.ui, s.config.widget);
+    cacheWidget.widget = undefined;
+    if (s.config.widget) {
+      ctx.ui.setWidget("pi-cachemire", (tui) => {
+        cacheWidget.widget = new LiveWidget(tui);
+        return cacheWidget.widget;
+      });
+    }
     updateWidget();
   });
 
   pi.on("session_shutdown", async () => {
     if (!ownsState()) return;
     clearCacheWidgetTimer(cacheWidget);
-    if (s.ui) unmountCacheWidget(cacheWidget, s.ui);
+    if (s.ui) {
+      if (cacheWidget.widget) s.ui.setWidget("pi-cachemire", undefined);
+      cacheWidget.widget = undefined;
+    }
     g.__piCachemireOwner = undefined;
   });
 

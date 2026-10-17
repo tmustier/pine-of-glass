@@ -70,13 +70,6 @@ export function ink(theme: Theme | undefined, tone: Tone, text: string): string 
 
 // --- panel headers (design language §8) -------------------------------------------------
 
-/** Mode pips for a panel header: active mode accent-bold, others dim, `→` dim. */
-export function panelPips(theme: Theme | undefined, modes: readonly string[], active: string): string {
-  return modes
-    .map((mode) => (mode === active ? ink(theme, "accent", theme?.bold(mode) ?? mode) : ink(theme, "dim", mode)))
-    .join(ink(theme, "dim", " → "));
-}
-
 /**
  * The family panel-header form (design language §8): `[Name]` in bold accent, optional
  * mode pips, then one dim hint line carrying keybinding, scope, and the panel's
@@ -89,7 +82,12 @@ export function panelHeader(
 ): string[] {
   const label = `[${name}]`;
   const brand = ink(theme, "accent", theme?.bold(label) ?? label);
-  const pips = options.modes && options.active ? ` ${panelPips(theme, options.modes, options.active)}` : "";
+  // Mode pips: active mode accent-bold, others dim, `→` dim.
+  const pips = options.modes && options.active
+    ? ` ${options.modes
+      .map((mode) => mode === options.active ? ink(theme, "accent", theme?.bold(mode) ?? mode) : ink(theme, "dim", mode))
+      .join(ink(theme, "dim", " → "))}`
+    : "";
   const lines = ["", `${brand}${pips}`];
   if (options.hint) lines.push(`  ${ink(theme, "dim", options.hint)}`);
   return lines;
@@ -118,46 +116,6 @@ export function tildify(text: string): string {
   return text.replace(TILDIFY_PATTERN, (match) => (match.startsWith("\x1b") ? match : "~"));
 }
 
-// ANSI-aware middle truncation that protects the *tail* of the line — the basename +
-// :line-range for a path, or the operative end of a command — because that is where the
-// information distinguishing one row from the next lives. The cut snaps to a nearby "/"
-// or space boundary, and the ellipsis is dimmed so it reads as a UI marker rather than as
-// part of the path/command. Falls back to tail truncation only when the width is too
-// small to keep both ends.
-// Ink continuity across the cut (design language §5): the tail's opening SGR may
-// sit in the removed middle, which would leave the tail at the terminal default until
-// the next styled span opened. Replay the *net* SGR state active at the cut point —
-// one sequence per attribute, offs and full resets clearing their slots — so the tail
-// keeps its ink without echoing the whole styling history.
-function activeSgrAt(line: string, rawIndex: number): string {
-  const state = new Map<string, string>();
-  const sgr = /\x1b\[([0-9;]*)m/g;
-  let match: RegExpExecArray | null;
-  while ((match = sgr.exec(line)) && match.index < rawIndex) {
-    const params = match[1]!;
-    if (params === "" || params === "0") {
-      state.clear();
-      continue;
-    }
-    const key =
-      params.startsWith("38") || params === "39" || /^(3[0-7]|9[0-7])$/.test(params)
-        ? "fg"
-        : params.startsWith("48") || params === "49" || /^(4[0-7]|10[0-7])$/.test(params)
-          ? "bg"
-          : params === "1" || params === "2" || params === "22"
-            ? "weight"
-            : params === "3" || params === "23"
-              ? "italic"
-              : params === "4" || params === "24"
-                ? "underline"
-                : params; // unknown/compound: replay verbatim, keyed by itself
-    const off = params === "39" || params === "49" || params === "22" || params === "23" || params === "24";
-    if (off) state.delete(key);
-    else state.set(key, match[0]);
-  }
-  return [...state.values()].join("");
-}
-
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /** Map a terminal-column cut to a grapheme boundary in the stripped line. Wide
@@ -183,6 +141,12 @@ function columnBoundary(
   return { plainIndex: text.length, column };
 }
 
+// ANSI-aware middle truncation that protects the *tail* of the line — the basename +
+// :line-range for a path, or the operative end of a command — because that is where the
+// information distinguishing one row from the next lives. The cut snaps to a nearby "/"
+// or space boundary, and the ellipsis is dimmed so it reads as a UI marker rather than as
+// part of the path/command. Falls back to tail truncation only when the width is too
+// small to keep both ends.
 export function middleTruncate(line: string, width: number, theme?: Theme): string {
   const maxWidth = Math.max(1, width);
   if (visibleWidth(line) <= maxWidth) return line;
@@ -222,7 +186,37 @@ export function middleTruncate(line: string, width: number, theme?: Theme): stri
   }
   const dimEllipsis = ink(theme, "dim", ELLIPSIS);
   const tailRawStart = rawIndexAtVisibleIndex(line, tailStart);
-  const tailRaw = `${activeSgrAt(line, tailRawStart)}${line.slice(tailRawStart)}`;
+  // Ink continuity across the cut (design language §5): the tail's opening SGR may
+  // sit in the removed middle, which would leave the tail at the terminal default until
+  // the next styled span opened. Replay the *net* SGR state active at the cut point —
+  // one sequence per attribute, offs and full resets clearing their slots — so the tail
+  // keeps its ink without echoing the whole styling history.
+  const sgrState = new Map<string, string>();
+  const sgr = /\x1b\[([0-9;]*)m/g;
+  let match: RegExpExecArray | null;
+  while ((match = sgr.exec(line)) && match.index < tailRawStart) {
+    const params = match[1]!;
+    if (params === "" || params === "0") {
+      sgrState.clear();
+      continue;
+    }
+    const key =
+      params.startsWith("38") || params === "39" || /^(3[0-7]|9[0-7])$/.test(params)
+        ? "fg"
+        : params.startsWith("48") || params === "49" || /^(4[0-7]|10[0-7])$/.test(params)
+          ? "bg"
+          : params === "1" || params === "2" || params === "22"
+            ? "weight"
+            : params === "3" || params === "23"
+              ? "italic"
+              : params === "4" || params === "24"
+                ? "underline"
+                : params; // unknown/compound: replay verbatim, keyed by itself
+    const off = params === "39" || params === "49" || params === "22" || params === "23" || params === "24";
+    if (off) sgrState.delete(key);
+    else sgrState.set(key, match[0]);
+  }
+  const tailRaw = `${[...sgrState.values()].join("")}${line.slice(tailRawStart)}`;
   const tailPadding = Math.max(0, maxTail - tailWidth);
 
   const headEnd = budget - maxTail;

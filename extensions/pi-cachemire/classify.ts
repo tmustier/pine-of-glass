@@ -78,25 +78,6 @@ function hashOf(value: unknown): string {
   return createHash("sha1").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
-function findTtlMs(payload: Record<string, unknown>): number | undefined {
-  const candidates: unknown[] = [];
-  const system = payload.system;
-  if (Array.isArray(system)) candidates.push(...system);
-  const tools = payload.tools;
-  if (Array.isArray(tools)) candidates.push(...tools);
-  const messages = payload.messages;
-  if (Array.isArray(messages)) {
-    for (const message of messages) {
-      if (isJsonObject(message) && Array.isArray(message.content)) candidates.push(...message.content);
-    }
-  }
-  for (const block of candidates) {
-    const control = isJsonObject(block) && isJsonObject(block.cache_control) ? block.cache_control : undefined;
-    if (control?.type === "ephemeral") return control.ttl === "1h" ? TTL_LONG_MS : TTL_SHORT_MS;
-  }
-  return undefined;
-}
-
 export function fingerprintPayload(
   payload: unknown,
   route?: ThinkingRoute,
@@ -152,6 +133,21 @@ export function fingerprintPayload(
       : thinking?.type === "adaptive"
         ? effort ? `thinking effort ${effort}` : "thinking adaptive"
         : "thinking off";
+    let ttlMs: number | undefined;
+    const candidates: unknown[] = [];
+    const system = body.system;
+    if (Array.isArray(system)) candidates.push(...system);
+    if (Array.isArray(body.tools)) candidates.push(...body.tools);
+    for (const message of messages) {
+      if (isJsonObject(message) && Array.isArray(message.content)) candidates.push(...message.content);
+    }
+    for (const block of candidates) {
+      const control = isJsonObject(block) && isJsonObject(block.cache_control) ? block.cache_control : undefined;
+      if (control?.type === "ephemeral") {
+        ttlMs = control.ttl === "1h" ? TTL_LONG_MS : TTL_SHORT_MS;
+        break;
+      }
+    }
     return {
       kind: "anthropic",
       model: typeof body.model === "string"
@@ -165,7 +161,7 @@ export function fingerprintPayload(
       }),
       messageHashes: messages.map((message) => hashOf(stripCacheMarkers(message))),
       cachedMessageCount,
-      ttlMs: findTtlMs(body),
+      ttlMs,
       thinking: thinkingDescription,
       thinkingCacheNeutral: thinkingChangesPreserveCache(route) ? true : undefined,
     };

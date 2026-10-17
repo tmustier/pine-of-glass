@@ -126,48 +126,38 @@ function isResourceComponent(component: unknown): boolean {
   return !isPrefixBlock(component) && isResourceRow(component);
 }
 
-function insertionIndexAfterResourceList(chat: ContainerLike): number {
-  let index = -1;
-  for (let i = 0; i < chat.children.length; i++) {
-    if (!isResourceComponent(chat.children[i])) continue;
-    index = i;
-    // SAFETY: Pi's resource container holds only TUI components.
-    const next = chat.children[i + 1] as Component | undefined;
-    if (next && stripAnsi(next.render(80).join("")).trim() === "") index = i + 1;
-  }
-  return index;
-}
-
-// Pi creates the resource container once and only clears and refills it, so search until it
-// is first found. Spotting resource rows means rendering components, so the search skips the
-// transcript beside the list, which in a long session would cost seconds per search.
-function installContextBlock(block: StartupContextComponent): boolean {
-  const tui = g.__piContextimateTui;
-  const chat = g.__piContextimateChat ?? findContainerBy(
-    tui,
-    (children) => children.some(isResourceComponent),
-    (children) => children.some((child) => isToolRow(child) || isAssistantRow(child)),
-  );
-  if (!chat) return false;
-
-  g.__piContextimateChat = chat;
-  if (chat.children.includes(block)) return true;
-
-  chat.children = chat.children.filter((child) => !isPrefixBlock(child));
-  const insertAfter = insertionIndexAfterResourceList(chat);
-  const insertAt = insertAfter >= 0 ? insertAfter + 1 : 0;
-  chat.children.splice(insertAt, 0, block);
-  tui?.requestRender(true);
-  return true;
-}
-
 function scheduleInstall(block: StartupContextComponent): void {
   if (g.__piContextimateInstallTimer) clearTimeout(g.__piContextimateInstallTimer);
   let attempts = 0;
   const attempt = () => {
     attempts++;
     try {
-      if (installContextBlock(block)) return;
+      // Pi creates the resource container once and only clears and refills it, so search until it
+      // is first found. Spotting resource rows means rendering components, so the search skips the
+      // transcript beside the list, which in a long session would cost seconds per search.
+      const tui = g.__piContextimateTui;
+      const chat = g.__piContextimateChat ?? findContainerBy(
+        tui,
+        (children) => children.some(isResourceComponent),
+        (children) => children.some((child) => isToolRow(child) || isAssistantRow(child)),
+      );
+      if (chat) {
+        g.__piContextimateChat = chat;
+        if (!chat.children.includes(block)) {
+          chat.children = chat.children.filter((child) => !isPrefixBlock(child));
+          let insertAfter = -1;
+          for (let i = 0; i < chat.children.length; i++) {
+            if (!isResourceComponent(chat.children[i])) continue;
+            insertAfter = i;
+            // SAFETY: Pi's resource container holds only TUI components.
+            const next = chat.children[i + 1] as Component | undefined;
+            if (next && stripAnsi(next.render(80).join("")).trim() === "") insertAfter = i + 1;
+          }
+          chat.children.splice(insertAfter >= 0 ? insertAfter + 1 : 0, 0, block);
+          tui?.requestRender(true);
+        }
+        return;
+      }
     } catch {
       // The foreign TUI tree may still be rebuilding; retry after it settles.
     }

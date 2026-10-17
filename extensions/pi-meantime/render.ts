@@ -96,19 +96,6 @@ function durationCell(ms: number | undefined): string {
 const HARNESS_NOTE_MS = 2_000;
 const OVERLAP_NOTE_MS = 1_000;
 
-/** Row notes use the same detectors as the notices, evaluated against prior calls. */
-function rowNotes(call: CallTiming, prior: CallTiming[], config: MeantimeConfig): string {
-  const notes: string[] = [];
-  const slowStart = detectSlowStart(call, prior, config);
-  if (slowStart) notes.push(`slow start (median ${formatLatency(slowStart.medianMs)})`);
-  const slowStream = detectSlowStream(call, prior, config);
-  if (slowStream) notes.push(`slow stream (median ${formatRate(slowStream.medianRate, { exact: true })})`);
-  if (call.silentReasoning) notes.push("wait incl. silent reasoning");
-  if ((call.toolsOverlapMs ?? 0) >= OVERLAP_NOTE_MS) notes.push(`${call.toolsCount} tools overlapped`);
-  if (call.harnessMs !== undefined && call.harnessMs >= HARNESS_NOTE_MS) notes.push(`harness ${formatLatency(call.harnessMs)}`);
-  return notes.join(SEP);
-}
-
 const BAR_CELLS = 25;
 
 export interface PaceOptions {
@@ -140,9 +127,18 @@ export function renderPace(calls: CallTiming[], totals: SessionTotals, options: 
   );
   let previousModel: string | undefined;
   for (const [i, call] of calls.entries()) {
-    const notes = rowNotes(call, calls.slice(0, i), options.config);
+    // Use the notice detectors against prior calls for the ledger notes too.
+    const prior = calls.slice(0, i);
+    const notes: string[] = [];
+    const slowStart = detectSlowStart(call, prior, options.config);
+    if (slowStart) notes.push(`slow start (median ${formatLatency(slowStart.medianMs)})`);
+    const slowStream = detectSlowStream(call, prior, options.config);
+    if (slowStream) notes.push(`slow stream (median ${formatRate(slowStream.medianRate, { exact: true })})`);
+    if (call.silentReasoning) notes.push("wait incl. silent reasoning");
+    if ((call.toolsOverlapMs ?? 0) >= OVERLAP_NOTE_MS) notes.push(`${call.toolsCount} tools overlapped`);
+    if (call.harnessMs !== undefined && call.harnessMs >= HARNESS_NOTE_MS) notes.push(`harness ${formatLatency(call.harnessMs)}`);
     const modelNote = models.length > 1 && call.model !== previousModel ? `model ${call.model ?? "unknown"}` : "";
-    const allNotes = [modelNote, notes].filter(Boolean).join(SEP);
+    const allNotes = [modelNote, notes.join(SEP)].filter(Boolean).join(SEP);
     lines.push(
       `  ${col(String(call.index), 4)} ${col(durationCell(call.ttftMs), 7)}` +
       ` ${col(durationCell(call.thinkMs), 7)} ${col(durationCell(call.writeMs), 7)}` +

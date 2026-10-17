@@ -172,27 +172,6 @@ function usesMinimumRetention(input: RetentionIdentity): boolean {
   return route && supportedModel;
 }
 
-function bedrockCacheTtlMs(payload: unknown): number | undefined {
-  if (!isJsonObject(payload)) return undefined;
-  const blocks: unknown[] = Array.isArray(payload.system) ? [...payload.system] : [];
-  if (Array.isArray(payload.messages)) {
-    for (const message of payload.messages) {
-      if (isJsonObject(message) && Array.isArray(message.content)) blocks.push(...message.content);
-    }
-  }
-
-  let ttlMs: number | undefined;
-  for (const block of blocks) {
-    if (!isJsonObject(block) || !isJsonObject(block.cachePoint) || block.cachePoint.type !== "default") continue;
-    const found = block.cachePoint.ttl === "1h"
-      ? TTL_LONG_MS
-      : block.cachePoint.ttl === undefined || block.cachePoint.ttl === "5m" ? TTL_SHORT_MS : undefined;
-    if (found === undefined || (ttlMs !== undefined && ttlMs !== found)) return undefined;
-    ttlMs = found;
-  }
-  return ttlMs;
-}
-
 function groqWindow(input: RetentionIdentity): KnownCacheWindow | undefined {
   return onRoute(input, "groq", "openai-completions") && input.model !== undefined && GROQ_MODELS.has(input.model)
     ? GROQ_WINDOW
@@ -271,7 +250,23 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
     activation: "read-or-write",
     resolveRequest: (input) => {
       if (!onRoute(input, "amazon-bedrock", "bedrock-converse-stream")) return undefined;
-      const ttlMs = bedrockCacheTtlMs(input.payload);
+      if (!isJsonObject(input.payload)) return undefined;
+      const blocks: unknown[] = Array.isArray(input.payload.system) ? [...input.payload.system] : [];
+      if (Array.isArray(input.payload.messages)) {
+        for (const message of input.payload.messages) {
+          if (isJsonObject(message) && Array.isArray(message.content)) blocks.push(...message.content);
+        }
+      }
+
+      let ttlMs: number | undefined;
+      for (const block of blocks) {
+        if (!isJsonObject(block) || !isJsonObject(block.cachePoint) || block.cachePoint.type !== "default") continue;
+        const found = block.cachePoint.ttl === "1h"
+          ? TTL_LONG_MS
+          : block.cachePoint.ttl === undefined || block.cachePoint.ttl === "5m" ? TTL_SHORT_MS : undefined;
+        if (found === undefined || (ttlMs !== undefined && ttlMs !== found)) return undefined;
+        ttlMs = found;
+      }
       const model = (input.model ?? "").replace(/^(?:au|eu|global|jp|us)\./, "");
       if (ttlMs === undefined || !BEDROCK_CACHE_MODELS.has(model) ||
           (ttlMs === TTL_LONG_MS && !BEDROCK_LONG_MODELS.has(model))) return undefined;

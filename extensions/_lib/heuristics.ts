@@ -159,72 +159,54 @@ function isClaudeModel(model: ModelSummary): boolean {
   return model.provider.toLowerCase().includes("anthropic") || model.id.toLowerCase().includes("claude");
 }
 
-function tokenizerProfile(model: ModelSummary): TokenizerProfile | undefined {
+export function builtInHeuristicPatchForModel(model?: ModelSummary): BuiltInHeuristic | undefined {
+  if (!model) return undefined;
   const id = model.id.toLowerCase();
-  if (isClaudeModel(model)) {
-    if (CLAUDE_47_PLUS_MODEL.test(id)) return CLAUDE_47_PLUS;
-    if (CLAUDE_45_46_MODEL.test(id)) return CLAUDE_45_46;
-    return CLAUDE_GENERIC;
-  }
   const kimiCoding = model.provider.toLowerCase() === "kimi-coding"
     && /^(?:k3(?:-256k)?|kimi-for-coding(?:-highspeed)?)$/.test(id);
-  if (KIMI_MODEL.test(id) || kimiCoding) return KIMI;
-  if (GLM_5_MODEL.test(id)) return GLM_5;
-  if (GLM_45_MODEL.test(id)) return GLM_45;
-  if (COMMAND_R_MODEL.test(id)) return COMMAND_R;
-  if (NORTH_MINI_CODE_MODEL.test(id)) return NORTH_MINI_CODE;
-  if (GROK_420_43_MODEL.test(id)) return GROK_420_43;
-  if (GROK_45_MODEL.test(id)) return GROK_45;
-  if (GEMINI_2_3_MODEL.test(id)) return GEMINI_2_3;
-  if (DEEPSEEK_MODEL.test(id)) return DEEPSEEK;
-  if (QWEN_35_MODEL.test(id)) return QWEN_35;
-  if (QWEN_25_MODEL.test(id) || QWEN_3_MODEL.test(id)) return QWEN_25_3;
-  if (model.provider.toLowerCase().includes("openai-codex")) {
-    return { label: "OpenAI-Codex heuristic", textDenominator: 4.4, sessionDenominator: 4 };
+  let tokenizer: TokenizerProfile | undefined;
+  if (isClaudeModel(model)) {
+    if (CLAUDE_47_PLUS_MODEL.test(id)) tokenizer = CLAUDE_47_PLUS;
+    else if (CLAUDE_45_46_MODEL.test(id)) tokenizer = CLAUDE_45_46;
+    else tokenizer = CLAUDE_GENERIC;
+  } else if (KIMI_MODEL.test(id) || kimiCoding) tokenizer = KIMI;
+  else if (GLM_5_MODEL.test(id)) tokenizer = GLM_5;
+  else if (GLM_45_MODEL.test(id)) tokenizer = GLM_45;
+  else if (COMMAND_R_MODEL.test(id)) tokenizer = COMMAND_R;
+  else if (NORTH_MINI_CODE_MODEL.test(id)) tokenizer = NORTH_MINI_CODE;
+  else if (GROK_420_43_MODEL.test(id)) tokenizer = GROK_420_43;
+  else if (GROK_45_MODEL.test(id)) tokenizer = GROK_45;
+  else if (GEMINI_2_3_MODEL.test(id)) tokenizer = GEMINI_2_3;
+  else if (DEEPSEEK_MODEL.test(id)) tokenizer = DEEPSEEK;
+  else if (QWEN_35_MODEL.test(id)) tokenizer = QWEN_35;
+  else if (QWEN_25_MODEL.test(id) || QWEN_3_MODEL.test(id)) tokenizer = QWEN_25_3;
+  else if (model.provider.toLowerCase().includes("openai-codex")) {
+    tokenizer = { label: "OpenAI-Codex heuristic", textDenominator: 4.4, sessionDenominator: 4 };
+  } else if (model.provider.toLowerCase().includes("openai")) {
+    tokenizer = { label: "OpenAI Responses heuristic", textDenominator: 4.4, sessionDenominator: 4 };
+  } else if (model.provider.toLowerCase().includes("google") || model.id.toLowerCase().includes("gemini")) {
+    tokenizer = { label: "Gemini/Vertex heuristic", textDenominator: 4, sessionDenominator: 4 };
   }
-  if (model.provider.toLowerCase().includes("openai")) {
-    return { label: "OpenAI Responses heuristic", textDenominator: 4.4, sessionDenominator: 4 };
-  }
-  if (model.provider.toLowerCase().includes("google") || model.id.toLowerCase().includes("gemini")) {
-    return { label: "Gemini/Vertex heuristic", textDenominator: 4, sessionDenominator: 4 };
-  }
-  return undefined;
-}
-
-function toolProfile(model: ModelSummary): ToolProfile | undefined {
   const provider = model.provider.toLowerCase();
   const api = model.api.toLowerCase();
-  if (provider.includes("openai-codex")) return { toolDenominator: 5.5, toolNumerator: "openai-cookbook" };
-  if (api === "anthropic-messages") {
+  let tools: ToolProfile | undefined;
+  if (provider.includes("openai-codex")) tools = { toolDenominator: 5.5, toolNumerator: "openai-cookbook" };
+  else if (api === "anthropic-messages") {
     let denominator = 4;
     if (isClaudeModel(model)) denominator = CLAUDE_47_PLUS_MODEL.test(model.id.toLowerCase()) ? 2.6 : 3.3;
-    return { toolDenominator: denominator, toolNumerator: "anthropic" };
-  }
-  if (api === "openai-completions" || api === "mistral-conversations") {
-    return { toolDenominator: 4, toolNumerator: "openai-chat" };
-  }
-  if (api === "google-generative-ai" || api === "google-vertex") return { toolDenominator: 4, toolNumerator: "gemini" };
-  if (api === "bedrock-converse-stream") return { toolDenominator: 4, toolNumerator: "bedrock" };
-  if (api === "pi-messages") return { toolDenominator: 4, toolNumerator: "pi-messages" };
-  if (api === "openai-responses" || api === "azure-openai-responses") {
-    return provider.includes("openai")
+    tools = { toolDenominator: denominator, toolNumerator: "anthropic" };
+  } else if (api === "openai-completions" || api === "mistral-conversations") {
+    tools = { toolDenominator: 4, toolNumerator: "openai-chat" };
+  } else if (api === "google-generative-ai" || api === "google-vertex") tools = { toolDenominator: 4, toolNumerator: "gemini" };
+  else if (api === "bedrock-converse-stream") tools = { toolDenominator: 4, toolNumerator: "bedrock" };
+  else if (api === "pi-messages") tools = { toolDenominator: 4, toolNumerator: "pi-messages" };
+  else if (api === "openai-responses" || api === "azure-openai-responses") {
+    tools = provider.includes("openai")
       ? { toolDenominator: 5.5, toolNumerator: "openai-cookbook" }
       : { toolDenominator: 4, toolNumerator: "openai-responses" };
   }
-  return undefined;
-}
-
-export function builtInHeuristicPatchForModel(model?: ModelSummary): BuiltInHeuristic | undefined {
-  if (!model) return undefined;
-  const tokenizer = tokenizerProfile(model);
-  const tools = toolProfile(model);
   if (!tokenizer && !tools) return undefined;
   return { label: tokenizer?.label ?? FALLBACK_TOKENIZER.label, ...tokenizer, ...tools };
-}
-
-export function builtInHeuristicForModel(model?: ModelSummary): HeuristicNumbers | undefined {
-  const patch = builtInHeuristicPatchForModel(model);
-  return patch ? { ...fallbackHeuristicNumbers(), ...patch } : undefined;
 }
 
 /** The family fallback when no built-in rule matches and no config overrides. */

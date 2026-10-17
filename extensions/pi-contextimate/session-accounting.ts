@@ -125,22 +125,21 @@ function reusedPrompt(previous: AssistantMessage, next: AssistantMessage): boole
   return promptTokens(previous) - next.usage.cacheRead <= CACHE_PREFIX_SLACK_TOKENS;
 }
 
-function hasEncryptedOpenAIReasoning(signature: string | undefined): boolean {
-  if (!signature) return false;
-  try {
-    const item: unknown = JSON.parse(signature);
-    if (!item || typeof item !== "object" || !("encrypted_content" in item)) return false;
-    const encryptedContent = item.encrypted_content;
-    return typeof encryptedContent === "string" && encryptedContent.length > 0;
-  } catch {
-    return false;
-  }
-}
-
 function hasReasoningCarrier(message: AssistantMessage): boolean {
   if (OPENAI_REASONING_REPLAY_APIS.has(message.api)) {
-    return message.content.some((block) => block.type === "thinking"
-      && hasEncryptedOpenAIReasoning(block.thinkingSignature));
+    return message.content.some((block) => {
+      if (block.type !== "thinking") return false;
+      const signature = block.thinkingSignature;
+      if (!signature) return false;
+      try {
+        const item: unknown = JSON.parse(signature);
+        if (!item || typeof item !== "object" || !("encrypted_content" in item)) return false;
+        const encryptedContent = item.encrypted_content;
+        return typeof encryptedContent === "string" && encryptedContent.length > 0;
+      } catch {
+        return false;
+      }
+    });
   }
   return message.content.some((block) => block.type === "thinking" && Boolean(block.thinkingSignature));
 }

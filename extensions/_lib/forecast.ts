@@ -1,5 +1,5 @@
 import {
-  builtInHeuristicForModel,
+  builtInHeuristicPatchForModel,
   estimateCharsAsTokens,
   fallbackHeuristicNumbers,
   type ModelSummary,
@@ -121,7 +121,7 @@ export function forecastTargetPrompt(args: {
   target: TargetModel;
   foreignThinking: ForeignThinking;
 }) {
-  const heuristic = builtInHeuristicForModel(args.target) ?? fallbackHeuristicNumbers();
+  const heuristic = { ...fallbackHeuristicNumbers(), ...builtInHeuristicPatchForModel(args.target) };
   const counts = forecastHistoryForTarget(args.history, args.target, args.foreignThinking);
   const historyChars = counts.textChars + counts.keptReasoningChars + counts.imageChars;
   return {

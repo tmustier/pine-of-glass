@@ -93,36 +93,6 @@ export interface ChatLineHost {
 
 const CHAT_CLEAR_HOOK_VERSION = 1;
 
-// Wrap the chat container's clear() (instance-level, original preserved) so every
-// rebuild is followed by a re-attach. The rebuild that follows clear() is synchronous;
-// a microtask runs after it completes, including pi's own trailing status line, so
-// anchors are matched against the final rebuilt children. Keys are namespaced per
-// extension: when two family members hook the same container their wrappers chain, and
-// each re-attaches only its own lines.
-function ensureChatClearHook(container: ContainerLike, ns: string, host: ChatLineHost): void {
-  // SAFETY: findChatContainer validates children; these namespaced properties are
-  // owned by this hook. Contract tests pin Pi's mutable clear()+children seam.
-  const chat = container as ContainerLike & {
-    [key: `__piChatline_${string}_ClearVersion`]: number | undefined;
-    [key: `__piChatline_${string}_OriginalClear`]: ContainerLike["clear"];
-  };
-  const versionKey = `__piChatline_${ns}_ClearVersion` as const;
-  const originalKey = `__piChatline_${ns}_OriginalClear` as const;
-  if (typeof chat.clear !== "function" || chat[versionKey] === CHAT_CLEAR_HOOK_VERSION) return;
-  const original = chat[originalKey] ?? chat.clear.bind(chat);
-  chat[originalKey] = original;
-  chat.clear = () => {
-    const result = original();
-    queueMicrotask(() => {
-      if (host.anchored.length === 0) return;
-      host.anchored = reattachAnchored(chat.children, host.anchored);
-      host.tui?.requestRender?.(true);
-    });
-    return result;
-  };
-  chat[versionKey] = CHAT_CLEAR_HOOK_VERSION;
-}
-
 /** Append one spacer+text pair to pi's chat scrollback, tracked for re-attachment
  * across rebuilds. Returns the Text (so the caller can resolve it in place), or
  * undefined when the seam degraded to the notify fallback. */
@@ -136,7 +106,35 @@ export function appendAnchoredLine(host: ChatLineHost, ns: string, text: TextCon
     chat.addChild(spacer);
     chat.addChild(line);
     host.anchored.push({ spacer, text: line, ...anchor });
-    ensureChatClearHook(chat, ns, host);
+
+    // Wrap the chat container's clear() (instance-level, original preserved) so every
+    // rebuild is followed by a re-attach. The rebuild that follows clear() is synchronous;
+    // a microtask runs after it completes, including pi's own trailing status line, so
+    // anchors are matched against the final rebuilt children. Keys are namespaced per
+    // extension: when two family members hook the same container their wrappers chain, and
+    // each re-attaches only its own lines.
+    // SAFETY: findChatContainer validates children; these namespaced properties are
+    // owned by this hook. Contract tests pin Pi's mutable clear()+children seam.
+    const hookedChat = chat as ContainerLike & {
+      [key: `__piChatline_${string}_ClearVersion`]: number | undefined;
+      [key: `__piChatline_${string}_OriginalClear`]: ContainerLike["clear"];
+    };
+    const versionKey = `__piChatline_${ns}_ClearVersion` as const;
+    const originalKey = `__piChatline_${ns}_OriginalClear` as const;
+    if (typeof hookedChat.clear === "function" && hookedChat[versionKey] !== CHAT_CLEAR_HOOK_VERSION) {
+      const original = hookedChat[originalKey] ?? hookedChat.clear.bind(hookedChat);
+      hookedChat[originalKey] = original;
+      hookedChat.clear = () => {
+        const result = original();
+        queueMicrotask(() => {
+          if (host.anchored.length === 0) return;
+          host.anchored = reattachAnchored(hookedChat.children, host.anchored);
+          host.tui?.requestRender?.(true);
+        });
+        return result;
+      };
+      hookedChat[versionKey] = CHAT_CLEAR_HOOK_VERSION;
+    }
     host.tui?.requestRender?.(true);
     return line;
   }

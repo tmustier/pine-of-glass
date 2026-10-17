@@ -95,14 +95,11 @@ export function renderMetricRow(row: MetricRow, theme: Theme, layout: MetricLayo
   return [line, ...detailLines.map((detail) => `${indent}${theme.fg("dim", detail)}`)];
 }
 
-export function formatDenominator(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
-}
-
 // --- the family number grammar: `~0.5k tokens (1.2k ch ÷ 2.6)` -------------------------
 
 export function ratioDetail(denominator: number): string {
-  return `÷ ${formatDenominator(denominator)}`;
+  const value = Number.isInteger(denominator) ? String(denominator) : denominator.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return `÷ ${value}`;
 }
 
 export function countDetail(chars: number, detail?: string): string {
