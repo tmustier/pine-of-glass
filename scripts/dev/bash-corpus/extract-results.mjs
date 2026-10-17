@@ -2,10 +2,11 @@
 // Harvest bash calls *with their results* from local pi session logs, for judging
 // traceline's records (design language §9.10) against real porcelain.
 //
-//   node scripts/dev/bash-corpus/extract-results.mjs [--sessions ~/.pi/agent/sessions] [--out out/results.jsonl]
+//   node scripts/dev/bash-corpus/extract-results.mjs [--sessions ~/.pi/agent/sessions] [--out out/results.jsonl] [--all]
 //
 // Output: one JSON object per line, {"cmd", "text", "isError"}, for every bash call
-// whose command mentions git, gh or npm (the record vocabularies). The file holds raw
+// whose command mentions git, gh or npm (the built-in vocabulary), or with --all every
+// bash call, for drafting entries for other tools (draft-vocabulary.ts). The file holds raw
 // session output, so it lives in the git-ignored out/ directory and is never committed.
 // records.ts replays it through the live records parser.
 
@@ -26,6 +27,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const sessionsRoot = argValue("--sessions", join(homedir(), ".pi", "agent", "sessions"));
 const outPath = argValue("--out", join(here, "out", "results.jsonl"));
 const VOCABULARY = /\b(?:git|gh|npm)\b/;
+const every = args.includes("--all");
 
 function* sessionFiles(root) {
   for (const entry of readdirSync(root)) {
@@ -68,7 +70,7 @@ for (const file of sessionFiles(sessionsRoot)) {
     if (!Array.isArray(message.content)) continue;
     for (const item of message.content) {
       const cmd = item?.type === "toolCall" && item?.name === "bash" ? item?.arguments?.command : undefined;
-      if (typeof cmd === "string" && VOCABULARY.test(cmd)) pending.set(item.id, cmd);
+      if (typeof cmd === "string" && (every || VOCABULARY.test(cmd))) pending.set(item.id, cmd);
     }
   }
 }

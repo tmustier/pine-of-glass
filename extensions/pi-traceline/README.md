@@ -253,6 +253,8 @@ That row then reads `applied deployment.apps/web $ kubectl apply -f web.yaml`.
 - If you tell Pi not to trust a project, Traceline ignores that project's vocabulary too. Pi only asks about projects that have their own Pi settings, extensions or skills, so in any other project the file is read like the rest of `pi-traceline.json`.
 - If something is wrong, Traceline shows a notification naming the file and entry, and loads everything else.
 
+To draft entries from your own session history with a model, see [Drafting entries with a model](../../scripts/dev/bash-corpus/README.md#drafting-entries-with-a-model). The script checks that every example is copied from a real result before it writes a draft.
+
 Another extension can send entries in the same format from its `session_start` handler. A later message from the same `source` replaces the earlier one, and your own files still win:
 
 ```ts
