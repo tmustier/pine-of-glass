@@ -8,6 +8,7 @@ import { isNoticeRow } from "../../extensions/_lib/chat.ts";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { hostExtension, IsolatedProject, RecordedUi, type HostedExtension } from "../harness/extension-host.ts";
 import { mouseViewport } from "../fixtures/mouse-viewport.ts";
+import { handleThinkingToggleTerminalInput } from "../../extensions/pi-traceline/thinking-toggle.ts";
 import { assistantMessage } from "../helpers.ts";
 import noticeFixture from "../smoke/notice-extension.ts";
 
@@ -74,6 +75,16 @@ test("Pi notice detection and expansion flag match the installed components", ()
   assert.equal(seam._expanded, false);
   msg.setExpanded(true);
   assert.equal(seam._expanded, true);
+});
+
+test("Ctrl+T collapses an expanded notice", () => {
+  const msg = message("plain", "hello");
+  const seam: unknown = msg;
+  assert.ok(isNoticeRow(seam));
+  chat.addChild(msg);
+  msg.setExpanded(true);
+  handleThinkingToggleTerminalInput("\x14", { getToolsExpanded: () => false, setToolsExpanded: () => {} }, () => chat.children);
+  assert.equal(seam._expanded, false);
 });
 
 test("registered renderers retain status ink and lose block decoration inside a fused trace block", () => {

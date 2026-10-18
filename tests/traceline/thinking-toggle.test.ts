@@ -1,11 +1,14 @@
 // Ctrl+T is decisive over Ctrl+O's global z1 expansion (design language §9.12):
 // Traceline collapses expanded tool rows before letting Pi's native reasoning toggle
-// handle the same press. Kitty release/repeat events remain consumed so one physical
+// handle the same press. Rows opened one at a time are covered with real Pi rows in
+// tests/contract/pi-traceline-click.test.ts. Kitty release/repeat events remain consumed so one physical
 // press produces one transition.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { handleThinkingToggleTerminalInput } from "../../extensions/pi-traceline/thinking-toggle.ts";
+
+const noRows = () => [];
 
 function toolsUi(expanded: boolean) {
   const writes: boolean[] = [];
@@ -26,7 +29,7 @@ test("Ctrl+T collapses Ctrl+O expansion and continues to Pi's native toggle", as
   let cleanups = 0;
 
   assert.equal(
-    handleThinkingToggleTerminalInput("\x14", ui, () => { cleanups += 1; }),
+    handleThinkingToggleTerminalInput("\x14", ui, noRows, () => { cleanups += 1; }),
     undefined,
     "press must continue to Pi",
   );
@@ -39,15 +42,15 @@ test("Ctrl+T collapses Ctrl+O expansion and continues to Pi's native toggle", as
 test("Ctrl+T leaves an already-collapsed tool view alone", () => {
   const { ui, writes } = toolsUi(false);
 
-  assert.equal(handleThinkingToggleTerminalInput("\x14", ui), undefined);
+  assert.equal(handleThinkingToggleTerminalInput("\x14", ui, noRows), undefined);
   assert.deepEqual(writes, [], "avoid a redundant global expansion write and render");
 });
 
 test("unrelated keys pass through; Kitty repeats and releases are consumed", () => {
   const { ui, writes } = toolsUi(true);
 
-  assert.equal(handleThinkingToggleTerminalInput("x", ui), undefined);
-  assert.deepEqual(handleThinkingToggleTerminalInput("\x1b[116;5:2u", ui), { consume: true });
-  assert.deepEqual(handleThinkingToggleTerminalInput("\x1b[116;5:3u", ui), { consume: true });
+  assert.equal(handleThinkingToggleTerminalInput("x", ui, noRows), undefined);
+  assert.deepEqual(handleThinkingToggleTerminalInput("\x1b[116;5:2u", ui, noRows), { consume: true });
+  assert.deepEqual(handleThinkingToggleTerminalInput("\x1b[116;5:3u", ui, noRows), { consume: true });
   assert.deepEqual(writes, [], "only a fresh Ctrl+T press may change expansion state");
 });

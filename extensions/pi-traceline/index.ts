@@ -1157,7 +1157,7 @@ export default function piTraceline(pi: ExtensionAPI) {
     inputUnsubscribe = ctx.ui.onTerminalInput((data) => {
       // A foreign chord exits drill mode before the same input reaches Pi (§9.13).
       handleDrillTerminalInput(data);
-      return handleThinkingToggleTerminalInput(data, ctx.ui, () => {
+      return handleThinkingToggleTerminalInput(data, ctx.ui, chatChildren, () => {
         const patched = tryPatch();
         const suppressed = suppressThinkingToggleStatus(chatChildren());
         if (patched || suppressed) g.__tracelineTui?.requestRender();

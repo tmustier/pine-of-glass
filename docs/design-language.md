@@ -963,8 +963,10 @@ borrows from:
 
 Ctrl+T is decisive over z1: when Pi's global Ctrl+O expansion is active,
 Traceline first collapses that expansion, then lets Pi's native reasoning toggle run.
-This guarantees that the next hidden-reasoning view is z0 rather than remaining pinned
-at z1. Ctrl+O can expand the rows again whenever z1 is wanted.
+Rows opened one at a time (by a click, a drill pin or an expanded notice) collapse
+too; revealed groups and ledgers (§9.12.1) stay as they are. This guarantees that
+the next hidden-reasoning view is z0 rather than remaining pinned at z1. Ctrl+O can
+expand the rows again whenever z1 is wanted.
 
 An expanded row opts out of trace-block grammar: it breaks the rail block
 (§9.1), leaves its neighbours' fact and truncation columns (§9.7, §9.8), and
@@ -998,7 +1000,7 @@ Revealed membership is a snapshot: later calls do not silently join it, and its
 members do not automatically refold after individual collapse. It is transient
 view state, retained through redraws and streaming, reset on reload/session
 replacement. Pi's per-row `expanded` remains the only output-expansion state;
-Ctrl+O still sets all rows and Ctrl+T retains the existing zoom rules. Regular
+Ctrl+O still sets all rows and Ctrl+T collapses them all (§9.12). Regular
 terminal-scrollback mode never captures the mouse. Mouse expansion is inactive
 while Drill is open, preserving its frozen keyboard targets.
 

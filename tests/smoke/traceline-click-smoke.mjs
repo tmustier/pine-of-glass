@@ -64,8 +64,10 @@ try {
   wait((s) => s.includes("OUTPUT_ALPHA") && s.includes("OUTPUT_SOLO"), "Ctrl+O did not expand all");
   keys("C-o");
   wait((s) => !s.includes("OUTPUT_"), "Ctrl+O did not collapse all");
+  click("beta.txt");
+  wait((s) => s.includes("OUTPUT_BETA"), "beta did not expand before Ctrl+T");
   keys("C-t"); sleep(200); keys("C-t");
-  wait((s) => s.includes("▾") && !s.includes("OUTPUT_"), "Ctrl+T did not preserve revealed compact state");
+  wait((s) => s.includes("▾") && !s.includes("OUTPUT_"), "Ctrl+T did not collapse beta or preserve revealed compact state");
   keys("C-c"); keys("-l", "/reload"); keys("Enter");
   wait((s) => s.includes("3 calls") && !s.includes("▾"), "reload did not reset transient fold state");
   click("3 calls"); click("beta.txt");
