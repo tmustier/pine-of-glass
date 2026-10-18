@@ -83,7 +83,7 @@ test("Ctrl+T collapses an expanded notice", () => {
   assert.ok(isNoticeRow(seam));
   chat.addChild(msg);
   msg.setExpanded(true);
-  handleThinkingToggleTerminalInput("\x14", { getToolsExpanded: () => false, setToolsExpanded: () => {} }, () => chat.children);
+  handleThinkingToggleTerminalInput("\x14", { getToolsExpanded: () => false, setToolsExpanded() {} }, () => chat.children);
   assert.equal(seam._expanded, false);
 });
 

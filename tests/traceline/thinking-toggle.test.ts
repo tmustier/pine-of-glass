@@ -1,7 +1,6 @@
 // Ctrl+T is decisive over Ctrl+O's global z1 expansion (design language §9.12):
 // Traceline collapses expanded tool rows before letting Pi's native reasoning toggle
-// handle the same press. Rows opened one at a time are covered with real Pi rows in
-// tests/contract/pi-traceline-click.test.ts. Kitty release/repeat events remain consumed so one physical
+// handle the same press. Kitty release/repeat events remain consumed so one physical
 // press produces one transition.
 import { test } from "node:test";
 import assert from "node:assert/strict";

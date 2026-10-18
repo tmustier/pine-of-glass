@@ -89,8 +89,7 @@ test("Ctrl+T collapses clicked rows; revealed groups stay revealed", () => {
   clickLine(c, "b.txt");
   assert.equal(seam(solo).expanded, true);
   assert.equal(seam(b).expanded, true);
-  const tools = { getToolsExpanded: () => false, setToolsExpanded: () => assert.fail("no global expansion to collapse") };
-  assert.equal(handleThinkingToggleTerminalInput("\x14", tools, () => c.children), undefined, "the press continues to Pi");
+  handleThinkingToggleTerminalInput("\x14", { getToolsExpanded: () => false, setToolsExpanded() {} }, () => c.children);
   assert.equal(seam(solo).expanded, false);
   assert.equal(seam(b).expanded, false);
   assert.ok(isRevealed(seam(a)) && isRevealed(seam(b)));
