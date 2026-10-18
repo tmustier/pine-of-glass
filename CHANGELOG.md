@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.18.1 (2026-10-18)
+
+- Traceline's Ctrl+T now collapses rows that were opened one at a time. A tool row
+  opened by a click or a drill pin, or an expanded notice, used to stay open after
+  hiding and showing reasoning again; only Ctrl+O's expand-all was collapsed.
+  Revealed groups and ledgers keep their state.
+
 ## 0.18.0 (2026-10-17)
 
 - Contextimate shows conversation text added only for a provider request in a separate
