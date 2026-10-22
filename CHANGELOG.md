@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.18.2 (2026-10-22)
+
 - Contextimate's `Request-only` attribution works in bundled Pi installs, which include
   the standard `npm install -g` install of Pi (since 0.84.3) and Homebrew. OpenAI
   Responses (including Codex and Azure) and Anthropic text requests no longer print
