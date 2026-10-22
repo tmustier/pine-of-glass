@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+## 0.18.3 (2026-10-22)
+
 - All four extensions read global configuration from Pi's active agent directory,
   respecting `PI_CODING_AGENT_DIR`. Project and explicit Contextimate overrides
-  keep their existing precedence. (#185)
+  keep their existing precedence. Reported by @hifanx in #185; fixed in #187.
 
 ## 0.18.2 (2026-10-22)
 
