@@ -1,28 +1,30 @@
 // Decode conversation additions, excluding instructions, tool output and schemas.
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sessionSdk from "@earendil-works/pi-coding-agent";
-import { buildSessionContext, convertToLlm, type ExtensionAPI, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, convertToLlm, VERSION, type ExtensionAPI, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { isJsonObject } from "../_lib/boundary.ts";
+import { foreignThinkingFor } from "../_lib/forecast.ts";
 import { countTextContent, countToolCallContent } from "./message-size.ts";
 
 type RequestMessages = { additive: false } | { additive: true; chars: number };
 type TextPart = { role: "user" | "assistant"; text: string };
-type Normalization = Pick<typeof import("@earendil-works/pi-ai/api/transform-messages"), "transformMessages">
-  & Pick<typeof import("@earendil-works/pi-ai/utils/sanitize-unicode"), "sanitizeSurrogates">;
-let normalization: Promise<Normalization> | undefined;
 
 function conversationText(messages: Message[], model?: Model<Api>): TextPart[] {
   const anthropic = model?.api === "anthropic-messages";
   const allowEmptySignature = model?.compat && "allowEmptySignature" in model.compat && model.compat.allowEmptySignature;
   return messages.flatMap((message): TextPart[] => {
     if (message.role !== "user" && message.role !== "assistant") return [];
-    const texts = typeof message.content === "string" ? [message.content] : message.content.flatMap((block) => {
+    // Mirror text-relevant replay rules only when comparing a native payload.
+    if (model && message.role === "assistant"
+      && (message.stopReason === "error" || message.stopReason === "aborted")) return [];
+    const foreign = model && message.role === "assistant"
+      && (message.provider !== model.provider || message.api !== model.api || message.model !== model.id);
+    const texts = typeof message.content === "string" ? [message.content] : (message.content ?? []).flatMap((block) => {
       if (block.type === "text") return [block.text];
-      if (anthropic && block.type === "thinking" && !block.redacted
-        && !block.thinkingSignature?.trim() && !allowEmptySignature) return [block.thinking];
+      if (block.type !== "thinking" || block.redacted) return [];
+      if (foreign) return foreignThinkingFor(VERSION) === "text" && block.thinking.trim() ? [block.thinking] : [];
+      if (anthropic && !block.thinkingSignature?.trim() && !allowEmptySignature) return [block.thinking];
       return [];
     });
     return texts.filter((text) => anthropic ? text.trim().length > 0 : text.length > 0)
@@ -64,18 +66,8 @@ export async function payloadTextAdditions(saved: AgentMessage[], payload: unkno
       }
     }
   }
-  normalization ??= (async () => {
-    const dist = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-ai")));
-    // SAFETY: public Pi AI exports, exercised by native-converter regression tests.
-    // File URLs bypass Pi 0.86's prefix alias, which misresolves package subpaths.
-    const messages = await import(pathToFileURL(join(dist, "api/transform-messages.js")).href) as typeof import("@earendil-works/pi-ai/api/transform-messages");
-    // SAFETY: paired public Pi AI sanitizer, pinned by the same native-converter tests.
-    const unicode = await import(pathToFileURL(join(dist, "utils/sanitize-unicode.js")).href) as typeof import("@earendil-works/pi-ai/utils/sanitize-unicode");
-    return { transformMessages: messages.transformMessages, sanitizeSurrogates: unicode.sanitizeSurrogates };
-  })();
-  const native = await normalization;
-  const expected = conversationText(native.transformMessages(messages, model), model)
-    .map((part) => ({ ...part, text: native.sanitizeSurrogates(part.text) }));
+  const expected = conversationText(messages, model)
+    .map((part) => ({ ...part, text: part.text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "") }));
   let index = 0;
   let chars = 0;
   for (const part of observed) {

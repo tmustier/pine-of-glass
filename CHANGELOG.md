@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Contextimate's `Request-only` attribution works in bundled Pi installs, which include
+  the standard `npm install -g` install of Pi (since 0.84.3) and Homebrew. OpenAI
+  Responses (including Codex and Azure) and Anthropic text requests no longer print
+  `Cannot find module '@earendil-works/pi-ai'` after assistant turns, while
+  request-only additions are still counted. (#181)
+
 ## 0.18.1 (2026-10-18)
 
 - Traceline's Ctrl+T now collapses rows that were opened one at a time. A tool row
