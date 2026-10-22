@@ -1,9 +1,10 @@
 // Shared config-file convention for the pine-of-glass extension family:
-// user-level `~/.pi/agent/<name>.json`, then project-level `<cwd>/.pi/<name>.json`.
+// user-level `<agentDir>/<name>.json`, then project-level `<cwd>/.pi/<name>.json`.
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export function expandHomePath(filePath: string): string {
   if (filePath === "~") return homedir();
@@ -23,5 +24,5 @@ export function readJsonConfig<T>(filePath: string, parse: (value: unknown) => T
 
 /** Standard lookup order: user file first, project file second (later overrides). */
 export function configPaths(name: string, cwd: string): string[] {
-  return [join(homedir(), ".pi", "agent", `${name}.json`), join(cwd, ".pi", `${name}.json`)];
+  return [join(getAgentDir(), `${name}.json`), join(cwd, ".pi", `${name}.json`)];
 }

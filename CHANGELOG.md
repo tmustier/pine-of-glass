@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- All four extensions read global configuration from Pi's active agent directory,
+  respecting `PI_CODING_AGENT_DIR`. Project and explicit Contextimate overrides
+  keep their existing precedence. (#185)
+
 ## 0.18.2 (2026-10-22)
 
 - Contextimate's `Request-only` attribution works in bundled Pi installs, which include

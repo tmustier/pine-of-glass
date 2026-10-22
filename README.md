@@ -15,6 +15,13 @@ Requires Pi 0.86.0 or later.
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
 - From npm (installs `contextimate`, `traceline`, and experimental `cachemire` and `meantime`): `pi install npm:pine-of-glass`. Meantime stays inert until its config sets `"enabled": true`.
 
+## Configuration directory
+
+All four extensions read global configuration from Pi's active agent directory.
+It defaults to `~/.pi/agent`; `PI_CODING_AGENT_DIR` selects a different directory.
+Project files under `.pi/` still override global configuration. Contextimate's
+`PI_CONTEXTIMATE_CONFIG` files still apply last.
+
 ## Themes
 
 All four extensions use Pi's selected theme. Running status uses its accent colour;
