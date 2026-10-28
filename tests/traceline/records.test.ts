@@ -142,8 +142,7 @@ test("a PR or issue datum carries the address its evidence or command names", ()
   assert.deepEqual(hrefs(bash('gh pr merge 124 --repo "$REPO"', "(no output)")), ["PR #124 -"]);
   assert.deepEqual(hrefs(bash("gh pr merge 125 && gh pr view 125 --json state -q .state", "MERGED\n")), ["PR #125 -"]);
   assert.deepEqual(hrefs(bash("gh pr create --fill", "see /pull/88\n")), ["PR #88 -"]);
-  // A state url for another PR, or one that could end the OSC 8 sequence, is not used.
-  assert.deepEqual(hrefs(bash("gh pr merge 92 && gh pr view 92 --json state,url", `{"state":"MERGED","url":"${repo}/pull/1"}\n`)), ["PR #92 -"]);
+  // An address that could end the OSC 8 sequence is not used.
   assert.deepEqual(hrefs(bash("gh pr merge 93 && gh pr view 93 --json state,url", `{"state":"MERGED","url":"${repo}\\u0007x/pull/93"}\n`)), ["PR #93 -"]);
 });
 

@@ -159,7 +159,7 @@ export const BUILT_IN_VOCABULARY = [
     id: "gh.pr.create",
     commands: ["gh pr create"],
     unless: ["--dry-run"],
-    records: [{ output: String.raw`(?<base>https?://[^\s/]+/[^\s/]+/[^\s/]+)?/pull/(?<number>\d+)\b`, verb: "opened", datum: "PR #{number}", href: "{base}/pull/{number}" }],
+    records: [{ output: String.raw`(?<base>https?://\S+?)?/pull/(?<number>\d+)\b`, verb: "opened", datum: "PR #{number}", href: "{base}/pull/{number}" }],
     examples: [
       { command: "gh pr create --fill", output: "https://github.com/o/r/pull/88\n", records: ["opened PR #88"] },
       { command: 'PR_URL=$(gh pr create --fill) && echo "$PR_URL"', output: "https://github.com/o/r/pull/88\n", records: ["opened PR #88"] },
@@ -168,7 +168,7 @@ export const BUILT_IN_VOCABULARY = [
   {
     id: "gh.issue.create",
     commands: ["gh issue create"],
-    records: [{ output: String.raw`(?<base>https?://)?(?<path>github\.com/[^/\s]+/[^/\s]+/issues/(?<number>\d+))\b`, verb: "opened", datum: "#{number}", href: "{base}{path}" }],
+    records: [{ output: String.raw`github\.com/(?<repo>[^/\s]+/[^/\s]+)/issues/(?<number>\d+)\b`, verb: "opened", datum: "#{number}", href: "https://github.com/{repo}/issues/{number}" }],
     examples: [{ command: "gh issue create --title x --body-file /tmp/body.md", output: "https://github.com/o/r/issues/14\n", records: ["opened #14"] }],
   },
   {

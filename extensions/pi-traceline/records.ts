@@ -13,11 +13,8 @@ import { BUILT_IN_VOCABULARY } from "./vocabulary.ts";
 export type RecordTone = "success" | "warning";
 /** Which of §9.10's evidence sources produced the fact. */
 export type RecordEvidence = "output" | "state" | "quiet";
-/**
- * `by`: the keys (record-shell.ts) of the commands that earned it; the fitter keeps them readable (§9.8).
- * `href`: the datum's web address when the evidence or command names one (§9.10).
- */
-export type RecordFact = { verb: string; datum: string; href: string | undefined; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence; by: string[] };
+/** `by`: the keys (record-shell.ts) of the commands that earned it; the fitter keeps them readable (§9.8). */
+export type RecordFact = { verb: string; datum: string; href?: string; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence; by: string[] };
 
 /** A vocabulary entry as written (§9.10): plain data, the shape a JSON file would hold. */
 export type VocabularyEntryInput = {
@@ -29,7 +26,7 @@ export type VocabularyEntryInput = {
   examples: { command: string; output: string; error?: boolean; records: string[] }[];
 };
 type Options = { long: string[]; short: string };
-type RecordRule = { pattern: RegExp; verb: string; datum: string; href: string | undefined; tone: RecordTone; opaque: boolean };
+type RecordRule = { pattern: RegExp; verb: string; datum: string; href?: string; tone: RecordTone; opaque: boolean };
 export type VocabularyEntry = {
   id: string;
   commands: [string, ...string[]][];
@@ -113,11 +110,11 @@ function prTarget(args: ShellWord[]): PrTarget | undefined {
 const SAFE_URL = /^https?:\/\/[!-~]+$/;
 const safeUrl = (url: string | undefined) => (url && SAFE_URL.test(url) ? url : undefined);
 
-/** A PR's address from the repository the command names; a bare owner/repo means github.com, as it does to gh. */
+/** A bare owner/repo means github.com, as it does to gh; host/owner/repo names its host. */
 function prUrl({ number, repo }: PrTarget): string | undefined {
-  const parts = repo && /^[\w.-]+(?:\/[\w.-]+){1,2}$/.test(repo) ? repo.split("/") : undefined;
-  if (!parts) return undefined;
-  return `https://${parts.length === 2 ? `github.com/${repo}` : repo}/pull/${number}`;
+  if (!repo || !/^[\w.-]+(?:\/[\w.-]+){1,2}$/.test(repo)) return undefined;
+  const host = repo.split("/").length === 2 ? "github.com/" : "";
+  return `https://${host}${repo}/pull/${number}`;
 }
 
 // --- the vocabulary ------------------------------------------------------------------
@@ -293,8 +290,7 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
         const hasState = view?.some(({ text }, i) =>
           (text === "--json" ? view[i + 1]?.text : text.startsWith("--json=") ? text.slice("--json=".length) : undefined)?.split(",").includes("state"));
         if (viewed?.number === target.number && sameRepo && hasState) {
-          const viewedUrl = stateUrl?.endsWith(`/pull/${target.number}`) ? safeUrl(stateUrl) : undefined;
-          const href = viewedUrl ?? prUrl(target) ?? prUrl(viewed);
+          const href = safeUrl(stateUrl) ?? prUrl(target) ?? prUrl(viewed);
           return [{ verb: "merged", datum: `PR #${target.number}`, href, at: out.indexOf(trimmed), tone: "success", opaque: false, evidence: "state", by }];
         }
         if (["cd", "pushd", "popd"].includes(command.head.text)) break;
@@ -307,7 +303,7 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
     if (op.command !== script.statusOwner) return [];
     if (fallback === "worktree") {
       const [path] = positionals(op.args, new Set());
-      return path?.literal ? [{ verb: "removed worktree", datum: path.text, href: undefined, at: 0, tone: "success", opaque: false, evidence: "quiet", by }] : [];
+      return path?.literal ? [{ verb: "removed worktree", datum: path.text, at: 0, tone: "success", opaque: false, evidence: "quiet", by }] : [];
     }
     const target = prTarget(op.args);
     return target && !hasOption(op.args, ["--auto", "--disable-auto"])

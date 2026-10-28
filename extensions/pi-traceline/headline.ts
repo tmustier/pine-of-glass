@@ -10,9 +10,7 @@ import type { RecordFact, RecordTone } from "./records.ts";
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
 
-/** One datum and, when its evidence names one, the address it links to (§9.10). */
-export type HeadlineDatum = { text: string; href: string | undefined };
-export type RecordCellData = { verb: string; data: HeadlineDatum[]; tone: RecordTone | CheckTone; opaque: boolean };
+export type RecordCellData = { verb: string; data: { text: string; href?: string }[]; tone: RecordTone | CheckTone; opaque: boolean };
 
 // Facts chain in output order; consecutive same-verb facts merge their data
 // (`pushed main, v0.5.9`) and exact duplicates collapse. Merging also requires the
@@ -26,9 +24,7 @@ export function mergeHeadlineFacts(records: RecordFact[], checks: CheckFact[]): 
     const datum = { text: fact.datum, href: fact.href };
     const last = merged[merged.length - 1];
     if (last && last.verb === fact.verb && last.tone === fact.tone) {
-      const same = last.data.find(({ text }) => text === fact.datum);
-      if (!same) last.data.push(datum);
-      else same.href ??= fact.href;
+      if (!last.data.some(({ text }) => text === fact.datum)) last.data.push(datum);
     } else {
       merged.push({ verb: fact.verb, data: [datum], tone: fact.tone, opaque: fact.opaque });
     }
@@ -40,8 +36,7 @@ export function recordCellText(cell: RecordCellData): string {
   return `${cell.verb} ${cell.data.map(({ text }) => text).join(", ")}`;
 }
 
-// A link wraps the datum alone, and only where Pi says the terminal shows links (§9.10).
-// OSC 8 adds no visible text, so widths above never count it.
+// A link wraps the datum alone, where Pi shows links (§9.10); it adds no visible width.
 function linkedData(cell: RecordCellData): string {
   const links = getCapabilities().hyperlinks;
   return cell.data.map(({ text, href }) => (links && href ? hyperlink(text, href) : text)).join(", ");
