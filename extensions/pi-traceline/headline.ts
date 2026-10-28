@@ -2,6 +2,7 @@
 // of consequence and check facts, merged, capped and inked. Parsing lives in records.ts
 // and checks.ts; this module turns their facts into the headline cells.
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { getCapabilities, hyperlink } from "@earendil-works/pi-tui";
 import { SEP, ink } from "../_lib/style.ts";
 import type { CheckFact, CheckTone } from "./checks.ts";
 import type { RecordFact, RecordTone } from "./records.ts";
@@ -9,7 +10,7 @@ import type { RecordFact, RecordTone } from "./records.ts";
 const BOLD = "\x1b[1m";
 const BOLD_OFF = "\x1b[22m";
 
-export type RecordCellData = { verb: string; data: string[]; tone: RecordTone | CheckTone; opaque: boolean };
+export type RecordCellData = { verb: string; data: { text: string; href?: string }[]; tone: RecordTone | CheckTone; opaque: boolean };
 
 // Facts chain in output order; consecutive same-verb facts merge their data
 // (`pushed main, v0.5.9`) and exact duplicates collapse. Merging also requires the
@@ -18,20 +19,27 @@ export type RecordCellData = { verb: string; data: string[]; tone: RecordTone | 
 // and merge under the same rule; a pass wears neutral ink, never green.
 export function mergeHeadlineFacts(records: RecordFact[], checks: CheckFact[]): RecordCellData[] {
   const merged: RecordCellData[] = [];
-  const facts = [...records, ...checks.map((fact) => ({ ...fact, opaque: false }))].sort((a, b) => a.at - b.at);
+  const facts = [...records, ...checks.map((fact) => ({ ...fact, href: undefined, opaque: false }))].sort((a, b) => a.at - b.at);
   for (const fact of facts) {
+    const datum = { text: fact.datum, href: fact.href };
     const last = merged[merged.length - 1];
     if (last && last.verb === fact.verb && last.tone === fact.tone) {
-      if (!last.data.includes(fact.datum)) last.data.push(fact.datum);
+      if (!last.data.some(({ text }) => text === fact.datum)) last.data.push(datum);
     } else {
-      merged.push({ verb: fact.verb, data: [fact.datum], tone: fact.tone, opaque: fact.opaque });
+      merged.push({ verb: fact.verb, data: [datum], tone: fact.tone, opaque: fact.opaque });
     }
   }
   return merged;
 }
 
 export function recordCellText(cell: RecordCellData): string {
-  return `${cell.verb} ${cell.data.join(", ")}`;
+  return `${cell.verb} ${cell.data.map(({ text }) => text).join(", ")}`;
+}
+
+// A link wraps the datum alone, where Pi shows links (§9.10); it adds no visible width.
+function linkedData(cell: RecordCellData): string {
+  const links = getCapabilities().hyperlinks;
+  return cell.data.map(({ text, href }) => (links && href ? hyperlink(text, href) : text)).join(", ");
 }
 
 // Records may take at most roughly a third of the row (§9.10), so the command keeps
@@ -53,7 +61,7 @@ export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], ava
   // the drop order below must not spend a fact that fits on one that never will.
   const cells = all.map((cell) => {
     const maxWidth = Math.floor(available * (cell.tone === "error" ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
-    return { ...cell, data: cell.data.filter((datum) => `${cell.verb} ${datum}`.length <= maxWidth) };
+    return { ...cell, data: cell.data.filter(({ text }) => `${cell.verb} ${text}`.length <= maxWidth) };
   }).filter((cell) => cell.data.length > 0);
   const lone = () => cells.length === 1 && cells[0]!.data.length === 1;
   const cap = () => Math.floor(available * (lone() && cells[0]!.tone === "error" ? LONE_FAILURE_SHARE : RECORD_HEADLINE_SHARE));
@@ -70,9 +78,9 @@ export function fitHeadline(theme: Theme | undefined, all: RecordCellData[], ava
   }
   if (cells.length === 0) return "";
   const shown = cells.map((cell) => {
-    if (!cell.opaque) return ink(theme, cell.tone, `${BOLD}${recordCellText(cell)}${BOLD_OFF}`);
+    if (!cell.opaque) return ink(theme, cell.tone, `${BOLD}${cell.verb} ${linkedData(cell)}${BOLD_OFF}`);
     const verb = ink(theme, cell.tone, `${BOLD}${cell.verb}${BOLD_OFF}`);
-    return `${verb}${ink(theme, "dim", ` ${cell.data.join(", ")}`)}`;
+    return `${verb}${ink(theme, "dim", ` ${linkedData(cell)}`)}`;
   }).join(ink(theme, "dim", SEP));
   const count = ` +${dropped}`;
   return dropped && width() + count.length <= cap() ? `${shown}${ink(theme, "dim", count)}` : shown;

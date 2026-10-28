@@ -7,6 +7,7 @@
 import { recordFacts } from "../../extensions/pi-traceline/records.ts";
 import { fitHeadline, mergeHeadlineFacts, recordCellText } from "../../extensions/pi-traceline/headline.ts";
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
+import { getCapabilities, setCapabilities } from "@earendil-works/pi-tui";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
@@ -118,6 +119,49 @@ test("gh porcelain: merge, close, create, issue close, release", () => {
   assert.deepEqual(headlineCells(closedIssue), ["closed #12"]);
   const released = bash("gh release create v0.5.9 --notes x", "https://github.com/tmustier/pine-of-glass/releases/tag/v0.5.9\n");
   assert.deepEqual(headlineCells(released), ["released v0.5.9"]);
+});
+
+test("a PR or issue datum carries the address its evidence or command names", () => {
+  const hrefs = (comp: ToolRowLike) => recordFacts(comp).map(({ datum, href }) => `${datum} ${href ?? "-"}`);
+  const repo = "https://github.com/tmustier/pine-of-glass";
+  assert.deepEqual(hrefs(bash("gh pr create --fill", `${repo}/pull/88\n`)), [`PR #88 ${repo}/pull/88`]);
+  assert.deepEqual(hrefs(bash("gh pr create --fill", "https://ghe.example.com/o/r/pull/7\n")), ["PR #7 https://ghe.example.com/o/r/pull/7"]);
+  assert.deepEqual(hrefs(bash("gh issue create --title x", `${repo}/issues/14\n`)), [`#14 ${repo}/issues/14`]);
+  assert.deepEqual(hrefs(bash("gh pr merge 87 --squash", "\u2713 Squashed and merged pull request tmustier/pine-of-glass#87 (x)\n")), [`PR #87 ${repo}/pull/87`]);
+  assert.deepEqual(hrefs(bash("gh pr close 12", "\u2713 Closed pull request tmustier/pine-of-glass#12 (stale)\n")), [`PR #12 ${repo}/pull/12`]);
+  assert.deepEqual(hrefs(bash("gh issue close 12", "\u2713 Closed issue tmustier/pine-of-glass#12 (x)\n")), [`#12 ${repo}/issues/12`]);
+  // Observed state: its own url first, then the repository the command names.
+  assert.deepEqual(hrefs(bash("gh pr merge 90 --squash && gh pr view 90 --json state,url", `{"state":"MERGED","url":"${repo}/pull/90"}\n`)), [`PR #90 ${repo}/pull/90`]);
+  assert.deepEqual(hrefs(bash("gh pr merge 91 -R o/r --squash && gh pr view 91 -R o/r --json state -q .state", "MERGED\n")), ["PR #91 https://github.com/o/r/pull/91"]);
+  // Quiet success: `--repo` (with or without a host) or the PR's URL.
+  assert.deepEqual(hrefs(bash("gh pr merge 120 --repo o/r --squash", "(no output)")), ["PR #120 https://github.com/o/r/pull/120"]);
+  assert.deepEqual(hrefs(bash("gh pr merge 121 --repo ghe.example.com/o/r", "(no output)")), ["PR #121 https://ghe.example.com/o/r/pull/121"]);
+  assert.deepEqual(hrefs(bash(`gh pr merge ${repo}/pull/122`, "(no output)")), [`PR #122 ${repo.toLowerCase()}/pull/122`]);
+  // Nothing names the repository: the datum stays unlinked rather than guessed.
+  assert.deepEqual(hrefs(bash("gh pr merge 123 --squash", "(no output)")), ["PR #123 -"]);
+  assert.deepEqual(hrefs(bash('gh pr merge 124 --repo "$REPO"', "(no output)")), ["PR #124 -"]);
+  assert.deepEqual(hrefs(bash("gh pr merge 125 && gh pr view 125 --json state -q .state", "MERGED\n")), ["PR #125 -"]);
+  assert.deepEqual(hrefs(bash("gh pr create --fill", "see /pull/88\n")), ["PR #88 -"]);
+  // An address that could end the OSC 8 sequence is not used.
+  assert.deepEqual(hrefs(bash("gh pr merge 93 && gh pr view 93 --json state,url", `{"state":"MERGED","url":"${repo}\\u0007x/pull/93"}\n`)), ["PR #93 -"]);
+});
+
+test("a linked datum is an OSC 8 hyperlink only where Pi says links show", () => {
+  const comp = bash("git push && gh pr create --fill", `${PUSH_OK}https://github.com/o/r/pull/88\n`);
+  const original = getCapabilities();
+  try {
+    setCapabilities({ ...original, hyperlinks: true });
+    const linked = headline(comp, 120);
+    assert.ok(linked.includes("\x1b]8;;https://github.com/o/r/pull/88\x1b\\PR #88\x1b]8;;\x1b\\"), JSON.stringify(linked));
+    assert.equal(linked.match(/\x1b\]8;;[^\x1b]/g)?.length, 1, "only the PR datum links; the verb and the pushed ref stay plain");
+    assert.equal(stripAnsi(linked), "pushed main \u00b7 opened PR #88");
+    setCapabilities({ ...original, hyperlinks: false });
+    const plain = headline(comp, 120);
+    assert.ok(!plain.includes("\x1b]8;"), JSON.stringify(plain));
+    assert.equal(stripAnsi(plain), stripAnsi(linked));
+  } finally {
+    setCapabilities(original);
+  }
 });
 
 test("silent terminal gh merges yield a merged fact", () => {

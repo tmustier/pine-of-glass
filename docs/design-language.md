@@ -730,6 +730,16 @@ provenance behind its `$`: `pushed main $ git push`, `merged PR #87 $ gh pr merg
   warning; git's porcelain says it is a riskier state. The tone is per fact,
   not per row: red discriminators beside a green `committed a4f21c9` is the
   loudest and most honest rendering, exactly when state changed before a failure
+- a datum whose evidence names its web address links there (`opened PR #88`
+  opens the pull request): an OSC 8 hyperlink around the datum alone, never
+  the verb, so the target stays small and the rest of the row keeps its click
+  (§9.12.1). The address comes from the evidence or the command, never a guess:
+  a URL in the output, a repository the output, `--repo` or a PR URL names, or
+  the `url` of observed state. A bare `owner/repo` means github.com, as it does
+  to gh by default. With none, the datum stays plain text. Links
+  follow Pi's hyperlink capability: on a terminal Pi does not know to support
+  them, nothing is emitted and the row reads exactly as before. A link adds no
+  visible text, so it never changes width, fitting or alignment
 
 Evidence comes from three sources. They are not ranked; each proves something
 different, and each vocabulary entry names the sources it accepts and why its
@@ -795,7 +805,9 @@ which is the list of what traceline records. An entry has:
   matches inside a cluster (`-n` in `-nu`)
 - `records`: completion-output rules, each an output pattern with named groups,
   the verb, a datum template over those groups (`PR #{number}`), and optionally a
-  warning tone or an opaque datum
+  warning tone, an opaque datum, or an `href` template over the same groups
+  (`{url}`, `https://github.com/{repo}/pull/{number}`). A link needs every group
+  it names and an `http(s)` address; without them the record stands unlinked
 - `examples`: real output with the records the entry must yield from it,
   including near misses that must yield none, and at least one that yields a
   record. An entry loads only when every example holds with the entry alone, so
