@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.18.4 (2026-10-28)
+
 - Traceline links PR and issue numbers in record headlines (`opened PR #88`,
   `merged PR #87`, `closed #12`) to their GitHub pages when the output or command
   names the repository. Click the number in fullscreen mode, or use your terminal's
