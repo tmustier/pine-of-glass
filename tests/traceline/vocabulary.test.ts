@@ -52,6 +52,7 @@ test("a bad entry is reported and left out whole; the rest still parse", () => {
     { ...valid, id: "kubectl.apply" },
     { ...valid, id: "bad.pattern", records: [{ output: "(unclosed", verb: "applied", datum: "x" }] },
     { ...valid, id: "bad.datum", records: [{ ...valid.records[0], datum: "{missing}" }] },
+    { ...valid, id: "bad.href", records: [{ ...valid.records[0], href: "https://example.com/{absent}" }] },
     { ...valid, id: "bad.option", unless: ["dry-run"] },
     { ...valid, id: "bad.tone", records: [{ ...valid.records[0], tone: "error" }] },
     { ...valid, id: "no.examples", examples: [] },
@@ -63,13 +64,15 @@ test("a bad entry is reported and left out whole; the rest still parse", () => {
     "kubectl.apply",
     "bad.pattern",
     "bad.datum",
+    "bad.href",
     "bad.option",
     "bad.tone",
     "no.examples",
     "no.commands",
-    "entry 9",
+    "entry 10",
   ]);
   assert.match(problems[2]!, /\{missing\} names no group/);
+  assert.match(problems[3]!, /href \{absent\} names no group/);
   assert.deepEqual(parseVocabulary({ entries: [valid] }), { entries: [], problems: ["vocabulary must be a list of entries"] });
 });
 

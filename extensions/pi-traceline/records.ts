@@ -13,8 +13,11 @@ import { BUILT_IN_VOCABULARY } from "./vocabulary.ts";
 export type RecordTone = "success" | "warning";
 /** Which of §9.10's evidence sources produced the fact. */
 export type RecordEvidence = "output" | "state" | "quiet";
-/** `by`: the keys (record-shell.ts) of the commands that earned it; the fitter keeps them readable (§9.8). */
-export type RecordFact = { verb: string; datum: string; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence; by: string[] };
+/**
+ * `by`: the keys (record-shell.ts) of the commands that earned it; the fitter keeps them readable (§9.8).
+ * `href`: the datum's web address when the evidence or command names one (§9.10).
+ */
+export type RecordFact = { verb: string; datum: string; href: string | undefined; at: number; tone: RecordTone; opaque: boolean; evidence: RecordEvidence; by: string[] };
 
 /** A vocabulary entry as written (§9.10): plain data, the shape a JSON file would hold. */
 export type VocabularyEntryInput = {
@@ -22,11 +25,11 @@ export type VocabularyEntryInput = {
   commands: string[];
   requires?: string[];
   unless?: string[];
-  records?: { output: string; verb: string; datum: string; tone?: RecordTone; opaque?: boolean }[];
+  records?: { output: string; verb: string; datum: string; href?: string; tone?: RecordTone; opaque?: boolean }[];
   examples: { command: string; output: string; error?: boolean; records: string[] }[];
 };
 type Options = { long: string[]; short: string };
-type RecordRule = { pattern: RegExp; verb: string; datum: string; tone: RecordTone; opaque: boolean };
+type RecordRule = { pattern: RegExp; verb: string; datum: string; href: string | undefined; tone: RecordTone; opaque: boolean };
 export type VocabularyEntry = {
   id: string;
   commands: [string, ...string[]][];
@@ -105,10 +108,28 @@ function prTarget(args: ShellWord[]): PrTarget | undefined {
   return { number, repo: (option ?? url?.[1])?.toLowerCase() };
 }
 
+// A link goes into an OSC 8 sequence, so it must be a plain http(s) address: printable
+// ASCII with no space, ESC or BEL that could end the sequence early (§9.10).
+const SAFE_URL = /^https?:\/\/[!-~]+$/;
+const safeUrl = (url: string | undefined) => (url && SAFE_URL.test(url) ? url : undefined);
+
+/** A PR's address from the repository the command names; a bare owner/repo means github.com, as it does to gh. */
+function prUrl({ number, repo }: PrTarget): string | undefined {
+  const parts = repo && /^[\w.-]+(?:\/[\w.-]+){1,2}$/.test(repo) ? repo.split("/") : undefined;
+  if (!parts) return undefined;
+  return `https://${parts.length === 2 ? `github.com/${repo}` : repo}/pull/${number}`;
+}
+
 // --- the vocabulary ------------------------------------------------------------------
 
 const OPTION = /^(?:--[A-Za-z0-9][\w-]*|-[A-Za-z])$/;
 const PLACEHOLDER = /\{(\w+)\}/g;
+
+/** Fill a template from a match's groups; undefined when it names a group that did not take part. */
+function fill(template: string, groups: Record<string, string | undefined> | undefined): string | undefined {
+  const complete = [...template.matchAll(PLACEHOLDER)].every((m) => groups?.[m[1]!] !== undefined);
+  return complete ? template.replace(PLACEHOLDER, (_, name: string) => groups?.[name] ?? "") : undefined;
+}
 
 function stringList(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
@@ -151,11 +172,14 @@ export function parseVocabulary(value: unknown, code: ReadonlyMap<string, EntryC
           }
           const pattern = new RegExp(value.output, "gm");
           const groups = new Set([...value.output.matchAll(/\(\?<(\w+)>/g)].map((m) => m[1]));
-          const missing = [...value.datum.matchAll(PLACEHOLDER)].map((m) => m[1]!).find((name) => !groups.has(name));
-          if (missing) throw new Error(`datum {${missing}} names no group in its output pattern`);
+          if (value.href !== undefined && typeof value.href !== "string") throw new Error("href must be a string");
+          for (const [field, template] of [["datum", value.datum], ["href", value.href ?? ""]] as const) {
+            const missing = [...template.matchAll(PLACEHOLDER)].map((m) => m[1]!).find((name) => !groups.has(name));
+            if (missing) throw new Error(`${field} {${missing}} names no group in its output pattern`);
+          }
           if (value.tone !== undefined && value.tone !== "success" && value.tone !== "warning") throw new Error("tone must be success or warning");
           if (value.opaque !== undefined && typeof value.opaque !== "boolean") throw new Error("opaque must be true or false");
-          return { pattern, verb: value.verb, datum: value.datum, tone: value.tone ?? "success", opaque: value.opaque ?? false };
+          return { pattern, verb: value.verb, datum: value.datum, href: value.href, tone: value.tone ?? "success", opaque: value.opaque ?? false };
         }),
         examples: item.examples.map((value: unknown) => {
           if (!isJsonObject(value)) throw new Error("each example needs command, output and records");
@@ -234,23 +258,22 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
     if (all.length === 0) return [];
     const by = all.map(({ command }) => commandKey(command));
     const output = entry.records.flatMap((rule) => [...out.matchAll(rule.pattern)].flatMap((match): RecordFact[] => {
-      let complete = true;
-      const datum = rule.datum.replace(PLACEHOLDER, (_, name: string) => {
-        const value = match.groups?.[name];
-        if (value === undefined) complete = false;
-        return value ?? "";
-      });
-      return complete ? [{ verb: rule.verb, datum: entry.code?.datum?.(datum, all) ?? datum, at: match.index, tone: rule.tone, opaque: rule.opaque, evidence: "output", by }] : [];
+      const datum = fill(rule.datum, match.groups);
+      if (datum === undefined) return [];
+      const href = rule.href === undefined ? undefined : safeUrl(fill(rule.href, match.groups));
+      return [{ verb: rule.verb, datum: entry.code?.datum?.(datum, all) ?? datum, href, at: match.index, tone: rule.tone, opaque: rule.opaque, evidence: "output", by }];
     }));
     const fallback = entry.code?.fallback;
     if (output.length || !fallback) return output;
 
     if (fallback === "merge" && trimmed !== "(no output)") {
       let merged = /^MERGED(?:\s+[0-9a-f]{7,40})?$/.test(trimmed);
+      let stateUrl: string | undefined;
       if (trimmed.startsWith("{")) {
         try {
           const state: unknown = JSON.parse(trimmed);
           merged = isJsonObject(state) && state.state === "MERGED";
+          if (isJsonObject(state) && typeof state.url === "string") stateUrl = state.url;
         } catch {
           return [];
         }
@@ -270,7 +293,9 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
         const hasState = view?.some(({ text }, i) =>
           (text === "--json" ? view[i + 1]?.text : text.startsWith("--json=") ? text.slice("--json=".length) : undefined)?.split(",").includes("state"));
         if (viewed?.number === target.number && sameRepo && hasState) {
-          return [{ verb: "merged", datum: `PR #${target.number}`, at: out.indexOf(trimmed), tone: "success", opaque: false, evidence: "state", by }];
+          const viewedUrl = stateUrl?.endsWith(`/pull/${target.number}`) ? safeUrl(stateUrl) : undefined;
+          const href = viewedUrl ?? prUrl(target) ?? prUrl(viewed);
+          return [{ verb: "merged", datum: `PR #${target.number}`, href, at: out.indexOf(trimmed), tone: "success", opaque: false, evidence: "state", by }];
         }
         if (["cd", "pushd", "popd"].includes(command.head.text)) break;
       }
@@ -282,11 +307,11 @@ function factsFor(entries: readonly VocabularyEntry[], command: string, text: st
     if (op.command !== script.statusOwner) return [];
     if (fallback === "worktree") {
       const [path] = positionals(op.args, new Set());
-      return path?.literal ? [{ verb: "removed worktree", datum: path.text, at: 0, tone: "success", opaque: false, evidence: "quiet", by }] : [];
+      return path?.literal ? [{ verb: "removed worktree", datum: path.text, href: undefined, at: 0, tone: "success", opaque: false, evidence: "quiet", by }] : [];
     }
     const target = prTarget(op.args);
     return target && !hasOption(op.args, ["--auto", "--disable-auto"])
-      ? [{ verb: "merged", datum: `PR #${target.number}`, at: 0, tone: "success", opaque: false, evidence: "quiet", by }]
+      ? [{ verb: "merged", datum: `PR #${target.number}`, href: prUrl(target), at: 0, tone: "success", opaque: false, evidence: "quiet", by }]
       : [];
   }).sort((a, b) => a.at - b.at);
 }

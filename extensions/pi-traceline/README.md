@@ -217,6 +217,8 @@ turns to the warning colour. This happens when a pipe such as `| tail -5` hides
 the checker's exit code. Traceline needs the summary in the output: a silent
 `tsc` gets no outcome.
 
+A pull request or issue number links to its page on GitHub when the output or the command names the repository: the URL `gh pr create` prints, `owner/repo#87` in gh's confirmation, `--repo`, or the `url` of a `gh pr view --json state,url` check. In fullscreen mode, click the number to open it; elsewhere, open it the way your terminal opens links (often Cmd-click). Links appear only where Pi shows hyperlinks. If your terminal supports them but Pi does not detect it, set `"terminal": { "hyperlinks": true }` in Pi's settings or `PI_HYPERLINKS=1`.
+
 Traceline requires result evidence, not just a command. A successful terminal `gh pr merge <number>` qualifies when Pi reports `(no output)`; auto modes do not. On merge-queue repositories, add a same-row `gh pr view <number> --json state` check when queued versus landed matters.
 
 ### Add your own outcomes
@@ -245,7 +247,7 @@ The commands Traceline knows are a list of entries, and you can add to it in `~/
 
 That row then reads `applied deployment.apps/web $ kubectl apply -f web.yaml`.
 
-- `output` is a regular expression matched against the result, where `^` and `$` mark the start and end of a line. `{name}` in `datum` reads the pattern's named group. Add `"tone": "warning"` for a riskier outcome, or `"opaque": true` to keep the datum dim, as commit hashes are. Keep patterns simple: they run on every bash result, and a pattern that backtracks badly slows rendering.
+- `output` is a regular expression matched against the result, where `^` and `$` mark the start and end of a line. `{name}` in `datum` reads the pattern's named group. Add `"tone": "warning"` for a riskier outcome, `"opaque": true` to keep the datum dim, as commit hashes are, or `"href"` to link the datum, such as `"https://example.com/deploys/{name}"`. A link needs every group it names and an `http` or `https` address. Keep patterns simple: they run on every bash result, and a pattern that backtracks badly slows rendering.
 - `requires` lists options of which one must be present, such as `["-b"]` for a new branch. `unless` lists options that rule the command out. A dry run should always be in `unless`.
 - An entry loads only when each example yields exactly its records. Include a near miss that must yield nothing, such as unchanged or failed output.
 - Reusing a built-in `id` replaces that entry, and `disableVocabulary` turns entries off. The built-in entries and their ids are in [`vocabulary.ts`](./vocabulary.ts).

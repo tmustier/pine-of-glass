@@ -1,6 +1,6 @@
 // The built-in record vocabulary (design language §9.10): plain data, parsed by
 // records.ts's parseVocabulary like any other vocabulary. Patterns are strings matched
-// with the `g` and `m` flags; `{name}` in a datum reads the pattern's named group.
+// with the `g` and `m` flags; `{name}` in a datum or href reads the pattern's named group.
 // An entry loads only when each example yields exactly its records with the entry alone:
 // copy examples from real porcelain, and add the near misses that must earn nothing.
 import type { VocabularyEntryInput } from "./records.ts";
@@ -140,7 +140,7 @@ export const BUILT_IN_VOCABULARY = [
     // `--disable-auto` only changed merge settings.
     id: "gh.pr.merge",
     commands: ["gh pr merge"],
-    records: [{ output: String.raw`(?:Merged|Squashed and merged|Rebased and merged) pull request \S*?#(?<number>\d+)`, verb: "merged", datum: "PR #{number}" }],
+    records: [{ output: String.raw`(?:Merged|Squashed and merged|Rebased and merged) pull request (?:(?<repo>[\w.-]+/[\w.-]+)|\S*?)#(?<number>\d+)`, verb: "merged", datum: "PR #{number}", href: "https://github.com/{repo}/pull/{number}" }],
     examples: [
       { command: "gh pr merge 87 --squash --delete-branch", output: "✓ Squashed and merged pull request o/r#87 (records)\n✓ Deleted branch records\n", records: ["merged PR #87"] },
       { command: "gh pr merge 120 --squash --delete-branch", output: SILENT, records: ["merged PR #120"] },
@@ -152,14 +152,14 @@ export const BUILT_IN_VOCABULARY = [
   {
     id: "gh.pr.close",
     commands: ["gh pr close"],
-    records: [{ output: String.raw`Closed pull request \S*?#(?<number>\d+)`, verb: "closed", datum: "PR #{number}" }],
+    records: [{ output: String.raw`Closed pull request (?:(?<repo>[\w.-]+/[\w.-]+)|\S*?)#(?<number>\d+)`, verb: "closed", datum: "PR #{number}", href: "https://github.com/{repo}/pull/{number}" }],
     examples: [{ command: "gh pr close 12", output: "✓ Closed pull request o/r#12 (stale)\n", records: ["closed PR #12"] }],
   },
   {
     id: "gh.pr.create",
     commands: ["gh pr create"],
     unless: ["--dry-run"],
-    records: [{ output: String.raw`/pull/(?<number>\d+)\b`, verb: "opened", datum: "PR #{number}" }],
+    records: [{ output: String.raw`(?<base>https?://[^\s/]+/[^\s/]+/[^\s/]+)?/pull/(?<number>\d+)\b`, verb: "opened", datum: "PR #{number}", href: "{base}/pull/{number}" }],
     examples: [
       { command: "gh pr create --fill", output: "https://github.com/o/r/pull/88\n", records: ["opened PR #88"] },
       { command: 'PR_URL=$(gh pr create --fill) && echo "$PR_URL"', output: "https://github.com/o/r/pull/88\n", records: ["opened PR #88"] },
@@ -168,13 +168,13 @@ export const BUILT_IN_VOCABULARY = [
   {
     id: "gh.issue.create",
     commands: ["gh issue create"],
-    records: [{ output: String.raw`github\.com/[^/\s]+/[^/\s]+/issues/(?<number>\d+)\b`, verb: "opened", datum: "#{number}" }],
+    records: [{ output: String.raw`(?<base>https?://)?(?<path>github\.com/[^/\s]+/[^/\s]+/issues/(?<number>\d+))\b`, verb: "opened", datum: "#{number}", href: "{base}{path}" }],
     examples: [{ command: "gh issue create --title x --body-file /tmp/body.md", output: "https://github.com/o/r/issues/14\n", records: ["opened #14"] }],
   },
   {
     id: "gh.issue.close",
     commands: ["gh issue close"],
-    records: [{ output: String.raw`Closed issue \S*?#(?<number>\d+)`, verb: "closed", datum: "#{number}" }],
+    records: [{ output: String.raw`Closed issue (?:(?<repo>[\w.-]+/[\w.-]+)|\S*?)#(?<number>\d+)`, verb: "closed", datum: "#{number}", href: "https://github.com/{repo}/issues/{number}" }],
     examples: [{ command: "gh issue close 12", output: "✓ Closed issue o/r#12 (rail glyphs)\n", records: ["closed #12"] }],
   },
   {

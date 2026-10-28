@@ -1,8 +1,8 @@
 import { stripAnsi } from "../../extensions/_lib/ansi.ts";
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { initTheme, ToolExecutionComponent, createReadTool } from "@earendil-works/pi-coding-agent";
-import { Container, Text, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { initTheme, ToolExecutionComponent, createBashToolDefinition, createReadTool } from "@earendil-works/pi-coding-agent";
+import { Container, Text, getCapabilities, setCapabilities, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { ToolRowLike } from "../../extensions/_lib/chat.ts";
 import { internals as trace } from "../../extensions/pi-traceline/index.ts";
 import { mouseViewport } from "../fixtures/mouse-viewport.ts";
@@ -192,6 +192,30 @@ test("fullscreen viewport preserves OSC 8 links, selection, overlay ownership an
     assert.equal(seam(a).expanded, false, "overlay must block transcript clicks");
     overlay.hide();
   } finally { view.stop(); }
+});
+
+test("a record's linked datum opens its PR; the rest of the row still expands", () => {
+  const original = getCapabilities();
+  setCapabilities({ ...original, hyperlinks: true });
+  const { view, urls, mouse } = mouseViewport();
+  const pr = new ToolExecutionComponent("bash", `call-${nextCallId++}`, { command: "gh pr create --fill" }, {}, createBashToolDefinition("/tmp"), { requestRender() {} } as never, "/tmp");
+  pr.updateResult({ content: [{ type: "text", text: "https://github.com/o/r/pull/88\n" }], isError: false });
+  const c = chat([pr]);
+  view.addChild(c);
+  try {
+    view.start(); view.paint();
+    const lines = painted(c);
+    const y = lines.findIndex((line) => line.includes("opened PR #88 $ gh pr create"));
+    assert.ok(y >= 0, lines.join("\n"));
+    const datum = lines[y]!.indexOf("PR #88") + 2;
+    mouse(0, datum, y); mouse(0, datum, y, true);
+    assert.deepEqual(urls, ["https://github.com/o/r/pull/88"]);
+    assert.equal(seam(pr).expanded, false, "opening the link must not expand the row");
+    const verb = lines[y]!.indexOf("opened");
+    mouse(0, verb, y); mouse(0, verb, y, true);
+    assert.deepEqual(urls, ["https://github.com/o/r/pull/88"], "the verb is not part of the link");
+    assert.equal(seam(pr).expanded, true);
+  } finally { view.stop(); setCapabilities(original); }
 });
 
 test("native mode keeps Pi mouse behaviour", () => {

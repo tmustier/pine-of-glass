@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Traceline links PR and issue numbers in record headlines (`opened PR #88`,
+  `merged PR #87`, `closed #12`) to their GitHub pages when the output or command
+  names the repository. Click the number in fullscreen mode, or use your terminal's
+  link gesture. Links follow Pi's hyperlink setting, so terminals Pi does not know
+  to support them show plain text as before. Vocabulary entries can link their own
+  datum with an `href` template.
+
 ## 0.18.3 (2026-10-22)
 
 - All four extensions read global configuration from Pi's active agent directory,
