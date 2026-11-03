@@ -11,6 +11,8 @@ Status: design only. Nothing here is implemented. Three investigations against P
 are folded in. The last section lists them, with the Amp threads that hold their full reports and
 reproduction tests.
 
+The design targets the latest Pi release only. It does not keep code paths for older Pi versions.
+
 ## Triage
 
 Most of the implicit state machines are fine and should stay as they are. A machine needs work
@@ -19,14 +21,14 @@ copies have already drifted apart.
 
 | Machine | Where | Decision |
 |---|---|---|
-| Process ownership of global state | cachemire, traceline (guarded); meantime, contextimate (not guarded) | Fix: one shared owner, used by all four |
+| Process-wide global state shared by every session | cachemire, traceline (guarded); meantime, contextimate (not guarded) | Fix: state per session, kept across `/reload`; Traceline keeps its owner |
 | Provider request lifecycle (armed, sent, settled, aborted) | cachemire, meantime, contextimate, forecast probe | Fix: one shared request cycle that recognises cache-warm replays and fallback re-attempts |
 | Cachemire pending request (nine `pending*` fields) | `pi-cachemire/index.ts` | Fix: one `PendingRequest` value |
 | Cachemire drift flags (`modelSwitched`, `thinkingChanged`, `compacted`) | `pi-cachemire/index.ts`, `warm.ts` | Fix: derive them instead of storing them |
 | Cachemire compaction (`inCompaction`, `compacted`) | `pi-cachemire/index.ts` | Fix: delete `inCompaction`, derive `compacted` |
 | Booking a billed call (live, warm, restored) | `index.ts` `message_end`, `warm.ts`, `ledger.ts` | Fix: one reducer |
 | Meantime call phase and run activity | `pi-meantime/index.ts` | Make explicit with tagged unions, and fix tool-time ownership |
-| Session lifetimes on `session_start` | all four | Make explicit: process, session and UI lifetimes |
+| Session lifetimes on `session_start` | all four | Make explicit: process, session and presentation parts |
 | "Was this call billed?" test | five copies | Fix: one helper |
 | Drill mode, pager, digit buffer | `pi-traceline/drill*.ts` | Leave |
 | Row view state (z0, z1, revealed folds, ledger overrides) | `pi-traceline/click.ts` | Leave (specified in design language §9.12.1) |
@@ -56,15 +58,16 @@ The same five rules shape every change below.
 
 ## Shared pieces in `_lib`
 
-### Process ownership (`_lib/session-owner.ts`)
+### Session-scoped state (`_lib/session-state.ts`)
 
 Pi can run more than one agent session in the same Node process. An extension that calls
 `createAgentSession` gets an in-process session with its own extension runner, and Pi invokes each
 extension's factory again for it, so closures are per session but `globalThis` is shared.
 Subagents that Pi spawns as separate processes (the example subagent extension, `RpcClient`) do
-not share globals. All four extensions keep state on `globalThis`, so an in-process child
-session's events reach the same state as the interactive session unless something stops them.
-Cachemire and Traceline each wrote their own guard; Meantime and Contextimate have none.
+not share globals. All four extensions keep their state in one `globalThis` slot, so that the
+state survives `/reload`, and as a result an in-process child session's events reach the same
+state as the interactive session. Cachemire and Traceline guard the slot with an ownership token;
+Meantime and Contextimate have no guard.
 
 The investigation (thread `T-01a1a11e-2170-70c4-a9f8-333edba5f95b`) confirmed the Meantime bug
 with an SDK-hosted test that fails on `main`. A headless child in the same process does the
@@ -77,75 +80,112 @@ following to the interactive session's Meantime state:
 - Its completed calls join the parent's ledger and slow-start baselines.
 - Its `session_shutdown` clears the shared timer and widget, which freezes the parent's clock.
   A child `session_start` with a reason other than `startup` or `reload` also wipes the
-  parent's history and UI handles. A default SDK child starts with `startup`, so this needs an
-  explicit `new`, `resume` or `fork`.
+  parent's history and UI handles.
 - Its factory call overwrites the shared config before any check.
 
 Contextimate's request accounting is per session and was correct in an interleaved test. Its UI
 globals are not: a child's `setModel` changed the model the parent's panel used, and a child's
-`session_shutdown` cancelled the parent's pending panel install.
+`session_shutdown` cancelled the parent's pending panel install. Cachemire's token has a gap of
+its own: it qualifies any session with `hasUI`, and Pi's RPC mode binds a UI, so an RPC session
+that starts first takes the ledger and a later TUI session gets nothing.
 
-The investigation also found a gap in Cachemire's guard. It qualifies any session with `hasUI`,
-and Pi's RPC mode binds a UI (`mode: "rpc"`), so an RPC-like session that starts first claims
-the ledger and a later TUI session gets nothing. Traceline already requires `mode === "tui"`.
-Traceline's `/drill` command checks `hasUI` but not ownership.
-
-The design moves Traceline's `tui-owner.ts` into `_lib` and generalises it:
+An ownership token is the wrong fix for this, because it makes one session win and the others go
+without. The design gives each session its own state instead, and keeps the `/reload` behaviour
+by keying the state on the session id, which a reload keeps:
 
 ```ts
-export interface SessionOwner {
-  /** True while this extension instance owns the process-wide slot. */
-  owns(): boolean;
-  /** Claim on session_start; false when another instance owns the slot or ctx does not qualify. */
-  claim(ctx: { hasUI: boolean; mode?: string }): boolean;
-  /** Release on session_shutdown; false when this instance did not own it. */
-  release(): boolean;
+/** Per-session extension state that survives /reload, keyed by Pi's session id. */
+export interface SessionStates<S> {
+  /** session_start. Reload returns the existing state; any other reason creates a fresh one. */
+  open(ctx: ExtensionContext, reason: SessionStartEvent["reason"], create: () => S): S;
+  /** Any later event. Undefined when this session has no state (see the delivery table). */
+  get(ctx: ExtensionContext): S | undefined;
+  /** session_shutdown. Reload keeps the state; any other reason removes and returns it for cleanup. */
+  close(ctx: ExtensionContext, reason: SessionShutdownEvent["reason"]): S | undefined;
 }
 
-export function sessionOwner(slot: string, qualifies: (ctx: { hasUI: boolean; mode?: string }) => boolean): SessionOwner;
+export function sessionStates<S>(slot: string): SessionStates<S>;
 ```
 
-Each extension creates one owner in its default export, with its own slot name and rule:
+The map lives in one `globalThis` slot per extension, keyed by
+`ctx.sessionManager.getSessionId()`. Pi emits `session_shutdown` with reason `reload` before it
+reloads, and with `new`, `resume`, `fork` or `quit` when the session ends, so `close` knows whether
+to keep the state. Every handler starts with `const s = states.get(ctx); if (!s) return;`.
 
-| Extension | Slot | Qualifies when |
+Each extension's state then has three parts with different lifetimes:
+
+| Part | Lifetime | Examples |
 |---|---|---|
-| Traceline | `__tracelineTuiOwner` | `mode === "tui" && hasUI` (unchanged) |
-| Cachemire | `__piCachemireOwner` | `mode === "tui" && hasUI` (changed from `hasUI`) |
-| Meantime | `__piMeantimeOwner` | `mode === "tui" && hasUI` |
-| Contextimate | `__piContextimateOwner` | `mode === "tui" && hasUI` |
+| Process | Whole process, outside the map | Cachemire's per-route thinking evidence, Contextimate's chosen view mode |
+| Session | One map entry, kept across `/reload` | ledgers, baselines, Meantime's calls and idle time |
+| Presentation | Rebound on every `session_start` inside the session entry | `ui`, theme, TUI handle, widget, chat container, timers |
 
-All four use the same rule, because all four render into Pi's terminal UI: the chat container,
-widgets and the resource list. Decision needed: requiring the TUI means Cachemire and Meantime
-stop working in RPC mode, where today they fall back to `notify`. The recommendation is to accept
-that, because the alternative (letting a TUI session take ownership from an RPC session) adds a
-hand-over protocol for a case with no known user.
+The process part is deliberately shared: thinking evidence describes a provider route, not a
+session, and the view mode is a user preference. Everything else is per session, so Meantime's
+18-field reset list becomes `create()`. The request tracker (next section) lives in the session
+entry but is abandoned on every `session_start`, reload included, because a request cannot settle
+into a reloaded module's handlers; that replaces Cachemire's manual `pending*` resets.
 
-The guard rules are:
+#### What each kind of session gets
 
-1. Every event handler, command handler and timer callback that touches global state starts with
-   `if (!owner.owns()) return;`. Only `session_start` calls `claim`, and only `session_shutdown`
-   calls `release`.
-2. Nothing touches global state before the claim. Meantime keeps reading its config in the
-   factory body, because `enabled: false` must still stop it from registering `/pace`, but it
-   moves `s.config = config` into `session_start`, after the claim.
-3. Closure state that Pi creates per factory call, such as Contextimate's `request` in
-   `request-messages.ts`, stays unguarded, because it already belongs to one session and its
-   accounting entries are useful in headless sessions too.
+The extensions should keep giving useful transcript information outside the TUI, without doing
+TUI work there. Pi sessions run in one of four modes (`tui`, `rpc`, `json`, `print`),
+and `hasUI` is false in a headless SDK child. The delivery level follows from that:
 
-One limit remains. Pi's SDK `AgentSession.dispose()` does not emit `session_shutdown`, so an
-owner disposed that way never releases its slot. That only matters if a TUI session is disposed
-without shutdown, which Pi's interactive mode does not do, so the design accepts it.
+| Session | Cachemire and Meantime | Contextimate | Traceline |
+|---|---|---|---|
+| TUI | Full: widget clocks, chat lines, `/cache` and `/pace` | Panel and request accounting | Full |
+| RPC | Ledger state, notices and turn summaries through `notify`, `/cache` and `/pace` through `notify`. No widget, no timers, no chat-container search. | Request accounting only | Nothing |
+| Print, JSON, headless child (`hasUI` false) | Nothing: no state is created, so handlers return at once | Request accounting only | Nothing |
 
-Tests (each must fail on `main`):
+RPC is the only non-TUI mode with an output channel, and Pi's RPC `setWidget` ignores component
+factories, so today's clock widgets already do nothing there while their timers still run. The
+design keeps what reaches an RPC client today (the `notify` fallback for chat lines and ledgers)
+and drops the work that never reaches it. Contextimate's request accounting writes session
+entries that other tools read later (for example `contextReport`), so it runs in every mode, as
+it does now.
+
+A small helper in `_lib` decides the level once per `session_start`:
+
+```ts
+export type Presentation = "tui" | "notify" | "none";
+export function presentation(ctx: ExtensionContext): Presentation {
+  if (!ctx.hasUI) return "none";
+  return ctx.mode === "tui" ? "tui" : "notify";
+}
+```
+
+Cachemire and Meantime call `states.open` only when the level is not `none`, and they create
+widgets, timers and the TUI capture only when it is `tui`.
+
+#### Traceline keeps its owner
+
+Traceline is different. It patches Pi's component prototypes, which are shared by the whole
+process and only render in the one terminal, so it needs exactly one owner, and its existing
+`tui-owner.ts` already requires `mode === "tui" && hasUI`. It stays as it is, with one fix:
+`/drill` checks `hasUI` but not ownership, and it should check ownership like every other
+Traceline entry point. Cachemire's ownership token is deleted, because session-scoped state
+replaces it.
+
+#### Tests
+
+Each of these fails on `main`:
 
 - Meantime: the investigation's test. A headless session and an interactive session share one
-  process; a billed call in the headless session must not appear in the interactive `/pace`
+  process, and a billed call in the headless session must not appear in the interactive `/pace`
   ledger. A second case drives the child's `session_shutdown` and checks that the parent's widget
   still updates.
 - Contextimate: a `setModel` in the headless session does not change the model the interactive
   panel shows, and a headless `session_shutdown` does not cancel the panel install.
-- Cachemire: an RPC-mode session that starts first does not stop a later TUI session from showing
-  the ledger.
+- Cachemire: an RPC session and a TUI session in one process each get their own `/cache` ledger,
+  whichever starts first. The RPC ledger arrives through `notify`.
+
+Two existing behaviours must keep passing: `/reload` keeps the ledgers (the existing reload
+tests), and `/new` starts them empty.
+
+One limit remains. Pi's SDK `AgentSession.dispose()` does not emit `session_shutdown`, so a
+session disposed that way leaves its map entry behind until the process exits. The entry is small
+and has no timers outside the TUI, so the design accepts it and lists it as a request for Pi.
 
 ### Provider request cycle (`_lib/request-cycle.ts`)
 
@@ -266,7 +306,7 @@ The tracker is still an inference from event order. The clean fix is in Pi: if
 `before_provider_request` and `after_provider_response` carried the request's purpose (`agent`,
 `cache_warm`) and an id shared with the resulting message, rules 1, 3 and 5 would become a
 lookup. That request goes in `docs/upstream-candidates.md`, and the tracker shrinks to the lookup
-when a supported Pi provides it.
+when Pi provides it.
 
 One finding is left as it is. After an aborted request whose response had started, Cachemire
 rolls the clock back to the previous refresh, although the provider may already have written the
@@ -288,29 +328,6 @@ export function hasBilledUsage(usage: UsageLike): boolean;
 Cachemire's four readers (`index.ts`, `warm.ts`, `ledger.ts`, `lineage-persistence.ts`) and
 Meantime use `hasBilledUsage`. Contextimate keeps
 `hasTrustedUsage`, because Pi's context total also excludes aborted and errored responses.
-
-### Lifetimes on `session_start`
-
-Each extension resets a different subset of its global state on `session_start`, and the subsets
-are written as long field lists (Meantime's reset assigns 18 fields). The design splits each
-extension's global state into three parts, so the reset rule becomes one line per part:
-
-```ts
-interface ExtensionGlobals<Process, Session, Ui> {
-  /** Survives reload and session changes: config caches, Cachemire's thinking evidence. */
-  process: Process;
-  /** Replaced on every session_start except reload. */
-  session: Session;
-  /** Rebound on every session_start: ui, theme, tui, widget, chat container. */
-  ui?: Ui;
-}
-```
-
-The request tracker is not part of any of the three. It is abandoned on every `session_start`,
-including reload, because a request cannot settle into a reloaded module's handlers.
-
-This is a convention, not a framework. Each extension declares its three types and writes a
-`newSession()` constructor; `_lib` adds nothing beyond the owner.
 
 ## Cachemire
 
@@ -452,12 +469,8 @@ The design deletes the machine instead of repairing it:
    or `message_end` to extensions. If a later Pi routes the summary through those hooks, the
    contract test fails and says so, which is the repo's normal way to catch Pi drift.
 
-The repo supports Pi 0.86.0 and later, and the investigation only read Pi 1.3.0. If an older
-supported Pi did route the summary through the hooks, the summary call would be booked as an
-ordinary call with an "unknown" or "history" cause. That is a wrong label on one row, which is
-smaller than the current bug. `session_compact_failed` exists in every supported version (added
-in Pi 0.84.3), so if review prefers to keep the guard, the fallback is to clear the flag on that
-event too. The deletion is still the recommendation.
+The design targets the latest Pi only, so it does not keep the flag for Pi versions that might
+have routed the summary differently.
 
 The same flag exists in the dev probe `scripts/cachemire/model-switch-forecast-probe.ts`, which
 also never resets it on `session_start`. The probe gets the same deletion.
@@ -635,7 +648,7 @@ decision.
 The existing `timing.test.ts`, render tests and `meantime-lines.txt` golden must pass unchanged.
 The new tests each fail on `main`:
 
-- The ownership test from the shared owner section.
+- The two-session test from the session-scoped state section.
 - The warming test from the request-cycle section, which checks that `/pace` does not charge
   `context` handler time to the model.
 - A round whose response reports no usage runs a 1-second tool, and the next billed round runs a
@@ -643,8 +656,9 @@ The new tests each fail on `main`:
 
 ## Contextimate
 
-Contextimate needs only the shared owner (for `model_select`, `session_shutdown` and its other
-global writes) and the shared request tracker in `request-messages.ts`, which stops a delayed
+Contextimate needs only session-scoped state (its model, TUI handle, chat container, panel block
+and install timer move into the session entry; the view mode stays process-wide) and the shared
+request tracker in `request-messages.ts`, which stops a delayed
 warm replay from overwriting the captured payload. Its other machines, the view mode, the
 snapshot cache and the panel install retry, are already explicit and stay as they are.
 
@@ -680,14 +694,15 @@ add code without fixing anything.
 
 Each step is one pull request that can ship on its own.
 
-1. Shared owner, with guards in all four extensions and the two-session tests. This fixes the
-   confirmed Meantime and Contextimate bugs and the Cachemire RPC gap.
+1. `_lib/session-state.ts` and `presentation()`, adopted by Cachemire, Meantime and
+   Contextimate, with the two-session tests; the `/drill` ownership check in Traceline. This
+   fixes the confirmed Meantime and Contextimate bugs and the Cachemire RPC gap, and it brings in
+   the process, session and presentation split that later steps use.
 2. Compaction fix in Cachemire, as a small change to the current code before the refactor.
    Delete `inCompaction` and `compaction-work`, add the compaction contract test, and set
    `compacted` from `pathContainsCompaction` on `session_start` and `session_tree` instead of
    resetting it. The three investigation tests must fail before the change and pass after it.
-3. `_lib/usage.ts` and the lifetime split. These are small refactors that the next two steps
-   build on.
+3. `_lib/usage.ts`. A small refactor that the next steps use.
 4. Cachemire state redesign: `state.ts`, baseline, selection, derived drift, `PendingRequest` and
    `bookCall`. The existing tests and golden must pass unchanged, and `index.ts` must drop below
    its line budget so the baseline entry shrinks.
@@ -712,8 +727,8 @@ would let this repo delete inference code.
    The request tracker's replay, re-attempt and response rules would become a lookup.
 2. A hook, or a field on `message_end`, that exposes the final payload after every extension's
    transform. Cachemire and Contextimate both read the payload at their own hook position today.
-3. `AgentSession.dispose()` emits `session_shutdown`, or documents that it does not, so process
-   ownership tokens are released when an SDK host disposes a session.
+3. `AgentSession.dispose()` emits `session_shutdown`, or documents that it does not, so
+   per-session state is released when an SDK host disposes a session.
 4. Compaction rejects a summary whose `stopReason` is `aborted`. Pi 1.3.0 rejects only `error`
    and `length`, so a provider that reports `aborted` without aborting the request signal is
    accepted as a successful compaction.
