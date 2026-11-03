@@ -47,6 +47,22 @@ function runLint(cwd: string, ...args: string[]) {
   });
 }
 
+for (const parserInstalled of [false, true]) {
+  test(`agent lint explains missing ${parserInstalled ? "Oxlint" : "development dependencies"}`, () => {
+    const dir = fixtureRepo();
+    rmSync(join(dir, "node_modules"));
+    if (parserInstalled) {
+      mkdirSync(join(dir, "node_modules"));
+      symlinkSync(join(repoRoot.pathname, "node_modules/oxc-parser"), join(dir, "node_modules/oxc-parser"), "dir");
+    }
+    writeFileSync(join(dir, ".oxlintrc.json"), "{}");
+    const failed = runLint(dir);
+    assert.notEqual(failed.status, 0);
+    assert.match(failed.stderr, /development dependencies.*npm install/);
+    assert.doesNotMatch(failed.stderr, /ERR_MODULE_NOT_FOUND|ENOENT/);
+  });
+}
+
 test("agent lint requires hand review before admitting a migration finding", () => {
   const dir = fixtureRepo();
   const badGuard = ["function is", "Record(value) { return !!value; }"].join("");

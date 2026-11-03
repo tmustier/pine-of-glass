@@ -2,9 +2,16 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { parseSync } from "oxc-parser";
 
 const ROOT = process.cwd();
+// Check before loading the parser so a fresh checkout gets an actionable error too.
+if (!existsSync(new URL("../../node_modules/oxc-parser/package.json", import.meta.url))
+    || (existsSync(join(ROOT, ".oxlintrc.json")) && !existsSync(join(ROOT, "node_modules/.bin/oxlint")))) {
+  console.error("agent-lint: missing development dependencies; run npm install (then npm run link-pi if checking against global Pi).");
+  process.exit(1);
+}
+const { parseSync } = await import("oxc-parser");
+
 const BASELINE_PATH = join(ROOT, "scripts", "dev", "agent-lint-baseline.json");
 const DEFAULT_TS_MAX_LINES = 350;
 const NON_BASELINED_CODES = new Set(["POG008", "POG009", "POG010", "POG011", "POG012", "POG013", "POG014", "POG015"]);

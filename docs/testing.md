@@ -65,7 +65,11 @@ Deliberately **not** tested:
   are dev dependencies held by the lockfile, so `npm install` gives tests, `tsc --noEmit`
   and the smoke layer a real runtime. To check against the Pi you use, `npm run link-pi`
   (`scripts/dev/link-pi-runtime.sh`) replaces them with links to the globally installed
-  packages; `npm install` restores the locked versions. Pi 0.86.0 is the minimum
+  npm package under `npm root --global`, not the `pi` launcher on PATH. Use the npm
+  prefix where you installed Pi; shell wrappers and checkout-local binaries are ignored.
+  `npm install` restores the locked versions, so rerun `npm run link-pi` afterward only
+  if you want to test global Pi again. Linking Pi does not install the lint tooling;
+  run `npm install` first. Pi 0.86.0 is the minimum
   supported version, so a `pi update` followed by `npm run link-pi && npm test` is the
   drift detector. `npm update` moves the lockfile to the latest Pi.
 - **Testability route:** pure domain logic lives in importable domain modules; see
