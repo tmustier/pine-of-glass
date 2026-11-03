@@ -3,39 +3,29 @@
 # so checks run against the Pi you use. `npm install` restores the pinned versions.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# Every `pi` on PATH, skipping this repo's own (npm run puts node_modules/.bin first) and
-# wrappers that name no pi-coding-agent path.
-candidates=()
-while IFS= read -r pi_bin; do
-  pi_real="$(readlink -f "$pi_bin")"
-  [[ "$pi_real" == "$repo_root"/* ]] && continue
-  candidates+=("$pi_real")
-  while IFS= read -r candidate; do
-    candidate="${candidate/#\$HOME/$HOME}"
-    candidate="${candidate/#\$\{HOME\}/$HOME}"
-    candidate="${candidate/#\~/$HOME}"
-    candidates+=("$candidate")
-  done < <(grep -Eo '(\$HOME|\$\{HOME\}|~|/)[^"[:space:]]*node_modules/@earendil-works/pi-coding-agent' "$pi_real" || true)
-done < <(which -a pi)
-if [[ ${#candidates[@]} -eq 0 ]]; then
-  echo "error: no installed pi found on PATH" >&2
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+# npm knows the installed package; PATH may contain wrappers or checkout-local Pi bins.
+global_root="$(npm root --global)"
+pi_pkg="$global_root/@earendil-works/pi-coding-agent"
+if [[ ! -f "$pi_pkg/package.json" ]]; then
+  echo "error: no installed Pi package at $pi_pkg; install with npm install -g @earendil-works/pi-coding-agent" >&2
   exit 1
 fi
-
-pi_pkg=""
-for candidate in "${candidates[@]}"; do
-  case "$candidate" in
-    */pi-coding-agent) pi_pkg="$candidate" ;;
-    */pi-coding-agent/*) pi_pkg="${candidate%%/pi-coding-agent/*}/pi-coding-agent" ;;
-  esac
-  [[ -f "$pi_pkg/package.json" && "$pi_pkg" != "$repo_root"/* ]] && break
-  pi_pkg=""
+# Canonicalize before comparing or deleting anything, including /tmp aliases on macOS.
+pi_pkg="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$pi_pkg")"
+if [[ "$pi_pkg" == "$repo_root" || "$pi_pkg" == "$repo_root"/* ]]; then
+  echo "error: installed Pi resolves inside the current worktree: $pi_pkg" >&2
+  exit 1
+fi
+checkout_root="$repo_root"
+while :; do
+  if [[ "$pi_pkg" == "$checkout_root/node_modules/"* ]]; then
+    echo "error: installed Pi resolves inside a checkout's node_modules: $pi_pkg" >&2
+    exit 1
+  fi
+  [[ "$checkout_root" == / ]] && break
+  checkout_root="$(dirname "$checkout_root")"
 done
-if [[ -z "$pi_pkg" ]]; then
-  echo "error: could not locate an installed pi-coding-agent package from pi on PATH" >&2
-  exit 1
-fi
 
 mkdir -p "$repo_root/node_modules/@earendil-works" "$repo_root/node_modules/@types"
 link() {
