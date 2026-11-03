@@ -323,7 +323,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("before_provider_request", async (event, ctx) => {
     const s = states.get(ctx);
     if (!s) return;
-    const kind = s.requests.payload(event.payload, () => {
+    const agent = s.requests.payload(event.payload, () => {
       const requestAt = Date.now();
       const sent = describeRequest(s, ctx, event.payload);
       Object.assign(s, sent.lineage);
@@ -348,7 +348,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       pending.cause = sent.cause;
       pending.retention = sent.retention;
     });
-    if (kind !== "agent" && kind !== "reattempt") return;
+    if (!agent) return;
     const pending = s.requests.inFlight;
     assert(pending);
     if (s.config.missWarnings) {

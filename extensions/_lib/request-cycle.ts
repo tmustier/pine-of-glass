@@ -12,7 +12,6 @@ type RequestCycle<Sent> =
     respondedAt?: number | null;
   };
 
-type PayloadKind = "agent" | "reattempt" | "replay" | "foreign";
 type EndedRequest<Sent> = { sent: Sent; respondedAt?: number };
 
 export class RequestTracker<Sent> {
@@ -41,8 +40,9 @@ export class RequestTracker<Sent> {
     if (this.#lastAgentKey !== undefined) this.#replayKeys.push(this.#lastAgentKey);
   }
 
-  /** `before_provider_request`: start an agent request or update its provider re-attempt. */
-  payload(payload: unknown, start: () => Sent, retry: (sent: Sent) => void): PayloadKind {
+  /** `before_provider_request`: start an agent request or update its provider re-attempt.
+   * True when the payload belongs to the agent's request. */
+  payload(payload: unknown, start: () => Sent, retry: (sent: Sent) => void): boolean {
     // Adapters rewrite the warmer's output cap, but preserve the wire conversation.
     const conversation = isJsonObject(payload) ? payload.messages ?? payload.input ?? payload.contents : undefined;
     const key = conversation === undefined ? undefined : JSON.stringify(conversation);
@@ -50,20 +50,13 @@ export class RequestTracker<Sent> {
     if (replayAt >= 0) {
       this.#replayKeys.splice(replayAt, 1);
       this.#replaysAwaitingResponse++;
-      return "replay";
+      return false;
     }
-    switch (this.#state.kind) {
-      case "armed":
-        this.#lastAgentKey = key;
-        this.#state = { kind: "sent", sent: start() };
-        return "agent";
-      case "sent":
-        this.#lastAgentKey = key;
-        retry(this.#state.sent);
-        return "reattempt";
-      case "idle":
-        return "foreign";
-    }
+    if (this.#state.kind === "idle") return false;
+    this.#lastAgentKey = key;
+    if (this.#state.kind === "armed") this.#state = { kind: "sent", sent: start() };
+    else retry(this.#state.sent);
+    return true;
   }
 
   /** `after_provider_response`: overlapping replay responses cannot be attributed. */

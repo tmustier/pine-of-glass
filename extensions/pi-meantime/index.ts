@@ -198,11 +198,11 @@ export default function piMeantime(pi: ExtensionAPI): void {
     const s = states.get(ctx);
     if (!s) return;
     const now = Date.now();
-    const kind = s.requests.payload(event.payload, () => {
+    const agent = s.requests.payload(event.payload, () => {
       closePhase(s, now, true);
       return newLiveCall(s.calls.length + 1, now);
     }, () => {});
-    if (kind === "agent") updateWidget(s, config, now);
+    if (agent) updateWidget(s, config, now);
   });
 
   pi.on("after_provider_response", async (_event, ctx) => {
