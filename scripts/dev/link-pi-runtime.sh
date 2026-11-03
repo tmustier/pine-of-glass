@@ -5,10 +5,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # npm knows the installed package; PATH may contain wrappers or checkout-local Pi bins.
-if ! global_root="$(npm root --global)"; then
-  echo "error: could not locate npm's global Pi installation" >&2
-  exit 1
-fi
+global_root="$(npm root --global)"
 pi_pkg="$global_root/@earendil-works/pi-coding-agent"
 if [[ ! -f "$pi_pkg/package.json" ]]; then
   echo "error: no installed Pi package at $pi_pkg; install with npm install -g @earendil-works/pi-coding-agent" >&2

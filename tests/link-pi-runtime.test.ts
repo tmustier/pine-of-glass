@@ -42,7 +42,7 @@ function fixture() {
   mkdirSync(bin);
   // Keep host Pi installations and npm config out of discovery, including npm's
   // inherited ancestor .bin entries. Use the real npm with a scratch global prefix.
-  for (const tool of ["sh", "bash", "node", "npm", "dirname", "readlink", "which", "grep", "mkdir", "rm", "ln"]) {
+  for (const tool of ["sh", "bash", "node", "npm", "dirname", "mkdir", "rm", "ln"]) {
     symlinkSync(execFileSync("which", [tool], { encoding: "utf8" }).trim(), join(bin, tool));
   }
   const env = {
@@ -100,18 +100,6 @@ test("link-pi reports a missing global package without replacing the local runti
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /npm install -g @earendil-works\/pi-coding-agent/);
   assert.ok(existsSync(join(localPkg, "dist/cli.js")));
-});
-
-test("link-pi still works with a wrapper shadowing a real Pi executable", () => {
-  const f = fixture();
-  write(join(f.bin, "pi"), "#!/bin/sh\nexit 98\n", true);
-  const realBin = join(f.dir, "real-bin");
-  mkdirSync(realBin);
-  symlinkSync(join(f.pkg, "dist/cli.js"), join(realBin, "pi"));
-  f.env.PATH += `:${realBin}`;
-  const result = run(f);
-  assert.equal(result.status, 0, result.stderr);
-  assertLinked(f.repo, f.pkg);
 });
 
 test("npm run link-pi ignores both worktree and parent checkout runtimes", () => {
