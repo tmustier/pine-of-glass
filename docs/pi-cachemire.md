@@ -293,6 +293,12 @@ its ledger and branch baselines from billed usage in assistant messages. Payload
 fingerprints, request-start and response-start observations and live retention fields
 are not persisted; diagnoses that need those fields remain unknown.
 
-Only the interactive Pi extension instance owns the process-global state. Nested
-headless sessions cannot overwrite its ledger, clock or model metadata. The interactive
-instance releases ownership on `session_shutdown`.
+Session state survives reload and is isolated by session manager. RPC gets a ledger
+and notifications without a widget; headless, print and JSON sessions keep no state.
+
+Warm replays are excluded from request evidence, including delayed replays. Provider
+re-attempts, such as Anthropic's strict-schema fallback, replace the captured payload.
+
+Compaction state follows the active path after its last billed call: reload and resume
+preserve it; branching before the checkpoint clears it. Summary requests bypass the
+provider hooks and are not booked as calls.

@@ -7,22 +7,28 @@ import {
   type ContainerLike,
 } from "../_lib/chat.ts";
 import type { ModelSummary } from "../_lib/heuristics.ts";
+import { presentation, sessionStates } from "../_lib/session-state.ts";
 import { ink } from "../_lib/style.ts";
 import { toModelSummary, loadContextimateConfig } from "./heuristic-config.ts";
 import { buildSnapshot, type PrefixSnapshot } from "./snapshot.ts";
 import { renderSummary, renderCompact, renderExpanded, type ViewMode } from "./render.ts";
 import { observeRequestMessages } from "./request-messages.ts";
 
-type ContextimateGlobal = typeof globalThis & {
-  __piContextimateTui?: TUI;
-  __piContextimateChat?: ContainerLike;
-  __piContextimateBlock?: StartupContextComponent;
-  __piContextimateMode?: ViewMode;
-  __piContextimateInstallTimer?: ReturnType<typeof setTimeout>;
-  __piContextimateModel?: ModelSummary;
-};
-
+// View preference is process-wide; panel state is per session.
+type ContextimateGlobal = typeof globalThis & { __piContextimateMode?: ViewMode };
+// SAFETY: a typed view of this extension's one process-wide global; only this file uses the key.
 const g = globalThis as ContextimateGlobal;
+
+interface PanelState {
+  tui?: TUI;
+  /** Pi's resource container, found once and then reused: Pi clears and refills it. */
+  chat?: ContainerLike;
+  block?: StartupContextComponent;
+  installTimer?: ReturnType<typeof setTimeout>;
+  model?: ModelSummary;
+}
+
+const panels = sessionStates<PanelState>("pi-contextimate");
 
 const DEFAULT_MODE: ViewMode = "summary";
 
@@ -127,8 +133,8 @@ function isResourceComponent(component: unknown): boolean {
   return !isPrefixBlock(component) && isResourceRow(component);
 }
 
-function scheduleInstall(block: StartupContextComponent): void {
-  if (g.__piContextimateInstallTimer) clearTimeout(g.__piContextimateInstallTimer);
+function scheduleInstall(panel: PanelState, block: StartupContextComponent): void {
+  if (panel.installTimer) clearTimeout(panel.installTimer);
   let attempts = 0;
   const attempt = () => {
     attempts++;
@@ -136,14 +142,14 @@ function scheduleInstall(block: StartupContextComponent): void {
       // Pi creates the resource container once and only clears and refills it, so search until it
       // is first found. Spotting resource rows means rendering components, so the search skips the
       // transcript beside the list, which in a long session would cost seconds per search.
-      const tui = g.__piContextimateTui;
-      const chat = g.__piContextimateChat ?? findContainerBy(
+      const tui = panel.tui;
+      const chat = panel.chat ?? findContainerBy(
         tui,
         (children) => children.some(isResourceComponent),
         (children) => children.some((child) => isToolRow(child) || isAssistantRow(child)),
       );
       if (chat) {
-        g.__piContextimateChat = chat;
+        panel.chat = chat;
         if (!chat.children.includes(block)) {
           chat.children = chat.children.filter((child) => !isPrefixBlock(child));
           let insertAfter = -1;
@@ -163,10 +169,10 @@ function scheduleInstall(block: StartupContextComponent): void {
       // The foreign TUI tree may still be rebuilding; retry after it settles.
     }
     if (attempts < 30) {
-      g.__piContextimateInstallTimer = setTimeout(attempt, 50);
+      panel.installTimer = setTimeout(attempt, 50);
     }
   };
-  g.__piContextimateInstallTimer = setTimeout(attempt, 0);
+  panel.installTimer = setTimeout(attempt, 0);
 }
 
 export type { PrefixSnapshot, PrefixSection, ToolSummary } from "./snapshot.ts";
@@ -198,8 +204,10 @@ export default function piContextimate(pi: ExtensionAPI) {
   // Branch checkout can change the model that billed the latest usage (issue #58).
   pi.on("session_tree", async () => markDirty());
 
-  pi.on("session_start", async (_event, ctx) => {
-    if (!ctx.hasUI) return;
+  pi.on("session_start", async (event, ctx) => {
+    if (presentation(ctx) !== "tui") return;
+    const panel = panels.open(ctx, event.reason, () => ({}));
+    if (panel.installTimer) clearTimeout(panel.installTimer);
 
     // Restore Pi's normal header; this extension now renders below Pi's loaded-resource list.
     ctx.ui.setHeader(undefined);
@@ -207,7 +215,7 @@ export default function piContextimate(pi: ExtensionAPI) {
     runPrompt = undefined;
     const currentMode = g.__piContextimateMode ?? DEFAULT_MODE;
     const config = loadContextimateConfig(ctx.cwd);
-    g.__piContextimateModel = toModelSummary(ctx.model);
+    panel.model = toModelSummary(ctx.model);
     markDirty();
     const block = new StartupContextComponent(
       () => {
@@ -217,7 +225,7 @@ export default function piContextimate(pi: ExtensionAPI) {
             systemPrompt: runPrompt ?? ctx.getSystemPrompt(),
             sessionManager: ctx.sessionManager,
             contextUsage: ctx.getContextUsage(),
-            model: g.__piContextimateModel ?? toModelSummary(ctx.model),
+            model: panel.model ?? toModelSummary(ctx.model),
             config,
           });
           cache.builtAt = now;
@@ -228,50 +236,56 @@ export default function piContextimate(pi: ExtensionAPI) {
       () => ctx.ui.theme,
       currentMode,
     );
-    g.__piContextimateBlock = block;
+    panel.block = block;
 
     ctx.ui.setWidget("__pi_contextimate_capture", (tui) => {
-      g.__piContextimateTui = tui;
+      panel.tui = tui;
       return {
         render: () => {
-          const activeBlock = g.__piContextimateBlock;
+          const activeBlock = panel.block;
           // Reload and navigation clear Pi's resource container and drop the panel; this
           // zero-line widget puts it back. Until the panel first attaches (quietStartup hides
           // the resource list), only session start and /contextimate search for it.
-          if (activeBlock && g.__piContextimateChat && !g.__piContextimateChat.children.includes(activeBlock)) scheduleInstall(activeBlock);
+          if (activeBlock && panel.chat && !panel.chat.children.includes(activeBlock)) scheduleInstall(panel, activeBlock);
           return [];
         },
         invalidate: () => {},
       };
     });
 
-    scheduleInstall(block);
+    scheduleInstall(panel, block);
   });
 
   pi.on("model_select", async (event, ctx) => {
-    g.__piContextimateModel = toModelSummary(event.model);
+    const panel = panels.get(ctx);
+    if (!panel) return;
+    panel.model = toModelSummary(event.model);
     markDirty();
-    g.__piContextimateBlock?.invalidate();
-    if (ctx.hasUI) g.__piContextimateTui?.requestRender(true);
+    panel.block?.invalidate();
+    panel.tui?.requestRender(true);
   });
 
-  pi.on("session_shutdown", async () => {
-    if (g.__piContextimateInstallTimer) clearTimeout(g.__piContextimateInstallTimer);
-    g.__piContextimateInstallTimer = undefined;
+  pi.on("session_shutdown", async (event, ctx) => {
+    const panel = panels.get(ctx);
+    if (!panel) return;
+    if (panel.installTimer) clearTimeout(panel.installTimer);
+    panel.installTimer = undefined;
+    panels.close(ctx, event.reason);
   });
 
   pi.registerCommand("contextimate", {
     description: "Show or switch the startup [Contextimate] view (summary, compact, expanded)",
     handler: async (args, ctx) => {
-      if (!ctx.hasUI) return;
+      const panel = panels.get(ctx);
+      if (!panel) return;
       const requested = args.trim().toLowerCase();
       const mode: ViewMode = requested === "summary" || requested === "compact" || requested === "expanded"
         ? requested
         : nextMode(g.__piContextimateMode ?? DEFAULT_MODE);
       g.__piContextimateMode = mode;
-      g.__piContextimateBlock?.setMode(mode);
-      g.__piContextimateTui?.requestRender(true);
-      if (g.__piContextimateBlock) scheduleInstall(g.__piContextimateBlock);
+      panel.block?.setMode(mode);
+      panel.tui?.requestRender(true);
+      if (panel.block) scheduleInstall(panel, panel.block);
       ctx.ui.notify(`[Contextimate] view: ${mode}`, "info");
     },
   });

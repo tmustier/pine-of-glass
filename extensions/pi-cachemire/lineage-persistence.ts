@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { confirmedWindow, retentionForModel } from "./retention.ts";
+import { hasBilledUsage } from "../_lib/usage.ts";
 import type { CacheLineageSnapshot } from "./types.ts";
 
 export function sessionEntryAt(entry: SessionEntry): number {
@@ -37,7 +38,7 @@ function snapshotsFromEntries(
     if (entry.type !== "message" || entry.message.role !== "assistant") continue;
     if (entry.parentId !== null) assistantChildren.set(entry.parentId, entry.id);
     const { usage } = entry.message;
-    if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) continue;
+    if (!hasBilledUsage(usage)) continue;
     const parentId = requestLeafFor(entriesById, entry.parentId);
     const responseAt = sessionEntryAt(entry);
     const requestAt = parentId === null ? responseAt : entryTimes.get(parentId) ?? responseAt;

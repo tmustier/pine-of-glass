@@ -33,3 +33,29 @@ test("a cache-warming payload hook without context cannot replace real-call evid
     await host.dispose();
   }
 });
+
+test("a provider's second attempt of the same request is the payload Cachemire compares next time", async () => {
+  const host = await hostCachemire({ reason: "new" });
+  const manager = host.session.sessionManager;
+  const strict = [{ name: "edit", input_schema: { type: "object" }, strict: true }];
+  const relaxed = [{ name: "edit", input_schema: { type: "object" } }];
+  const changed = [{ name: "edit", input_schema: { type: "object", properties: { path: { type: "string" } } } }];
+  try {
+    manager.appendMessage({ role: "user", content: "first", timestamp: Date.now() });
+    await request(host, payload(["first"], strict));
+    // Anthropic rejected the strict schema; the billed request is the fallback.
+    await host.session.extensionRunner.emitBeforeProviderRequest(payload(["first"], relaxed));
+    await finish(host, billed(ANTHROPIC, 0, 0, 100_000));
+
+    manager.appendMessage({ role: "user", content: "next", timestamp: Date.now() });
+    await request(host, payload(["first", "next"], relaxed));
+    assert.deepEqual(host.ui.notifications, [], "the billed tools did not change");
+    await finish(host, billed(ANTHROPIC, 0, 100_000));
+
+    manager.appendMessage({ role: "user", content: "changed", timestamp: Date.now() });
+    await request(host, payload(["first", "next", "changed"], changed));
+    assert.match(host.ui.notifications.at(-1) ?? "", /cause: tools changed/);
+  } finally {
+    await host.dispose();
+  }
+});

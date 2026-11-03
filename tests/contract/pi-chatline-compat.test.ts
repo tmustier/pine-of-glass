@@ -89,3 +89,26 @@ test("native chat rebuild restores anchored lines and drops missing anchors", as
   assert.deepEqual(host.anchored, [], "vanished anchor did not retire its tracked line");
 });
 
+test("after /new the native rebuild restores the new session's lines, not the old one's", async () => {
+  pi.initTheme(undefined, false);
+  const timestamp = Date.UTC(2026, 10, 3, 12);
+  const realAssistant = () => new pi.AssistantMessageComponent(
+    assistantMessage([{ type: "text", text: "hi" }], { timestamp }),
+  );
+  // Pi keeps one chat container for every session the terminal shows.
+  const chatContainer = new piTui.Container();
+  chatContainer.addChild(realAssistant());
+  const previous: chatline.ChatLineHost = { chat: chatContainer as never, anchored: [] };
+  chatline.appendAnchoredLine(previous, "contract-new", "previous session");
+  const current: chatline.ChatLineHost = { chat: chatContainer as never, anchored: [] };
+  const line = chatline.appendAnchoredLine(current, "contract-new", "current session");
+  const receiver = {
+    chatContainer,
+    sessionManager: { buildContextEntries: () => [] },
+    renderSessionEntries: () => { chatContainer.addChild(realAssistant()); },
+  };
+  (pi.InteractiveMode.prototype as unknown as { rebuildChatFromMessages: (this: unknown) => void })
+    .rebuildChatFromMessages.call(receiver);
+  await Promise.resolve();
+  assert.ok(line && chatContainer.children.includes(line), "the current session's line was not restored");
+});

@@ -1,21 +1,19 @@
+import assert from "node:assert/strict";
 import type {
   ExtensionAPI,
   ExtensionContext,
-  ExtensionUIContext,
   Theme,
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { ThemedText, TextContent } from "../_lib/themed-text.ts";
-import { booleanValue, isJsonObject, positiveNumberValue } from "../_lib/boundary.ts";
 import { captureTui } from "../_lib/capture.ts";
-import { type ContainerLike } from "../_lib/chat.ts";
-import {
-  appendAnchoredLine,
-  type AnchoredLine,
-} from "../_lib/chatline.ts";
-import { configPaths, readJsonConfig } from "../_lib/config.ts";
+import { appendAnchoredLine, type ChatLineHost } from "../_lib/chatline.ts";
+import { readConfig } from "./config.ts";
 import { LiveWidget } from "../_lib/live-widget.ts";
+import { RequestTracker } from "../_lib/request-cycle.ts";
+import { presentation, sessionStates } from "../_lib/session-state.ts";
 import { GLYPH, ink, type Tone } from "../_lib/style.ts";
+import { hasBilledUsage } from "../_lib/usage.ts";
 import {
   classifyCall,
   diffFingerprints,
@@ -32,6 +30,7 @@ import {
   cacheStateForLineage,
   findBranchBaseline,
   hydrateLineageResponseIds,
+  pathContainsCompaction,
   requestLeafFor,
   resolveCacheLineage,
   restoreLineageSnapshots,
@@ -72,96 +71,60 @@ export type {
   UsageLike,
 } from "./types.ts";
 
-// Cachemire explains Pi's provider-reported cache usage and loop cost.
-const DEFAULT_CONFIG: CachemireConfig = {
-  debug: false, // agent-default (not a user rule): 2026-09-24
-  widget: true,
-  turnSummary: true,
-  turnSummaryMinCalls: 1, // every turn: a single-call turn omitting the line felt inconsistent
-  missWarnings: true,
-  missWarnUsd: 0.05,
-  missWarnTokens: 20_000,
-};
+// --- per-session state (docs/state-machines-2026-11-03.md) -------------------------------------
 
-// --- live state ------------------------------------------------------------------------
+/** What Cachemire knew when it sent the agent request still waiting for usage. */
+interface PendingRequest {
+  /** Latest payload fingerprint, including provider re-attempts. */
+  fingerprint: RequestFingerprint;
+  cause?: CallCause;
+  requestLeafId: string | null;
+  requestAt: number;
+  /** The clock before this send, restored when the request ends without usage. */
+  previousRefreshedAt?: number;
+  previousWindow: CacheWindow;
+  cacheGapMs?: number;
+  retention?: RetentionMatch;
+  /** Break notice placed at send time; resolved in place when the request ends. */
+  notice?: ThemedText;
+}
 
-interface CachemireState extends WarmSyncState {
+interface CachemireState extends WarmSyncState, ChatLineHost {
   config: CachemireConfig;
-  notifyFallback?: (plainText: string) => void;
-  requestArmed: boolean;
-  pendingFingerprint?: RequestFingerprint;
-  pendingFingerprintCause?: CallCause;
-  pendingRequestLeafId?: string | null;
-  pendingRequestAt?: number;
-  /** When the provider began responding to the pending request: the cache TTL anchor. */
-  pendingResponseAt?: number;
-  pendingPreviousRefreshedAt?: number;
-  pendingPreviousWindow?: CacheWindow;
-  pendingRetention?: RetentionMatch;
-  pendingCacheGapMs?: number;
+  requests: RequestTracker<PendingRequest>;
   /** Target-currency forecast while modelSwitched (issue #57); cleared by usage. */
   switchForecast?: SwitchForecast;
   /** Thinking level at the last billed call vs now; mirrors the model-switch pair. */
   lastCallThinkingLevel?: string;
   currentThinkingLevel?: string;
   thinkingChanged: boolean;
-  /** Billed effort-change verdicts per route; outlives sessions (see thinking.ts). */
-  thinkingEvidence: ThinkingEvidenceLedger;
   rates?: ModelRates;
   modelLabel?: string;
   providerLabel?: string;
-  /** Chat lines cachemire appended, with anchors for re-attachment after pi rebuilds. */
-  anchored: AnchoredLine[];
-  /** Cached chat container: rebuilds empty it of recognizable rows, but the instance
-   * lives for the whole interactive session, so the first find stays valid. */
-  chat?: ContainerLike;
-  /** In-flight break notice placed at request time; resolved in place when usage arrives. */
-  pendingNotice?: ThemedText;
   run?: RunAggregate;
-  /** Theme handle (captured at session_start) — all chat/widget ink flows through ink(). */
+  // Presentation, rebound on every session_start.
   theme?: Theme;
-  ui?: Pick<ExtensionUIContext, "setWidget" | "notify">;
-  tui?: { requestRender?: (force?: boolean) => void };
+  widget: CacheWidgetRuntime;
 }
 
-type CachemireGlobal = typeof globalThis & {
-  __piCachemire?: CachemireState;
-  __piCachemireWidget?: CacheWidgetRuntime;
-  __piCachemireOwner?: symbol;
-};
+const states = sessionStates<CachemireState>("pi-cachemire");
+
+type CachemireGlobal = typeof globalThis & { __piCachemireThinkingEvidence?: ThinkingEvidenceLedger };
+// SAFETY: a typed view of this extension's one process-wide global; only this file uses the key.
 const g = globalThis as CachemireGlobal;
-const cacheWidget = g.__piCachemireWidget ??= {};
-function state(): CachemireState {
-  if (!g.__piCachemire) {
-    g.__piCachemire = {
-      config: DEFAULT_CONFIG,
-      records: [],
-      lineages: [],
-      requestArmed: false,
-      seenWarmEntryIds: new Set(),
-      window: UNKNOWN_WINDOW,
-      modelSwitched: false,
-      thinkingChanged: false,
-      thinkingEvidence: new Map(),
-      expectedRead: 0,
-      compacted: false,
-      inCompaction: false,
-      anchored: [],
-    };
-  }
-  return g.__piCachemire;
-}
+/** Billed effort-change verdicts per route: facts about the provider and extension stack that
+ * every session and loaded copy in the process shares (see thinking.ts). */
+const thinkingEvidence = (): ThinkingEvidenceLedger => (g.__piCachemireThinkingEvidence ??= new Map());
 
 // One-line loop-economics facts (design language §§1, 6): ◍ opens the line; the status
 // tone is theme-derived. These are transient signals, so the tone covers the whole line.
-function econLine(tone: Tone, text: string): () => string {
-  return () => ink(state().theme, tone, `${GLYPH.econ} ${text}`);
+function econLine(s: CachemireState, tone: Tone, text: string): () => string {
+  return () => ink(s.theme, tone, `${GLYPH.econ} ${text}`);
 }
-function updateWidget(now = Date.now()): void {
-  const s = state();
-  updateCacheWidget(cacheWidget, {
+function updateWidget(s: CachemireState, now = Date.now()): void {
+  updateCacheWidget(s.widget, {
     enabled: s.config.widget,
-    renderLine: econLine,
+    renderLine: (tone, text) => econLine(s, tone, text),
     clock: {
       now,
       lastRefreshedAt: s.lastRefreshedAt,
@@ -175,27 +138,31 @@ function updateWidget(now = Date.now()): void {
     },
   });
 }
-function appendChatLine(text: TextContent): ThemedText | undefined {
-  const s = state();
-  s.notifyFallback ??= (plainText) => s.ui?.notify(plainText, "info");
+function appendChatLine(s: CachemireState, text: TextContent): ThemedText | undefined {
   return appendAnchoredLine(s, "cachemire", text);
 }
 
-function resolveNotice(text: TextContent): void {
-  const s = state();
-  if (!s.pendingNotice) return;
-  s.pendingNotice.setText(text);
-  s.pendingNotice = undefined;
+function resolveNotice(s: CachemireState, pending: PendingRequest, text: TextContent): void {
+  if (!pending.notice) return;
+  pending.notice.setText(text);
+  pending.notice = undefined;
   s.tui?.requestRender?.(true);
 }
 
+/** Whether the active path compacted away the prefix its last billed call cached. Derived
+ * from the session, so reload, resume and tree navigation agree with what Pi will send. */
+function pathCompacted(s: CachemireState, entries: readonly SessionEntry[], leafId: string | null): boolean {
+  const baseline = findBranchBaseline(entries, leafId, s.lineages);
+  return baseline !== undefined && pathContainsCompaction(entries, leafId, baseline);
+}
+
 function refreshSwitchForecast(
+  s: CachemireState,
   pi: ExtensionAPI,
   ctx: Pick<ExtensionContext, "sessionManager" | "getSystemPrompt">,
   activeLeafId: string | null,
   target: SwitchTarget | undefined,
 ): void {
-  const s = state();
   if (!s.modelSwitched || !target) {
     s.switchForecast = undefined;
     return;
@@ -213,68 +180,91 @@ function refreshSwitchForecast(
 // --- extension entry --------------------------------------------------------------------
 
 export default function piCachemire(pi: ExtensionAPI): void {
-  const s = state();
-  const ownerToken = Symbol("pi-cachemire-owner");
-  const ownsState = () => g.__piCachemireOwner === ownerToken;
-
-  // Material only when a warm prefix exists to break AND the current level changes the
-  // wire params for this model against the level its last call was billed at; cycling
-  // back before the next call revives the cache. Routes whose contract or billed
-  // evidence keeps the prefix stay neutral.
-  const markThinkingChange = (ctx: ExtensionContext) => {
+  // Compare effort against the last billed level, not intermediate selections.
+  const markThinkingChange = (s: CachemireState, ctx: ExtensionContext) => {
     s.thinkingChanged = s.expectedRead > 0 && ctx.model?.reasoning === true &&
       thinkingChangeInvalidatesCache(
         thinkingRoute(ctx),
         ctx.model.thinkingLevelMap,
         s.lastCallThinkingLevel,
         s.currentThinkingLevel,
-        s.thinkingEvidence,
+        thinkingEvidence(),
       );
   };
 
-  // The active path decides what the next effort change is measured from: the level
-  // its last billed call used, not the level Pi is holding now, which differs after a
-  // late change before quitting, a --thinking flag on resume, or a branch switch.
-  const restoreThinkingForPath = (ctx: ExtensionContext, entries: readonly SessionEntry[], leafId: string | null) => {
-    const lastBilledLevel = restoreBilledThinking(s.thinkingEvidence, entries, leafId, ctx.model, Date.now());
+  // Resume and branch changes restore the billed level from the active path.
+  const restoreThinkingForPath = (
+    s: CachemireState,
+    ctx: ExtensionContext,
+    entries: readonly SessionEntry[],
+    leafId: string | null,
+  ) => {
+    const lastBilledLevel = restoreBilledThinking(thinkingEvidence(), entries, leafId, ctx.model, Date.now());
     s.currentThinkingLevel = pi.getThinkingLevel();
     s.lastCallThinkingLevel = lastBilledLevel ?? s.currentThinkingLevel;
-    markThinkingChange(ctx);
+    markThinkingChange(s, ctx);
+  };
+
+  /** Recomputed for each payload, including strict-schema fallback. */
+  const describeRequest = (s: CachemireState, ctx: ExtensionContext, payload: unknown) => {
+    const fingerprint = fingerprintPayload(payload, thinkingRoute(ctx));
+    const entries = ctx.sessionManager.getEntries();
+    hydrateLineageResponseIds(s.lineages, entries);
+    const current = { provider: ctx.model?.provider, model: ctx.model?.id ?? fingerprint.model, api: ctx.model?.api };
+    const resolution = resolveCacheLineage({
+      entries,
+      activeLeafId: ctx.sessionManager.getLeafId(),
+      snapshots: s.lineages,
+      currentProvider: current.provider,
+      currentModel: current.model,
+      currentApi: current.api,
+      currentFingerprint: fingerprint,
+      compareFingerprints: diffFingerprints,
+    });
+    return {
+      entries,
+      fingerprint,
+      lineage: cacheStateForLineage(resolution, current),
+      cause: resolution.cause ?? withheldThinkingCause(resolution.baseline?.fingerprint, fingerprint),
+      retention: retentionForRequest({ ...current, ttlMs: fingerprint.ttlMs, payload }),
+    };
+  };
+
+  /** A request that ended without usage: restore the clock it moved at send. */
+  const rollBack = (s: CachemireState, pending: PendingRequest) => {
+    s.lastRefreshedAt = pending.previousRefreshedAt;
+    s.window = pending.previousWindow;
+    resolveNotice(s, pending, econLine(s, "dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
   };
 
   pi.on("session_start", async (event, ctx) => {
-    if (!ctx.hasUI) return;
-    if (g.__piCachemireOwner !== undefined && !ownsState()) return;
-    g.__piCachemireOwner = ownerToken;
-    s.config = configPaths("pi-cachemire", process.cwd()).reduce((config, filePath) => {
-      const parsed = readJsonConfig(filePath, (value): Partial<CachemireConfig> => {
-        if (!isJsonObject(value)) return {};
-        const next: Partial<CachemireConfig> = {};
-        const debug = booleanValue(value.debug);
-        const widget = booleanValue(value.widget);
-        const turnSummary = booleanValue(value.turnSummary);
-        const turnSummaryMinCalls = positiveNumberValue(value.turnSummaryMinCalls);
-        const missWarnings = booleanValue(value.missWarnings);
-        const missWarnUsd = positiveNumberValue(value.missWarnUsd);
-        const missWarnTokens = positiveNumberValue(value.missWarnTokens);
-        if (debug !== undefined) next.debug = debug;
-        if (widget !== undefined) next.widget = widget;
-        if (turnSummary !== undefined) next.turnSummary = turnSummary;
-        if (turnSummaryMinCalls !== undefined) next.turnSummaryMinCalls = Math.floor(turnSummaryMinCalls);
-        if (missWarnings !== undefined) next.missWarnings = missWarnings;
-        if (missWarnUsd !== undefined) next.missWarnUsd = missWarnUsd;
-        if (missWarnTokens !== undefined) next.missWarnTokens = Math.floor(missWarnTokens);
-        return next;
-      });
-      return Object.assign(config, parsed);
-    }, { ...DEFAULT_CONFIG });
+    const level = presentation(ctx);
+    if (level === "none") return;
+    // The first session of a process starts without route evidence; later sessions share it.
+    if (event.reason === "startup" && states.liveSessions === 0) g.__piCachemireThinkingEvidence = new Map();
+    // SDK reload preserves in-flight requests.
+    const config = readConfig();
+    const s = states.open(ctx, event.reason, () => ({
+      config,
+      records: [],
+      lineages: [],
+      requests: new RequestTracker<PendingRequest>(),
+      seenWarmEntryIds: new Set<string>(),
+      window: UNKNOWN_WINDOW,
+      modelSwitched: false,
+      thinkingChanged: false,
+      expectedRead: 0,
+      compacted: false,
+      anchored: [],
+      widget: {},
+    }));
+    s.config = config;
     const entries = ctx.sessionManager.getEntries();
-    const branch = ctx.sessionManager.getBranch();
-    s.records = restoreBranchRecords(branch);
+    const leafId = ctx.sessionManager.getLeafId();
+    s.records = restoreBranchRecords(ctx.sessionManager.getBranch());
     s.seenWarmEntryIds = new Set(entries.filter(isWarmUsageEntry).map((entry) => entry.id));
-    s.requestArmed = false;
     s.lineages = restoreLineageSnapshots(entries, event.reason === "reload" ? s.lineages : undefined);
-    const baseline = findBranchBaseline(entries, ctx.sessionManager.getLeafId(), s.lineages);
+    const baseline = findBranchBaseline(entries, leafId, s.lineages);
     const model = ctx.model;
     if (model) {
       s.rates = model.cost;
@@ -285,140 +275,126 @@ export default function piCachemire(pi: ExtensionAPI): void {
       { provider: model?.provider, model: model?.id, api: model?.api },
     ));
     s.prevCallRefreshedAt = s.records.at(-1)?.at || undefined;
+    s.compacted = pathCompacted(s, entries, leafId);
     // A restored branch can already be mid-switch (billed by a different model than the
     // current one); the forecast must exist before the first widget render.
-    refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
-    // Route evidence belongs to the process (provider and extension stack), not the
-    // session; a resumed path still tells which efforts may hold a warm entry and what
-    // its last call was billed at.
-    // SAFETY: a reload re-imports this file over the global state of the version it replaces.
-    if (event.reason === "startup" || !s.thinkingEvidence) s.thinkingEvidence = new Map();
-    restoreThinkingForPath(ctx, entries, ctx.sessionManager.getLeafId());
-    s.compacted = false;
-    s.inCompaction = false;
-    s.pendingFingerprint = undefined;
-    s.pendingFingerprintCause = undefined;
-    s.pendingRequestAt = s.pendingResponseAt = s.pendingPreviousRefreshedAt = s.pendingCacheGapMs = undefined;
-    s.pendingRequestLeafId = undefined;
-    s.pendingRetention = s.pendingPreviousWindow = undefined;
-    s.ui = ctx.ui;
+    refreshSwitchForecast(s, pi, ctx, leafId, model);
+    restoreThinkingForPath(s, ctx, entries, leafId);
+
+    clearCacheWidgetTimer(s.widget);
+    s.widget.widget = undefined;
     s.theme = ctx.ui.theme;
+    s.notifyFallback = (plainText) => ctx.ui.notify(plainText, "info");
+    s.tui = undefined;
+    // RPC has notify but renders no components: no widget, no chat lines in place.
+    if (level !== "tui") return;
     captureTui(ctx.ui, "__pi_cachemire_capture", (tui) => {
       s.tui = tui;
     });
-    cacheWidget.widget = undefined;
     if (s.config.widget) {
       ctx.ui.setWidget("pi-cachemire", (tui) => {
-        cacheWidget.widget = new LiveWidget(tui);
-        return cacheWidget.widget;
+        s.widget.widget = new LiveWidget(tui);
+        return s.widget.widget;
       });
     }
-    updateWidget();
+    updateWidget(s);
   });
 
-  pi.on("session_shutdown", async () => {
-    if (!ownsState()) return;
-    clearCacheWidgetTimer(cacheWidget);
-    if (s.ui) {
-      if (cacheWidget.widget) s.ui.setWidget("pi-cachemire", undefined);
-      cacheWidget.widget = undefined;
-    }
-    g.__piCachemireOwner = undefined;
+  pi.on("session_shutdown", async (event, ctx) => {
+    const s = states.get(ctx);
+    if (!s) return;
+    clearCacheWidgetTimer(s.widget);
+    if (s.widget.widget) ctx.ui.setWidget("pi-cachemire", undefined);
+    s.widget.widget = undefined;
+    states.close(ctx, event.reason);
   });
 
   pi.on("context", async (_event, ctx) => {
-    if (!ownsState()) return;
+    const s = states.get(ctx);
+    if (!s) return;
     syncWarmEntries(s, ctx);
-    s.requestArmed = true;
+    s.requests.arm();
+  });
+
+  pi.on("cache_warming_decision", async (event, ctx) => {
+    if (event.action === "warm") states.get(ctx)?.requests.expectReplay();
   });
 
   pi.on("before_provider_request", async (event, ctx) => {
-    if (!ownsState()) return;
-    if (!s.requestArmed) return;
-    s.requestArmed = false;
-    s.pendingFingerprint = fingerprintPayload(event.payload, thinkingRoute(ctx));
-    const requestAt = Date.now();
-    const entries = ctx.sessionManager.getEntries();
-    hydrateLineageResponseIds(s.lineages, entries);
-    const resolution = resolveCacheLineage({
-      entries,
-      activeLeafId: ctx.sessionManager.getLeafId(),
-      snapshots: s.lineages,
-      currentProvider: ctx.model?.provider,
-      currentModel: ctx.model?.id ?? s.pendingFingerprint.model,
-      currentApi: ctx.model?.api,
-      currentFingerprint: s.pendingFingerprint,
-      compareFingerprints: diffFingerprints,
+    const s = states.get(ctx);
+    if (!s) return;
+    const agent = s.requests.payload(event.payload, () => {
+      const requestAt = Date.now();
+      const sent = describeRequest(s, ctx, event.payload);
+      Object.assign(s, sent.lineage);
+      const pending: PendingRequest = {
+        fingerprint: sent.fingerprint,
+        cause: sent.cause,
+        requestLeafId: requestLeafFor(new Map(sent.entries.map((entry) => [entry.id, entry])), ctx.sessionManager.getLeafId()),
+        requestAt,
+        previousRefreshedAt: s.lastRefreshedAt,
+        previousWindow: s.window,
+        cacheGapMs: s.lastRefreshedAt !== undefined ? requestAt - s.lastRefreshedAt : undefined,
+        retention: sent.retention,
+      };
+      s.providerLabel = ctx.model?.provider;
+      s.lastRefreshedAt = requestAt;
+      s.window = UNKNOWN_WINDOW;
+      return pending;
+    }, (pending) => {
+      // Replace rejected-payload evidence without restarting the clock.
+      const sent = describeRequest(s, ctx, event.payload);
+      pending.fingerprint = sent.fingerprint;
+      pending.cause = sent.cause;
+      pending.retention = sent.retention;
     });
-    Object.assign(s, cacheStateForLineage(
-      resolution,
-      { provider: ctx.model?.provider, model: ctx.model?.id ?? s.pendingFingerprint.model, api: ctx.model?.api },
-    ));
-    s.pendingFingerprintCause = resolution.cause ??
-      withheldThinkingCause(resolution.baseline?.fingerprint, s.pendingFingerprint);
-    s.pendingRequestLeafId = requestLeafFor(new Map(entries.map((entry) => [entry.id, entry])), ctx.sessionManager.getLeafId());
-    s.pendingPreviousRefreshedAt = s.lastRefreshedAt;
-    s.pendingPreviousWindow = s.window;
-    s.pendingCacheGapMs = s.lastRefreshedAt !== undefined ? requestAt - s.lastRefreshedAt : undefined;
-    s.pendingRetention = retentionForRequest({
-      provider: ctx.model?.provider,
-      model: ctx.model?.id ?? s.pendingFingerprint.model,
-      api: ctx.model?.api,
-      ttlMs: s.pendingFingerprint.ttlMs,
-      payload: event.payload,
-    });
-    s.providerLabel = ctx.model?.provider;
-    s.pendingRequestAt = requestAt;
-    s.pendingResponseAt = undefined;
-    s.lastRefreshedAt = requestAt;
-    s.window = UNKNOWN_WINDOW;
-
-    // Place the break notice where the causality lives: between the user's action and the
-    // response. It shows the expectation now and is resolved in place when usage arrives.
+    if (!agent) return;
+    const pending = s.requests.inFlight;
+    assert(pending);
     if (s.config.missWarnings) {
       const prediction = predictBreak({
         isFirst: s.records.length === 0,
-        inCompaction: s.inCompaction,
         compacted: s.compacted,
-        gapMs: s.pendingCacheGapMs,
-        window: s.pendingPreviousWindow ?? s.window,
+        gapMs: pending.cacheGapMs,
+        window: pending.previousWindow,
         expectedRead: s.expectedRead,
-        fingerprintCause: s.pendingFingerprintCause,
-        thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx), s.thinkingEvidence),
+        fingerprintCause: pending.cause,
+        thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx), thinkingEvidence()),
         rates: s.rates,
         switchForecast: s.switchForecast === undefined ? undefined : {
           ...s.switchForecast,
           priorMayBeWarm: s.switchForecast.prior !== undefined &&
-            !pastWindow(s.switchForecast.prior.window, requestAt - s.switchForecast.prior.refreshedAt),
+            !pastWindow(s.switchForecast.prior.window, pending.requestAt - s.switchForecast.prior.refreshedAt),
         },
       });
       const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;
       const sizedUsd = prediction?.expectedUsd ?? prediction?.estimatedUsd;
       const material = prediction !== undefined && (
-        sizedTokens === undefined || // unsized (compaction/model/thinking): explicit user action, the notice is its explanation
+        sizedTokens === undefined || // Explain explicit breaks even without a size estimate.
         sizedTokens >= s.config.missWarnTokens ||
         (sizedUsd ?? 0) >= s.config.missWarnUsd
       );
       if (material) {
-        const text = econLine("warning", renderBreakingLine(prediction));
-        if (s.pendingNotice) s.pendingNotice.setText(text);
-        else s.pendingNotice = appendChatLine(text);
+        const text = econLine(s, "warning", renderBreakingLine(prediction));
+        if (pending.notice) pending.notice.setText(text);
+        else pending.notice = appendChatLine(s, text);
         if (s.config.debug) {
           pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
-          s.pendingRequestLeafId = ctx.sessionManager.getLeafId();
+          pending.requestLeafId = ctx.sessionManager.getLeafId();
         }
       }
     }
-    updateWidget();
+    updateWidget(s);
   });
 
   // Anthropic sends response headers only after prefill has read and written the cache.
-  pi.on("after_provider_response", async () => {
-    if (ownsState()) s.pendingResponseAt = Date.now();
+  pi.on("after_provider_response", async (_event, ctx) => {
+    states.get(ctx)?.requests.responded(Date.now());
   });
 
   pi.on("model_select", async (event, ctx) => {
-    if (!ownsState()) return;
+    const s = states.get(ctx);
+    if (!s) return;
     const model = event.model;
     s.rates = model.cost;
     s.modelLabel = `${model.provider}/${model.id}`;
@@ -430,27 +406,31 @@ export default function piCachemire(pi: ExtensionAPI): void {
       (s.lastCallProvider !== undefined && model.provider !== s.lastCallProvider) ||
       (s.lastCallApi !== undefined && model.api !== s.lastCallApi)
     );
-    refreshSwitchForecast(pi, ctx, ctx.sessionManager.getLeafId(), model);
-    updateWidget();
+    refreshSwitchForecast(s, pi, ctx, ctx.sessionManager.getLeafId(), model);
+    updateWidget(s);
   });
 
   pi.on("thinking_level_select", async (event, ctx) => {
-    if (!ownsState()) return;
+    const s = states.get(ctx);
+    if (!s) return;
     // First flip in a session: the event's own previousLevel is the level every billed
     // call so far used — a baseline that needs no session_start timing assumptions.
     s.lastCallThinkingLevel ??= event.previousLevel;
     s.currentThinkingLevel = event.level;
-    markThinkingChange(ctx);
-    updateWidget();
+    markThinkingChange(s, ctx);
+    updateWidget(s);
   });
 
-  pi.on("agent_start", async () => {
-    if (!ownsState()) return;
-    s.run = { startedAt: Date.now(), calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, costUsd: 0 };
+  pi.on("agent_start", async (_event, ctx) => {
+    const s = states.get(ctx);
+    if (s) s.run = { startedAt: Date.now(), calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, costUsd: 0 };
   });
 
   pi.on("session_tree", async (event, ctx) => {
-    if (!ownsState()) return;
+    const s = states.get(ctx);
+    if (!s) return;
+    const pending = s.requests.abandon();
+    if (pending) rollBack(s, pending.sent);
     const entries = ctx.sessionManager.getEntries();
     hydrateLineageResponseIds(s.lineages, entries);
     const baseline = findBranchBaseline(entries, event.newLeafId, s.lineages);
@@ -468,66 +448,66 @@ export default function piCachemire(pi: ExtensionAPI): void {
       resolution,
       { provider: ctx.model?.provider, model: ctx.model?.id, api: ctx.model?.api },
     ));
+    s.compacted = pathCompacted(s, entries, event.newLeafId);
     // Checking out a branch billed by another model is a switch in lineage terms.
-    refreshSwitchForecast(pi, ctx, event.newLeafId, ctx.model);
-    restoreThinkingForPath(ctx, entries, event.newLeafId);
-    s.requestArmed = false;
-    updateWidget();
+    refreshSwitchForecast(s, pi, ctx, event.newLeafId, ctx.model);
+    restoreThinkingForPath(s, ctx, entries, event.newLeafId);
+    updateWidget(s);
   });
 
-  pi.on("session_before_compact", async () => {
-    if (!ownsState()) return;
-    s.inCompaction = true;
-  });
-
-  pi.on("session_compact", async () => {
-    if (!ownsState()) return;
-    s.inCompaction = false;
-    s.compacted = true;
-    updateWidget();
+  // The summary request bypasses the provider hooks, so compaction only changes the path.
+  pi.on("session_compact", async (_event, ctx) => {
+    const s = states.get(ctx);
+    if (!s) return;
+    s.compacted = pathCompacted(s, ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
+    updateWidget(s);
   });
 
   pi.on("message_end", async (event, ctx) => {
-    if (!ownsState()) return;
+    const s = states.get(ctx);
     const message = event.message;
-    if (message.role !== "assistant") return;
+    if (!s || message.role !== "assistant") return;
+    const ended = s.requests.settle();
+    const pending = ended?.sent;
     const usage = message.usage;
-    if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) {
-      updateWidget();
+    if (!hasBilledUsage(usage)) {
+      if (pending) rollBack(s, pending);
+      updateWidget(s);
       return;
     }
     const now = Date.now();
     // Idle gap between the previous call's cache refresh and this request.
-    const requestAt = s.pendingRequestAt ?? now;
-    const refreshedAt = s.pendingResponseAt ?? requestAt;
+    const requestAt = pending?.requestAt ?? now;
+    const responseAt = ended?.respondedAt;
+    const refreshedAt = responseAt ?? requestAt;
     const gapMs = s.prevCallRefreshedAt !== undefined ? requestAt - s.prevCallRefreshedAt : undefined;
-    const cacheGapMs = s.pendingCacheGapMs ?? gapMs;
+    const cacheGapMs = pending ? pending.cacheGapMs : gapMs;
+    const previousWindow = pending?.previousWindow ?? s.window;
 
-    const fingerprintCause = s.pendingFingerprintCause;
+    const fingerprintCause = pending?.cause;
     const classification = classifyCall({
       isFirst: s.records.length === 0,
       gapMs: cacheGapMs,
-      window: s.pendingPreviousWindow ?? s.window,
+      window: previousWindow,
       usage,
       expectedRead: s.expectedRead,
       modelSwitched: s.modelSwitched,
       compacted: s.compacted,
-      inCompaction: s.inCompaction,
       fingerprintCause,
     });
-    const activeWindow = confirmedWindow(s.pendingRetention, usage) ?? UNKNOWN_WINDOW;
+    const activeWindow = confirmedWindow(pending?.retention, usage) ?? UNKNOWN_WINDOW;
     // The billed verdict on an effort change, whatever the payload looked like at
     // Cachemire's hook: a later extension or provider may have transformed it.
     const thinkingBreakExpected = s.thinkingChanged;
     const route = thinkingRoute(ctx);
-    const thinkingChange = route && recordBilledThinking(s.thinkingEvidence, route, {
+    const thinkingChange = route && recordBilledThinking(thinkingEvidence(), route, {
       map: ctx.model?.thinkingLevelMap,
       lastCallLevel: s.lastCallThinkingLevel,
       currentLevel: s.currentThinkingLevel,
-      incomparable: s.modelSwitched || s.compacted || s.inCompaction,
+      incomparable: s.modelSwitched || s.compacted,
       classification,
       thinkingNamedAtSend: fingerprintCause?.kind === "thinking",
-      warmPromised: withinWarmPromise(s.pendingPreviousWindow ?? s.window, cacheGapMs),
+      warmPromised: withinWarmPromise(previousWindow, cacheGapMs),
       usage,
       expectedRead: s.expectedRead,
     });
@@ -549,28 +529,21 @@ export default function piCachemire(pi: ExtensionAPI): void {
     s.records.push(record);
     const promptSize = usage.input + usage.cacheRead + usage.cacheWrite;
     s.lineages.push({
-      requestLeafId: s.pendingRequestLeafId ?? null,
+      requestLeafId: pending?.requestLeafId ?? null,
       responseAt: message.timestamp,
       requestAt,
-      responseStartAt: s.pendingResponseAt,
+      responseStartAt: responseAt,
       promptTokens: promptSize,
       provider: message.provider,
       model: message.model,
       api: message.api,
-      fingerprint: s.pendingFingerprint,
+      fingerprint: pending?.fingerprint,
       window: activeWindow,
     });
     s.compacted = false;
     s.prevCallRefreshedAt = refreshedAt;
-    s.pendingFingerprint = undefined;
-    s.pendingFingerprintCause = undefined;
-    s.pendingRequestAt = s.pendingResponseAt = undefined;
-    s.pendingRequestLeafId = undefined;
-    s.pendingPreviousRefreshedAt = s.pendingPreviousWindow = undefined;
-    s.pendingCacheGapMs = undefined;
     s.expectedRead = promptSize;
     s.window = activeWindow;
-    s.pendingRetention = undefined;
     s.lastCallModelId = message.model;
     s.lastCallProvider = message.provider;
     s.lastCallApi = message.api;
@@ -591,64 +564,57 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.run.costUsd += usage.cost.total;
     }
 
-    const broke = (classification.kind === "miss" || classification.kind === "partial") &&
-      classification.cause?.kind !== "compaction-work";
-    if (s.pendingNotice) {
+    const broke = classification.kind === "miss" || classification.kind === "partial";
+    if (pending?.notice) {
       // Resolve the in-flight notice with actuals — yellow when the break happened, green
       // when the prediction was wrong and the prefix held (shared-prefix warmth).
-      resolveNotice(broke
-        ? econLine("warning", renderMissLine(record))
-        : econLine("success", renderHeldLine(record)));
+      resolveNotice(s, pending, broke
+        ? econLine(s, "warning", renderMissLine(record))
+        : econLine(s, "success", renderHeldLine(record)));
     } else if (
       s.config.missWarnings && broke &&
       ((record.costUsd ?? 0) >= s.config.missWarnUsd || record.rewroteTokens >= s.config.missWarnTokens)
     ) {
       // Append an unpredicted break once provider usage proves it.
-      appendChatLine(econLine("warning", renderMissLine(record)));
+      appendChatLine(s, econLine(s, "warning", renderMissLine(record)));
     } else if (s.config.missWarnings && thinkingBreakExpected && thinkingChange?.held) {
       // An expected break that held: say so once; the evidence keeps later ones quiet.
-      appendChatLine(econLine("success", renderHeldLine(record)));
+      appendChatLine(s, econLine(s, "success", renderHeldLine(record)));
     }
-    updateWidget(now);
+    updateWidget(s, now);
   });
 
   pi.on("turn_end", async (_event, ctx) => {
-    if (!ownsState()) return;
+    const s = states.get(ctx);
+    if (!s) return;
     hydrateLineageResponseIds(s.lineages, ctx.sessionManager.getEntries());
     syncWarmEntries(s, ctx);
   });
 
   pi.on("agent_end", async (_event, ctx) => {
-    if (!ownsState()) return;
-    s.requestArmed = false;
-    resolveNotice(econLine("dim", "cache \u00b7 send ended without usage (aborted?) \u00b7 outcome unknown"));
-    if (s.pendingRequestAt !== undefined) {
-      s.lastRefreshedAt = s.pendingPreviousRefreshedAt;
-      s.window = s.pendingPreviousWindow ?? s.window;
-      s.pendingRequestAt = s.pendingResponseAt = undefined;
-      s.pendingRequestLeafId = undefined;
-      s.pendingPreviousRefreshedAt = s.pendingPreviousWindow = undefined;
-      s.pendingFingerprint = undefined;
-      s.pendingFingerprintCause = undefined;
-      s.pendingRetention = undefined;
-      s.pendingCacheGapMs = undefined;
-      updateWidget();
+    const s = states.get(ctx);
+    if (!s) return;
+    const pending = s.requests.abandon();
+    if (pending) {
+      rollBack(s, pending.sent);
+      updateWidget(s);
     }
     syncWarmEntries(s, ctx);
     const run = s.run;
     s.run = undefined;
     if (!run || !s.config.turnSummary || run.calls < s.config.turnSummaryMinCalls) return;
-    appendChatLine(econLine("dim", renderRunSummary(run, Date.now())));
+    appendChatLine(s, econLine(s, "dim", renderRunSummary(run, Date.now())));
   });
 
   pi.registerCommand("cache", {
     description: "Show the cachemire cache & loop ledger",
     handler: async (_args, ctx) => {
-      if (!ownsState() || !ctx.hasUI) return;
+      const s = states.get(ctx);
+      if (!s) return;
       syncWarmEntries(s, ctx);
       const records = s.records.slice();
       const options = { providerLabel: s.providerLabel, window: s.window, modelLabel: s.modelLabel };
-      appendChatLine(() => renderLedger(records, { ...options, theme: s.theme }).join("\n"));
+      appendChatLine(s, () => renderLedger(records, { ...options, theme: s.theme }).join("\n"));
     },
   });
 }

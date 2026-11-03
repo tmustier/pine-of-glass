@@ -120,7 +120,9 @@ editor restoration and keyboard routing.
 | `CustomMessageComponent` and `CustomEntryComponent` satisfy `isNoticeRow` (`render`, `setExpanded`, `message.customType`/`entry.customType`, no `toolName`), read `_expanded` as the flag `setExpanded()` writes, hold the extension renderer's component in `customComponent`, and their prototypes accept the render/mouse/setExpanded substitution | traceline notice rows (§9.16) |
 | A collapsed `AssistantMessageComponent` skips empty thinking blocks, emits one label per adjacent thinking run, and keeps native spacers across tool and text boundaries | traceline grouped thinking previews |
 | Real assistant thinking runs retain Pi's native `MouseRegion` and `thinkingVisibilityOverrides` behaviour after preview substitution: independent clicks, streaming rebuilds, Ctrl+T reset, links and drag selection | traceline reasoning preview clicks |
-| Two Pi SDK sessions in one process distinguish headless and interactive through `ctx.hasUI`; a headless child cannot write into Cachemire's interactive ledger, while the root still can | cachemire process-global session ownership |
+| SDK runtimes have distinct session managers, even for one session id; `hasUI` and `mode` distinguish delivery | shared session state |
+| Compaction summaries bypass context and provider hooks | cachemire compaction state |
+| Warm replays follow `cache_warming_decision`, reuse the conversation and can arrive after the next agent payload | shared request attribution |
 | OpenAI request capture exposes retention fields and distinguishes append-only effort updates from ChatGPT sign-in's request-level effort | cachemire outgoing-policy evidence |
 | Native OpenAI Completions accounts top-level `usage.cached_tokens` for Moonshot, Moonshot CN and Together, while preserving detailed-field precedence and cost accounting | cachemire provider usage accounting |
 | `ExtensionAPI` exposes `getActiveTools()` ⊆ `getAllTools()` by name; `ToolInfo` has `name`, `description`, `parameters`, `sourceInfo{scope,source,origin,path}`, `promptGuidelines` | contextimate tools section |

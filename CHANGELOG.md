@@ -6,6 +6,14 @@
   previous batch's reply; up to four requests progress concurrently.
 - Contextimate's request-only text attribution runs synchronously; nothing in it
   awaited.
+- Isolate session ledgers and panels from in-process children; RPC keeps its own
+  Cachemire and Meantime notifications without taking the terminal's widgets.
+- Exclude cache-warm replays from request evidence and timing; use the final
+  strict-schema fallback payload for Cachemire comparisons.
+- Preserve Cachemire's compaction warning across reload/resume, clear it on earlier
+  branches, and prevent cancelled compactions from misclassifying later calls.
+- Keep unbilled and nested tools out of unrelated Meantime call timing.
+- Restrict `/drill` to Traceline's terminal owner.
 
 ## 0.18.4 (2026-10-28)
 

@@ -120,3 +120,42 @@ and `resultImages?: number` to `NestedToolCallRecord` at `NestedCallRecorder.fin
 Both are already computed elsewhere in the tool pipeline; the cost is a few bytes per
 call under the existing 256-call cap.
 
+
+## 5. Provider request attribution
+
+**Observed:** Pi 1.3.0, `core/sdk.js`, `core/cache-warmer.js`, `core/extensions/runner.js`.
+
+Provider hooks carry no request id or purpose. Agent requests, warm replays and strict-schema
+fallbacks share them; an aborted replay can arrive after the next agent payload.
+`_lib/request-cycle.ts` infers attribution from context events and conversations, covered by
+`tests/lib/native-cache-warming.test.ts`.
+
+**Upstream direction:** add request id and `purpose: "agent" | "cache_warm"` to both provider
+hooks and the resulting assistant message; stop aborted replay dispatch.
+
+## 6. Final provider payload
+
+**Observed:** Pi 1.3.0, `core/extensions/runner.js` (`emitBeforeProviderRequest`).
+
+Handlers transform payloads in load order. Cachemire's fingerprint and Contextimate's counts
+miss later handlers' edits.
+
+**Upstream direction:** expose the final payload in a read-only event or on `message_end`.
+
+## 7. SDK disposal notification
+
+**Observed:** Pi 1.3.0, `core/agent-session.js` (`dispose`).
+
+`dispose()` does not emit `session_shutdown`. Weak session keys allow collection, but
+presentation timers can keep running unless the SDK host emits shutdown itself.
+
+**Upstream direction:** emit shutdown on disposal, or document the host's obligation.
+
+## 8. Aborted compaction summaries
+
+**Observed:** Pi 1.3.0, `core/compaction/compaction.js` (`getSummarizationFailure`).
+
+Summary validation rejects `error` and `length`, but accepts `aborted` when the request signal
+was not aborted, potentially saving a partial or empty summary.
+
+**Upstream direction:** reject `aborted` too.

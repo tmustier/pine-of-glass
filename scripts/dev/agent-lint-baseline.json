@@ -142,15 +142,6 @@
       "extensions/_lib/chatline.ts": {
         "const c = child as { toolCallId?: unknown; lastMessage?: { role?: unknown; timestamp?: unknown } } | undefined;": 1
       },
-      "extensions/pi-cachemire/index.ts": {
-        "const g = globalThis as CachemireGlobal;": 1
-      },
-      "extensions/pi-contextimate/index.ts": {
-        "const g = globalThis as ContextimateGlobal;": 1
-      },
-      "extensions/pi-meantime/index.ts": {
-        "const g = globalThis as MeantimeGlobal;": 1
-      },
       "extensions/pi-traceline/drill-pager.ts": {
         "if (matchesKey(data, String(d) as KeyId)) {": 1
       },
@@ -181,7 +172,7 @@
   "lineBudgets": {
     "defaultTsMax": 350,
     "files": {
-      "extensions/pi-cachemire/index.ts": 655,
+      "extensions/pi-cachemire/index.ts": 621,
       "extensions/pi-traceline/index.ts": 1186,
       "tests/traceline/one-line.test.ts": 723
     }

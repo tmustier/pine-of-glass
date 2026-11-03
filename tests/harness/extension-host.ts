@@ -117,6 +117,8 @@ export async function hostExtension(
     project: IsolatedProject;
     ui?: RecordedUi;
     interactive?: boolean;
+    /** The UI mode of an interactive session; RPC binds a UI that renders no components. */
+    mode?: "tui" | "rpc";
     reason?: SessionStartEvent["reason"];
     model?: CreateAgentSessionOptions["model"];
     thinkingLevel?: CreateAgentSessionOptions["thinkingLevel"];
@@ -128,7 +130,7 @@ export async function hostExtension(
     projectTrusted?: boolean;
   },
 ): Promise<HostedExtension> {
-  const { project, interactive = true, reason = "startup", model, thinkingLevel, noTools = "all" } = options;
+  const { project, interactive = true, mode = "tui", reason = "startup", model, thinkingLevel, noTools = "all" } = options;
   const cwd = project.dir;
   const agentDir = join(project.home, ".pi", "agent");
   const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: options.projectTrusted ?? true });
@@ -152,7 +154,7 @@ export async function hostExtension(
   const errors: string[] = [];
   const onError = (error: { event: string; error: string }) => errors.push(`${error.event}: ${error.error}`);
   await session.bindExtensions(
-    interactive ? { uiContext: ui as unknown as ExtensionUIContext, mode: "tui", onError } : { mode: "print", onError },
+    interactive ? { uiContext: ui as unknown as ExtensionUIContext, mode, onError } : { mode: "print", onError },
   );
 
   return {

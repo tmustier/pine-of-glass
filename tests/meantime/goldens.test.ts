@@ -70,7 +70,7 @@ test("meantime widget, notices, and /pace panel golden", () => {
     const line = tempoWidget(snap);
     return `[${label}] ${line ? `(${line.tone}) \u25cd ${line.text}` : "(hidden)"}`;
   };
-  const base = { writingCharsPerToken: 2.9, openTools: 0, runActive: true, toolElapsedMs: 0 };
+  const base = { writingCharsPerToken: 2.9, openTools: 0, toolElapsedMs: 0 };
 
   const lines = [
     "=== widget states ===",
@@ -95,7 +95,7 @@ test("meantime widget, notices, and /pace panel golden", () => {
     }),
     widget("tools", { ...base, now: 31_000, openTools: 1, toolElapsedMs: 31_000 }),
     widget("tools-parallel", { ...base, now: 31_000, openTools: 3, toolElapsedMs: 31_000 }),
-    widget("idle", { ...base, now: 1_000, runActive: false }),
+    widget("idle", { ...base, now: 1_000 }),
     "",
     "=== notices (chat lines) ===",
     `\u25cd ${renderSlowStartLine(CALLS[3]!, { ttftMs: 14_200, medianMs: 1_900 }, DEFAULT_CONFIG.prefillCauseTokens)}`,
