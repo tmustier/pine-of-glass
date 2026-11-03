@@ -148,9 +148,6 @@
       "extensions/pi-contextimate/index.ts": {
         "const g = globalThis as ContextimateGlobal;": 1
       },
-      "extensions/pi-meantime/index.ts": {
-        "const g = globalThis as MeantimeGlobal;": 1
-      },
       "extensions/pi-traceline/drill-pager.ts": {
         "if (matchesKey(data, String(d) as KeyId)) {": 1
       },
