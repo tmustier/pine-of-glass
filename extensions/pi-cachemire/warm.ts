@@ -36,7 +36,7 @@ export function syncWarmEntries(state: WarmSyncState, sessionManager: ExtensionC
     const at = sessionEntryAt(entry);
     const lineage = state.lineages.find((snapshot) => snapshot.responseEntryId === entry.id);
     assert(lineage, `missing cache-warm lineage for ${entry.id}`);
-    const booked = bookCall(state.records, state.baseline, {
+    const booked = bookCall(state.records.length, state.baseline, {
       requestAt: at,
       at,
       refreshedAt: at,

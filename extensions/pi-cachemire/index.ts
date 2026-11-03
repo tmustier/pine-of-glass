@@ -333,7 +333,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     states.get(ctx)?.requests.responded(Date.now());
   });
 
-  pi.on("model_select", async (event, ctx) => {
+  pi.on("model_select", async (_event, ctx) => {
     const s = states.get(ctx);
     if (!s) return;
     refreshSwitchForecast(s, ctx);
@@ -405,7 +405,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // Anchor at the response start, not its end: a 4m thinking block must not show 5m left
     // on a prefix written before it started.
     const refreshedAt = ended?.respondedAt ?? requestAt;
-    const { record, baseline } = bookCall(s.records, previous, {
+    const { record, baseline } = bookCall(s.records.length, previous, {
       requestAt,
       at: now,
       refreshedAt,

@@ -28,8 +28,6 @@ export interface CacheBaseline {
   lastCallAt?: number;
 }
 
-const EMPTY_BASELINE: CacheBaseline = { expectedRead: 0, window: UNKNOWN_WINDOW };
-
 /** Unknown parts of a route are not evidence of a switch. */
 export function routeChanged(from: Route | undefined, to: Route): boolean {
   const changed = (a: string | undefined, b: string | undefined) => a !== undefined && b !== undefined && a !== b;
@@ -62,7 +60,7 @@ interface BookedCall {
 }
 
 /** Book one billed call against the baseline it read from, and advance the baseline. */
-export function bookCall(records: readonly CallRecord[], baseline: CacheBaseline, call: BilledCall): BookedCall {
+export function bookCall(priorCalls: number, baseline: CacheBaseline, call: BilledCall): BookedCall {
   const { usage } = call;
   const { billedBy } = baseline;
   // Pi saves no API on warm entries; one that repeats the baseline's model used its API.
@@ -71,7 +69,7 @@ export function bookCall(records: readonly CallRecord[], baseline: CacheBaseline
   const switched = routeChanged(billedBy, route);
   const start = call.requestAt ?? call.at;
   const classification = classifyCall({
-    isFirst: records.length === 0,
+    isFirst: priorCalls === 0,
     gapMs: baseline.refreshedAt === undefined ? undefined : start - baseline.refreshedAt,
     window: baseline.window,
     usage,
@@ -91,7 +89,7 @@ export function bookCall(records: readonly CallRecord[], baseline: CacheBaseline
   }
   return {
     record: {
-      index: records.length + 1,
+      index: priorCalls + 1,
       at: call.at,
       requestAt: call.requestAt,
       gapMs: baseline.lastCallAt === undefined ? undefined : start - baseline.lastCallAt,
@@ -120,7 +118,7 @@ export function bookCall(records: readonly CallRecord[], baseline: CacheBaseline
 /** Rebuild a branch's ledger from its saved calls. */
 export function restoreBranchRecords(entries: readonly SessionEntry[]): CallRecord[] {
   const records: CallRecord[] = [];
-  let baseline = EMPTY_BASELINE;
+  let baseline: CacheBaseline = { expectedRead: 0, window: UNKNOWN_WINDOW };
   let compacted = false;
   for (const entry of entries) {
     if (entry.type === "compaction") {
@@ -131,7 +129,7 @@ export function restoreBranchRecords(entries: readonly SessionEntry[]): CallReco
     const call = warm ? entry : entry.type === "message" && entry.message.role === "assistant" ? entry.message : undefined;
     if (!call || !hasBilledUsage(call.usage)) continue;
     const at = sessionEntryAt(entry);
-    const booked = bookCall(records, baseline, {
+    const booked = bookCall(records.length, baseline, {
       at,
       refreshedAt: at,
       usage: call.usage,

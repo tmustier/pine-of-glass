@@ -44,7 +44,8 @@ retry the same conversation. A response overlapping a replay has no attributable
 time; Cachemire falls back to send time.
 
 Cachemire stores fingerprint, retention, timing and notice in one `PendingRequest`.
-A re-attempt replaces payload-derived evidence; an unbilled end resolves the notice. Contextimate similarly replaces its captured payload.
+A re-attempt replaces payload-derived evidence; an unbilled end resolves the notice.
+Contextimate similarly replaces its captured payload.
 `_lib/usage.ts` shares the billed-token check; Contextimate's trusted-context check
 remains separate because it also excludes errors and aborts.
 

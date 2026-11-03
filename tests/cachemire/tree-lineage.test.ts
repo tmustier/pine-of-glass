@@ -5,8 +5,7 @@ import type { AssistantMessage, Message, Usage } from "@earendil-works/pi-ai";
 
 import { diffFingerprints, fingerprintPayload } from "../../extensions/pi-cachemire/classify.ts";
 import { predictBreak } from "../../extensions/pi-cachemire/economics.ts";
-import { findBranchBaseline, hydrateLineageResponseIds, resolveCacheLineage, restoreLineageSnapshots } from "../../extensions/pi-cachemire/lineage.ts";
-import { baselineForLineage } from "../../extensions/pi-cachemire/lineage.ts";
+import { baselineForLineage, findBranchBaseline, hydrateLineageResponseIds, resolveCacheLineage, restoreLineageSnapshots } from "../../extensions/pi-cachemire/lineage.ts";
 import { routeChanged } from "../../extensions/pi-cachemire/ledger.ts";
 import type { CacheLineageSnapshot } from "../../extensions/pi-cachemire/types.ts";
 
