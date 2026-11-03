@@ -67,5 +67,9 @@ npm run test:smoke      # launches real pi in tmux with an isolated HOME (local-
 
 ## Releasing
 
-Bump `package.json` version + `CHANGELOG.md`, commit, tag `vX.Y.Z`, push with tags,
+Bump `package.json` version + `CHANGELOG.md`. Review `UPDATE_NOTES.md` for short
+Pi startup notes, adding only meaningful changes that affect every extension.
+Skip extension-specific changes and releases that do not need a notice; Pi cannot
+filter package notes by the extensions a user loads. Keep the detailed changelog.
+Commit, tag `vX.Y.Z`, push with tags,
 `npm publish`, then GitHub release notes (`gh release create`).

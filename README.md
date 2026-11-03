@@ -15,6 +15,17 @@ Requires Pi 0.86.0 or later.
 - From GitHub: `pi install git:github.com/tmustier/pine-of-glass`
 - From npm (installs `contextimate`, `traceline`, and experimental `cachemire` and `meantime`): `pi install npm:pine-of-glass`. Meantime stays inert until its config sets `"enabled": true`.
 
+## Update notices
+
+Pi 1.5 and later use [`UPDATE_NOTES.md`](./UPDATE_NOTES.md) for short startup
+notices. The first launch records the version without showing old notes.
+Pi's `collapseChangelog` setting reduces notices to one line per package.
+
+Pi cannot filter package notes by the extensions you load. Startup notes cover
+only changes that affect all four extensions, so a Traceline update does not
+notify someone who uses only Contextimate. The full history, including changes
+to individual extensions, stays in [`CHANGELOG.md`](./CHANGELOG.md).
+
 ## Configuration directory
 
 All four extensions read global configuration from Pi's active agent directory.
