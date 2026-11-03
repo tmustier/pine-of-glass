@@ -3,8 +3,7 @@
 ## Unreleased
 
 - Traceline sends summary batches as soon as rows settle instead of waiting for the
-  previous batch's reply, up to four requests at once. A turn with many cut commands
-  gets its gists in one round trip rather than one per batch.
+  previous batch's reply; up to four requests progress concurrently.
 - Contextimate's request-only text attribution runs synchronously; nothing in it
   awaited.
 

@@ -118,7 +118,6 @@ export function installSummaries(pi: ExtensionAPI, owns: () => boolean, changed:
       if (stopped || timer || asking >= IN_FLIGHT || waiting.length === 0) return;
       timer = setTimeout(() => {
         timer = undefined;
-        // Batches are independent, so later ones need not wait for earlier replies.
         while (asking < IN_FLIGHT && waiting.length > 0) void ask(waiting.splice(0, BATCH));
       }, GATHER_MS);
     };

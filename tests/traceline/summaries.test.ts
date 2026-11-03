@@ -102,7 +102,7 @@ test("a cut command gets one ≈ line once settled, asked for in one batch; the 
   }
 });
 
-test("batches go out together rather than waiting for earlier replies", async () => {
+test("batches go out together, four at a time, and the backlog drains as replies land", async () => {
   const project = new IsolatedProject();
   try {
     project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
@@ -112,10 +112,12 @@ test("batches go out together rather than waiting for earlier replies", async ()
       piTraceline(pi);
     }, { project });
     try {
-      const rows = Array.from({ length: 9 }, (_, index) => bash(`${LONG} && echo ${index}`, "ok"));
+      const rows = Array.from({ length: 33 }, (_, index) => bash(`${LONG} && echo ${index}`, "ok"));
       for (const row of rows) lines(row);
       await new Promise((resolve) => setTimeout(resolve, 280));
-      assert.deepEqual(asked.map((batch) => batch.length), [8, 1], "both batches are in flight before either reply");
+      assert.deepEqual(asked.map((batch) => batch.length), [8, 8, 8, 8], "four batches are in flight before any reply; the fifth waits");
+      while (asked.length < 5) await settle();
+      assert.deepEqual(asked.map((batch) => batch.length), [8, 8, 8, 8, 1]);
       await settle();
       assert.ok(rows.every((row) => lines(row).at(-1)?.includes("≈ gist")));
     } finally {

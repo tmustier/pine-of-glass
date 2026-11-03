@@ -104,7 +104,7 @@ test("bundled Pi attributes native payload additions without installed Pi peers"
     writeFileSync(probe, `
       import assert from "node:assert/strict";
       import { payloadTextAdditions } from "./extensions/pi-contextimate/request-messages.ts";
-      export default async function () {
+      export default function () {
         for (const { history, payload, model } of ${JSON.stringify(fixtures)}) {
           for (let turn = 0; turn < 2; turn++) {
             assert.deepEqual(payloadTextAdditions(history, payload, model), { additive: true, chars: 0 });
