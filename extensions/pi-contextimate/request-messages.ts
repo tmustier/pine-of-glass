@@ -88,7 +88,7 @@ export function observeRequestMessages(pi: ExtensionAPI): void {
   // The context hook prepares the counts; the agent request's own payload completes them. The
   // shared tracker keeps a cache-warm replay of an earlier request out of the capture.
   let prepared: Prepared | undefined;
-  const requests = new RequestTracker<Captured>();
+  const requests = new RequestTracker<Captured | undefined>();
   pi.on("context_with_system", (event, ctx) => {
     const saved = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages;
     const expected = convertToLlm(saved).filter((message) => message.role !== "system");
@@ -114,12 +114,16 @@ export function observeRequestMessages(pi: ExtensionAPI): void {
     if (event.action === "warm") requests.expectReplay();
   });
   pi.on("before_provider_request", (event) => {
-    const ready = prepared;
-    if (!ready) return;
+    // Every payload goes through the tracker, so a replay while idle meets its expectation.
+    const capture = (): Captured | undefined => prepared && { ...prepared, payload: structuredClone(event.payload) };
     // A second attempt of the same request (strict-schema fallback) replaces the capture.
-    requests.payload(event.payload, () => ({ ...ready, payload: structuredClone(event.payload) }), (sent) => {
-      sent.payload = structuredClone(event.payload);
+    requests.payload(event.payload, capture, (sent) => {
+      if (sent) sent.payload = structuredClone(event.payload);
     });
+  });
+  pi.on("agent_end", () => {
+    requests.abandon();
+    prepared = undefined;
   });
   pi.on("message_end", (event, ctx) => {
     if (event.message.role !== "assistant") return;

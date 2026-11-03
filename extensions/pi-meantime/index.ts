@@ -156,9 +156,9 @@ export default function piMeantime(pi: ExtensionAPI): void {
   pi.on("session_start", async (event, ctx) => {
     const level = presentation(ctx);
     if (level === "none") return;
+    // A reload keeps a request in flight: Pi's SDK reload does not abort it, and its response
+    // reaches this session's new handlers.
     const s = states.open(ctx, event.reason, newSession);
-    // A request cannot settle into a reloaded module's handlers.
-    s.requests.abandon();
     unbindPresentation(s, ctx);
     if (ctx.model) s.currentModel = modelLabel(ctx.model);
     s.theme = ctx.ui.theme;

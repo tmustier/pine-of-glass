@@ -9,7 +9,10 @@
 // - Pi's cache warmer replays the last agent request with `maxTokens: 1` and the same options,
 //   so the replay reaches the provider hooks. Each refresh first emits `cache_warming_decision`.
 //   Pi does not await an aborted refresh, so its payload can still arrive after the next agent
-//   request has been sent.
+//   request has been sent. Adapters rewrite the one-token cap (OpenAI Responses sends at least
+//   16, Bedrock adds the thinking budget), so the cap does not identify a replay; the
+//   conversation does. Within one agent run every new agent request extends the conversation,
+//   and a retry with the same conversation comes only after `agent_end`.
 // - An agent request is always preceded by a `context` event, retries included.
 // - A second payload for the same request arrives without a new `context`.
 
@@ -42,17 +45,6 @@ export function conversationKey(payload: unknown): string | undefined {
   return conversation === undefined ? undefined : JSON.stringify(conversation);
 }
 
-/** False when the payload states an output cap other than the warmer's one token: Anthropic and
- * OpenAI chat `max_tokens`, OpenAI `max_output_tokens` and `max_completion_tokens`, Gemini
- * `generationConfig.maxOutputTokens`. A route without a recognised cap field cannot tell. */
-function mayBeReplay(payload: unknown): boolean {
-  if (!isJsonObject(payload)) return false;
-  const generation = isJsonObject(payload.generationConfig) ? payload.generationConfig : {};
-  const cap = payload.max_tokens ?? payload.max_output_tokens ?? payload.max_completion_tokens
-    ?? generation.maxOutputTokens;
-  return typeof cap !== "number" || cap === 1;
-}
-
 export class RequestTracker<Sent> {
   #state: RequestCycle<Sent> = { kind: "idle" };
   #lastAgentKey: string | undefined;
@@ -77,10 +69,9 @@ export class RequestTracker<Sent> {
     return ended;
   }
 
-  /** `cache_warming_decision` with action `warm`: a payload that replays the last agent
-   * conversation within the warmer's one-token cap is the warm request, whenever it arrives. A
-   * later extension can still cancel the refresh, so an unused expectation lasts until
-   * `abandon`. */
+  /** `cache_warming_decision` with action `warm`: a payload that repeats the last agent
+   * conversation is the warm request, whenever it arrives. A later extension can still cancel
+   * the refresh, so an unused expectation lasts until `abandon` at `agent_end`. */
   expectReplay(): void {
     if (this.#lastAgentKey !== undefined) this.#replayKeys.push(this.#lastAgentKey);
   }
@@ -89,7 +80,7 @@ export class RequestTracker<Sent> {
    * `retry` lets the caller re-derive what it read from the payload for a second attempt. */
   payload(payload: unknown, start: () => Sent, retry: (sent: Sent) => void): PayloadKind {
     const key = conversationKey(payload);
-    const replayAt = key === undefined || !mayBeReplay(payload) ? -1 : this.#replayKeys.indexOf(key);
+    const replayAt = key === undefined ? -1 : this.#replayKeys.indexOf(key);
     if (replayAt >= 0) {
       this.#replayKeys.splice(replayAt, 1);
       this.#replaysAwaitingResponse++;

@@ -113,9 +113,9 @@ const states = sessionStates<CachemireState>("pi-cachemire");
 type CachemireGlobal = typeof globalThis & { __piCachemireThinkingEvidence?: ThinkingEvidenceLedger };
 // SAFETY: a typed view of this extension's one process-wide global; only this file uses the key.
 const g = globalThis as CachemireGlobal;
-/** Billed effort-change verdicts per route. They describe the provider and extension stack,
- * not a session, so they outlive session switches and reloads (see thinking.ts). */
-let thinkingEvidence: ThinkingEvidenceLedger = (g.__piCachemireThinkingEvidence ??= new Map());
+/** Billed effort-change verdicts per route: facts about the provider and extension stack that
+ * every session and loaded copy in the process shares (see thinking.ts). */
+const thinkingEvidence = (): ThinkingEvidenceLedger => (g.__piCachemireThinkingEvidence ??= new Map());
 
 function newState(config: CachemireConfig): CachemireState {
   return {
@@ -209,7 +209,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
         ctx.model.thinkingLevelMap,
         s.lastCallThinkingLevel,
         s.currentThinkingLevel,
-        thinkingEvidence,
+        thinkingEvidence(),
       );
   };
 
@@ -222,7 +222,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     entries: readonly SessionEntry[],
     leafId: string | null,
   ) => {
-    const lastBilledLevel = restoreBilledThinking(thinkingEvidence, entries, leafId, ctx.model, Date.now());
+    const lastBilledLevel = restoreBilledThinking(thinkingEvidence(), entries, leafId, ctx.model, Date.now());
     s.currentThinkingLevel = pi.getThinkingLevel();
     s.lastCallThinkingLevel = lastBilledLevel ?? s.currentThinkingLevel;
     markThinkingChange(s, ctx);
@@ -265,7 +265,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       window: pending.previousWindow,
       expectedRead: s.expectedRead,
       fingerprintCause: pending.cause,
-      thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx), thinkingEvidence),
+      thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx), thinkingEvidence()),
       rates: s.rates,
       switchForecast: s.switchForecast === undefined ? undefined : {
         ...s.switchForecast,
@@ -300,11 +300,10 @@ export default function piCachemire(pi: ExtensionAPI): void {
   pi.on("session_start", async (event, ctx) => {
     const level = presentation(ctx);
     if (level === "none") return;
-    // A process starts with no route evidence.
-    if (event.reason === "startup") thinkingEvidence = g.__piCachemireThinkingEvidence = new Map();
+    // The first session of a process starts without route evidence; later sessions share it.
+    if (event.reason === "startup" && states.liveSessions === 0) g.__piCachemireThinkingEvidence = new Map();
+    // A reload keeps a request in flight: Pi's SDK reload does not abort it.
     const s = states.open(ctx, event.reason, () => newState(readConfig()));
-    const pending = s.requests.abandon();
-    if (pending) rollBack(s, pending.sent);
     s.config = readConfig();
     const entries = ctx.sessionManager.getEntries();
     const leafId = ctx.sessionManager.getLeafId();
@@ -517,7 +516,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     // Cachemire's hook: a later extension or provider may have transformed it.
     const thinkingBreakExpected = s.thinkingChanged;
     const route = thinkingRoute(ctx);
-    const thinkingChange = route && recordBilledThinking(thinkingEvidence, route, {
+    const thinkingChange = route && recordBilledThinking(thinkingEvidence(), route, {
       map: ctx.model?.thinkingLevelMap,
       lastCallLevel: s.lastCallThinkingLevel,
       currentLevel: s.currentThinkingLevel,

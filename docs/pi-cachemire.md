@@ -294,14 +294,16 @@ fingerprints, request-start and response-start observations and live retention f
 are not persisted; diagnoses that need those fields remain unknown.
 
 Each Pi session in the process keeps its own ledger, clock and model metadata, keyed by
-its session id, so a nested session cannot write into another session's state. A reload
+its session manager, so a nested session cannot write into another session's state, even
+when it opens the same session file. A reload
 keeps the session's state; any other shutdown removes it. Headless, print and JSON
 sessions keep no state. An RPC session keeps a ledger and sends its notices and `/cache`
 as notifications, with no widget. Only a terminal session shows the widget.
 
 Pi's cache warmer replays the last request through the same provider hooks. Cachemire
-treats a payload as a replay when it follows a `warm` decision, repeats the replayed
-request's conversation and asks for one output token; it never becomes call evidence.
+treats a payload as a replay when it follows a `warm` decision and repeats the replayed
+request's conversation, even when it arrives after the next request; it never becomes
+call evidence.
 When a provider sends a second payload for the same request without new context, such as
 Anthropic's strict-schema fallback, the second payload is the one Cachemire compares
 next time.

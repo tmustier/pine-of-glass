@@ -91,7 +91,7 @@ export interface ChatLineHost {
   notifyFallback?: (plainText: string) => void;
 }
 
-const CHAT_CLEAR_HOOK_VERSION = 1;
+const CHAT_CLEAR_HOOK_VERSION = 2;
 
 /** Append one spacer+text pair to pi's chat scrollback, tracked for re-attachment
  * across rebuilds. Returns the Text (so the caller can resolve it in place), or
@@ -112,24 +112,29 @@ export function appendAnchoredLine(host: ChatLineHost, ns: string, text: TextCon
     // a microtask runs after it completes, including pi's own trailing status line, so
     // anchors are matched against the final rebuilt children. Keys are namespaced per
     // extension: when two family members hook the same container their wrappers chain, and
-    // each re-attaches only its own lines.
+    // each re-attaches only its own lines. Pi keeps the container across /new and /resume, so
+    // the hook re-attaches the lines of whichever host appended last, never a retired session's.
     // SAFETY: findChatContainer validates children; these namespaced properties are
     // owned by this hook. Contract tests pin Pi's mutable clear()+children seam.
     const hookedChat = chat as ContainerLike & {
       [key: `__piChatline_${string}_ClearVersion`]: number | undefined;
       [key: `__piChatline_${string}_OriginalClear`]: ContainerLike["clear"];
+      [key: `__piChatline_${string}_Host`]: ChatLineHost;
     };
     const versionKey = `__piChatline_${ns}_ClearVersion` as const;
     const originalKey = `__piChatline_${ns}_OriginalClear` as const;
+    const hostKey = `__piChatline_${ns}_Host` as const;
+    hookedChat[hostKey] = host;
     if (typeof hookedChat.clear === "function" && hookedChat[versionKey] !== CHAT_CLEAR_HOOK_VERSION) {
       const original = hookedChat[originalKey] ?? hookedChat.clear.bind(hookedChat);
       hookedChat[originalKey] = original;
       hookedChat.clear = () => {
         const result = original();
         queueMicrotask(() => {
-          if (host.anchored.length === 0) return;
-          host.anchored = reattachAnchored(hookedChat.children, host.anchored);
-          host.tui?.requestRender?.(true);
+          const current = hookedChat[hostKey];
+          if (current.anchored.length === 0) return;
+          current.anchored = reattachAnchored(hookedChat.children, current.anchored);
+          current.tui?.requestRender?.(true);
         });
         return result;
       };

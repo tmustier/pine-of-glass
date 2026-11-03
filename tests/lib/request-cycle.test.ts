@@ -56,6 +56,17 @@ test("a refresh aborted by the next request can still deliver its replay after t
   assert.equal(requests.inFlight?.attempts, 1);
 });
 
+test("a replay is recognised by its conversation whatever cap the adapter wrote", () => {
+  const { requests, send } = tracker();
+  const responses = { max_output_tokens: 32_000, input: [{ role: "user", content: "a" }] };
+  requests.arm();
+  send(responses);
+  requests.settle();
+  requests.expectReplay();
+  // OpenAI Responses raises the warmer's one-token cap to its minimum of 16.
+  assert.equal(send({ ...responses, max_output_tokens: 16 }), "replay");
+});
+
 test("a warm decision that no replay follows does not swallow a later request", () => {
   const { requests, send } = tracker();
   requests.arm();
@@ -65,6 +76,8 @@ test("a warm decision that no replay follows does not swallow a later request", 
   requests.arm();
   assert.equal(send(turn("a", "b")), "agent");
   requests.settle();
+  requests.expectReplay(); // stopped again
+  requests.abandon(); // agent_end: Pi retries a failed request only after the run ends
   requests.arm();
   assert.equal(send(turn("a", "b")), "agent", "a retry resending the same conversation is not a replay");
 });

@@ -160,9 +160,10 @@ Contextimate counts at their own position, so a later extension's additions are 
 **Observed:** Pi 1.3.0 · `dist/core/agent-session.js` (`dispose`)
 
 `dispose()` aborts work and disposes the runner, but extensions are not told the session ended.
-Per-session extension state (`extensions/_lib/session-state.ts`) for an SDK-hosted child session
-therefore stays in memory until the process exits, unless the host emits `session_shutdown`
-itself, as the test harness does.
+Per-session extension state (`extensions/_lib/session-state.ts`) is keyed weakly by the session
+manager, so it is collected with the session, but timers and widgets an extension started for an
+SDK-hosted session keep running until something else stops them, unless the host emits
+`session_shutdown` itself, as the test harness does.
 
 **Possible upstream direction:** emit `session_shutdown` from `dispose()`, or document that SDK
 hosts must.

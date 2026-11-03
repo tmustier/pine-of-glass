@@ -98,10 +98,10 @@ that starts first takes the ledger and a later TUI session gets nothing.
 
 An ownership token is the wrong fix for this, because it makes one session win and the others go
 without. The design gives each session its own state instead, and keeps the `/reload` behaviour
-by keying the state on the session id, which a reload keeps:
+by keying the state on the session's `SessionManager`, which a reload keeps:
 
 ```ts
-/** Per-session extension state that survives /reload, keyed by Pi's session id. */
+/** Per-session extension state that survives /reload, keyed by the session's SessionManager. */
 export interface SessionStates<S> {
   /** session_start. Reload returns the existing state; any other reason creates a fresh one. */
   open(ctx: ExtensionContext, reason: SessionStartEvent["reason"], create: () => S): S;
@@ -114,8 +114,10 @@ export interface SessionStates<S> {
 export function sessionStates<S>(slot: string): SessionStates<S>;
 ```
 
-The map lives in one `globalThis` slot per extension, keyed by
-`ctx.sessionManager.getSessionId()`. Pi emits `session_shutdown` with reason `reload` before it
+The map is a `WeakMap` in one `globalThis` slot per extension, keyed by the
+`ctx.sessionManager` object. The session id is not enough: two runtimes that open the same session
+file share it, and an entry keyed by id would let one reach the other's state. A weak key also lets
+an SDK session disposed without `session_shutdown` take its state with it. Pi emits `session_shutdown` with reason `reload` before it
 reloads, and with `new`, `resume`, `fork` or `quit` when the session ends, so `close` knows whether
 to keep the state. Every handler starts with `const s = states.get(ctx); if (!s) return;`.
 
@@ -263,16 +265,17 @@ export interface RequestTracker<Sent> {
 
 The rules, in the order `payload` applies them:
 
-1. A payload is a replay when a `cache_warming_decision` with action `warm` came first, the
+1. A payload is a replay when a `cache_warming_decision` with action `warm` came first and the
    payload's conversation messages equal those of the agent payload that was last when the
-   decision came, and the payload does not state an output cap other than one token. A replay
-   changes nothing except the response bookkeeping in rule 5. The decision event is Pi's own
-   signal that a warm is coming, but a later extension can override it to `stop`, so the message
-   comparison confirms it. The comparison alone cannot tell a replay from an ordinary retry, which
-   resends the same messages; the one-token cap can, on every route whose cap field the tracker
-   reads. Pi does not await an aborted refresh's payload dispatch, so a replay can arrive after
-   the next agent request has been sent. An expectation therefore lasts until its replay arrives
-   or `abandon` runs, not only until the next agent payload.
+   decision came. A replay changes nothing except the response bookkeeping in rule 5. The
+   decision event is Pi's own signal that a warm is coming, but a later extension can override it
+   to `stop`, so the message comparison confirms it. The output cap cannot: adapters rewrite the
+   warmer's one-token cap (OpenAI Responses sends at least 16, Bedrock adds the thinking budget).
+   The comparison alone cannot tell a replay from an ordinary retry, which resends the same
+   messages, but Pi retries a failed request only after `agent_end`, and within one run every new
+   agent request extends the conversation. Pi does not await an aborted refresh's payload
+   dispatch, so a replay can arrive after the next agent request has been sent. An expectation
+   therefore lasts until its replay arrives or `abandon` runs at `agent_end`.
 2. A payload in the `armed` state is an agent payload. `start` creates the extension's data.
 3. A payload in the `sent` state is a re-attempt of the same call (the strict-schema fallback).
    `retry` lets the extension replace what it derived from the payload, such as Cachemire's

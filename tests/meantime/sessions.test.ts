@@ -3,6 +3,8 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+
 import piMeantime from "../../extensions/pi-meantime/index.ts";
 import { assistantMessage } from "../helpers.ts";
 import { hostExtension, IsolatedProject, type HostedExtension } from "../harness/extension-host.ts";
@@ -71,7 +73,30 @@ test("a headless session in the same process does not write into the interactive
   }
 });
 
-test("a child session ending does not freeze the interactive session's widget", async () => {
+test("a second runtime on the same session id does not write into the interactive /pace ledger", async () => {
+  const project = new IsolatedProject();
+  project.writeProjectConfig("pi-meantime", { enabled: true, widget: false });
+  const id = "019a0000-0000-7000-8000-000000000001";
+  const parent = await hostExtension(piMeantime, { project, sessionManager: SessionManager.inMemory(project.dir, { id }) });
+  const child = await hostExtension(piMeantime, {
+    project, interactive: false, sessionManager: SessionManager.inMemory(project.dir, { id }),
+  });
+  try {
+    const runner = child.session.extensionRunner;
+    await runner.emit({ type: "agent_start" });
+    await request(child);
+    await runner.emitMessageEnd({ type: "message_end", message: billed() });
+    await runner.emit({ type: "agent_end", messages: [] });
+    await child.dispose();
+    assert.match(await pace(parent), /no timed model calls yet/, "the child reached the parent's state by its id");
+  } finally {
+    await parent.dispose();
+    project.dispose();
+  }
+});
+
+test("a child session ending does not freeze the interactive session's widget", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: Date.now() });
   const project = new IsolatedProject();
   project.writeProjectConfig("pi-meantime", { enabled: true });
   const parent = await hostExtension(piMeantime, { project });
@@ -80,7 +105,11 @@ test("a child session ending does not freeze the interactive session's widget", 
     await child.dispose();
     await parent.session.extensionRunner.emit({ type: "agent_start" });
     await request(parent);
-    assert.match(parent.ui.widgetLines("pi-meantime")?.join("\n") ?? "", /waiting/);
+    const before = parent.ui.widgetLines("pi-meantime")?.join("\n") ?? "";
+    t.mock.timers.tick(4_000);
+    const after = parent.ui.widgetLines("pi-meantime")?.join("\n") ?? "";
+    assert.match(after, /waiting/);
+    assert.notEqual(after, before, "the widget's clock stopped");
   } finally {
     await parent.dispose();
     project.dispose();
@@ -98,6 +127,23 @@ test("/reload keeps the ledger", async () => {
     await runner.emitMessageEnd({ type: "message_end", message: billed() });
     await runner.emit({ type: "agent_end", messages: [] });
     await host.session.reload();
+    assert.match(await pace(host), /totals: 1 call/);
+  } finally {
+    await host.dispose();
+    project.dispose();
+  }
+});
+
+test("an SDK reload while a request streams keeps that request", async () => {
+  const project = new IsolatedProject();
+  project.writeProjectConfig("pi-meantime", { enabled: true, widget: false });
+  const host = await hostExtension(piMeantime, { project });
+  try {
+    await host.session.extensionRunner.emit({ type: "agent_start" });
+    await request(host);
+    await host.session.reload();
+    await host.session.extensionRunner.emitMessageEnd({ type: "message_end", message: billed() });
+    await host.session.extensionRunner.emit({ type: "agent_end", messages: [] });
     assert.match(await pace(host), /totals: 1 call/);
   } finally {
     await host.dispose();
