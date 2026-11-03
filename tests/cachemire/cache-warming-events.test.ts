@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { ANTHROPIC, billed, finish, hostCachemire, payload, request } from "./event-fixtures.ts";
 
@@ -57,5 +57,30 @@ test("a provider's second attempt of the same request is the payload Cachemire c
     assert.match(host.ui.notifications.at(-1) ?? "", /cause: tools changed/);
   } finally {
     await host.dispose();
+  }
+});
+
+test("the clock follows a warm refresh Pi saves while the agent waits", async () => {
+  mock.timers.enable({ apis: ["Date", "setTimeout"], now: Date.now() });
+  const host = await hostCachemire({ reason: "new" });
+  const manager = host.session.sessionManager;
+  const clock = () => host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "";
+  try {
+    manager.appendMessage({ role: "user", content: "first", timestamp: Date.now() });
+    await request(host, payload(["first"]));
+    await finish(host, billed(ANTHROPIC, 0, 0, 100_000));
+    mock.timers.tick(4 * 60_000 + 50_000);
+    assert.match(clock(), /cache expires in/);
+
+    // Pi's warmer saves its refresh with no extension event.
+    manager.appendUsage("cache_warm", ANTHROPIC.provider, ANTHROPIC.id, {
+      input: 0, output: 1, cacheRead: 100_000, cacheWrite: 0, totalTokens: 100_001,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    });
+    mock.timers.tick(1_000);
+    assert.equal(clock(), "", "the refreshed cache is not about to expire");
+  } finally {
+    await host.dispose();
+    mock.timers.reset();
   }
 });

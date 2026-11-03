@@ -132,13 +132,16 @@ export default function piCachemire(pi: ExtensionAPI): void {
     };
   };
 
+  /** Pi saves warm refreshes without telling extensions, so every update reads them first. */
   const updateWidget = (s: CachemireState, ctx: ExtensionContext, now = Date.now()) => {
+    syncWarmEntries(s, ctx.sessionManager);
     const { baseline } = s;
     const inFlight = s.requests.inFlight;
     const d = drift(s, ctx);
     updateCacheWidget(s.widget, {
       enabled: s.config.widget,
       renderLine: (tone, text) => econLine(s, tone, text),
+      refresh: () => updateWidget(s, ctx),
       clock: {
         now,
         lastRefreshedAt: inFlight?.requestAt ?? baseline.refreshedAt,
@@ -480,18 +483,15 @@ export default function piCachemire(pi: ExtensionAPI): void {
     const s = states.get(ctx);
     if (!s) return;
     hydrateLineageResponseIds(s.lineages, ctx.sessionManager.getEntries());
-    syncWarmEntries(s, ctx.sessionManager);
+    updateWidget(s, ctx);
   });
 
   pi.on("agent_end", async (_event, ctx) => {
     const s = states.get(ctx);
     if (!s) return;
     const pending = s.requests.abandon();
-    if (pending) {
-      endedWithoutUsage(s, pending.sent);
-      updateWidget(s, ctx);
-    }
-    syncWarmEntries(s, ctx.sessionManager);
+    if (pending) endedWithoutUsage(s, pending.sent);
+    updateWidget(s, ctx);
     const run = s.run;
     s.run = undefined;
     if (!run || !s.config.turnSummary || run.calls < s.config.turnSummaryMinCalls) return;
@@ -503,7 +503,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       const s = states.get(ctx);
       if (!s) return;
-      syncWarmEntries(s, ctx.sessionManager);
+      updateWidget(s, ctx);
       const records = s.records.slice();
       const options = {
         providerLabel: s.baseline.billedBy?.provider,

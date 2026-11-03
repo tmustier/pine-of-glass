@@ -12,6 +12,8 @@ interface CacheWidgetInput {
   enabled: boolean;
   clock: ClockInput;
   renderLine: (tone: Tone, text: string) => TextContent;
+  /** Rebuilds the input from current state when the wording can next change. */
+  refresh: () => void;
 }
 
 export function clearCacheWidgetTimer(runtime: CacheWidgetRuntime): void {
@@ -28,6 +30,6 @@ export function updateCacheWidget(runtime: CacheWidgetRuntime, input: CacheWidge
   if (!input.enabled) return;
   const delay = nextClockUpdateMs(input.clock);
   if (delay === undefined) return;
-  runtime.timer = setTimeout(() => updateCacheWidget(runtime, { ...input, clock: { ...input.clock, now: Date.now() } }), Math.max(1, delay));
+  runtime.timer = setTimeout(input.refresh, Math.max(1, delay));
   runtime.timer.unref();
 }

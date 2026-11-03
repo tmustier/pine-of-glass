@@ -18,6 +18,8 @@
   session instead of storing it, and books live, warm and restored calls through one
   function. `/cache` in a restored session names the billed provider before the first
   new call.
+- Cachemire's clock picks up Pi's cache-warmer refreshes as it ticks, instead of
+  counting down to an expiry the refresh prevented until the next request.
 
 ## 0.18.4 (2026-10-28)
 
