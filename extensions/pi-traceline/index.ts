@@ -1065,8 +1065,9 @@ export default function piTraceline(pi: ExtensionAPI) {
   // Drill mode (§9.13) lives in drill.ts / drill-pager.ts; this host hands it just the
   // render internals it needs. Entry points: a shortcut (alt+t by default, `drillKey`
   // in the family config to rebind) plus /drill for discoverability.
-  const startDrill = (ctx: { ui: ExtensionUIContext; hasUI: boolean }) => {
-    if (!ctx.hasUI) return;
+  const startDrill = (ctx: { ui: ExtensionUIContext; mode: string }) => {
+    // Drill mode works on the terminal this instance patched; another session has none.
+    if (!tuiOwner.owns() || ctx.mode !== "tui") return;
     enterDrillMode({
       ui: ctx.ui,
       theme: currentTheme,
