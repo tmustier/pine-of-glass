@@ -1,4 +1,4 @@
-// Two Pi sessions share one process (issue #44): only the one with a UI owns the ledger.
+// Session ledgers stay isolated; headless sessions keep no state.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -122,17 +122,16 @@ test("an RPC session started first keeps its own ledger and leaves the terminal 
   const project = new IsolatedProject();
   const rpc = await hostExtension(piCachemire, { project, mode: "rpc" });
   const terminal = await hostExtension(piCachemire, { project });
-  const billedMessage = (model: string, input: number) => assistantMessage([], {
-    model,
-    usage: {
-      input, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: input + 10,
-      cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    },
-  });
   const call = async (host: typeof rpc, model: string, input: number) => {
     await host.session.extensionRunner.emitContext([]);
     await host.session.extensionRunner.emitBeforeProviderRequest({ model, messages: [] });
-    await host.session.extensionRunner.emitMessageEnd({ type: "message_end", message: billedMessage(model, input) });
+    await host.session.extensionRunner.emitMessageEnd({ type: "message_end", message: assistantMessage([], {
+      model,
+      usage: {
+        input, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: input + 10,
+        cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    }) });
   };
   try {
     assert.ok(terminal.ui.widgets.has("pi-cachemire"), "the terminal session has its widget");

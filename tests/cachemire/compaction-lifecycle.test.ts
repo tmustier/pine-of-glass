@@ -1,6 +1,3 @@
-// Compaction changes the session path, not Cachemire's request stream: Pi's summary request
-// never reaches the provider hooks (pinned in tests/contract/pi-compaction-hooks.test.ts), so
-// the post-compaction state is read from the path. These run the SDK agent loop.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";

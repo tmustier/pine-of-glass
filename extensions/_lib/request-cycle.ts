@@ -1,85 +1,51 @@
-// The provider request lifecycle shared by Cachemire, Meantime and Contextimate
-// (docs/state-machines-2026-11-03.md, "Provider request cycle").
-//
-// Pi's provider hook events carry only the payload, so a before_provider_request does not say
-// whether it is the agent loop's request, a cache-warm replay or the second attempt of the same
-// request (Anthropic's strict-schema fallback). The tracker works that out from event order and
-// is the only code in the family that does.
-//
-// - Pi's cache warmer replays the last agent request with `maxTokens: 1` and the same options,
-//   so the replay reaches the provider hooks. Each refresh first emits `cache_warming_decision`.
-//   Pi does not await an aborted refresh, so its payload can still arrive after the next agent
-//   request has been sent. Adapters rewrite the one-token cap (OpenAI Responses sends at least
-//   16, Bedrock adds the thinking budget), so the cap does not identify a replay; the
-//   conversation does. Within one agent run every new agent request extends the conversation,
-//   and a retry with the same conversation comes only after `agent_end`.
-// - An agent request is always preceded by a `context` event, retries included.
-// - A second payload for the same request arrives without a new `context`.
-
+// Pi hooks lack request ids: attribute agent calls, warm replays and provider re-attempts
+// by context events and conversation identity. See docs/state-machines-2026-11-03.md.
 import { isJsonObject } from "./boundary.ts";
 
-export type RequestCycle<Sent> =
+type RequestCycle<Sent> =
   | { kind: "idle" }
-  /** `context` seen; the next agent payload starts a request. */
   | { kind: "armed" }
   | {
     kind: "sent";
     sent: Sent;
-    /** When the provider began responding, if that response is attributable to this request. */
-    respondedAt?: number;
-    /** A cache-warm replay overlapped this request, so a response cannot be attributed to it. */
-    responseAmbiguous: boolean;
+    /** Undefined before response; null when an overlapping replay makes attribution ambiguous. */
+    respondedAt?: number | null;
   };
 
-/** What one before_provider_request turned out to be. */
-export type PayloadKind = "agent" | "reattempt" | "replay" | "foreign";
-
-/** A request that left the `sent` state, with what the tracker learnt about its response. */
-export type EndedRequest<Sent> = { sent: Sent; respondedAt?: number };
-
-/** The wire conversation of a provider payload: Anthropic and OpenAI chat `messages`, OpenAI
- * Responses `input`, Gemini `contents`. A replay reuses the replayed request's conversation. */
-export function conversationKey(payload: unknown): string | undefined {
-  if (!isJsonObject(payload)) return undefined;
-  const conversation = payload.messages ?? payload.input ?? payload.contents;
-  return conversation === undefined ? undefined : JSON.stringify(conversation);
-}
+type PayloadKind = "agent" | "reattempt" | "replay" | "foreign";
+type EndedRequest<Sent> = { sent: Sent; respondedAt?: number };
 
 export class RequestTracker<Sent> {
   #state: RequestCycle<Sent> = { kind: "idle" };
   #lastAgentKey: string | undefined;
-  /** Conversations a decided refresh will replay, until that replay's payload arrives. */
   #replayKeys: string[] = [];
   #replaysAwaitingResponse = 0;
 
-  get state(): RequestCycle<Sent> {
-    return this.#state;
+  get armed(): boolean {
+    return this.#state.kind === "armed";
   }
 
-  /** The in-flight request's data, if one is in flight. */
   get inFlight(): Sent | undefined {
     return this.#state.kind === "sent" ? this.#state.sent : undefined;
   }
 
-  /** `context`: the next agent payload starts a request. Returns a request this replaces, which
-   * Pi's ordering makes unreachable but which the caller must still be able to clean up. */
-  arm(): EndedRequest<Sent> | undefined {
-    const ended = this.#end();
+  /** `context`: arm the next agent payload. */
+  arm(): void {
+    this.#end();
     this.#state = { kind: "armed" };
-    return ended;
   }
 
-  /** `cache_warming_decision` with action `warm`: a payload that repeats the last agent
-   * conversation is the warm request, whenever it arrives. A later extension can still cancel
-   * the refresh, so an unused expectation lasts until `abandon` at `agent_end`. */
+  /** `cache_warming_decision: warm`. Expectations last until replay or agent_end because
+   * aborted refreshes can dispatch after the next agent payload; later handlers can cancel them. */
   expectReplay(): void {
     if (this.#lastAgentKey !== undefined) this.#replayKeys.push(this.#lastAgentKey);
   }
 
-  /** `before_provider_request`. `start` creates the request's data for an agent payload, and
-   * `retry` lets the caller re-derive what it read from the payload for a second attempt. */
+  /** `before_provider_request`: start an agent request or update its provider re-attempt. */
   payload(payload: unknown, start: () => Sent, retry: (sent: Sent) => void): PayloadKind {
-    const key = conversationKey(payload);
+    // Adapters rewrite the warmer's output cap, but preserve the wire conversation.
+    const conversation = isJsonObject(payload) ? payload.messages ?? payload.input ?? payload.contents : undefined;
+    const key = conversation === undefined ? undefined : JSON.stringify(conversation);
     const replayAt = key === undefined ? -1 : this.#replayKeys.indexOf(key);
     if (replayAt >= 0) {
       this.#replayKeys.splice(replayAt, 1);
@@ -89,7 +55,7 @@ export class RequestTracker<Sent> {
     switch (this.#state.kind) {
       case "armed":
         this.#lastAgentKey = key;
-        this.#state = { kind: "sent", sent: start(), responseAmbiguous: false };
+        this.#state = { kind: "sent", sent: start() };
         return "agent";
       case "sent":
         this.#lastAgentKey = key;
@@ -100,27 +66,23 @@ export class RequestTracker<Sent> {
     }
   }
 
-  /** `after_provider_response`. While a replay waits for its own response, no response can be
-   * attributed, so the in-flight request keeps no response time at all. */
+  /** `after_provider_response`: overlapping replay responses cannot be attributed. */
   responded(now: number): void {
     const state = this.#state;
     if (this.#replaysAwaitingResponse > 0) {
       this.#replaysAwaitingResponse--;
-      if (state.kind === "sent") {
-        state.responseAmbiguous = true;
-        state.respondedAt = undefined;
-      }
-      return;
+      if (state.kind === "sent") state.respondedAt = null;
+    } else if (state.kind === "sent" && state.respondedAt === undefined) {
+      state.respondedAt = now;
     }
-    if (state.kind === "sent" && !state.responseAmbiguous) state.respondedAt ??= now;
   }
 
-  /** An assistant `message_end`, whatever its usage or stop reason, ends the request. */
+  /** Assistant `message_end`, regardless of usage or stop reason. */
   settle(): EndedRequest<Sent> | undefined {
     return this.#end();
   }
 
-  /** `agent_end`, `session_start`, `session_tree`: drop any request without a response. */
+  /** `agent_end` or tree navigation: discard unfinished work and replay expectations. */
   abandon(): EndedRequest<Sent> | undefined {
     this.#replayKeys = [];
     return this.#end();
@@ -130,8 +92,8 @@ export class RequestTracker<Sent> {
     const state = this.#state;
     this.#state = { kind: "idle" };
     if (state.kind !== "sent") return undefined;
-    // A replay that never got a response must not make later requests ambiguous.
+    // A replay without a response must not make later requests ambiguous.
     this.#replaysAwaitingResponse = 0;
-    return { sent: state.sent, respondedAt: state.respondedAt };
+    return { sent: state.sent, respondedAt: state.respondedAt ?? undefined };
   }
 }

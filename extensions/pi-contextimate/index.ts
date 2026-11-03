@@ -14,8 +14,7 @@ import { buildSnapshot, type PrefixSnapshot } from "./snapshot.ts";
 import { renderSummary, renderCompact, renderExpanded, type ViewMode } from "./render.ts";
 import { observeRequestMessages } from "./request-messages.ts";
 
-// The chosen view is a user preference, so it is process-wide; everything else belongs to the
-// one TUI session that shows the panel (docs/state-machines-2026-11-03.md).
+// View preference is process-wide; panel state is per session.
 type ContextimateGlobal = typeof globalThis & { __piContextimateMode?: ViewMode };
 // SAFETY: a typed view of this extension's one process-wide global; only this file uses the key.
 const g = globalThis as ContextimateGlobal;
@@ -206,7 +205,6 @@ export default function piContextimate(pi: ExtensionAPI) {
   pi.on("session_tree", async () => markDirty());
 
   pi.on("session_start", async (event, ctx) => {
-    // The panel lives in Pi's terminal resource list; other modes have nowhere to show it.
     if (presentation(ctx) !== "tui") return;
     const panel = panels.open(ctx, event.reason, () => ({}));
     if (panel.installTimer) clearTimeout(panel.installTimer);

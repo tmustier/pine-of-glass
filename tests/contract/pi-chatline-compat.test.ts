@@ -89,7 +89,6 @@ test("native chat rebuild restores anchored lines and drops missing anchors", as
   assert.deepEqual(host.anchored, [], "vanished anchor did not retire its tracked line");
 });
 
-
 test("after /new the native rebuild restores the new session's lines, not the old one's", async () => {
   pi.initTheme(undefined, false);
   const timestamp = Date.UTC(2026, 10, 3, 12);

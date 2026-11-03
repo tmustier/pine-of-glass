@@ -293,22 +293,12 @@ its ledger and branch baselines from billed usage in assistant messages. Payload
 fingerprints, request-start and response-start observations and live retention fields
 are not persisted; diagnoses that need those fields remain unknown.
 
-Each Pi session in the process keeps its own ledger, clock and model metadata, keyed by
-its session manager, so a nested session cannot write into another session's state, even
-when it opens the same session file. A reload
-keeps the session's state; any other shutdown removes it. Headless, print and JSON
-sessions keep no state. An RPC session keeps a ledger and sends its notices and `/cache`
-as notifications, with no widget. Only a terminal session shows the widget.
+Session state survives reload and is isolated by session manager. RPC gets a ledger
+and notifications without a widget; headless, print and JSON sessions keep no state.
 
-Pi's cache warmer replays the last request through the same provider hooks. Cachemire
-treats a payload as a replay when it follows a `warm` decision and repeats the replayed
-request's conversation, even when it arrives after the next request; it never becomes
-call evidence.
-When a provider sends a second payload for the same request without new context, such as
-Anthropic's strict-schema fallback, the second payload is the one Cachemire compares
-next time.
+Warm replays are excluded from request evidence, including delayed replays. Provider
+re-attempts, such as Anthropic's strict-schema fallback, replace the captured payload.
 
-Post-compaction state comes from the session path: the active path has a compaction
-entry after the baseline call. It survives reload and resume, and moving to a branch
-from before the compaction clears it. Pi's summary request does not reach the provider
-hooks, so Cachemire never sees it as a call.
+Compaction state follows the active path after its last billed call: reload and resume
+preserve it; branching before the checkpoint clears it. Summary requests bypass the
+provider hooks and are not booked as calls.

@@ -112,8 +112,7 @@ export function appendAnchoredLine(host: ChatLineHost, ns: string, text: TextCon
     // a microtask runs after it completes, including pi's own trailing status line, so
     // anchors are matched against the final rebuilt children. Keys are namespaced per
     // extension: when two family members hook the same container their wrappers chain, and
-    // each re-attaches only its own lines. Pi keeps the container across /new and /resume, so
-    // the hook re-attaches the lines of whichever host appended last, never a retired session's.
+    // each re-attaches only its own lines. /new reuses the container, so follow the latest host.
     // SAFETY: findChatContainer validates children; these namespaced properties are
     // owned by this hook. Contract tests pin Pi's mutable clear()+children seam.
     const hookedChat = chat as ContainerLike & {

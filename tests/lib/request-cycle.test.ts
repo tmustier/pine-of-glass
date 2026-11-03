@@ -110,7 +110,8 @@ test("abandoning drops the request and any expected replay", () => {
   send(turn("a"));
   requests.expectReplay();
   assert.deepEqual(requests.abandon()?.sent, { id: 1, attempts: 1 });
-  assert.equal(requests.state.kind, "idle");
+  assert.equal(requests.inFlight, undefined);
+  assert.equal(send(turn("a")), "foreign");
   requests.arm();
   assert.equal(send(turn("a")), "agent");
 });

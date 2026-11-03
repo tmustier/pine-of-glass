@@ -1,5 +1,3 @@
-// Pi's compaction summary request does not pass through the extension provider hooks. Cachemire
-// relies on this: it reads compaction from the session path and has no summarizer-call state.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";

@@ -121,60 +121,41 @@ Both are already computed elsewhere in the tool pipeline; the cost is a few byte
 call under the existing 256-call cap.
 
 
-## 5. Provider hook events do not say which request they belong to
+## 5. Provider request attribution
 
-**Observed:** Pi 1.3.0 · `dist/core/sdk.js` (`streamFn`, `onPayload`), `dist/core/cache-warmer.js`
-(`start`, `refresh`), `dist/core/extensions/runner.js` (payload dispatch)
+**Observed:** Pi 1.3.0, `core/sdk.js`, `core/cache-warmer.js`, `core/extensions/runner.js`.
 
-`before_provider_request` and `after_provider_response` carry the payload and response, but not
-the request's purpose or identity. Three kinds of request reach them: the agent loop's request,
-the cache warmer's replay of that request (same options, `maxTokens: 1`), and a provider's second
-attempt of the same request (Anthropic's strict-schema fallback re-sends with changed tools and no
-new `context`). `cache_warming_decision` comes before a replay, but a later extension can turn
-`warm` into `stop`, and `start()` aborts an older refresh without awaiting its payload dispatch,
-so that replay can reach later handlers after the next agent request's payload.
+Provider hooks carry no request id or purpose. Agent requests, warm replays and strict-schema
+fallbacks share them; an aborted replay can arrive after the next agent payload.
+`_lib/request-cycle.ts` infers attribution from context events and conversations, covered by
+`tests/lib/native-cache-warming.test.ts`.
 
-Consequence: Cachemire, Meantime and Contextimate each needed the same inference
-(`extensions/_lib/request-cycle.ts`): arm on `context`, recognise a replay by its conversation and
-one-token cap, and treat a second payload without new `context` as a re-attempt. Before it, a
-replay could take the next request's fingerprint, start its clock or overwrite its captured
-additions (`tests/lib/native-cache-warming.test.ts`).
+**Upstream direction:** add request id and `purpose: "agent" | "cache_warm"` to both provider
+hooks and the resulting assistant message; stop aborted replay dispatch.
 
-**Possible upstream direction:** add `purpose: "agent" | "cache_warm"` and a request id to both
-events, with the same id on the resulting assistant message; drop an aborted refresh's payload
-dispatch.
+## 6. Final provider payload
 
-## 6. No hook sees the final provider payload
+**Observed:** Pi 1.3.0, `core/extensions/runner.js` (`emitBeforeProviderRequest`).
 
-**Observed:** Pi 1.3.0 · `dist/core/extensions/runner.js` (`emitBeforeProviderRequest`)
+Handlers transform payloads in load order. Cachemire's fingerprint and Contextimate's counts
+miss later handlers' edits.
 
-`before_provider_request` handlers run in load order, and each may replace the payload. A handler
-sees the payload as earlier handlers left it, not as it is sent. Cachemire fingerprints and
-Contextimate counts at their own position, so a later extension's additions are invisible to them.
+**Upstream direction:** expose the final payload in a read-only event or on `message_end`.
 
-**Possible upstream direction:** a read-only event after all transforms, or the final payload on
-`message_end`.
+## 7. SDK disposal notification
 
-## 7. `AgentSession.dispose()` does not emit `session_shutdown`
+**Observed:** Pi 1.3.0, `core/agent-session.js` (`dispose`).
 
-**Observed:** Pi 1.3.0 · `dist/core/agent-session.js` (`dispose`)
+`dispose()` does not emit `session_shutdown`. Weak session keys allow collection, but
+presentation timers can keep running unless the SDK host emits shutdown itself.
 
-`dispose()` aborts work and disposes the runner, but extensions are not told the session ended.
-Per-session extension state (`extensions/_lib/session-state.ts`) is keyed weakly by the session
-manager, so it is collected with the session, but timers and widgets an extension started for an
-SDK-hosted session keep running until something else stops them, unless the host emits
-`session_shutdown` itself, as the test harness does.
+**Upstream direction:** emit shutdown on disposal, or document the host's obligation.
 
-**Possible upstream direction:** emit `session_shutdown` from `dispose()`, or document that SDK
-hosts must.
+## 8. Aborted compaction summaries
 
-## 8. Compaction accepts a summary whose `stopReason` is `aborted`
+**Observed:** Pi 1.3.0, `core/compaction/compaction.js` (`getSummarizationFailure`).
 
-**Observed:** Pi 1.3.0 · `dist/core/compaction/compaction.js` (`getSummarizationFailure`)
+Summary validation rejects `error` and `length`, but accepts `aborted` when the request signal
+was not aborted, potentially saving a partial or empty summary.
 
-The summary check rejects `error` and `length`. A provider that ends a summary with
-`stopReason: "aborted"` without the request signal being aborted produces a successful
-compaction with a partial or empty summary.
-
-**Possible upstream direction:** treat `aborted` as a failure, as the other stop-reason checks in
-the same file do.
+**Upstream direction:** reject `aborted` too.

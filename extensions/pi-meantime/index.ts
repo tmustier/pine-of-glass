@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { captureTui } from "../_lib/capture.ts";
-import { type ContainerLike } from "../_lib/chat.ts";
-import { appendAnchoredLine, type AnchoredLine, type ChatLineHost } from "../_lib/chatline.ts";
+import { appendAnchoredLine, type ChatLineHost } from "../_lib/chatline.ts";
 import { configPaths, readJsonConfig } from "../_lib/config.ts";
 import { LiveWidget } from "../_lib/live-widget.ts";
 import { RequestTracker } from "../_lib/request-cycle.ts";
@@ -33,13 +32,11 @@ import {
 
 // --- per-session state (docs/state-machines-2026-11-03.md) -------------------------------------
 
-/** Where the agent loop is between provider requests. The live call itself is the request
- * tracker's in-flight data. */
+/** The request tracker owns live calls; this phase owns the work after a response. */
 type CallPhase =
   | { kind: "between" }
-  /** After a response: its tools run, then Pi and extensions prepare the next request.
-   * `callIndex` is absent when the response reported no usage, so no call owns the phase. */
-  | { kind: "after"; callIndex?: number; startedAt: number; tools: ToolClock };
+  /** Unbilled responses own tools without a timed call. */
+  | { kind: "after"; call?: CallTiming; startedAt: number; tools: ToolClock };
 
 interface ToolClock {
   /** toolCallId to execution start, for top-level tools still running. */
@@ -60,9 +57,6 @@ interface MeantimeSession extends ChatLineHost {
   startedAt: number;
   /** Provider-qualified model identity, used to keep baselines in one currency. */
   currentModel?: string;
-  /** Chat lines meantime appended, with anchors for re-attachment after pi rebuilds. */
-  anchored: AnchoredLine[];
-  chat?: ContainerLike;
   // Presentation, rebound on every session_start.
   theme?: Theme;
   widget?: LiveWidget;
@@ -70,19 +64,6 @@ interface MeantimeSession extends ChatLineHost {
 }
 
 const states = sessionStates<MeantimeSession>("pi-meantime");
-
-function newSession(): MeantimeSession {
-  const now = Date.now();
-  return {
-    calls: [],
-    requests: new RequestTracker(),
-    phase: { kind: "between" },
-    activity: { kind: "idle", since: now },
-    idleMs: 0,
-    startedAt: now,
-    anchored: [],
-  };
-}
 
 // One-line tempo facts share cachemire's loop-economics voice (design language §1, §10).
 function tempoLine(s: MeantimeSession, tone: Tone, text: string): () => string {
@@ -106,8 +87,7 @@ function closePhase(s: MeantimeSession, endAt: number, endedByRequest: boolean):
   s.phase = { kind: "between" };
   if (phase.kind !== "after") return;
   const intervals = [...phase.tools.done, ...Array.from(phase.tools.open.values(), (start) => ({ start, end: endAt }))];
-  const call = s.calls.at(-1);
-  if (call && phase.callIndex === call.index) attachPhase(call, intervals, phase.startedAt, endAt, endedByRequest);
+  if (phase.call) attachPhase(phase.call, intervals, phase.startedAt, endAt, endedByRequest);
 }
 
 // --- widget ---------------------------------------------------------------------------------
@@ -156,9 +136,19 @@ export default function piMeantime(pi: ExtensionAPI): void {
   pi.on("session_start", async (event, ctx) => {
     const level = presentation(ctx);
     if (level === "none") return;
-    // A reload keeps a request in flight: Pi's SDK reload does not abort it, and its response
-    // reaches this session's new handlers.
-    const s = states.open(ctx, event.reason, newSession);
+    // SDK reload preserves in-flight requests.
+    const s = states.open(ctx, event.reason, () => {
+      const now = Date.now();
+      return {
+        calls: [],
+        requests: new RequestTracker<LiveCall>(),
+        phase: { kind: "between" },
+        activity: { kind: "idle", since: now },
+        idleMs: 0,
+        startedAt: now,
+        anchored: [],
+      };
+    });
     unbindPresentation(s, ctx);
     if (ctx.model) s.currentModel = modelLabel(ctx.model);
     s.theme = ctx.ui.theme;
@@ -241,13 +231,12 @@ export default function piMeantime(pi: ExtensionAPI): void {
     if (message.stopReason === "error" || message.stopReason === "aborted") return;
     const tools: ToolClock = { open: new Map(), done: [] };
     if (!hasBilledUsage(message.usage)) {
-      // No usage, no call to time; the phase still owns its tools.
       s.phase = { kind: "after", startedAt: now, tools };
       updateWidget(s, config, now);
       return;
     }
     const call = resolveCall(ended.sent, message.usage, now, s.currentModel);
-    s.phase = { kind: "after", callIndex: call.index, startedAt: now, tools };
+    s.phase = { kind: "after", call, startedAt: now, tools };
     if (config.notices) {
       const slowStart = detectSlowStart(call, s.calls, config);
       if (slowStart) {

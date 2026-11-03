@@ -1,6 +1,4 @@
-// Pi's own cache warmer against the family's request tracking: the replay reaches the same
-// provider hooks as the agent's requests (docs/state-machines-2026-11-03.md, "Provider request
-// cycle"). The Anthropic stream is real; only fetch is scripted.
+// Real Pi warmer and Anthropic adapter; only HTTP responses and time are scripted.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
@@ -18,18 +16,12 @@ import { hostExtension, IsolatedProject } from "../harness/extension-host.ts";
 const TTL_S = 300;
 const WARM_DELAY_MS = 270_000; // Pi refreshes a 300s cache 30s before expiry.
 
-/** What the scripted HTTP layer saw: the warmer's replay asks for one output token. */
 type Sent = { warm: boolean; text: string };
-
-function sent(body: unknown): Sent {
-  return { warm: isJsonObject(body) && body.max_tokens === 1, text: JSON.stringify(body) };
-}
 
 function isReplay(payload: unknown): boolean {
   return isJsonObject(payload) && payload.max_tokens === 1;
 }
 
-/** An Anthropic provider whose HTTP layer answers from a script. Every body is recorded. */
 function scriptedAnthropic(bodies: Sent[], toolRound: boolean): ExtensionFactory {
   return (pi) => {
     pi.registerProvider("anthropic", {
@@ -39,10 +31,11 @@ function scriptedAnthropic(bodies: Sent[], toolRound: boolean): ExtensionFactory
       streamSimple: (model, context, options) => streamAnthropic(model as typeof ANTHROPIC, context, {
         ...options,
         fetch: async (_url, init) => {
-          const body = sent(JSON.parse(String(init?.body)));
-          bodies.push(body);
-          const warm = body.warm;
-          const callTool = toolRound && !warm && !body.text.includes("tool_result");
+          const body: unknown = JSON.parse(String(init?.body));
+          const warm = isReplay(body);
+          const text = JSON.stringify(body);
+          bodies.push({ warm, text });
+          const callTool = toolRound && !warm && !text.includes("tool_result");
           const content = callTool ? [{ type: "tool_use", id: "toolu_1", name: "fixture_tool", input: {} }] : [];
           const events = [
             { type: "message_start", message: {
@@ -86,7 +79,7 @@ test("a refresh replay during the next request's context work is neither its pay
       await warmFinished;
       t.mock.timers.tick(10_000);
     });
-    // The real next request differs from the replayed one only in its system prompt.
+    // Change only the system prompt to expose replayed fingerprint evidence.
     pi.on("context_with_system", (event) => contexts === 2 ? {
       messages: event.messages.map((m) => m.role === "system" ? { ...m, content: "CHANGED SYSTEM" } : m),
     } : undefined);

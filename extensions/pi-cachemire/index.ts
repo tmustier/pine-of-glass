@@ -1,7 +1,7 @@
+import assert from "node:assert/strict";
 import type {
   ExtensionAPI,
   ExtensionContext,
-  ExtensionUIContext,
   Theme,
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
@@ -75,7 +75,7 @@ export type {
 
 /** What Cachemire knew when it sent the agent request still waiting for usage. */
 interface PendingRequest {
-  /** The request's final payload; a second attempt of the same request replaces it. */
+  /** Latest payload fingerprint, including provider re-attempts. */
   fingerprint: RequestFingerprint;
   cause?: CallCause;
   requestLeafId: string | null;
@@ -104,7 +104,6 @@ interface CachemireState extends WarmSyncState, ChatLineHost {
   run?: RunAggregate;
   // Presentation, rebound on every session_start.
   theme?: Theme;
-  ui?: Pick<ExtensionUIContext, "setWidget" | "notify">;
   widget: CacheWidgetRuntime;
 }
 
@@ -116,23 +115,6 @@ const g = globalThis as CachemireGlobal;
 /** Billed effort-change verdicts per route: facts about the provider and extension stack that
  * every session and loaded copy in the process shares (see thinking.ts). */
 const thinkingEvidence = (): ThinkingEvidenceLedger => (g.__piCachemireThinkingEvidence ??= new Map());
-
-function newState(config: CachemireConfig): CachemireState {
-  return {
-    config,
-    records: [],
-    lineages: [],
-    requests: new RequestTracker(),
-    seenWarmEntryIds: new Set(),
-    window: UNKNOWN_WINDOW,
-    modelSwitched: false,
-    thinkingChanged: false,
-    expectedRead: 0,
-    compacted: false,
-    anchored: [],
-    widget: {},
-  };
-}
 
 // One-line loop-economics facts (design language §§1, 6): ◍ opens the line; the status
 // tone is theme-derived. These are transient signals, so the tone covers the whole line.
@@ -160,8 +142,8 @@ function appendChatLine(s: CachemireState, text: TextContent): ThemedText | unde
   return appendAnchoredLine(s, "cachemire", text);
 }
 
-function resolveNotice(s: CachemireState, pending: PendingRequest | undefined, text: TextContent): void {
-  if (!pending?.notice) return;
+function resolveNotice(s: CachemireState, pending: PendingRequest, text: TextContent): void {
+  if (!pending.notice) return;
   pending.notice.setText(text);
   pending.notice = undefined;
   s.tui?.requestRender?.(true);
@@ -198,10 +180,7 @@ function refreshSwitchForecast(
 // --- extension entry --------------------------------------------------------------------
 
 export default function piCachemire(pi: ExtensionAPI): void {
-  // Material only when a warm prefix exists to break AND the current level changes the
-  // wire params for this model against the level its last call was billed at; cycling
-  // back before the next call revives the cache. Routes whose contract or billed
-  // evidence keeps the prefix stay neutral.
+  // Compare effort against the last billed level, not intermediate selections.
   const markThinkingChange = (s: CachemireState, ctx: ExtensionContext) => {
     s.thinkingChanged = s.expectedRead > 0 && ctx.model?.reasoning === true &&
       thinkingChangeInvalidatesCache(
@@ -213,9 +192,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
       );
   };
 
-  // The active path decides what the next effort change is measured from: the level
-  // its last billed call used, not the level Pi is holding now, which differs after a
-  // late change before quitting, a --thinking flag on resume, or a branch switch.
+  // Resume and branch changes restore the billed level from the active path.
   const restoreThinkingForPath = (
     s: CachemireState,
     ctx: ExtensionContext,
@@ -228,8 +205,7 @@ export default function piCachemire(pi: ExtensionAPI): void {
     markThinkingChange(s, ctx);
   };
 
-  /** Send-time view of one payload: its fingerprint, the lineage it extends and why it
-   * may not. A second attempt of the same request runs this again on its own payload. */
+  /** Recomputed for each payload, including strict-schema fallback. */
   const describeRequest = (s: CachemireState, ctx: ExtensionContext, payload: unknown) => {
     const fingerprint = fingerprintPayload(payload, thinkingRoute(ctx));
     const entries = ctx.sessionManager.getEntries();
@@ -254,42 +230,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
     };
   };
 
-  /** Place, or update, the break notice between the user's action and the response: it
-   * shows the expectation now and is resolved in place when usage arrives. */
-  const placeNotice = (s: CachemireState, ctx: ExtensionContext, pending: PendingRequest) => {
-    if (!s.config.missWarnings) return;
-    const prediction = predictBreak({
-      isFirst: s.records.length === 0,
-      compacted: s.compacted,
-      gapMs: pending.cacheGapMs,
-      window: pending.previousWindow,
-      expectedRead: s.expectedRead,
-      fingerprintCause: pending.cause,
-      thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx), thinkingEvidence()),
-      rates: s.rates,
-      switchForecast: s.switchForecast === undefined ? undefined : {
-        ...s.switchForecast,
-        priorMayBeWarm: s.switchForecast.prior !== undefined &&
-          !pastWindow(s.switchForecast.prior.window, pending.requestAt - s.switchForecast.prior.refreshedAt),
-      },
-    });
-    const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;
-    const sizedUsd = prediction?.expectedUsd ?? prediction?.estimatedUsd;
-    const material = prediction !== undefined && (
-      sizedTokens === undefined || // unsized (compaction/model/thinking): explicit user action, the notice is its explanation
-      sizedTokens >= s.config.missWarnTokens ||
-      (sizedUsd ?? 0) >= s.config.missWarnUsd
-    );
-    if (!material) return;
-    const text = econLine(s, "warning", renderBreakingLine(prediction));
-    if (pending.notice) pending.notice.setText(text);
-    else pending.notice = appendChatLine(s, text);
-    if (s.config.debug) {
-      pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
-      pending.requestLeafId = ctx.sessionManager.getLeafId();
-    }
-  };
-
   /** A request that ended without usage: restore the clock it moved at send. */
   const rollBack = (s: CachemireState, pending: PendingRequest) => {
     s.lastRefreshedAt = pending.previousRefreshedAt;
@@ -302,9 +242,23 @@ export default function piCachemire(pi: ExtensionAPI): void {
     if (level === "none") return;
     // The first session of a process starts without route evidence; later sessions share it.
     if (event.reason === "startup" && states.liveSessions === 0) g.__piCachemireThinkingEvidence = new Map();
-    // A reload keeps a request in flight: Pi's SDK reload does not abort it.
-    const s = states.open(ctx, event.reason, () => newState(readConfig()));
-    s.config = readConfig();
+    // SDK reload preserves in-flight requests.
+    const config = readConfig();
+    const s = states.open(ctx, event.reason, () => ({
+      config,
+      records: [],
+      lineages: [],
+      requests: new RequestTracker<PendingRequest>(),
+      seenWarmEntryIds: new Set<string>(),
+      window: UNKNOWN_WINDOW,
+      modelSwitched: false,
+      thinkingChanged: false,
+      expectedRead: 0,
+      compacted: false,
+      anchored: [],
+      widget: {},
+    }));
+    s.config = config;
     const entries = ctx.sessionManager.getEntries();
     const leafId = ctx.sessionManager.getLeafId();
     s.records = restoreBranchRecords(ctx.sessionManager.getBranch());
@@ -329,7 +283,6 @@ export default function piCachemire(pi: ExtensionAPI): void {
 
     clearCacheWidgetTimer(s.widget);
     s.widget.widget = undefined;
-    s.ui = ctx.ui;
     s.theme = ctx.ui.theme;
     s.notifyFallback = (plainText) => ctx.ui.notify(plainText, "info");
     s.tui = undefined;
@@ -389,18 +342,49 @@ export default function piCachemire(pi: ExtensionAPI): void {
       s.window = UNKNOWN_WINDOW;
       return pending;
     }, (pending) => {
-      // The provider rejected the first payload and sent another (Anthropic's strict-schema
-      // fallback); the request that will be billed is this one.
+      // Replace rejected-payload evidence without restarting the clock.
       const sent = describeRequest(s, ctx, event.payload);
       pending.fingerprint = sent.fingerprint;
       pending.cause = sent.cause;
       pending.retention = sent.retention;
     });
+    if (kind !== "agent" && kind !== "reattempt") return;
     const pending = s.requests.inFlight;
-    if ((kind === "agent" || kind === "reattempt") && pending) {
-      placeNotice(s, ctx, pending);
-      updateWidget(s);
+    assert(pending);
+    if (s.config.missWarnings) {
+      const prediction = predictBreak({
+        isFirst: s.records.length === 0,
+        compacted: s.compacted,
+        gapMs: pending.cacheGapMs,
+        window: pending.previousWindow,
+        expectedRead: s.expectedRead,
+        fingerprintCause: pending.cause,
+        thinkingCacheNeutral: thinkingChangesPreserveCache(thinkingRoute(ctx), thinkingEvidence()),
+        rates: s.rates,
+        switchForecast: s.switchForecast === undefined ? undefined : {
+          ...s.switchForecast,
+          priorMayBeWarm: s.switchForecast.prior !== undefined &&
+            !pastWindow(s.switchForecast.prior.window, pending.requestAt - s.switchForecast.prior.refreshedAt),
+        },
+      });
+      const sizedTokens = prediction?.expectedRewriteTokens ?? prediction?.estimatedRewriteTokens;
+      const sizedUsd = prediction?.expectedUsd ?? prediction?.estimatedUsd;
+      const material = prediction !== undefined && (
+        sizedTokens === undefined || // Explain explicit breaks even without a size estimate.
+        sizedTokens >= s.config.missWarnTokens ||
+        (sizedUsd ?? 0) >= s.config.missWarnUsd
+      );
+      if (material) {
+        const text = econLine(s, "warning", renderBreakingLine(prediction));
+        if (pending.notice) pending.notice.setText(text);
+        else pending.notice = appendChatLine(s, text);
+        if (s.config.debug) {
+          pi.appendEntry("cachemire-warning", { cause: prediction.cause.kind });
+          pending.requestLeafId = ctx.sessionManager.getLeafId();
+        }
+      }
     }
+    updateWidget(s);
   });
 
   // Anthropic sends response headers only after prefill has read and written the cache.

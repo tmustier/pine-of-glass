@@ -85,8 +85,6 @@ type Prepared = { saved: AgentMessage[]; counts?: RequestMessages; nonTextChars:
 type Captured = Prepared & { payload?: unknown };
 
 export function observeRequestMessages(pi: ExtensionAPI): void {
-  // The context hook prepares the counts; the agent request's own payload completes them. The
-  // shared tracker keeps a cache-warm replay of an earlier request out of the capture.
   let prepared: Prepared | undefined;
   const requests = new RequestTracker<Captured | undefined>();
   pi.on("context_with_system", (event, ctx) => {
@@ -114,10 +112,7 @@ export function observeRequestMessages(pi: ExtensionAPI): void {
     if (event.action === "warm") requests.expectReplay();
   });
   pi.on("before_provider_request", (event) => {
-    // Every payload goes through the tracker, so a replay while idle meets its expectation.
-    const capture = (): Captured | undefined => prepared && { ...prepared, payload: structuredClone(event.payload) };
-    // A second attempt of the same request (strict-schema fallback) replaces the capture.
-    requests.payload(event.payload, capture, (sent) => {
+    requests.payload(event.payload, () => prepared && { ...prepared, payload: structuredClone(event.payload) }, (sent) => {
       if (sent) sent.payload = structuredClone(event.payload);
     });
   });
@@ -128,7 +123,7 @@ export function observeRequestMessages(pi: ExtensionAPI): void {
   pi.on("message_end", (event, ctx) => {
     if (event.message.role !== "assistant") return;
     // A provider that never emits its payload still answers the prepared request.
-    const armed: Captured | undefined = requests.state.kind === "armed" ? prepared : undefined;
+    const armed: Captured | undefined = requests.armed ? prepared : undefined;
     const request = requests.settle()?.sent ?? armed;
     prepared = undefined;
     if (!request) return;
