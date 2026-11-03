@@ -57,9 +57,10 @@ checkpoint clears it. Pi's summary request bypasses extension provider hooks, so
 is no compaction-in-progress flag or summarizer-call classification to get stuck after
 cancellation or failure.
 
-Meantime separates request timing from the following tools/harness phase. Responses not ending in error or abort own their tools even without usage, but unbilled
-responses create no timed call. Nested tool events
-are ignored because their parent interval already covers them. The phase closes at
+Meantime separates request timing from the following tools/harness phase. Responses not
+ending in error or abort own their tools even without usage, but unbilled responses
+create no timed call. Nested tool events are ignored because their parent interval
+already covers them. The phase closes at
 the next agent request, or without harness time at `agent_end`.
 
 Run activity is `running`, `settling` or `idle`. The interval between `agent_end` and
@@ -85,7 +86,7 @@ Every confirmed bug retains a regression through Pi's SDK or a domain interface:
 `tests/lib/request-cycle.test.ts` covers replay, re-attempt and response-attribution
 rules. Native warming tests exercise Pi's warmer and Anthropic adapter with scripted
 HTTP responses. `tests/contract/pi-compaction-hooks.test.ts` pins summary-hook isolation.
-Existing render goldens remain unchanged. These tests make no live provider calls.
+Existing render goldens remain unchanged.
 
 ## Still open
 
@@ -99,5 +100,4 @@ Existing render goldens remain unchanged. These tests make no live provider call
 - Pi accepts an `aborted` compaction summary when its request signal was not aborted.
   These Pi API gaps are listed in [upstream candidates](./upstream-candidates.md#5-provider-request-attribution).
 - Whether an aborted response has refreshed a provider's cache remains unverified.
-  Cachemire conservatively restores the previous clock. Live-provider acceptance with
-  warming enabled remains a separate check.
+  Cachemire conservatively restores the previous clock.
