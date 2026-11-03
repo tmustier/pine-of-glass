@@ -44,14 +44,12 @@ interface ToolClock {
   done: Interval[];
 }
 
-/** `settling` is agent_end before agent_settled; it still counts as active time. */
-type Activity = { kind: "running" } | { kind: "settling" } | { kind: "idle"; since: number };
-
 interface MeantimeSession extends ChatLineHost {
   calls: CallTiming[];
   requests: RequestTracker<LiveCall>;
   phase: CallPhase;
-  activity: Activity;
+  /** Set from agent_settled until the next agent_start; Pi's work after agent_end is active. */
+  idleSince?: number;
   /** Accumulated out-of-run time (agent settled → next agent start). */
   idleMs: number;
   startedAt: number;
@@ -107,7 +105,6 @@ function updateWidget(s: MeantimeSession, config: MeantimeConfig, now = Date.now
   const tools = s.phase.kind === "after" ? s.phase.tools : undefined;
   const line = tempoWidget({
     now,
-    runActive: s.activity.kind === "running",
     live,
     openTools: tools?.open.size ?? 0,
     toolElapsedMs: tools ? liveToolWallClock(tools.done, tools.open.values(), now) : 0,
@@ -143,7 +140,7 @@ export default function piMeantime(pi: ExtensionAPI): void {
         calls: [],
         requests: new RequestTracker<LiveCall>(),
         phase: { kind: "between" },
-        activity: { kind: "idle", since: now },
+        idleSince: now,
         idleMs: 0,
         startedAt: now,
         anchored: [],
@@ -184,8 +181,8 @@ export default function piMeantime(pi: ExtensionAPI): void {
     const s = states.get(ctx);
     if (!s) return;
     const now = Date.now();
-    if (s.activity.kind === "idle") s.idleMs += Math.max(0, now - s.activity.since);
-    s.activity = { kind: "running" };
+    if (s.idleSince !== undefined) s.idleMs += Math.max(0, now - s.idleSince);
+    s.idleSince = undefined;
     updateWidget(s, config, now);
   });
 
@@ -278,13 +275,12 @@ export default function piMeantime(pi: ExtensionAPI): void {
     // A send that never produced a response must not linger as a phantom call.
     s.requests.abandon();
     closePhase(s, now, false);
-    s.activity = { kind: "settling" };
     updateWidget(s, config, now);
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
     const s = states.get(ctx);
-    if (s && s.activity.kind !== "idle") s.activity = { kind: "idle", since: Date.now() };
+    if (s) s.idleSince ??= Date.now();
   });
 
   pi.registerCommand("pace", {
@@ -297,7 +293,7 @@ export default function piMeantime(pi: ExtensionAPI): void {
         startedAt: s.startedAt,
         now,
         idleMs: s.idleMs,
-        idleSince: s.activity.kind === "idle" ? s.activity.since : undefined,
+        idleSince: s.idleSince,
       });
       const calls = s.calls.map((call) => ({ ...call }));
       const options = { config, modelLabel: s.currentModel };

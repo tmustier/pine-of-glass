@@ -63,8 +63,8 @@ create no timed call. Nested tool events are ignored because their parent interv
 already covers them. The phase closes at
 the next agent request, or without harness time at `agent_end`.
 
-Run activity is `running`, `settling` or `idle`. The interval between `agent_end` and
-`agent_settled` remains active time; idle starts at `agent_settled`.
+Run activity is running or idle. Idle starts at `agent_settled`, not `agent_end`,
+because Pi can still retry, recover, compact or continue in between.
 
 ## Regression coverage
 

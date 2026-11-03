@@ -20,7 +20,6 @@ import {
 
 export interface WidgetSnapshot {
   now: number;
-  runActive: boolean;
   live?: LiveCall;
   /** Tool executions currently running. */
   openTools: number;
@@ -39,7 +38,6 @@ export interface WidgetLine {
 const LIVE_RATE_MIN_MS = 2_000;
 
 export function tempoWidget(snap: WidgetSnapshot): WidgetLine | undefined {
-  if (!snap.runActive) return undefined;
   const live = snap.live;
   if (live) {
     if (live.firstTokenAt === undefined) {
