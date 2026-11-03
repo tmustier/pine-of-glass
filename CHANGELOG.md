@@ -14,6 +14,10 @@
   branches, and prevent cancelled compactions from misclassifying later calls.
 - Keep unbilled and nested tools out of unrelated Meantime call timing.
 - Restrict `/drill` to Traceline's terminal owner.
+- Cachemire works out model-switch, thinking-change and compaction state from the
+  session instead of storing it, and books live, warm and restored calls through one
+  function. `/cache` in a restored session names the billed provider before the first
+  new call.
 
 ## 0.18.4 (2026-10-28)
 

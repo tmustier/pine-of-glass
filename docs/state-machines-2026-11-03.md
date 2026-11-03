@@ -44,10 +44,22 @@ retry the same conversation. A response overlapping a replay has no attributable
 time; Cachemire falls back to send time.
 
 Cachemire stores fingerprint, retention, timing and notice in one `PendingRequest`.
-A re-attempt replaces payload-derived evidence; an unbilled end restores the previous
-clock and resolves the notice. Contextimate similarly replaces its captured payload.
+A re-attempt replaces payload-derived evidence; an unbilled end resolves the notice. Contextimate similarly replaces its captured payload.
 `_lib/usage.ts` shares the billed-token check; Contextimate's trusted-context check
 remains separate because it also excludes errors and aborts.
+
+## Cachemire baseline
+
+Cachemire stores one `CacheBaseline`: what the provider cache holds for the active path
+as of the last billed call (expected read, clock anchor, window, billing route and
+thinking level). Only lineage projection (start, tree navigation, send) and `bookCall`
+change it. A request in flight shows on the clock without changing the baseline, so an
+unbilled end has nothing to undo.
+
+Model switch, thinking change and compaction are derived on demand by comparing the
+baseline with Pi's current model, Pi's current thinking level and the active path.
+`bookCall` in `ledger.ts` books live calls, warm entries and restored sessions alike;
+the only source-specific rule left is the "restored session" cause label.
 
 ## Compaction and timing
 
@@ -90,9 +102,6 @@ Existing render goldens remain unchanged.
 
 ## Still open
 
-- Cachemire still stores model/thinking drift flags and has separate live, warm and
-  restored booking paths. A baseline/selection split and shared booking reducer are
-  deferred; no confirmed bug requires them.
 - Provider hooks lack request ids and purpose, so attribution still infers event order.
   Payload capture also misses transforms from later extension handlers.
 - SDK `dispose()` does not emit shutdown. Weak keys allow collection, but a host must
@@ -100,4 +109,4 @@ Existing render goldens remain unchanged.
 - Pi accepts an `aborted` compaction summary when its request signal was not aborted.
   These Pi API gaps are listed in [upstream candidates](./upstream-candidates.md#5-provider-request-attribution).
 - Whether an aborted response has refreshed a provider's cache remains unverified.
-  Cachemire conservatively restores the previous clock.
+  Cachemire conservatively keeps the previous clock.

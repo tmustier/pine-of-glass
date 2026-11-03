@@ -6,7 +6,8 @@ import type { AssistantMessage, Message, Usage } from "@earendil-works/pi-ai";
 import { diffFingerprints, fingerprintPayload } from "../../extensions/pi-cachemire/classify.ts";
 import { predictBreak } from "../../extensions/pi-cachemire/economics.ts";
 import { findBranchBaseline, hydrateLineageResponseIds, resolveCacheLineage, restoreLineageSnapshots } from "../../extensions/pi-cachemire/lineage.ts";
-import { cacheStateForLineage } from "../../extensions/pi-cachemire/lineage.ts";
+import { baselineForLineage } from "../../extensions/pi-cachemire/lineage.ts";
+import { routeChanged } from "../../extensions/pi-cachemire/ledger.ts";
 import type { CacheLineageSnapshot } from "../../extensions/pi-cachemire/types.ts";
 
 function usage(input: number, cacheRead: number, cacheWrite: number, output = 10): Usage {
@@ -181,12 +182,9 @@ test("an unknown restored API withholds refresh proof without inventing a model 
   const resolution = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left"])));
   assert.equal(resolution.cause, undefined, "missing history is not positive switch evidence");
   assert.deepEqual(resolution.compatible, [], "unknown identity cannot prove a warm entry or compatible descendants");
-  const cacheState = cacheStateForLineage(
-    resolution,
-    { provider: "anthropic", model: "claude-opus-4-8", api: "anthropic-messages" },
-  );
-  assert.equal(cacheState.modelSwitched, false);
-  assert.equal(cacheState.lastRefreshedAt, undefined, "unknown identity cannot restore a freshness clock");
+  const cacheState = baselineForLineage(resolution);
+  assert.equal(routeChanged(cacheState.billedBy, { provider: "anthropic", model: "claude-opus-4-8", api: "anthropic-messages" }), false);
+  assert.equal(cacheState.refreshedAt, undefined, "unknown identity cannot restore a freshness clock");
 });
 
 test("incompatible descendants cannot refresh the selected lineage", () => {
