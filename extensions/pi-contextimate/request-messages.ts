@@ -42,7 +42,7 @@ function messageKey(message: Message): string {
     toolCallId: message.role === "toolResult" ? message.toolCallId : undefined });
 }
 
-export async function payloadTextAdditions(saved: AgentMessage[], payload: unknown, model: Model<Api>): Promise<RequestMessages | undefined> {
+export function payloadTextAdditions(saved: AgentMessage[], payload: unknown, model: Model<Api>): RequestMessages | undefined {
   if (!isJsonObject(payload)) return undefined;
   const messages = convertToLlm(saved);
   // Image conversion depends on Pi settings and can generate captions after the hooks.
@@ -112,7 +112,7 @@ export function observeRequestMessages(pi: ExtensionAPI): void {
   pi.on("before_provider_request", (event) => {
     if (request) request.payload = structuredClone(event.payload);
   });
-  pi.on("message_end", async (event, ctx) => {
+  pi.on("message_end", (event, ctx) => {
     if (event.message.role !== "assistant" || !request) return;
     const { saved, payload, nonTextChars, hasImages } = request;
     let { counts } = request;
@@ -122,7 +122,7 @@ export function observeRequestMessages(pi: ExtensionAPI): void {
     // A virtual selection can have a different API; the response names the physical route.
     const model = ctx.modelRegistry.find(response.provider, response.model);
     if (model && !hasImages && counts?.additive !== false) {
-      const text = await payloadTextAdditions(saved, payload, model);
+      const text = payloadTextAdditions(saved, payload, model);
       if (text) {
         if (!text.additive) counts = text;
         else counts = text.chars > 0 || counts

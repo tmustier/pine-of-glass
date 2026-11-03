@@ -28,40 +28,40 @@ async function anthropicPayload(model: Model<"anthropic-messages">, context: Ret
 const saved = [{ role: "user" as const, content: "same", timestamp: 1 }];
 const item = (text: string) => ({ role: "user", content: [{ type: "input_text", text }] });
 
-test("payload attribution preserves duplicate occurrences and ignores system and tool material", async () => {
+test("payload attribution preserves duplicate occurrences and ignores system and tool material", () => {
   const payload = { instructions: "not an addition", tools: [{ description: "nor this" }], input: [
     { role: "developer", content: [{ type: "input_text", text: "not session text" }] },
     item("same"), item("same"), item("extra"),
     { type: "function_call_output", output: "not user text" },
   ] };
-  assert.deepEqual(await payloadTextAdditions(saved, payload, route("openai-codex-responses")), { chars: 9, additive: true });
+  assert.deepEqual(payloadTextAdditions(saved, payload, route("openai-codex-responses")), { chars: 9, additive: true });
 });
 
-test("deletions, replacements and reordering are not falsely presented as additive counts", async () => {
-  assert.deepEqual(await payloadTextAdditions(saved, { input: [item("replacement")] }, route("openai-responses")),
+test("deletions, replacements and reordering are not falsely presented as additive counts", () => {
+  assert.deepEqual(payloadTextAdditions(saved, { input: [item("replacement")] }, route("openai-responses")),
     { additive: false });
-  assert.deepEqual(await payloadTextAdditions(saved, { input: [] }, route("openai-responses")),
+  assert.deepEqual(payloadTextAdditions(saved, { input: [] }, route("openai-responses")),
     { additive: false });
-  assert.deepEqual(await payloadTextAdditions([...saved, { role: "user", content: "next", timestamp: 2 }],
+  assert.deepEqual(payloadTextAdditions([...saved, { role: "user", content: "next", timestamp: 2 }],
     { input: [item("next"), item("same")] }, route("openai-responses")), { additive: false });
 });
 
-test("unknown routes and malformed payloads do not claim outgoing text coverage", async () => {
+test("unknown routes and malformed payloads do not claim outgoing text coverage", () => {
   for (const payload of [null, {}, { input: "not an array" }]) {
-    assert.equal(await payloadTextAdditions(saved, payload, route("openai-responses")), undefined);
+    assert.equal(payloadTextAdditions(saved, payload, route("openai-responses")), undefined);
   }
-  assert.equal(await payloadTextAdditions(saved, { input: [item("extra")] }, route("unknown-api")), undefined);
+  assert.equal(payloadTextAdditions(saved, { input: [item("extra")] }, route("unknown-api")), undefined);
 });
 
-test("native OpenAI replay drops aborted replies without losing genuine additions", async () => {
+test("native OpenAI replay drops aborted replies without losing genuine additions", () => {
   const model = route("openai-responses");
   const history = [...saved,
     assistantMessage([{ type: "text", text: "partial aborted reply" }], { stopReason: "aborted" }),
   ];
   const context = normalizeContext({ messages: history });
   const input = convertResponsesMessages(model, context, new Set());
-  assert.deepEqual(await payloadTextAdditions(history, { input }, model), { chars: 0, additive: true });
-  assert.deepEqual(await payloadTextAdditions(history, { input: [...input, item("injected")] }, model),
+  assert.deepEqual(payloadTextAdditions(history, { input }, model), { chars: 0, additive: true });
+  assert.deepEqual(payloadTextAdditions(history, { input: [...input, item("injected")] }, model),
     { chars: 8, additive: true });
 });
 
@@ -71,7 +71,7 @@ test("native Anthropic unsigned thinking is not counted a second time", async ()
     { type: "thinking", thinking: "unsigned thinking" }, { type: "text", text: "reply" },
   ], { provider: model.provider, model: model.id, api: model.api })];
   const payload = await anthropicPayload(model, normalizeContext({ messages: history }));
-  assert.deepEqual(await payloadTextAdditions(history, payload, model), { chars: 0, additive: true });
+  assert.deepEqual(payloadTextAdditions(history, payload, model), { chars: 0, additive: true });
 });
 
 test("bundled Pi attributes native payload additions without installed Pi peers", async () => {
@@ -107,12 +107,12 @@ test("bundled Pi attributes native payload additions without installed Pi peers"
       export default async function () {
         for (const { history, payload, model } of ${JSON.stringify(fixtures)}) {
           for (let turn = 0; turn < 2; turn++) {
-            assert.deepEqual(await payloadTextAdditions(history, payload, model), { additive: true, chars: 0 });
+            assert.deepEqual(payloadTextAdditions(history, payload, model), { additive: true, chars: 0 });
             const added = structuredClone(payload);
             const anthropic = model.api === "anthropic-messages";
             added[anthropic ? "messages" : "input"].push({ role: "user",
               content: [{ type: anthropic ? "text" : "input_text", text: "injected" }] });
-            assert.deepEqual(await payloadTextAdditions(history, added, model), { additive: true, chars: 8 });
+            assert.deepEqual(payloadTextAdditions(history, added, model), { additive: true, chars: 8 });
           }
         }
       }
@@ -130,20 +130,20 @@ test("bundled Pi attributes native payload additions without installed Pi peers"
   } finally { project.dispose(); }
 });
 
-test("image conversions retain only hook coverage rather than mistaking generated captions for additions", async () => {
+test("image conversions retain only hook coverage rather than mistaking generated captions for additions", () => {
   const image = { type: "image" as const, data: "AA==", mimeType: "image/png" };
   const user = { role: "user" as const, content: [image], timestamp: 2 };
-  assert.equal(await payloadTextAdditions([user], { input: [item("Image reading is disabled.")] }, route("openai-responses")), undefined);
+  assert.equal(payloadTextAdditions([user], { input: [item("Image reading is disabled.")] }, route("openai-responses")), undefined);
   const tool = { role: "toolResult" as const, toolCallId: "call_abc|fc_def", toolName: "read",
     content: [image], isError: true, timestamp: 3 };
-  assert.equal(await payloadTextAdditions([tool], { messages: [{ role: "user", content: "provider-generated caption" }] },
+  assert.equal(payloadTextAdditions([tool], { messages: [{ role: "user", content: "provider-generated caption" }] },
     route("anthropic-messages")), undefined);
 });
 
-test("Anthropic tool-result blocks and system instructions are not request-only conversation additions", async () => {
+test("Anthropic tool-result blocks and system instructions are not request-only conversation additions", () => {
   const payload = { system: "instructions", messages: [
     { role: "user", content: [{ type: "text", text: "same" }, { type: "tool_result", content: "tool output" }] },
     { role: "assistant", content: [{ type: "text", text: "injected" }] },
   ] };
-  assert.deepEqual(await payloadTextAdditions(saved, payload, route("anthropic-messages")), { chars: 8, additive: true });
+  assert.deepEqual(payloadTextAdditions(saved, payload, route("anthropic-messages")), { chars: 8, additive: true });
 });

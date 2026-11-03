@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Traceline sends summary batches as soon as rows settle instead of waiting for the
+  previous batch's reply, up to four requests at once. A turn with many cut commands
+  gets its gists in one round trip rather than one per batch.
+- Contextimate's request-only text attribution runs synchronously; nothing in it
+  awaited.
+
 ## 0.18.4 (2026-10-28)
 
 - Traceline links PR and issue numbers in record headlines (`opened PR #88`,

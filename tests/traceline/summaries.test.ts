@@ -102,6 +102,30 @@ test("a cut command gets one ≈ line once settled, asked for in one batch; the 
   }
 });
 
+test("batches go out together rather than waiting for earlier replies", async () => {
+  const project = new IsolatedProject();
+  try {
+    project.writeUserConfig("pi-traceline", { summaries: { model: `${PROVIDER}/gist` } });
+    const asked: Asked[][] = [];
+    const host = await hostExtension((pi) => {
+      summaryModel(pi, asked, undefined, 300);
+      piTraceline(pi);
+    }, { project });
+    try {
+      const rows = Array.from({ length: 9 }, (_, index) => bash(`${LONG} && echo ${index}`, "ok"));
+      for (const row of rows) lines(row);
+      await new Promise((resolve) => setTimeout(resolve, 280));
+      assert.deepEqual(asked.map((batch) => batch.length), [8, 1], "both batches are in flight before either reply");
+      await settle();
+      assert.ok(rows.every((row) => lines(row).at(-1)?.includes("≈ gist")));
+    } finally {
+      await host.dispose();
+    }
+  } finally {
+    project.dispose();
+  }
+});
+
 test("a cut wide-character command earns a gist by terminal columns", async () => {
   const project = new IsolatedProject();
   try {
