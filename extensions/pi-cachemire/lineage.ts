@@ -1,9 +1,9 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { findBranchBaseline } from "./lineage-persistence.ts";
 export { findBranchBaseline, hydrateLineageResponseIds, requestLeafFor, restoreLineageSnapshots } from "./lineage-persistence.ts";
+import type { CacheBaseline } from "./ledger.ts";
 import type {
   CacheLineageSnapshot,
-  CacheWindow,
   CallCause,
   RequestFingerprint,
   ResolvedCacheLineage,
@@ -37,32 +37,16 @@ export function pathContainsCompaction(
   return false;
 }
 
-/** Project a lineage resolution onto the cache clock's baseline state. */
-export function cacheStateForLineage(
+/** The cache baseline a lineage resolution implies. */
+export function baselineForLineage(
   resolution: ResolvedCacheLineage,
-  current: { provider?: string; model?: string; api?: string },
-): {
-  expectedRead: number;
-  lastRefreshedAt: number | undefined;
-  lastCallModelId: string | undefined;
-  lastCallProvider: string | undefined;
-  lastCallApi: string | undefined;
-  modelSwitched: boolean;
-  window: CacheWindow;
-} {
+): Pick<CacheBaseline, "expectedRead" | "refreshedAt" | "window" | "billedBy"> {
   const { baseline, refresh } = resolution;
   return {
     expectedRead: baseline?.promptTokens ?? 0,
-    lastRefreshedAt: refresh && cacheRefreshedAt(refresh),
-    lastCallModelId: baseline?.model,
-    lastCallProvider: baseline?.provider,
-    lastCallApi: baseline?.api,
-    modelSwitched: baseline !== undefined && (
-      changed(baseline.provider, current.provider) ||
-      changed(baseline.model, current.model) ||
-      changed(baseline.api, current.api)
-    ),
+    refreshedAt: refresh && cacheRefreshedAt(refresh),
     window: refresh?.window ?? { kind: "unknown" },
+    billedBy: baseline && { provider: baseline.provider, model: baseline.model, api: baseline.api },
   };
 }
 

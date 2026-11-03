@@ -1,108 +1,146 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Usage } from "@earendil-works/pi-ai";
 import { classifyCall } from "./classify.ts";
+import { UNKNOWN_WINDOW } from "./clock.ts";
 import { sessionEntryAt } from "./lineage-persistence.ts";
 import { hasBilledUsage } from "../_lib/usage.ts";
-import type { CallCause, CallRecord } from "./types.ts";
+import type { CacheWindow, CallCause, CallRecord } from "./types.ts";
 
-function identityChanged(a: string | undefined, b: string | undefined): boolean {
-  return a !== undefined && b !== undefined && a !== b;
-}
-
-type PersistedCall = {
-  at: number;
-  usage: Usage;
+export interface Route {
   provider?: string;
   model?: string;
+  /** The same model through a different wire API is a different cache. */
   api?: string;
-  warm: boolean;
-};
+}
 
-export function restoreBranchRecords(
-  entries: readonly SessionEntry[],
-): CallRecord[] {
+/** What the provider cache holds for the active path, as of the last billed call. */
+export interface CacheBaseline {
+  /** Prompt size of the last billed call: the next call's expected cache read. */
+  expectedRead: number;
+  /** When a compatible request last refreshed the cache: the clock anchor. */
+  refreshedAt?: number;
+  window: CacheWindow;
+  billedBy?: Route;
+  thinkingLevel?: string;
+  /** When the previous booked call refreshed the cache: the ledger's gap anchor. It differs
+   * from `refreshedAt` after a branch switch, because the clock follows lineage and the
+   * ledger follows time. */
+  lastCallAt?: number;
+}
+
+/** Unknown parts of a route are not evidence of a switch. */
+export function routeChanged(from: Route | undefined, to: Route): boolean {
+  const changed = (a: string | undefined, b: string | undefined) => a !== undefined && b !== undefined && a !== b;
+  return from !== undefined &&
+    (changed(from.provider, to.provider) || changed(from.model, to.model) || changed(from.api, to.api));
+}
+
+/** One billed call from a live response, a warm entry or a restored session entry. */
+export interface BilledCall {
+  /** Restored calls know only when the response was saved. */
+  requestAt?: number;
+  at: number;
+  refreshedAt: number;
+  usage: Usage;
+  route: Route;
+  /** The retention window this call confirmed. */
+  window: CacheWindow;
+  /** A compaction sits between the baseline call and this one. */
+  compacted: boolean;
+  fingerprintCause?: CallCause;
+  thinkingLevel?: string;
+  uncachedUsd?: number;
+  warm?: true;
+  restored?: true;
+}
+
+interface BookedCall {
+  record: CallRecord;
+  baseline: CacheBaseline;
+}
+
+/** Book one billed call against the baseline it read from, and advance the baseline. */
+export function bookCall(priorCalls: number, baseline: CacheBaseline, call: BilledCall): BookedCall {
+  const { usage } = call;
+  const { billedBy } = baseline;
+  // Pi saves no API on warm entries; one that repeats the baseline's model used its API.
+  const sameModel = billedBy?.provider === call.route.provider && billedBy?.model === call.route.model;
+  const route = { ...call.route, api: call.route.api ?? (sameModel ? billedBy?.api : undefined) };
+  const switched = routeChanged(billedBy, route);
+  const start = call.requestAt ?? call.at;
+  const classification = classifyCall({
+    isFirst: priorCalls === 0,
+    gapMs: baseline.refreshedAt === undefined ? undefined : start - baseline.refreshedAt,
+    window: baseline.window,
+    usage,
+    expectedRead: baseline.expectedRead,
+    modelSwitched: switched,
+    compacted: call.compacted,
+    fingerprintCause: call.fingerprintCause ?? (switched ? {
+      kind: "model",
+      detail: `model switched ${billedBy?.model ?? "previous model"} \u2192 ${route.model ?? "current model"}`,
+    } : undefined),
+  });
+  if (
+    call.restored && classification.kind !== "cold" && classification.kind !== "hit" &&
+    classification.cause.kind !== "model" && classification.cause.kind !== "compaction"
+  ) {
+    classification.cause = { kind: "restored", detail: "restored session (cause unknown)" };
+  }
+  return {
+    record: {
+      index: priorCalls + 1,
+      at: call.at,
+      requestAt: call.requestAt,
+      gapMs: baseline.lastCallAt === undefined ? undefined : start - baseline.lastCallAt,
+      usage,
+      expectedRead: baseline.expectedRead,
+      classification,
+      rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
+      switched: switched ? true : undefined,
+      postCompaction: call.compacted ? { modelSwitched: switched } : undefined,
+      costUsd: usage.cost.total,
+      uncachedUsd: call.uncachedUsd,
+      warm: call.warm,
+      restored: call.restored,
+    },
+    baseline: {
+      expectedRead: usage.input + usage.cacheRead + usage.cacheWrite,
+      refreshedAt: Math.max(baseline.refreshedAt ?? 0, call.refreshedAt),
+      window: call.window,
+      billedBy: route,
+      thinkingLevel: call.thinkingLevel ?? baseline.thinkingLevel,
+      lastCallAt: call.refreshedAt,
+    },
+  };
+}
+
+/** Rebuild a branch's ledger from its saved calls. */
+export function restoreBranchRecords(entries: readonly SessionEntry[]): CallRecord[] {
   const records: CallRecord[] = [];
-  let previousAt: number | undefined;
-  let previousIdentity: { provider?: string; model?: string; api?: string } | undefined;
-  let expectedRead = 0;
+  let baseline: CacheBaseline = { expectedRead: 0, window: UNKNOWN_WINDOW };
   let compacted = false;
   for (const entry of entries) {
     if (entry.type === "compaction") {
       compacted = true;
       continue;
     }
-
-    let call: PersistedCall;
-    if (entry.type === "usage" && entry.kind === "cache_warm") {
-      call = {
-        at: sessionEntryAt(entry),
-        usage: entry.usage,
-        provider: entry.provider,
-        model: entry.model,
-        warm: true,
-      };
-    } else if (entry.type === "message" && entry.message.role === "assistant") {
-      call = {
-        at: sessionEntryAt(entry),
-        usage: entry.message.usage,
-        provider: entry.message.provider,
-        model: entry.message.model,
-        api: entry.message.api,
-        warm: false,
-      };
-    } else {
-      continue;
-    }
-
-    const { usage } = call;
-    if (!hasBilledUsage(usage)) continue;
-    const inheritedApi = call.warm && previousIdentity !== undefined &&
-      previousIdentity.provider === call.provider && previousIdentity.model === call.model
-      ? previousIdentity.api
-      : undefined;
-    const identity = { provider: call.provider, model: call.model, api: call.api ?? inheritedApi };
-    const fingerprintCause: CallCause | undefined = previousIdentity !== undefined && (
-      identityChanged(previousIdentity.provider, identity.provider) ||
-      identityChanged(previousIdentity.model, identity.model) ||
-      identityChanged(previousIdentity.api, identity.api)
-    ) ? {
-      kind: "model",
-      detail: `model switched ${previousIdentity.model ?? "previous model"} \u2192 ${identity.model ?? "current model"}`,
-    } : undefined;
-    const switched = fingerprintCause !== undefined;
-    const gapMs = previousAt === undefined ? undefined : call.at - previousAt;
-    const classification = classifyCall({
-      isFirst: records.length === 0,
-      gapMs,
-      usage,
-      expectedRead,
-      modelSwitched: switched,
+    const warm = entry.type === "usage" && entry.kind === "cache_warm";
+    const call = warm ? entry : entry.type === "message" && entry.message.role === "assistant" ? entry.message : undefined;
+    if (!call || !hasBilledUsage(call.usage)) continue;
+    const at = sessionEntryAt(entry);
+    const booked = bookCall(records.length, baseline, {
+      at,
+      refreshedAt: at,
+      usage: call.usage,
+      route: { provider: call.provider, model: call.model, api: "api" in call ? call.api : undefined },
+      window: UNKNOWN_WINDOW,
       compacted,
-      fingerprintCause,
-    });
-    if (
-      classification.kind !== "cold" && classification.kind !== "hit" &&
-      classification.cause.kind !== "model" && classification.cause.kind !== "compaction"
-    ) {
-      classification.cause = { kind: "restored", detail: "restored session (cause unknown)" };
-    }
-    records.push({
-      index: records.length + 1,
-      at: call.at,
-      gapMs,
-      usage,
-      expectedRead,
-      classification,
-      rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
-      switched: switched ? true : undefined,
-      postCompaction: compacted ? { modelSwitched: switched } : undefined,
-      costUsd: usage.cost.total,
-      warm: call.warm ? true : undefined,
+      warm: warm ? true : undefined,
       restored: true,
     });
-    previousAt = call.at;
-    previousIdentity = identity;
-    expectedRead = usage.input + usage.cacheRead + usage.cacheWrite;
+    records.push(booked.record);
+    baseline = booked.baseline;
     compacted = false;
   }
   return records;

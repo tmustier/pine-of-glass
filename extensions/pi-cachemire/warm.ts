@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { classifyCall } from "./classify.ts";
+import { UNKNOWN_WINDOW } from "./clock.ts";
+import { bookCall, type CacheBaseline } from "./ledger.ts";
 import { hydrateLineageResponseIds, restoreLineageSnapshots, sessionEntryAt } from "./lineage-persistence.ts";
 import { hasBilledUsage } from "../_lib/usage.ts";
-import type { CacheLineageSnapshot, CacheWindow, CallRecord } from "./types.ts";
+import type { CacheLineageSnapshot, CallRecord } from "./types.ts";
 
 type CacheWarmUsageEntry = Extract<SessionEntry, { type: "usage" }>;
 
@@ -11,32 +12,20 @@ export interface WarmSyncState {
   records: CallRecord[];
   lineages: CacheLineageSnapshot[];
   seenWarmEntryIds: Set<string>;
-  prevCallRefreshedAt?: number;
-  lastRefreshedAt?: number;
-  window: CacheWindow;
-  lastCallModelId?: string;
-  lastCallProvider?: string;
-  lastCallApi?: string;
-  modelSwitched: boolean;
-  expectedRead: number;
-  compacted: boolean;
+  baseline: CacheBaseline;
 }
 
 export function isWarmUsageEntry(entry: SessionEntry): entry is CacheWarmUsageEntry {
   return entry.type === "usage" && entry.kind === "cache_warm";
 }
 
-export function syncWarmEntries(
-  state: WarmSyncState,
-  ctx: Pick<ExtensionContext, "model" | "sessionManager">,
-): void {
-  const branch = ctx.sessionManager.getBranch();
-  const unseen = branch.filter(
+export function syncWarmEntries(state: WarmSyncState, sessionManager: ExtensionContext["sessionManager"]): void {
+  const unseen = sessionManager.getBranch().filter(
     (entry): entry is CacheWarmUsageEntry => isWarmUsageEntry(entry) && !state.seenWarmEntryIds.has(entry.id),
   );
   if (unseen.length === 0) return;
 
-  const entries = ctx.sessionManager.getEntries();
+  const entries = sessionManager.getEntries();
   hydrateLineageResponseIds(state.lineages, entries);
   state.lineages = restoreLineageSnapshots(entries, state.lineages);
 
@@ -44,47 +33,22 @@ export function syncWarmEntries(
     state.seenWarmEntryIds.add(entry.id);
     const { usage } = entry;
     if (!hasBilledUsage(usage)) continue;
-    const requestAt = sessionEntryAt(entry);
+    const at = sessionEntryAt(entry);
     const lineage = state.lineages.find((snapshot) => snapshot.responseEntryId === entry.id);
     assert(lineage, `missing cache-warm lineage for ${entry.id}`);
-    const gapMs = state.prevCallRefreshedAt === undefined ? undefined : requestAt - state.prevCallRefreshedAt;
-    const switched = state.lastCallModelId !== undefined && (
-      entry.model !== state.lastCallModelId ||
-      (state.lastCallProvider !== undefined && entry.provider !== state.lastCallProvider)
-    );
-    const classification = classifyCall({
-      isFirst: state.records.length === 0,
-      gapMs,
-      window: state.window,
+    const booked = bookCall(state.records.length, state.baseline, {
+      requestAt: at,
+      at,
+      refreshedAt: at,
       usage,
-      expectedRead: state.expectedRead,
-      modelSwitched: switched,
-      compacted: state.compacted,
-    });
-    state.records.push({
-      index: state.records.length + 1,
-      at: requestAt,
-      requestAt,
-      gapMs,
-      usage,
-      expectedRead: state.expectedRead,
-      classification,
-      rewroteTokens: usage.cacheWrite > 0 ? usage.cacheWrite : usage.input,
-      switched: switched ? true : undefined,
-      costUsd: usage.cost.total,
+      route: { provider: entry.provider, model: entry.model, api: lineage.api },
+      window: lineage.window ?? UNKNOWN_WINDOW,
+      // A warm request replays the baseline request, whose prefix no compaction can change.
+      compacted: false,
       uncachedUsd: usage.cost.total,
       warm: true,
     });
-    state.expectedRead = lineage.promptTokens;
-    state.prevCallRefreshedAt = requestAt;
-    state.lastRefreshedAt = Math.max(state.lastRefreshedAt ?? 0, requestAt);
-    state.window = lineage.window ?? { kind: "unknown" };
-    state.lastCallModelId = entry.model;
-    state.lastCallProvider = entry.provider;
-    state.lastCallApi = lineage.api;
-    state.modelSwitched = ctx.model !== undefined && (
-      ctx.model.provider !== entry.provider || ctx.model.id !== entry.model ||
-      (lineage.api !== undefined && ctx.model.api !== lineage.api)
-    );
+    state.records.push(booked.record);
+    state.baseline = booked.baseline;
   }
 }

@@ -101,11 +101,7 @@ test("thinking_level_select keeps direct Claude Fable 5.1 cache UI silent", asyn
 		await host.session.extensionRunner.emitMessageEnd({ type: "message_end", message: assistant });
 		assert.deepEqual(host.ui.widgetLines("pi-cachemire"), [], "a healthy cache is silent");
 
-		await host.session.extensionRunner.emit({
-			type: "thinking_level_select",
-			previousLevel: "low",
-			level: "high",
-		});
+		host.session.setThinkingLevel("high");
 		assert.deepEqual(
 			host.ui.widgetLines("pi-cachemire"),
 			[],
@@ -126,7 +122,7 @@ test("a billed hit after an effort change silences a route the contract expects 
 		await call(host, anthropicPayload(fableFive, "low", ["first"]), billed(fableFive, { input: 2, cacheRead: 0, cacheWrite: 100_000 }));
 
 		// No evidence yet: the contract rule predicts a break, at the keystroke and in flight.
-		await runner.emit({ type: "thinking_level_select", previousLevel: "low", level: "high" });
+		host.session.setThinkingLevel("high");
 		assert.match(host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "", /thinking level changed/);
 		host.session.sessionManager.appendMessage({ role: "user", content: "second", timestamp: Date.now() });
 		await runner.emitContext([]);
@@ -145,7 +141,7 @@ test("a billed hit after an effort change silences a route the contract expects 
 		);
 
 		// The verdict now outranks the contract: the next change is quiet end to end.
-		await runner.emit({ type: "thinking_level_select", previousLevel: "high", level: "low" });
+		host.session.setThinkingLevel("low");
 		assert.deepEqual(host.ui.widgetLines("pi-cachemire"), [], "evidence must silence the stale clock");
 		host.session.sessionManager.appendMessage({ role: "user", content: "third", timestamp: Date.now() });
 		await runner.emitContext([]);
@@ -158,7 +154,7 @@ test("a billed hit after an effort change silences a route the contract expects 
 
 		// The payload diff still saw the wire change; only the claim was withheld. A miss
 		// on the same route names it, so the verdict can flip back.
-		await runner.emit({ type: "thinking_level_select", previousLevel: "low", level: "high" });
+		host.session.setThinkingLevel("high");
 		await call(
 			host,
 			anthropicPayload(fableFive, "high", ["first", "second", "third", "fourth"]),
@@ -166,11 +162,11 @@ test("a billed hit after an effort change silences a route the contract expects 
 		);
 		assert.equal(notices.length, 3);
 		assert.match(notices[2]!, /cache broke .* cause: thinking changed \(thinking effort low \u2192 thinking effort high\)/);
-		await runner.emit({ type: "thinking_level_select", previousLevel: "high", level: "low" });
+		host.session.setThinkingLevel("low");
 		assert.match(host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "", /thinking level changed/, "a billed miss reinstates the expectation");
 
 		// Turning thinking off is a different mutation and stays material regardless.
-		await runner.emit({ type: "thinking_level_select", previousLevel: "low", level: "off" });
+		host.session.setThinkingLevel("off");
 		assert.match(host.ui.widgetLines("pi-cachemire")?.join("\n") ?? "", /thinking level changed/);
 	} finally {
 		await host.dispose();
@@ -181,11 +177,10 @@ test("a billed hit after an effort change silences a route the contract expects 
 test("GPT-6 Astra: the usage decides, and only a fresh effort can prove the route holds", async () => {
 	const project = new IsolatedProject();
 	const host = await hostExtension(piCachemire, { project, model: astra, thinkingLevel: "low" });
-	const runner = host.session.extensionRunner;
 	const notices = host.ui.notifications;
 	const turns = ["first"];
-	const change = async (previousLevel: ThinkingLevel, level: ThinkingLevel, usage: { input: number; cacheRead: number }) => {
-		await runner.emit({ type: "thinking_level_select", previousLevel, level });
+	const change = async (level: ThinkingLevel, usage: { input: number; cacheRead: number }) => {
+		host.session.setThinkingLevel(level);
 		turns.push(level);
 		await call(host, astraPayload(level, turns), billed(astra, { ...usage, cacheWrite: 0 }));
 	};
@@ -194,23 +189,23 @@ test("GPT-6 Astra: the usage decides, and only a fresh effort can prove the rout
 
 		// Stock Pi: the request-level effort changes and the bill says miss. The payload
 		// diff names it, and an OpenAI window never earns an in-flight claim.
-		await change("low", "high", { input: 30_600, cacheRead: 0 });
+		await change("high", { input: 30_600, cacheRead: 0 });
 		assert.equal(notices.length, 1);
 		assert.match(notices[0]!, /^\u25cd cache broke .* cause: thinking changed \(effort low \u2192 effort high\)$/);
-		await change("high", "medium", { input: 30_800, cacheRead: 0 });
+		await change("medium", { input: 30_800, cacheRead: 0 });
 		assert.equal(notices.length, 2);
 		assert.match(notices[1]!, /cause: thinking changed \(effort high \u2192 effort medium\)$/);
 
 		// Back to an effort already billed: the provider still holds that effort's own
 		// entry, so the hit is real but proves nothing about the route. No line, and the
 		// expectation stays.
-		await change("medium", "high", { input: 400, cacheRead: 30_600 });
+		await change("high", { input: 400, cacheRead: 30_600 });
 		assert.equal(notices.length, 2, "a hit on a previously billed effort is not evidence");
 
 		// A hit on an effort this route has never billed is the verdict: a later-loaded
 		// extension kept the prefix (configuration_update) even though the payload
 		// Cachemire saw changed effort. Say so once; record it.
-		await change("high", "xhigh", { input: 400, cacheRead: 30_800 });
+		await change("xhigh", { input: 400, cacheRead: 30_800 });
 		assert.equal(notices.length, 3);
 		assert.equal(
 			notices[2],
@@ -218,7 +213,7 @@ test("GPT-6 Astra: the usage decides, and only a fresh effort can prove the rout
 		);
 
 		// The route now holds: an expected hit earns no line.
-		await change("xhigh", "low", { input: 400, cacheRead: 31_200 });
+		await change("low", { input: 400, cacheRead: 31_200 });
 		assert.equal(notices.length, 3);
 
 		await host.session.prompt("/cache");
