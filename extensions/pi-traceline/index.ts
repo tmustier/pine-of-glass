@@ -1066,8 +1066,7 @@ export default function piTraceline(pi: ExtensionAPI) {
   // render internals it needs. Entry points: a shortcut (alt+t by default, `drillKey`
   // in the family config to rebind) plus /drill for discoverability.
   const startDrill = (ctx: { ui: ExtensionUIContext; mode: string }) => {
-    // Drill mode works on the terminal this instance patched; another session has none.
-    if (!tuiOwner.owns() || ctx.mode !== "tui") return;
+    if (!tuiOwner.owns() || ctx.mode !== "tui") return; // only the session whose terminal is patched
     enterDrillMode({
       ui: ctx.ui,
       theme: currentTheme,

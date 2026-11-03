@@ -2,6 +2,7 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Usage } from "@earendil-works/pi-ai";
 import { classifyCall } from "./classify.ts";
 import { sessionEntryAt } from "./lineage-persistence.ts";
+import { hasBilledUsage } from "../_lib/usage.ts";
 import type { CallCause, CallRecord } from "./types.ts";
 
 function identityChanged(a: string | undefined, b: string | undefined): boolean {
@@ -54,7 +55,7 @@ export function restoreBranchRecords(
     }
 
     const { usage } = call;
-    if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) continue;
+    if (!hasBilledUsage(usage)) continue;
     const inheritedApi = call.warm && previousIdentity !== undefined &&
       previousIdentity.provider === call.provider && previousIdentity.model === call.model
       ? previousIdentity.api

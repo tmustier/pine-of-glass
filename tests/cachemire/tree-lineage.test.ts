@@ -266,7 +266,6 @@ test("a selected compaction checkpoint stays unsized before provider usage", () 
   assert.equal(resolution.cause?.kind, "compaction");
   const prediction = predictBreak({
     isFirst: false,
-    inCompaction: false,
     compacted: false,
     expectedRead: resolution.baseline!.promptTokens,
     fingerprintCause: resolution.cause,
@@ -285,7 +284,6 @@ test("lineage-local freshness drives TTL prediction", () => {
   const resolution = resolve(entries, snapshots, "left", fingerprintPayload(payload(["root", "left", "continued"])));
   const prediction = predictBreak({
     isFirst: false,
-    inCompaction: false,
     compacted: false,
     gapMs: now - resolution.refresh!.requestAt,
     window: resolution.refresh!.window,

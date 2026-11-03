@@ -10,7 +10,6 @@ import type { BreakPrediction, CacheWindow, CallCause, CallRecord, ModelRates, U
 
 export function predictBreak(args: {
   isFirst: boolean;
-  inCompaction: boolean;
   compacted: boolean;
   gapMs?: number;
   window?: CacheWindow;
@@ -22,8 +21,8 @@ export function predictBreak(args: {
   /** Target-currency estimate while a model switch is pending (issue #57). */
   switchForecast?: Pick<SwitchForecast, "estTokens" | "basis" | "targetProvider"> & { priorMayBeWarm: boolean };
 }): BreakPrediction | undefined {
-  // Cold starts are healthy and the compaction summarizer call is labelled, not warned.
-  if (args.isFirst || args.inCompaction || args.expectedRead <= 0) return undefined;
+  // Cold starts are healthy.
+  if (args.isFirst || args.expectedRead <= 0) return undefined;
   if (args.compacted) {
     // The old prefix is gone; the new one's size is unknowable until usage arrives.
     return { cause: { kind: "compaction", detail: "history compacted" } };

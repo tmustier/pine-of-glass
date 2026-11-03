@@ -6,10 +6,17 @@ request is in flight") but is stored as loose booleans and optional fields, with
 spread across event handlers. The audit that found them is summarised in the first section. The
 rest of the document says what to change, in what order, and how each change is tested.
 
-Status: design only. Nothing here is implemented. Three investigations against Pi 1.3.0 and
-`main` at `3e13d7c` checked the suspected bugs before this design was finished, and their findings
-are folded in. The last section lists them, with the Amp threads that hold their full reports and
-reproduction tests.
+Status: steps 1, 2, 3, 5, 6 and 7 of "Order of work" are implemented, and step 4 in part.
+Three investigations against Pi 1.3.0 and `main` at `3e13d7c` checked the suspected bugs before
+this design was finished, and their findings are folded in. The last section lists them, with the
+Amp threads that hold their full reports and reproduction tests. Each confirmed bug now has a
+regression test that fails on `main`.
+
+From step 4, Cachemire has one `PendingRequest`, its config parser moved to `config.ts`, and
+`compacted` is read from the session path. Still open, and not needed by any confirmed bug: a
+separate `state.ts` with `Baseline` and `Selection`, deriving `modelSwitched` and
+`thinkingChanged` instead of setting them at events, and one `bookCall` reducer for live, warm and
+restored calls.
 
 The design targets the latest Pi release only. It does not keep code paths for older Pi versions.
 
@@ -241,10 +248,10 @@ export interface RequestTracker<Sent> {
   readonly state: RequestCycle<Sent>;
   /** context (Contextimate: context_with_system). */
   arm(): void;
-  /** cache_warming_decision with action "warm": the next matching payload is a replay. */
+  /** cache_warming_decision with action "warm": a later replay of the last agent conversation. */
   expectReplay(): void;
   /** before_provider_request. Calls `start` for an agent payload and `retry` for a re-attempt. */
-  payload(payload: unknown, now: number, start: () => Sent, retry: (sent: Sent) => void): PayloadKind;
+  payload(payload: unknown, start: () => Sent, retry: (sent: Sent) => void): PayloadKind;
   /** after_provider_response. */
   responded(now: number): void;
   /** Assistant message_end, whatever its usage or stop reason. */
@@ -256,13 +263,16 @@ export interface RequestTracker<Sent> {
 
 The rules, in the order `payload` applies them:
 
-1. A payload is a replay when a `cache_warming_decision` with action `warm` came first and the
-   payload's conversation messages equal those of the last agent payload. A replay changes
-   nothing except the response bookkeeping in rule 5. Both conditions are needed. The decision
-   event is Pi's own signal that a warm is coming, but a later extension can override it to
-   `stop`, so the message comparison confirms it. The comparison alone cannot tell a replay from
-   an ordinary retry, which resends the same messages. A decision that no matching payload
-   follows is cleared by the next agent payload.
+1. A payload is a replay when a `cache_warming_decision` with action `warm` came first, the
+   payload's conversation messages equal those of the agent payload that was last when the
+   decision came, and the payload does not state an output cap other than one token. A replay
+   changes nothing except the response bookkeeping in rule 5. The decision event is Pi's own
+   signal that a warm is coming, but a later extension can override it to `stop`, so the message
+   comparison confirms it. The comparison alone cannot tell a replay from an ordinary retry, which
+   resends the same messages; the one-token cap can, on every route whose cap field the tracker
+   reads. Pi does not await an aborted refresh's payload dispatch, so a replay can arrive after
+   the next agent request has been sent. An expectation therefore lasts until its replay arrives
+   or `abandon` runs, not only until the next agent payload.
 2. A payload in the `armed` state is an agent payload. `start` creates the extension's data.
 3. A payload in the `sent` state is a re-attempt of the same call (the strict-schema fallback).
    `retry` lets the extension replace what it derived from the payload, such as Cachemire's

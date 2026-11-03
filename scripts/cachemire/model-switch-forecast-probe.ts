@@ -23,6 +23,7 @@ import {
   type ForecastMessage,
   type TargetModel,
 } from "../../extensions/_lib/forecast.ts";
+import { RequestTracker } from "../../extensions/_lib/request-cycle.ts";
 import { activeToolDefinitions } from "../../extensions/pi-cachemire/forecast.ts";
 
 const outputPath = process.env.PI_CACHEMIRE_FORECAST_CAPTURE ?? "/tmp/pi-cachemire-model-switch-forecast.jsonl";
@@ -52,9 +53,9 @@ type ResolvedCapture = RequestCapture & {
   actualPromptTokens: number;
 };
 
-let pending: RequestCapture | undefined;
+// The same request rule as Cachemire: only agent requests count, not cache-warm replays.
+const requests = new RequestTracker<RequestCapture | undefined>();
 let lastResolved: ResolvedCapture | undefined;
-let inCompaction = false;
 
 function append(type: string, data: object): void {
   mkdirSync(dirname(outputPath), { recursive: true });
@@ -126,22 +127,27 @@ export default function modelSwitchForecastProbe(pi: ExtensionAPI): void {
     });
   });
 
-  pi.on("before_provider_request", (_event, ctx) => {
-    if (ctx.model === undefined) return;
-    if (inCompaction) {
-      pending = undefined;
-      append("compaction_request_skipped", {});
-      return;
-    }
-    const model = identity(ctx.model);
-    const canonical = canonicalCounts(pi, ctx, model, "before_provider_request");
-    if (canonical === undefined) return;
-    pending = { identity: model, canonical };
-    append("before_provider_request", pending);
+  pi.on("context", () => { requests.arm(); });
+  pi.on("cache_warming_decision", (event) => {
+    if (event.action === "warm") requests.expectReplay();
+  });
+
+  pi.on("before_provider_request", (event, ctx) => {
+    requests.payload(event.payload, () => {
+      if (ctx.model === undefined) return undefined;
+      const model = identity(ctx.model);
+      const canonical = canonicalCounts(pi, ctx, model, "before_provider_request");
+      if (canonical === undefined) return undefined;
+      const capture = { identity: model, canonical };
+      append("before_provider_request", capture);
+      return capture;
+    }, () => {});
   });
 
   pi.on("message_end", (event) => {
-    if (event.message.role !== "assistant" || pending === undefined) return;
+    if (event.message.role !== "assistant") return;
+    const pending = requests.settle()?.sent;
+    if (pending === undefined) return;
     const resolvedIdentity = {
       provider: event.message.provider,
       api: event.message.api,
@@ -150,30 +156,18 @@ export default function modelSwitchForecastProbe(pi: ExtensionAPI): void {
     if (resolvedIdentity.provider !== pending.identity.provider ||
         resolvedIdentity.api !== pending.identity.api || resolvedIdentity.id !== pending.identity.id) {
       append("identity_mismatch", { request: pending.identity, response: resolvedIdentity });
-      pending = undefined;
       return;
     }
     const actualPromptTokens = event.message.usage.input + event.message.usage.cacheRead + event.message.usage.cacheWrite;
     if (actualPromptTokens <= 0) {
       append("unbilled_response", { identity: resolvedIdentity });
-      pending = undefined;
       return;
     }
     lastResolved = { ...pending, actualPromptTokens };
     append("resolved", lastResolved);
-    pending = undefined;
-  });
-
-  pi.on("session_before_compact", () => {
-    inCompaction = true;
-  });
-
-  pi.on("session_compact", () => {
-    inCompaction = false;
-    pending = undefined;
   });
 
   pi.on("agent_end", () => {
-    pending = undefined;
+    requests.abandon();
   });
 }

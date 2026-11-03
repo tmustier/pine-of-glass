@@ -32,7 +32,7 @@ export interface RequestFingerprint {
 }
 
 export type CauseKind =
-  | "cold" | "ttl" | "compaction" | "compaction-work" | "model" | "thinking" | "system"
+  | "cold" | "ttl" | "compaction" | "model" | "thinking" | "system"
   | "tools" | "history" | "restored" | "unknown";
 
 export interface CallCause { kind: CauseKind; detail: string }

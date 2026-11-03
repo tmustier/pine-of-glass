@@ -234,12 +234,11 @@ test("run summary and miss lines read exactly as designed", () => {
 });
 
 test("break prediction: knowable at request time, silent when healthy", () => {
-  const base = { isFirst: false, inCompaction: false, compacted: false, expectedRead: 138_200, rates: RATES };
+  const base = { isFirst: false, compacted: false, expectedRead: 138_200, rates: RATES };
 
   // Healthy paths predict nothing.
   assert.equal(predictBreak({ ...base, gapMs: 30_000, window: CONTRACT_5M }), undefined);
   assert.equal(predictBreak({ ...base, isFirst: true, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
-  assert.equal(predictBreak({ ...base, inCompaction: true, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
   assert.equal(predictBreak({ ...base, expectedRead: 0, gapMs: 590 * MIN, window: CONTRACT_5M }), undefined);
   // Unknown window: no contract, no definite prediction.
   assert.equal(predictBreak({ ...base, gapMs: 590 * MIN }), undefined);

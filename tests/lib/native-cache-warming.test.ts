@@ -7,6 +7,7 @@ import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthr
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import cachemire from "../../extensions/pi-cachemire/index.ts";
 import contextimate from "../../extensions/pi-contextimate/index.ts";
 import meantime from "../../extensions/pi-meantime/index.ts";
 import { scanSession } from "../../extensions/pi-contextimate/session-accounting.ts";
@@ -69,7 +70,7 @@ function freezeClock(t: TestContext): void {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: Date.now() });
 }
 
-test("a refresh replay during the next request's context work does not start that request's clock", async (t) => {
+test("a refresh replay during the next request's context work is neither its payload nor its clock", async (t) => {
   freezeClock(t);
   const project = new IsolatedProject();
   project.writeProjectConfig("pi-meantime", { enabled: true, widget: false });
@@ -85,11 +86,15 @@ test("a refresh replay during the next request's context work does not start tha
       await warmFinished;
       t.mock.timers.tick(10_000);
     });
+    // The real next request differs from the replayed one only in its system prompt.
+    pi.on("context_with_system", (event) => contexts === 2 ? {
+      messages: event.messages.map((m) => m.role === "system" ? { ...m, content: "CHANGED SYSTEM" } : m),
+    } : undefined);
     pi.on("message_end", ({ message }) => {
       if (message.role === "assistant" && contexts === 1) pi.sendUserMessage("follow up", { deliverAs: "followUp" });
     });
   };
-  const host = await hostExtension([meantime, scriptedAnthropic(bodies, false), slowContext], { project, reason: "new" });
+  const host = await hostExtension([cachemire, meantime, scriptedAnthropic(bodies, false), slowContext], { project, reason: "new" });
   const unsubscribe = host.session.subscribe((event) => {
     if (event.type === "entry_appended" && event.entry.type === "usage" && event.entry.kind === "cache_warm") warmed();
   });
@@ -98,6 +103,9 @@ test("a refresh replay during the next request's context work does not start tha
     await host.session.setModel(host.session.modelRuntime.getModel("anthropic", ANTHROPIC.id)!);
     await host.session.prompt("first");
     assert.deepEqual(bodies.map((body) => body.warm), [false, true, false], "Pi replayed the first request");
+    assert.match(bodies[2]!.text, /CHANGED SYSTEM/);
+    await host.session.prompt("/cache");
+    assert.match(host.ui.notifications.at(-1)!, /system prompt changed/, "Cachemire compared the replay, not the request");
     await host.session.prompt("/pace");
     const pace = host.ui.notifications.at(-1)!;
     assert.match(pace, /totals: 2 calls/);

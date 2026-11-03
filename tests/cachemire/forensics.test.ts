@@ -244,9 +244,6 @@ test("classification ladder", () => {
   const partial = classifyCall({ isFirst: false, usage: usage(50_000), expectedRead: 100_000 });
   assert.equal(partial.kind, "partial");
   assert.equal(partial.cause!.kind, "unknown");
-
-  const summarizer = classifyCall({ isFirst: false, usage: usage(0), expectedRead: 100_000, inCompaction: true });
-  assert.equal(summarizer.cause!.kind, "compaction-work");
 });
 
 test("unknown misses do not invent a provider-side cause", () => {

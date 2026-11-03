@@ -247,14 +247,10 @@ export interface ClassifyInput {
   /** expectedRead is denominated in a previous model's tokenizer (model switch). */
   modelSwitched?: boolean;
   compacted?: boolean;
-  inCompaction?: boolean;
   fingerprintCause?: CallCause;
 }
 
 export function classifyCall(args: ClassifyInput): CallClassification {
-  if (args.inCompaction) {
-    return { kind: "miss", cause: { kind: "compaction-work", detail: "compaction summarizer call" } };
-  }
   if (args.isFirst || args.expectedRead <= 0) {
     return { kind: "cold", cause: { kind: "cold", detail: "cold start" } };
   }

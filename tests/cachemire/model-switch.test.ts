@@ -106,7 +106,7 @@ test("clock: A\u2192B\u2192A switch-back defers to the target's own prior entry"
 });
 
 test("break prediction: model switch sized in the target currency, or silent when warm", () => {
-  const base = { isFirst: false, inCompaction: false, compacted: false, expectedRead: 138_200, rates: RATES };
+  const base = { isFirst: false, compacted: false, expectedRead: 138_200, rates: RATES };
   const modelCause = { kind: "model", detail: "model switched a \u2192 b" } as const;
 
   // Without a forecast: certain break, but the size is in the old tokenizer \u2014 withheld.

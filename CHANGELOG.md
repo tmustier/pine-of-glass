@@ -6,6 +6,22 @@
   previous batch's reply; up to four requests progress concurrently.
 - Contextimate's request-only text attribution runs synchronously; nothing in it
   awaited.
+- Cachemire, Meantime and Contextimate keep their state per Pi session, so a child
+  session in the same process no longer writes into the terminal session's `/pace`
+  ledger, switches Contextimate's panel model or stops its widgets. An RPC session gets
+  Cachemire's and Meantime's notices and commands as notifications; starting it first
+  no longer takes Cachemire from the terminal session.
+- Pi's cache-warm replays no longer count as the agent's requests. Before, a replay
+  could take Cachemire's fingerprint for the next request, start Meantime's clock
+  during context work, or overwrite Contextimate's captured additions.
+- Cachemire compares the payload a provider actually billed when it sends a second
+  attempt of the same request (Anthropic's strict-schema fallback).
+- Cachemire reads post-compaction state from the session path. The warning survives
+  reload and resume, clears on a branch from before the compaction, and a cancelled
+  or failed compaction no longer labels later calls as summarizer work.
+- Meantime keeps tools of a response without usage out of the next call's tool time,
+  and ignores nested tool events that their parent tool already covers.
+- `/drill` does nothing outside the session that owns Traceline's terminal.
 
 ## 0.18.4 (2026-10-28)
 

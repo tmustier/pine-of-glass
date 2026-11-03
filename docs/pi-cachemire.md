@@ -293,6 +293,20 @@ its ledger and branch baselines from billed usage in assistant messages. Payload
 fingerprints, request-start and response-start observations and live retention fields
 are not persisted; diagnoses that need those fields remain unknown.
 
-Only the interactive Pi extension instance owns the process-global state. Nested
-headless sessions cannot overwrite its ledger, clock or model metadata. The interactive
-instance releases ownership on `session_shutdown`.
+Each Pi session in the process keeps its own ledger, clock and model metadata, keyed by
+its session id, so a nested session cannot write into another session's state. A reload
+keeps the session's state; any other shutdown removes it. Headless, print and JSON
+sessions keep no state. An RPC session keeps a ledger and sends its notices and `/cache`
+as notifications, with no widget. Only a terminal session shows the widget.
+
+Pi's cache warmer replays the last request through the same provider hooks. Cachemire
+treats a payload as a replay when it follows a `warm` decision, repeats the replayed
+request's conversation and asks for one output token; it never becomes call evidence.
+When a provider sends a second payload for the same request without new context, such as
+Anthropic's strict-schema fallback, the second payload is the one Cachemire compares
+next time.
+
+Post-compaction state comes from the session path: the active path has a compaction
+entry after the baseline call. It survives reload and resume, and moving to a branch
+from before the compaction clears it. Pi's summary request does not reach the provider
+hooks, so Cachemire never sees it as a call.

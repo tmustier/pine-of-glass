@@ -117,3 +117,36 @@ test("switching branches does not ingest an already restored warm entry twice", 
     project.dispose();
   }
 });
+
+test("an RPC session started first keeps its own ledger and leaves the terminal session's alone", async () => {
+  const project = new IsolatedProject();
+  const rpc = await hostExtension(piCachemire, { project, mode: "rpc" });
+  const terminal = await hostExtension(piCachemire, { project });
+  const billedMessage = (model: string, input: number) => assistantMessage([], {
+    model,
+    usage: {
+      input, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: input + 10,
+      cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    },
+  });
+  const call = async (host: typeof rpc, model: string, input: number) => {
+    await host.session.extensionRunner.emitContext([]);
+    await host.session.extensionRunner.emitBeforeProviderRequest({ model, messages: [] });
+    await host.session.extensionRunner.emitMessageEnd({ type: "message_end", message: billedMessage(model, input) });
+  };
+  try {
+    assert.ok(terminal.ui.widgets.has("pi-cachemire"), "the terminal session has its widget");
+    assert.ok(!rpc.ui.widgets.has("pi-cachemire"), "RPC renders no components");
+    await call(rpc, "rpc", 32_800);
+    await call(terminal, "terminal", 1_000);
+    await terminal.session.prompt("/cache");
+    await rpc.session.prompt("/cache");
+    assert.match(terminal.ui.notifications.at(-1)!, /\b1\.0k\b/);
+    assert.doesNotMatch(terminal.ui.notifications.at(-1)!, /32\.8k/);
+    assert.match(rpc.ui.notifications.at(-1)!, /32\.8k/, "RPC gets its ledger as a notification");
+  } finally {
+    await rpc.dispose();
+    await terminal.dispose();
+    project.dispose();
+  }
+});

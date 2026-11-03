@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { classifyCall } from "./classify.ts";
 import { hydrateLineageResponseIds, restoreLineageSnapshots, sessionEntryAt } from "./lineage-persistence.ts";
+import { hasBilledUsage } from "../_lib/usage.ts";
 import type { CacheLineageSnapshot, CacheWindow, CallRecord } from "./types.ts";
 
 type CacheWarmUsageEntry = Extract<SessionEntry, { type: "usage" }>;
@@ -19,7 +20,6 @@ export interface WarmSyncState {
   modelSwitched: boolean;
   expectedRead: number;
   compacted: boolean;
-  inCompaction: boolean;
 }
 
 export function isWarmUsageEntry(entry: SessionEntry): entry is CacheWarmUsageEntry {
@@ -43,7 +43,7 @@ export function syncWarmEntries(
   for (const entry of unseen) {
     state.seenWarmEntryIds.add(entry.id);
     const { usage } = entry;
-    if (usage.input === 0 && usage.output === 0 && usage.cacheRead === 0 && usage.cacheWrite === 0) continue;
+    if (!hasBilledUsage(usage)) continue;
     const requestAt = sessionEntryAt(entry);
     const lineage = state.lineages.find((snapshot) => snapshot.responseEntryId === entry.id);
     assert(lineage, `missing cache-warm lineage for ${entry.id}`);
@@ -60,7 +60,6 @@ export function syncWarmEntries(
       expectedRead: state.expectedRead,
       modelSwitched: switched,
       compacted: state.compacted,
-      inCompaction: state.inCompaction,
     });
     state.records.push({
       index: state.records.length + 1,
