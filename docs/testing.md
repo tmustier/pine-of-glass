@@ -171,9 +171,9 @@ not a mock. Anything requiring a live terminal goes to the smoke layer instead.
   gist under the row's first word once its result arrives and the record keeps its
   slot; a cut thinking preview shows its gist once the run is settled; a long gist
   wraps under its first word in muted words, never cut, and a reply's control
-  characters never reach the terminal; requests batch; gists
-  are stored as session entries and a replay asks for nothing; a reply that answers
-  nothing, or arrives after its session ended, changes nothing.
+  characters never reach the terminal; requests batch, and batches go out together;
+  gists are stored as session entries and a replay asks for nothing; a reply that
+  answers nothing, or arrives after its session ended, changes nothing.
 - **Composed calls** (`composed-calls.test.ts`, design language §9.14): a codemode row
   folds nested calls by tool with counts, one target per member, `✗N` for nested
   failures inside a completed script, `trimmed` ahead of the size cell, wall time from

@@ -1257,11 +1257,12 @@ like a record or a fact:
   ask again with every token
 - the original stays one zoom away (§9.12), so a wrong gist costs a click
 
-Gists are asked for in batches as rows settle, and each is stored in the session
-as a custom entry keyed by a hash of its text. A replayed or resumed session
-reads saved gists back without asking for them again. A row waiting for its gist
-renders exactly as it would without summaries, so the transcript never waits on a
-model; a gist that fails is not asked for again in that installed state.
+Gists are asked for in batches as rows settle, up to four batches at once, and
+each is stored in the session as a custom entry keyed by a hash of its text. A
+replayed or resumed session reads saved gists back without asking for them
+again. A row waiting for its gist renders exactly as it would without summaries,
+so the transcript never waits on a model; a gist that fails is not asked for
+again in that installed state.
 
 Summary usage belongs to the request, including replies that contain no usable
 gist. Each request records its id, model and item count before dispatch, then its
