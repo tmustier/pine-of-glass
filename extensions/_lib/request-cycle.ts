@@ -8,6 +8,8 @@
 //
 // - Pi's cache warmer replays the last agent request with `maxTokens: 1` and the same options,
 //   so the replay reaches the provider hooks. Each refresh first emits `cache_warming_decision`.
+//   Pi does not await an aborted refresh, so its payload can still arrive after the next agent
+//   request has been sent.
 // - An agent request is always preceded by a `context` event, retries included.
 // - A second payload for the same request arrives without a new `context`.
 
@@ -40,10 +42,22 @@ export function conversationKey(payload: unknown): string | undefined {
   return conversation === undefined ? undefined : JSON.stringify(conversation);
 }
 
+/** False when the payload states an output cap other than the warmer's one token: Anthropic and
+ * OpenAI chat `max_tokens`, OpenAI `max_output_tokens` and `max_completion_tokens`, Gemini
+ * `generationConfig.maxOutputTokens`. A route without a recognised cap field cannot tell. */
+function mayBeReplay(payload: unknown): boolean {
+  if (!isJsonObject(payload)) return false;
+  const generation = isJsonObject(payload.generationConfig) ? payload.generationConfig : {};
+  const cap = payload.max_tokens ?? payload.max_output_tokens ?? payload.max_completion_tokens
+    ?? generation.maxOutputTokens;
+  return typeof cap !== "number" || cap === 1;
+}
+
 export class RequestTracker<Sent> {
   #state: RequestCycle<Sent> = { kind: "idle" };
   #lastAgentKey: string | undefined;
-  #replayExpected = false;
+  /** Conversations a decided refresh will replay, until that replay's payload arrives. */
+  #replayKeys: string[] = [];
   #replaysAwaitingResponse = 0;
 
   get state(): RequestCycle<Sent> {
@@ -63,24 +77,26 @@ export class RequestTracker<Sent> {
     return ended;
   }
 
-  /** `cache_warming_decision` with action `warm`: the next payload that replays the last agent
-   * conversation is the warm request. A later extension can still cancel the refresh. */
+  /** `cache_warming_decision` with action `warm`: a payload that replays the last agent
+   * conversation within the warmer's one-token cap is the warm request, whenever it arrives. A
+   * later extension can still cancel the refresh, so an unused expectation lasts until
+   * `abandon`. */
   expectReplay(): void {
-    this.#replayExpected = true;
+    if (this.#lastAgentKey !== undefined) this.#replayKeys.push(this.#lastAgentKey);
   }
 
   /** `before_provider_request`. `start` creates the request's data for an agent payload, and
    * `retry` lets the caller re-derive what it read from the payload for a second attempt. */
   payload(payload: unknown, start: () => Sent, retry: (sent: Sent) => void): PayloadKind {
     const key = conversationKey(payload);
-    if (this.#replayExpected && key !== undefined && key === this.#lastAgentKey) {
-      this.#replayExpected = false;
+    const replayAt = key === undefined || !mayBeReplay(payload) ? -1 : this.#replayKeys.indexOf(key);
+    if (replayAt >= 0) {
+      this.#replayKeys.splice(replayAt, 1);
       this.#replaysAwaitingResponse++;
       return "replay";
     }
     switch (this.#state.kind) {
       case "armed":
-        this.#replayExpected = false;
         this.#lastAgentKey = key;
         this.#state = { kind: "sent", sent: start(), responseAmbiguous: false };
         return "agent";
@@ -115,7 +131,7 @@ export class RequestTracker<Sent> {
 
   /** `agent_end`, `session_start`, `session_tree`: drop any request without a response. */
   abandon(): EndedRequest<Sent> | undefined {
-    this.#replayExpected = false;
+    this.#replayKeys = [];
     return this.#end();
   }
 

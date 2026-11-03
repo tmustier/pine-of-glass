@@ -44,6 +44,18 @@ test("a warm replay of the last request never consumes the arm, before or during
   assert.equal(requests.inFlight?.attempts, 1);
 });
 
+test("a refresh aborted by the next request can still deliver its replay after that request is sent", () => {
+  const { requests, send } = tracker();
+  requests.arm();
+  send(turn("a"));
+  requests.settle();
+  requests.expectReplay();
+  requests.arm();
+  assert.equal(send(turn("a", "b")), "agent");
+  assert.equal(send(warm(turn("a"))), "replay", "the late replay is not a second attempt of the new request");
+  assert.equal(requests.inFlight?.attempts, 1);
+});
+
 test("a warm decision that no replay follows does not swallow a later request", () => {
   const { requests, send } = tracker();
   requests.arm();

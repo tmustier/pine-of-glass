@@ -5,6 +5,7 @@ import * as sessionSdk from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, convertToLlm, VERSION, type ExtensionAPI, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { isJsonObject } from "../_lib/boundary.ts";
 import { foreignThinkingFor } from "../_lib/forecast.ts";
+import { RequestTracker } from "../_lib/request-cycle.ts";
 import { countTextContent, countToolCallContent } from "./message-size.ts";
 
 type RequestMessages = { additive: false } | { additive: true; chars: number };
@@ -80,15 +81,14 @@ export function payloadTextAdditions(saved: AgentMessage[], payload: unknown, mo
 
 const ENTRY_TYPE = "contextimate-request-messages";
 
+type Prepared = { saved: AgentMessage[]; counts?: RequestMessages; nonTextChars: number; hasImages: boolean };
+type Captured = Prepared & { payload?: unknown };
+
 export function observeRequestMessages(pi: ExtensionAPI): void {
-  let request: {
-    saved: AgentMessage[];
-    payload?: unknown;
-    counts?: RequestMessages;
-    nonTextChars: number;
-    hasImages: boolean;
-  } | undefined;
-  pi.on("turn_start", () => { request = undefined; });
+  // The context hook prepares the counts; the agent request's own payload completes them. The
+  // shared tracker keeps a cache-warm replay of an earlier request out of the capture.
+  let prepared: Prepared | undefined;
+  const requests = new RequestTracker<Captured>();
   pi.on("context_with_system", (event, ctx) => {
     const saved = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages;
     const expected = convertToLlm(saved).filter((message) => message.role !== "system");
@@ -107,16 +107,29 @@ export function observeRequestMessages(pi: ExtensionAPI): void {
     }
     const counts: RequestMessages | undefined = index !== keys.length ? { additive: false }
       : observed.length > expected.length ? { chars, additive: true } : undefined;
-    request = { saved, counts, nonTextChars: chars - textChars, hasImages: hasImages(observed) };
+    prepared = { saved, counts, nonTextChars: chars - textChars, hasImages: hasImages(observed) };
+    requests.arm();
+  });
+  pi.on("cache_warming_decision", (event) => {
+    if (event.action === "warm") requests.expectReplay();
   });
   pi.on("before_provider_request", (event) => {
-    if (request) request.payload = structuredClone(event.payload);
+    const ready = prepared;
+    if (!ready) return;
+    // A second attempt of the same request (strict-schema fallback) replaces the capture.
+    requests.payload(event.payload, () => ({ ...ready, payload: structuredClone(event.payload) }), (sent) => {
+      sent.payload = structuredClone(event.payload);
+    });
   });
   pi.on("message_end", (event, ctx) => {
-    if (event.message.role !== "assistant" || !request) return;
+    if (event.message.role !== "assistant") return;
+    // A provider that never emits its payload still answers the prepared request.
+    const armed: Captured | undefined = requests.state.kind === "armed" ? prepared : undefined;
+    const request = requests.settle()?.sent ?? armed;
+    prepared = undefined;
+    if (!request) return;
     const { saved, payload, nonTextChars, hasImages } = request;
     let { counts } = request;
-    request = undefined;
     const response = event.message;
     if (response.stopReason === "error" || response.stopReason === "aborted") return;
     // A virtual selection can have a different API; the response names the physical route.

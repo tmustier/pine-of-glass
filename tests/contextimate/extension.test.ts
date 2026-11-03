@@ -47,3 +47,29 @@ test("contextimate commands cycle views and restore one panel after a resource r
     project.dispose();
   }
 });
+
+test("a child session in the same process neither switches nor stops the interactive panel", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const project = new IsolatedProject();
+  const { view } = mouseViewport();
+  const resources = new Container();
+  resources.addChild(new Text("[Context] AGENTS.md", 0, 0));
+  view.addChild(resources);
+  const ui = Object.assign(new RecordedUi(plainTheme, view), { setHeader() {} });
+  const parent = await hostExtension(piContextimate, { project, ui });
+  const child = await hostExtension(piContextimate, { project, interactive: false });
+  const panelText = () => stripAnsi(resources.render(160).join("\n"));
+  try {
+    await child.session.extensionRunner.emit({
+      type: "model_select", previousModel: undefined, source: "set",
+      model: { ...child.session.model!, provider: "child-provider", id: "child-model" },
+    });
+    await child.dispose();
+    t.mock.timers.tick(1);
+    assert.match(panelText(), /\[Contextimate\]/, "the child's shutdown cancelled the parent's install");
+    assert.doesNotMatch(panelText(), /child-provider\/child-model/, "the child's model reached the parent's panel");
+  } finally {
+    await parent.dispose();
+    project.dispose();
+  }
+});
