@@ -17,14 +17,11 @@ Requires Pi 0.86.0 or later.
 
 ## Update notices
 
-Pi 1.5 and later use [`UPDATE_NOTES.md`](./UPDATE_NOTES.md) for short startup
-notices. The first launch records the version without showing old notes.
-Pi's `collapseChangelog` setting reduces notices to one line per package.
+Pi 1.5 and later show short startup notices from [`UPDATE_NOTES.md`](./UPDATE_NOTES.md).
+The first launch is silent; `collapseChangelog` reduces notices to one line per package.
 
-Pi cannot filter package notes by the extensions you load. Startup notes cover
-only changes that affect all four extensions, so a Traceline update does not
-notify someone who uses only Contextimate. The full history, including changes
-to individual extensions, stays in [`CHANGELOG.md`](./CHANGELOG.md).
+Pi cannot filter notes by loaded extensions, so startup notes cover only changes
+affecting all four extensions. The full history stays in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Configuration directory
 
