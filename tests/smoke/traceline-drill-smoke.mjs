@@ -13,12 +13,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { linkedPiLaunch, shellQuote } from "./pi-launch.mjs";
+import { linkedPiLaunch, shellQuote, smokeTmuxSocket } from "./pi-launch.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const pi = linkedPiLaunch(repoRoot);
 const extensionPath = join(repoRoot, "extensions", "pi-traceline", "index.ts");
 const tmuxSession = `pog-drill-${process.pid}`;
+const tmuxSocket = smokeTmuxSocket("drill");
+const tmux = ["tmux", "-S", tmuxSocket];
 const readySentinel = "DRILL_SMOKE_READY";
 const alphaResult = `DRILL_RESULT_ALPHA ${"a".repeat(160)}`;
 const betaResult = `DRILL_RESULT_BETA ${"b".repeat(160)}`;
@@ -45,17 +47,17 @@ function cleanupRun(args) {
 }
 
 function hasTmuxSession() {
-  return run(["tmux", "has-session", "-t", tmuxSession], { timeoutMs: 2_000 }).status === 0;
+  return run([...tmux, "has-session", "-t", tmuxSession], { timeoutMs: 2_000 }).status === 0;
 }
 
 function capturePane() {
-  return run(["tmux", "capture-pane", "-p", "-t", tmuxSession, "-S", "-500"], {
+  return run([...tmux, "capture-pane", "-p", "-t", tmuxSession, "-S", "-500"], {
     timeoutMs: 2_000,
   }).stdout ?? "";
 }
 
 function sendKeys(...keys) {
-  return run(["tmux", "send-keys", "-t", tmuxSession, ...keys], { timeoutMs: 2_000 });
+  return run([...tmux, "send-keys", "-t", tmuxSession, ...keys], { timeoutMs: 2_000 });
 }
 
 function sleep(ms) {
@@ -179,7 +181,7 @@ function sessionEntries(cwd) {
 function cleanupLaunchedPi() {
   if (Number.isInteger(launchedPid)) {
     const panePid = Number.parseInt(
-      cleanupRun(["tmux", "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"]).stdout?.trim() ?? "",
+      cleanupRun([...tmux, "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"]).stdout?.trim() ?? "",
       10,
     );
     const command = cleanupRun(["ps", "-p", String(launchedPid), "-o", "command="]).stdout ?? "";
@@ -192,7 +194,8 @@ function cleanupLaunchedPi() {
       }
     }
   }
-  cleanupRun(["tmux", "kill-session", "-t", tmuxSession]);
+  cleanupRun([...tmux, "kill-server"]);
+  rmSync(tmuxSocket, { force: true });
 }
 
 if (run(["tmux", "-V"]).status !== 0) {
@@ -232,10 +235,10 @@ try {
   ].join(" ");
   // Pi 1.x redraws in place without leaving old frames in scrollback, so both expanded
   // results must fit on screen at once: a tall window, not the -S capture, keeps alpha visible.
-  const launch = run(["tmux", "new-session", "-d", "-s", tmuxSession, "-x", "110", "-y", "60", command]);
+  const launch = run([...tmux, "new-session", "-d", "-s", tmuxSession, "-x", "110", "-y", "60", command]);
   if (launch.status !== 0) throw new Error(`tmux launch failed: ${launch.stderr?.trim()}`);
 
-  const pidResult = run(["tmux", "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"], { timeoutMs: 2_000 });
+  const pidResult = run([...tmux, "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"], { timeoutMs: 2_000 });
   launchedPid = Number.parseInt(pidResult.stdout?.trim() ?? "", 10);
   if (!Number.isInteger(launchedPid)) throw new Error("could not identify the isolated Pi pane PID");
 
