@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
-"""Screenshot an HTML file with headless Chrome, then autocrop to content.
-
-Usage: html2png.py <in.html> <out.png> [--width 1800] [--height 2600]
-"""
-import subprocess, sys, tempfile, os
-from PIL import Image, ImageChops
+"""Screenshot an HTML file with headless Chrome, then autocrop to content."""
+import argparse, subprocess, sys, tempfile, os
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PAGE_BG = (0x0B, 0x0C, 0x10)
@@ -12,9 +8,15 @@ MARGIN = 56  # device px at scale 2 == 28 css px of page background kept around 
 
 
 if __name__ == "__main__":
-    html, out = sys.argv[1], sys.argv[2]
-    width = next((sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--width"), "1800")
-    height = next((sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--height"), "2600")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("html", help="input HTML file")
+    parser.add_argument("out", help="output PNG file")
+    parser.add_argument("--width", default="1800")
+    parser.add_argument("--height", default="2600")
+    args = parser.parse_args()
+    html, out, width, height = args.html, args.out, args.width, args.height
+    # Imported after parsing so --help works before PIL is installed.
+    from PIL import Image, ImageChops
     with tempfile.TemporaryDirectory() as td:
         raw = os.path.join(td, "raw.png")
         subprocess.run(

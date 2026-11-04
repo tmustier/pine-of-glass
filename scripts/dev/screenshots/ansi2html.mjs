@@ -2,12 +2,19 @@
 // ANSI (SGR) → HTML for README screenshots. Faithful where freeze/termshot are not:
 // dim (SGR 2) renders at reduced opacity, reverse (SGR 7) swaps fg/bg, and 39/49/22
 // resets behave like a real terminal. Truecolor and the xterm-256 palette map exactly.
-//
-// Usage: node ansi2html.mjs <capture.txt> [--title "pi"] [--out out.html] [--cols 120]
 import { readFileSync, writeFileSync } from "node:fs";
 
+const usage = 'Usage: node ansi2html.mjs <capture.txt> [--title "pi"] [--out out.html] [--cols 120]';
 const args = process.argv.slice(2);
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(usage);
+  process.exit(0);
+}
 const input = args.find((a) => !a.startsWith("--"));
+if (input === undefined) {
+  console.error(usage);
+  process.exit(2);
+}
 const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;

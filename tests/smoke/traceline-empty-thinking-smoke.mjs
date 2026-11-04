@@ -9,12 +9,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { linkedPiLaunch, shellQuote } from "./pi-launch.mjs";
+import { linkedPiLaunch, shellQuote, smokeTmuxSocket } from "./pi-launch.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const pi = linkedPiLaunch(repoRoot);
 const extensionPath = join(repoRoot, "extensions", "pi-traceline", "index.ts");
 const tmuxSession = `pog-empty-thinking-${process.pid}`;
+const tmuxSocket = smokeTmuxSocket("empty-thinking");
+const tmux = ["tmux", "-S", tmuxSocket];
 const sentinel = "GROUPED_THINKING_RESUME_SENTINEL";
 const firstPreviewFragment = "first adjacent reasoning step";
 const latestPreviewFragment = "fourth adjacent reasoning step";
@@ -42,11 +44,11 @@ function cleanupRun(args) {
 }
 
 function hasTmuxSession() {
-  return run(["tmux", "has-session", "-t", tmuxSession], { timeoutMs: 2_000 }).status === 0;
+  return run([...tmux, "has-session", "-t", tmuxSession], { timeoutMs: 2_000 }).status === 0;
 }
 
 function capturePane() {
-  return run(["tmux", "capture-pane", "-p", "-t", tmuxSession, "-S", "-500"], {
+  return run([...tmux, "capture-pane", "-p", "-t", tmuxSession, "-S", "-500"], {
     timeoutMs: 2_000,
   }).stdout ?? "";
 }
@@ -118,7 +120,7 @@ function sessionEntries(cwd) {
 function cleanupLaunchedPi() {
   if (Number.isInteger(launchedPid)) {
     const panePid = Number.parseInt(
-      cleanupRun(["tmux", "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"]).stdout?.trim() ?? "",
+      cleanupRun([...tmux, "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"]).stdout?.trim() ?? "",
       10,
     );
     const command = cleanupRun(["ps", "-p", String(launchedPid), "-o", "command="]).stdout ?? "";
@@ -131,7 +133,8 @@ function cleanupLaunchedPi() {
       }
     }
   }
-  cleanupRun(["tmux", "kill-session", "-t", tmuxSession]);
+  cleanupRun([...tmux, "kill-server"]);
+  rmSync(tmuxSocket, { force: true });
 }
 
 if (run(["tmux", "-V"]).status !== 0) {
@@ -173,11 +176,11 @@ try {
     shellQuote(sessionFile),
   ].join(" ");
   const launch = run([
-    "tmux", "new-session", "-d", "-s", tmuxSession, "-x", "100", "-y", "30", command,
+    ...tmux, "new-session", "-d", "-s", tmuxSession, "-x", "100", "-y", "30", command,
   ]);
   if (launch.status !== 0) throw new Error(`tmux launch failed: ${launch.stderr?.trim()}`);
 
-  const pidResult = run(["tmux", "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"], {
+  const pidResult = run([...tmux, "display-message", "-p", "-t", tmuxSession, "#{pane_pid}"], {
     timeoutMs: 2_000,
   });
   launchedPid = Number.parseInt(pidResult.stdout?.trim() ?? "", 10);
@@ -205,7 +208,7 @@ try {
     throw new Error(`one-line preview lost its opening or newest fragment\n${lastPane}`);
   }
 
-  run(["tmux", "send-keys", "-t", tmuxSession, "/quit", "Enter"], { timeoutMs: 2_000 });
+  run([...tmux, "send-keys", "-t", tmuxSession, "/quit", "Enter"], { timeoutMs: 2_000 });
   const exitDeadline = Math.min(hardDeadline, Date.now() + 5_000);
   while (Date.now() < exitDeadline && hasTmuxSession()) sleep(100);
   if (hasTmuxSession()) throw new Error("resumed Pi rendered but did not respond to /quit");

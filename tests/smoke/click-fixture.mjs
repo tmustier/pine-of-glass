@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { linkedPiLaunch, shellQuote } from "./pi-launch.mjs";
+import { linkedPiLaunch, shellQuote, smokeTmuxSocket } from "./pi-launch.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const pi = linkedPiLaunch(root);
@@ -14,9 +14,7 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
   const home = mkdtempSync(join(tmpdir(), `pog-${name}-home-`));
   const cwd = join(home, "project"), agent = join(home, ".pi/agent");
   const artifacts = mkdtempSync(join(tmpdir(), `pog-${name}-captures-`));
-  const socketDir = process.env.CLAUDE_TMUX_SOCKET_DIR ?? join(tmpdir(), "claude-tmux-sockets");
-  mkdirSync(socketDir, { recursive: true });
-  const socket = join(socketDir, `pog-${name}-${process.pid}.sock`);
+  const socket = smokeTmuxSocket(name);
   const session = name;
   const monitor = `tmux -S ${shellQuote(socket)} attach -t ${session}`;
   mkdirSync(cwd, { recursive: true });
@@ -69,7 +67,7 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
     raw(0, x ?? p.x, p.y, true);
     sleep(150);
   }
-  let launched = false;
+  let launched = false, shots = 0;
   function launch(width, height) {
     const sessionFile = join(cwd, "session.jsonl");
     writeFileSync(sessionFile, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
@@ -84,13 +82,21 @@ export function createClickFixture(name, { extension = join(root, "extensions/pi
       return;
     }
     try {
-      if (launched) spawnSync("tmux", ["-S", socket, "kill-session", "-t", session], { encoding: "utf8", timeout: 5000 });
+      if (launched) spawnSync("tmux", ["-S", socket, "kill-server"], { encoding: "utf8", timeout: 5000 });
     }
-    finally { rmSync(home, { recursive: true, force: true }); }
+    finally {
+      rmSync(socket, { force: true });
+      rmSync(home, { recursive: true, force: true });
+      // Written captures are the run's printed inspection output; an empty directory is not.
+      if (shots === 0) rmSync(artifacts, { recursive: true, force: true });
+    }
   }
   return {
     cwd, artifacts, timestamp, assistant, append, tmux, session,
     capture, keys, wait, point, raw, click, sleep, launch, close,
-    shot: (name) => writeFileSync(join(artifacts, `${name}.ansi`), capture(true)),
+    shot: (name) => {
+      writeFileSync(join(artifacts, `${name}.ansi`), capture(true));
+      shots++;
+    },
   };
 }
